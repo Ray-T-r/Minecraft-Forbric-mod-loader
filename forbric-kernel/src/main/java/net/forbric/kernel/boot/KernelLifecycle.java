@@ -102,32 +102,12 @@ public final class KernelLifecycle {
 	private static volatile List<Path> kernelAssetJars = List.of();
 
 	/**
-	 * Whether the kernel's mod-loading window has opened in this process. Each entry has one trigger the kernel
-	 * redirects here (NeoForge's {@code ServerModLoader.load(false)} or {@code ClientModLoader.begin()}); the guard is
-	 * defensive, so that a second trigger reaching the kernel runs nothing instead of a second window.
-	 */
-	private static final java.util.concurrent.atomic.AtomicBoolean WINDOW_OPENED = new java.util.concurrent.atomic.AtomicBoolean();
-
-	/** True for the first trigger to reach the kernel; a later one is named and runs nothing. */
-	static boolean openWindow(Side side) {
-		if (WINDOW_OPENED.compareAndSet(false, true)) return true;
-		ForbricLog.info("[Forbric/Lifecycle] another mod-loading trigger of the %s entry reached the kernel after its "
-				+ "window ran (each ecosystem's own copy of the call); it runs nothing", side.distName());
-		return false;
-	}
-
-	/** Tests only: closes the window again. */
-	static void forgetWindow() {
-		WINDOW_OPENED.set(false);
-	}
-
-	/**
 	 * Invoked from {@code net.minecraft.server.Main.main} (redirected from {@code ServerModLoader.load}) after
-	 * {@code Bootstrap.bootStrap}. Drives native ecosystem registration, once ({@link #openWindow}). {@code dedicated}
-	 * is the original argument.
+	 * {@code Bootstrap.bootStrap}. Drives native ecosystem registration. {@code dedicated} is the original argument.
+	 * Each entry point has exactly one trigger; the merged base's server entry carried both ecosystems' copies of the
+	 * call, and a once-per-process guard for it went in Stage 4.
 	 */
 	public static void onServerModLoading(boolean dedicated) {
-		if (!openWindow(Side.DEDICATED_SERVER)) return;
 		driveNativeRegistration(Side.DEDICATED_SERVER);
 	}
 
@@ -138,7 +118,6 @@ public final class KernelLifecycle {
 	 * {@code client} entrypoints rather than {@code server} ones, driven by {@code KernelFabricLoader}'s env type.
 	 */
 	public static void onClientModLoading() {
-		if (!openWindow(Side.CLIENT)) return;
 		driveNativeRegistration(Side.CLIENT);
 	}
 
