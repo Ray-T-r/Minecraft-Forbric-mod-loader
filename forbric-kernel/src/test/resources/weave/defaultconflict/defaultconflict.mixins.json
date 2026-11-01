@@ -1,1 +1,1 @@
-{"required": true, "package": "fixture.defaultconflict.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["BlockEntityRendererMixin", "ItemMixin"], "injectors": {"defaultRequire": 1}}
+{"required": true, "package": "fixture.defaultconflict.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["BlockEntityRendererMixin", "ItemMixin", "ItemStackMixin"], "injectors": {"defaultRequire": 1}}

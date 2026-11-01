@@ -82,7 +82,7 @@ import org.objectweb.asm.tree.MethodNode;
  * carrier shipped settled; anything added on top is the kernel's pipeline's to settle.
  *
  * <p>{@link #CHAINED} names the one signature where the override asks a third, wider hook instead of picking one of
- * the two: see its javadoc.
+ * the two, and where weaving that brought a single default for it is enough: see its javadoc.
  *
  * <p>{@code -Dforbric.defaultConflictRepair=off} leaves the conflict in place.
  */
@@ -94,14 +94,21 @@ public final class InterfaceDefaultConflictRepair {
 			List.of("net/minecraft/", "net/neoforged/", "net/minecraftforge/", "com/mojang/");
 
 	/**
-	 * {@code owner#name+desc} → the overload of the same name the override calls instead of either default.
+	 * {@code owner#name+desc} → the overload of the same name the override calls instead of the default(s) weaving
+	 * brought. A row applies when the class inherits a default for the key that was not reachable before weaving and
+	 * declares none itself — contested or not — and the base's interfaces default the overload.
 	 *
-	 * <p>{@code Item.getCraftingRemainder(ItemStack)}: MinecraftForge's {@code IForgeItem} and fabric-api's
-	 * {@code FabricItem} both default it to vanilla's {@code getCraftingRemainder()}, and so does NeoForge's
-	 * {@code IItemExtension.getCraftingRemainder(ItemInstance)} — which nothing on the merged base asked, because
-	 * {@code ItemStack.getCraftingRemainder()} resolved to MinecraftForge's chain. Calling NeoForge's overload returns
-	 * the same answer for every item that overrides none of them, lets a MinecraftForge or Fabric item's override win
-	 * by dispatch as before, and lets a NeoForge item's override be reached at all.
+	 * <p>{@code Item.getCraftingRemainder(ItemStack)}: fabric-item-api-v1's class tweaker gives {@code Item} fabric-api's
+	 * {@code FabricItem}, whose default answers vanilla's {@code getCraftingRemainder()}, and so does NeoForge's
+	 * {@code IItemExtension.getCraftingRemainder(ItemInstance)}, the overload a NeoForge item overrides. Its mixin also
+	 * puts {@code FabricItemStack} on {@code ItemStack}, which already inherits NeoForge's
+	 * {@code ItemInstanceExtension.getCraftingRemainder()}; that conflict is settled with Fabric's default (the non-base
+	 * declarer), which asks {@code Item.getCraftingRemainder(ItemStack)}. Without this row that call ends in
+	 * {@code FabricItem}'s default and a NeoForge item's override of the {@code ItemInstance} overload is never reached
+	 * from crafting, brewing or furnace fuel, though NeoForge's own route reaches it. Calling NeoForge's overload returns
+	 * the same answer for every item that overrides neither, lets a Fabric item's override win by dispatch as before, and
+	 * lets a NeoForge item's override be reached (CraftingRemainderConflictTest, gate-m45). On the merged base the same
+	 * row settled a real conflict, MinecraftForge's {@code IForgeItem} defaulting the stack-typed overload as well.
 	 */
 	static final java.util.Map<String, String> CHAINED = java.util.Map.of(
 			"net/minecraft/world/item/Item#getCraftingRemainder(Lnet/minecraft/world/item/ItemStack;)Lnet/minecraft/world/item/ItemStackTemplate;",
@@ -191,6 +198,17 @@ public final class InterfaceDefaultConflictRepair {
 			if (declaresLocally(node, e.getKey())) continue;
 			conflicts.add(new String[] { e.getKey(), pick(from), String.join(", ", from) });
 		}
+		// A CHAINED row also applies where weaving brought its key's only default: nothing conflicts, but the default
+		// asks past the overload the base's own subclasses override. pick == null marks it as uncontested.
+		for (Map.Entry<String, String> row : CHAINED.entrySet()) {
+			int hash = row.getKey().indexOf('#');
+			if (!node.name.equals(row.getKey().substring(0, hash))) continue;
+			String key = row.getKey().substring(hash + 1);
+			List<String> from = suppliers.get(key);
+			if (from == null || from.size() != 1 || before.containsAll(from) || declaresLocally(node, key)
+					|| !defaultsOf(node.interfaces).containsKey(row.getValue())) continue;
+			conflicts.add(new String[] { key, null, from.getFirst() });
+		}
 		if (conflicts.isEmpty()) return bytes;
 
 		// With its frames: the class is written back without recomputing them, and a class (not an interface) has
@@ -202,12 +220,20 @@ public final class InterfaceDefaultConflictRepair {
 			if (chained != null && defaultsOf(full.interfaces).containsKey(chained)) {
 				addChained(full, conflict[0], chained);
 				if (repaired.add(full.name + '.' + conflict[0])) {
-					ForbricLog.info("[Forbric/DefaultConflict] %s inherits %s as a default from two unrelated interfaces (%s) — gave "
-							+ "it one that asks %s, the overload all of them answer the same way (-D%s=off to leave it)",
-							full.name.replace('/', '.'), conflict[0], conflict[2].replace('/', '.'), chained, SWITCH);
+					if (conflict[1] == null) {
+						ForbricLog.info("[Forbric/DefaultConflict] %s inherits %s as a default only from %s, which weaving "
+								+ "added and which never asks the overload the base's own subclasses override — gave it one "
+								+ "that asks %s, which answers the same way (-D%s=off to leave it)",
+								full.name.replace('/', '.'), conflict[0], conflict[2].replace('/', '.'), chained, SWITCH);
+					} else {
+						ForbricLog.info("[Forbric/DefaultConflict] %s inherits %s as a default from two unrelated interfaces (%s) — gave "
+								+ "it one that asks %s, the overload all of them answer the same way (-D%s=off to leave it)",
+								full.name.replace('/', '.'), conflict[0], conflict[2].replace('/', '.'), chained, SWITCH);
+					}
 				}
 				continue;
 			}
+			if (conflict[1] == null) continue;     // an uncontested CHAINED row whose overload the base does not default
 			add(full, conflict[0], conflict[1]);
 			if (repaired.add(full.name + '.' + conflict[0])) {
 				ForbricLog.info("[Forbric/DefaultConflict] %s inherits %s as a default from two unrelated "

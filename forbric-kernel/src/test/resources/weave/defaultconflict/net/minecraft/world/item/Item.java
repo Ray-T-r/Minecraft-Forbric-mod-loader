@@ -1,13 +1,12 @@
 package net.minecraft.world.item;
 
-import net.minecraftforge.fixture.defaultconflict.IForgeItem;
 import net.neoforged.fixture.defaultconflict.IItemExtension;
 
 /**
- * The merged base's Item: both Forge-family extensions, whose remainder defaults are overloads of each other and so
- * no conflict until a third interface defaults the ItemStack one again.
+ * NeoForge's Item: its extension defaults only the ItemInstance remainder overload, so nothing conflicts when the mod's
+ * mixin adds a default for the ItemStack one — but that default asks past the overload a NeoForge item overrides.
  */
-public class Item implements IForgeItem, IItemExtension {
+public class Item implements IItemExtension {
 	private final ItemStackTemplate craftingRemainder;
 
 	public Item(ItemStackTemplate craftingRemainder) {
