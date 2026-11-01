@@ -10,7 +10,7 @@ Everything C4 owned that was not the census commit: the furnace-remainder report
 |---|---|---|---|
 | False SUSPECTED furnace-remainder rows on every install with fabric-api | already DONE by lane census-forge's review fixes; re-checked, nothing to add | Root cause (census-forge-fix B-2): fabric-item-api's `AbstractFurnaceBlockEntityMixin` copies the fuel stack at `consumeFuel`'s HEAD (`@Share`) and redirects `Item.getCraftingRemainder()`; NeoForge's `consumeFuel` asks `ItemStack.getCraftingRemainder()` on the unshrunk argument before `shrink`, so the redirect has no anchor and the judge (FinalMixinApplications / MixinFit) reported a loss nothing loses. The fix is in the judge, not the row text: SupersededMixins' `native-furnace-remainder` entry (claim = the mixin's HEAD-copy + redirect shape, witness = the defined `consumeFuel`). Red before: `SupersededFurnaceRemainderStagedTest` keeps the rows SUSPECTED on the staged class with `shrink` moved first, and regress-gate's `superseded-off` phase must show them. Green in this lane's final suite (3 tests) | d3ab1755 |
 | Merged-base wording in log and report strings | DONE: about 140 literals in 63 files; every one left is another meaning of "merge" (17, below) | full suite with the edits applied found 21 test methods pinning old text (15 classes), moved in the same commit; every `check`/`check_absent` pattern in `run/*.sh`, `run/lib.sh`, `run/compat/*.py` read for the old fragments: none pins a changed line; gate-m52's step text follows its hopper line | 3f989f97 |
-| Merged-base wording in javadoc and comments | MOSTLY DONE: 635 comment lines in 136 files (comment lines only, checked mechanically) and 2 named test lines; 94 present-tense lines left, listed | `stage4-c4-wording-left.txt` (LEFT 94, HISTORY 196 not proof-read, LEGIT 97) | 9debd7b4 |
+| Merged-base wording in javadoc and comments | DONE after the review fixes: 635 comment lines in 136 files and 2 named test lines here, then 311 lines in 138 files after reading every line this pass had left or filed as history (section "Review fixes" below) | `stage4-c4-wording-left.txt`, regenerated: 118 history, 102 other meanings, none present tense | 9debd7b4, 0407d118 |
 | C4 and C4+C5 rows of `c3/failures-c3b.txt` (18 + 6) | 23 of 24 were already resolved by lane census-forge; the 24th, `MergedBaseCalleeSwapTest.everyAdmittedSwapIsEitherRewrittenOrExplained`, has its C4 half (the FORGE skip) done and stays with C5 | its genuine-base admitted swap `ServerPlayer.teleport unsetRemoved -> revive` needs a rewrite-or-explain decision (census-forge handoff "-> C5"); this lane adds no evidence beyond that | — |
 | Stage 4 README, C4 part | DONE | README "### C4 (both lanes): outcome, suite at the C4 tip, open items" | record commit |
 
@@ -28,7 +28,8 @@ Everything C4 owned that was not the census commit: the furnace-remainder report
   merge report, class-tweaker merging, merged mappings, overlay merging, frame merges, the `client-merged-pack` fixture
   name); identifiers and log tags (`ForbricMergedBaseCompatTransformer`, `MergedBase*`, `[Forbric/MergedBaseCompat]`,
   transformer names `forbric-merged-base-*`, the census format word `merged-only`) — renamed in Stage 6 or never.
-  "Forge-family" wording and "froze the registries NeoForge-first" kept (D32, Stage 6 rule).
+  "Forge-family" log wording kept (the plan's Stage 6 rule, "Forge-family 的日志措辞不改"); "froze the registries
+  NeoForge-first" kept (D32).
 
 ## Facts checked while rewording (javap on `.stage4/run/neoforge-patched/patched-mc-neoforge-26.2.jar`)
 
@@ -54,11 +55,12 @@ m1, m46, m52 GREEN; m9 165 PASS / 21 FAIL, the same 21 lines as the census lane'
 
 ## Open, with owner
 
-- C5: `MergedBaseCalleeSwapTest` (above); ~80 test-tree messages and javadoc still say "staged merged base" (fixture
+- C5: `MergedBaseCalleeSwapTest` (above); 157 string literals in 84 test files still say "merged base/merged-base/merged
+  game", most of them "staged merged base" (fixture
   reasons such as `FixturePolicyExtensionTest`'s pinned `"[fixture:staged] merged base"` are a test-harness string; re-pin
   with the test rewrites); gate prose and labels that still say "merged" (e.g. gate-m1 "kernel loaded merged base",
   gate-m10's banner, gate-m45's PartEntity label, comments in m9/m29/m35/m47) — wording only, C5's gate rewrites.
-- Stage 6 (naming): the 94 LEFT comment lines in `stage4-c4-wording-left.txt`; class, field and parameter names
+- Stage 6 (naming): class, field and parameter names
   (`ForbricMergedBaseCompatTransformer`, `MergedBaseUncalledMethods`, `MergedBaseFieldDrift`, `MergedBaseAnonymousDrift`,
   `KernelForgePipRenderers`, `LocalRanges.mergedGameClass`, the `merged`/`mergedHost` locals and parameters); the log tag
   `[Forbric/MergedBaseCompat]` (gates grep it).
@@ -67,4 +69,14 @@ m1, m46, m52 GREEN; m9 165 PASS / 21 FAIL, the same 21 lines as the census lane'
   needs it is unmeasured (possible C3-style deletion candidate). KernelClientSmoke still drills "a traditional-Forge
   mod's listener" (prose kept; the drill's purpose on NeoForge's base is C5's call). VanillaDamageReadInjector's javadoc
   still describes "MinecraftForge's flow" (the census lane already handed this on with VanillaDamageReadInjectorTest).
-- The 196 HISTORY lines were classified by a word test, not read one by one; a few may still be present tense.
+- (Superseded by the review fixes: the 94 LEFT lines and the 196 HISTORY lines of the first version of
+  `stage4-c4-wording-left.txt` were all read and the present-tense ones reworded.)
+
+## Review fixes (d81ee8be, 0407d118)
+
+Two reviews (s4/c4/wording-reports-review-A.md, -B.md) found no behaviour change but wording still false on NeoForge's
+base: 11 log lines and an anchor reason the "merge"-keyed sweep could not see (d81ee8be), new false sentences from the
+automatic comment pass and present-tense lines among the 94 LEFT and 196 HISTORY ones (0407d118, 311 comment lines in 138
+files, every line read with its paragraph), a stale C5 bullet, a wrong decision citation and a low count (this file and
+the README). Per finding with evidence: README "C4, lane wording-reports review fixes" and s4/c4/checks.md. Suite at
+0407d118: 5,762 / 42 failed, identical to 9debd7b4 name for name; m1 GREEN, m9 the same 21 C5 lines.

@@ -1,3 +1,5 @@
+# SUPERSEDED (C4 wording lane and its review fixes, d81ee8be/0407d118): every literal and prose line below was reworded or
+# judged another meaning; what is left is listed, read by hand, in stage4-c4-wording-left.txt.
 # Stage 4 C4, lane census-forge review fixes: string literals in src/main/java and src/runtime/java that still say
 # "merged"/"the merge" after this round (generated 2026-11-02 on s4-c4; MixinMerged annotation names left out).
 # Most are log or report lines printed on NeoForge's base. Handed to a C4 wording follow-up (owner: orchestrator), each line

@@ -1,301 +1,17 @@
-# Stage 4 C4, lane wording-reports: comment and javadoc lines in src/main/java and src/runtime/java that still contain
-# "merge" after this lane (generated 2026-11-02 on s4-c4 by the lane's rest.py; identifiers such as MergedBase*/mergedX left out).
-# Class: LEFT = present tense or unclassified, not reworded (owner: Stage 6 naming pass / whoever touches the file next);
-# HISTORY = reads as history by a word test (was/were/had/0.4/old ...), not proof-read line by line;
-# LEGIT = another meaning of merge (Mixin merging a handler, the DupeId merge report, overlay merge, merged mappings,
-# the client-merged-pack fixture, frame merges). String literals: none left but LEGIT ones (17, listed in stage4-c4-wording.md).
+# Stage 4 C4, lane wording-reports, after its review fixes: comment and javadoc lines in src/main/java and src/runtime/java
+# that still contain "merge" (regenerated 2026-11-02 on s4-c4 with the lane's rest.py; identifiers such as MergedBase*/mergedX
+# left out). Supersedes the first version of this file (LEFT 94 / HISTORY 196 / LEGIT 97) and stage4-c4-census-wording-left.txt.
+# Every line was read by hand. Class:
+#   HISTORY = names the merged base of Forbric 0.4 and earlier (or its merge tool) as the past, in the past tense or with
+#             "old" / "0.4 and earlier", or describes an old install LaunchInputCheck refuses;
+#   LEGIT   = another meaning of merge (Mixin merging a handler or field into its target, the DupeId merge report, merged
+#             mappings, overlay merging, frame/value merges at joins, class-tweaker merging, the merged-pack fixture, two
+#             modpacks merged into one instance, parameter names such as {@code merged}, the census format word merged-only).
+# There is no LEFT class: no present-tense line about a merged base is left in src/main or src/runtime.
 # <class>	<file>:<line>	<text>
-HISTORY	m/access/AccessCensus.java:68	* {@code Holder<Item>} on the merged base AND on both patched bases AND on stock 26.2 — a stale line that a
-HISTORY	m/access/AccessCensus.java:69	* native loader ignores in exactly the same way — and it was being reported as a merge re-typing that marked
-HISTORY	m/boot/AbiLinkAudit.java:46	* resolves each against the carriers, the merged base and every installed jar (a Fabric port of a Forge library
-HISTORY	m/boot/CrashAttribution.java:61	* deny-list for free: the merged base, the runtime carriers, the kernel's own jar and Minecraft's libraries are
-HISTORY	m/boot/DatapackRegistryDeclaration.java:100	* <p>The two initialisers are circular in the merged base, and which one runs first decides what NeoForge sees.
-HISTORY	m/boot/FabricApiModuleLossAudit.java:44	* Names every installed mod that uses a fabric-api surface the merged base still switches off, and marks it
-HISTORY	m/boot/FabricApiModuleLossAudit.java:49	* the merged base. Most of what they carried is restored by other means now (loot events by
-HISTORY	m/boot/FieldDriftAudit.java:44	* Names every installed jar, and its mod, that reads a vanilla field with a descriptor the merged base no longer
-HISTORY	m/boot/KernelBoot.java:1142	// gate-m17-installer.sh:340 greps this line ("it opened the merged base") and still names the old wording; C5
-HISTORY	m/boot/KernelBoot.java:516	// payload codec, Hud's hotbar-and-decorations…), added where the base lacks them (on the merged base of Forbric
-HISTORY	m/boot/KernelBoot.java:532	// merged base of Forbric 0.4 and earlier had this splice built in, its builder's PASS 4b). Pre-Mixin, so the post-Mixin
-HISTORY	m/boot/KernelBoot.java:995	// CapabilityProvider above Entity was the case on the merged base), and such a class fails VERIFICATION,
-HISTORY	m/boot/KernelClientLaunch.java:23	* <p>The launch script must add the client-only JVM setup the merged base's rendering stack needs — on macOS
-HISTORY	m/boot/KernelClientPacks.java:36	* on the merged base — nothing calls it, because the vanilla/Forge pack-repository construction won that merge. So
-HISTORY	m/boot/KernelClientSmoke.java:1470	* merged base of Forbric 0.4 and earlier kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
-HISTORY	m/boot/KernelClientSmoke.java:148	* <p>A multipart entity is where the client once disconnected: the merged base's tracking callback (Forbric 0.4 and earlier) read the other
-HISTORY	m/boot/KernelClientSmoke.java:2418	// each frame. That path crashed the render frame on the merged base for the life of the project and was
-HISTORY	m/boot/KernelDataPacks.java:64	* same way, and they are not an afterthought: the merged base carries only {@code data/minecraft/*}, so without
-HISTORY	m/boot/KernelDataPacks.java:72	* takes them: the merged base IS NeoForge with MinecraftForge spliced in, and NeoForge's versions are written
-HISTORY	m/boot/KernelFabricEcosystem.java:845	* <p>There is no other authority for this in the kernel: the merged base carries the client classes even on a
-HISTORY	m/boot/KernelLifecycle.java:107	* Each entry point has exactly one trigger; the merged base's server entry carried both ecosystems' copies of the
-HISTORY	m/boot/KernelLifecycle.java:1894	// REGISTRY is the public read view (on a merged base it was Forge-wrapped); WRITABLE_REGISTRY is the
-HISTORY	m/boot/KernelLifecycle.java:39	* The kernel-owned server lifecycle hook that runs where the merged base used to call the genuine
-HISTORY	m/boot/KernelPackRepair.java:30	* <p>A merged base runs two sets of patches over one {@code Pack.readPackMetadata}, and they collide. NeoForge's
-HISTORY	m/boot/KernelPackRepair.java:45	* <p>{@link #concat} is the repair: the merged base stops assuming a mutability it can no longer guarantee.
-HISTORY	m/boot/LaunchInputCheck.java:122	* whether a game jar is NeoForge's patched game -- and, for an old merged base, that MinecraftForge's
-HISTORY	m/boot/LaunchInputCheck.java:129	/** The package root MinecraftForge's extension interfaces on an old merged base's {@code Block} live under. */
-HISTORY	m/boot/LaunchInputCheck.java:131	/** MinecraftForge's half of the native-reference index the old merged base embedded. */
-HISTORY	m/boot/LaunchInputCheck.java:187	// An old install is refused whatever the switch says: the merged game cannot run on a kernel without
-HISTORY	m/boot/LaunchInputCheck.java:76	* <p>Those installs ran a MERGED base (NeoForge's and MinecraftForge's patches in one jar) with a MinecraftForge
-HISTORY	m/boot/LaunchInputCheck.java:77	* carrier beside the NeoForge one. The merged base is NeoForge-patched too -- its {@code Block} implements
-HISTORY	m/classloading/DelegationPolicy.java:61	// parent classpath — while the merged base's NeoForge half was compiled against 3.8.x, where
-HISTORY	m/classloading/ForbricClassLoader.java:168	* a class another loader defined, and for one no single ecosystem owns — the merged base, a runtime carrier, a
-HISTORY	m/classloading/ForbricClassLoader.java:753	* the merged base, a runtime carrier, an MC library, a jar declaring no loader, or a kernel class. A universal jar
-HISTORY	m/fabric/KernelMappingResolver.java:27	* <p>The sovereign kernel runs the merged base in the <b>named</b> (Mojmap) namespace, and modern Fabric mods
-HISTORY	m/interop/PayloadInterop.java:106	* Called from bytecode patched into NeoForge's {@code CustomPacketPayload$1.findCodec(...)} (on the merged base, its
-HISTORY	m/interop/PayloadInterop.java:469	* different {@code ConfigurationTask.Type}s. Treat those task ids as aliases on the merged base.
-HISTORY	m/interop/package-info.java:43	* repository. That made the kernel's runtime depend on a repo it does not build, and made a class the merged base
-HISTORY	m/interop/package-info.java:44	* hard-references invisible to the kernel's own tests. They are kernel classes now; the merged base still names
-HISTORY	m/mixin/CarrierDefaultChains.java:184	* The vanilla operation the injector names in the native method {@code was}, which the merged method {@code selected} no
-HISTORY	m/mixin/CarrierReturnedCalls.java:45	* merged method reaches under the conditions the native call was made under (and on no way the native call was not made),
-HISTORY	m/mixin/FabricCommonPayloadMixinAdapter.java:63	* merged base turned off the same delivery ({@code CommonNetworkInteropInjector}'s play-phase hand-over, which went in
-HISTORY	m/mixin/FabricCommonPayloadMixinAdapter.java:67	/** The off switch (the name the merged base's play-phase hand-over in {@code CommonNetworkInteropInjector} had). */
-HISTORY	m/mixin/FabricFreezeHookMixinAdapter.java:140	* the merged {@code BuiltInRegistries} its selectors bind in; {@code source}, or null, the one the mod was compiled
-HISTORY	m/mixin/FabricFreezeHookMixinAdapter.java:97	* merged {@code BuiltInRegistries}, where the selectors bind; a point is read in the class the mod was compiled
-HISTORY	m/mixin/ForeignMixinTargets.java:55	* Neither member exists in the merged base, so every anchor failed to resolve, both were auto-suppressed, and
-HISTORY	m/mixin/JoinedReturnExits.java:36	* merged base of Forbric 0.4 and earlier, MinecraftForge's twin of the hook stood there; NeoForge's base has the hook
-HISTORY	m/mixin/KernelGuestMixinAdapter.java:58	* hand-curated owned-class/package table. That was wrong at the root: even the merged base of Forbric 0.4 and
-HISTORY	m/mixin/LambdaShapeEvidence.java:46	* merged base could carry a name twice, one body per carrier, and the duplicate-lambda pruner dropped the orphaned one and
-HISTORY	m/mixin/MergedBaseAnonymousDrift.java:33	* {@code MergedBaseAnonymousDriftTest}; the merged base of Forbric &le; 0.4 gave the same RELOCATED and RESHAPED sets. The
-HISTORY	m/mixin/MergedBaseUncalledMethods.java:35	* re-derives from the staged jars and pins. (The class kept its merged-base name; Stage 6 renames.)
-HISTORY	m/mixin/MergedBaseUncalledMethods.java:51	* class): on the merged base of Forbric 0.4 and earlier, {@code Level.removeBlock(BlockPos, boolean)}, called
-HISTORY	m/mixin/MergedBaseUncalledMethods.java:93	*                   kernel silences (written with a leading {@value #SILENCED}; on the merged base, MinecraftForge's
-HISTORY	m/mixin/MixinCameraRollAdapter.java:320	// The roll modifier was written for the method its selector binds natively; in the merged class that method's
-HISTORY	m/mixin/MixinCollectionSourceAdapter.java:84	// it selects in the method the mod was compiled against (the merged body no longer reads it).
-HISTORY	m/mixin/MixinConfigPolicy.java:43	* record of what was true when each entry was measured, and the merged base keeps changing underneath it — so
-HISTORY	m/mixin/MixinDefaultPredicateAdapter.java:87	// it selects in the method the mod was compiled against (the merged body no longer makes it).
-HISTORY	m/mixin/MixinDefaultPredicateTransport.java:89	// The one method Mixin binds in the merged class, and the same member bound in the class the mod was compiled
-HISTORY	m/mixin/MixinFit.java:47	* <p>The base IS NeoForge's patched Minecraft (even the merged base of Forbric 0.4 and earlier was: its builder took
-HISTORY	m/mixin/MixinFit.java:852	* owned-target rule exist. On the merged base of Forbric 0.4 and earlier NeoForge's {@code GuiRenderer.<init>}
-HISTORY	m/mixin/MixinFluidReactionAdapter.java:141	* <p>On the merged base {@code NativeEntryRelay} served a HEAD handler instead: nothing there called
-HISTORY	m/mixin/MixinFluidReactionAdapter.java:20	* <p>Two older rewrites served the merged base, whose placement asked MinecraftForge's registry and whose neighbour change
-HISTORY	m/mixin/MixinFluidReactionAdapter.java:23	* NeoForge's own base asks {@code shouldSpreadLiquid} there, so they never applied and went with the merged base.
-HISTORY	m/mixin/MixinGuiItemCaptureAdapter.java:33	* serves the capture ({@link #tailServes}, when the class the mod was compiled against is at hand); the merged tail's
-HISTORY	m/mixin/MixinHandlerShim.java:75	* staged merged base, lists every vanilla lambda the current class declares once with the same parameters in another
-HISTORY	m/mixin/MixinPrivateDefaultCollision.java:53	* merged base {@code LivingEntity} declared {@code self()} itself.
-HISTORY	m/mixin/MixinResourceContinuationAdapter.java:87	// The host is the one method Mixin binds in the merged class, and the method the wrap was written for — the one it
-HISTORY	m/mixin/MixinRetarget.java:967	* each read off the settings; vanilla's method is gone from the merged base, MinecraftForge's reshaped one beside it
-HISTORY	m/mixin/MixinReturnOrdinals.java:19	* <p>The ordinal counts the returns of the body the guest was compiled against. A merge that keeps another family's
-HISTORY	m/mixin/MixinSharedResultTransport.java:52	// The host is the one method Mixin binds in the merged class, and the method the redirect was written for —
-HISTORY	m/mixin/MixinShearsRelay.java:46	* compiled (bound nowhere). The merged base had put MinecraftForge's {@code canPerformAction(ToolActions.SHEARS_HARVEST)}
-HISTORY	m/mixin/MixinShiftedPoints.java:34	* The count was right in the native body. A merge that keeps another family's code inside that stretch moves the count
-HISTORY	m/mixin/MixinShiftedPoints.java:49	* same descriptor, whose points were not already translated to the merged body; nothing moves where the native target
-HISTORY	m/mixin/MixinStructurePlacementAdapter.java:159	* it, when at hand), or at the merged call it was already moved to (read in {@code liveCaller}): the target as Mixin
-HISTORY	m/mixin/MixinStructurePlacementAdapter.java:186	/** Whether the handler was written for the native {@code placeEntities}, the method the merged game no longer calls. */
-HISTORY	m/mixin/MixinStructurePlacementAdapter.java:55	* {@code references} gives the class the mod was compiled against: the merged game no longer declares the native
-HISTORY	m/mixin/MixinStubRebind.java:34	* Moves a mod's injector off a merge-added delegating stub onto the method that carries the body, when the mod was
-HISTORY	m/mixin/MixinStubRebind.java:40	* {@code Player.getDestroySpeed(BlockState)} is {@code return getDestroySpeed(state, null)} on the merged base — and
-HISTORY	m/mixin/MixinStubRebind.java:43	* {@code RETURN} injection runs only when something calls the stub. Nothing on the merged base calls
-HISTORY	m/mixin/MixinStubRebind.java:453	* old signature, which on the merged base are often none (FinalMixinApplications reports it).
-HISTORY	m/mixin/MixinTargetSelectors.java:159	* which is the merge's order, not necessarily the one the mod was compiled against; null then, and as {@link #one}.
-HISTORY	m/mixin/MixinTargetSelectors.java:215	* The member ({@code name + desc}) the handler was written for in a class the merged game may no longer declare it in:
-HISTORY	m/mixin/MixinTwinRebind.java:67	*       On the merged base Physics Mod's collapse hook captured MinecraftForge's {@code removeBlock(pos, canHarvest)}'s
-HISTORY	m/mixin/MixinWrapOperationShim.java:39	* {@code @At} moved to the merged call, and hands the original exactly the arguments it was written for, with an
-HISTORY	m/mixin/MixinWrapOperationShim.java:41	* the merged order, the extra arguments as the merged call had them. Arguments it changes are changed; the call it skips
-HISTORY	m/mixin/NativeAbsentTargets.java:100	* the merge added; Stage 4 regenerated it from NeoForge's base.)
-HISTORY	m/mixin/NativeAbsentTargets.java:99	* either. (On the merged base of Forbric 0.4 and earlier the table also spoke for MinecraftForge, and subtracted what
-HISTORY	m/mixin/NativeGameReferences.java:213	// A base that embeds this ecosystem's index too (the merged base) holds the authority the sidecar was proven
-HISTORY	m/mixin/NativeGameReferences.java:233	* built from another vanilla jar) — the embedded index answers instead. On the merged base the two are equal row for
-HISTORY	m/mixin/NativeGameReferences.java:235	* adapter compares against is still the merged base's own rather than silently missing.
-HISTORY	m/mixin/NativeLocalPins.java:31	* whose method is the same natively (the class its ecosystem's mods were compiled against) and merged, and whose point
-HISTORY	m/mixin/NativeReferenceSources.java:154	* Whether the base jar embeds {@code ecosystem}'s index itself (the old merged base did; NeoForge's does not). Where the
-HISTORY	m/mixin/NativeReferenceSources.java:208	* has no {@code Block}, or implements a MinecraftForge interface (an old Forge-patched or merged base, which
-HISTORY	m/mixin/NativeReferenceSources.java:25	* {@code META-INF/forbric/native-reference/<ECO>/} trees the old loader's merge tool embedded in the merged base of
-HISTORY	m/mixin/NativeReferenceSources.java:26	* Forbric 0.4 and earlier, read through the game class loader, with a null answer when absent. A base that is not that merge embeds nothing, and the
-HISTORY	m/mixin/NativeReferenceSources.java:34	*       is preferred over the base's embedded index for those ecosystems: on the old merged base the two were equal row
-HISTORY	m/mixin/NativeReferenceSources.java:39	*   <li><b>The base's embedded index</b>, for every other ecosystem it carries — NEOFORGE on the merged base of
-HISTORY	m/mixin/NativeSliceOccurrences.java:34	* were compiled against) and merged; the native slice and ordinal pick exactly one call there and the merged slice picks
-HISTORY	m/mixin/OperationCallGraph.java:34	* the method its injector binds in {@code source}, the class it was written against, which the merged game moved out
-HISTORY	m/mixin/PostMixinFixups.java:114	* <p>On the merged base this also swapped the map read for the registry's {@code keySet()}, because MinecraftForge's
-HISTORY	m/mixin/UncalledValueRelay.java:42	* {@code CommonHooks.handleBlockDrops}. Nothing in the merged game calls {@code tryDropExperience}, so every such hook was
-HISTORY	m/transform/AnchorSet.java:37	* the merged base and into the NeoForge carrier between two carrier versions; pinning which artifact a class
-HISTORY	m/transform/ChunkExecutorGuardInjector.java:45	* one. Both the merged base's own off-thread branch and Lithium's replacement reach the executor through
-HISTORY	m/transform/CommonNetworkInteropInjector.java:136	* CONNECTION_INITIALIZED channel attribute is set), the splice matched nothing from then on, on the merged base and
-HISTORY	m/transform/CommonNetworkInteropInjector.java:188	* One claim per branch. (The merged base's play-phase fall-through, a REQUIRED claim on MinecraftForge's
-HISTORY	m/transform/CommonNetworkInteropInjector.java:509	* the handshake (on the merged base MinecraftForge did too), and NeoForge's client answers every declaration a server
-HISTORY	m/transform/CustomPayloadInteropSeam.java:135	* when the interface cannot be read: guessing by name would splice the merged base's vanilla-shaped {@code $1},
-HISTORY	m/transform/CustomPayloadInteropSeam.java:39	* chooses by the payload's runtime class across every ecosystem's registry — the splice the merged base already
-HISTORY	m/transform/CustomPayloadInteropSeam.java:40	* carries, moved into the kernel so a base that was never merged gets it too.
-HISTORY	m/transform/CustomPayloadInteropSeam.java:42	* <p>The previous-generation loader's {@code MergedBaseBuilder} (its PASS 4b) rewrote the merged codec class's
-HISTORY	m/transform/CustomPayloadInteropSeam.java:52	* {@code CustomPacketPayload.codec(FallbackProvider, List, ConnectionProtocol, PacketFlow)}. On the merged base that is
-HISTORY	m/transform/CustomPayloadInteropSeam.java:59	* while the merged base's codec class carried the call itself; on NeoForge's base the splice always lands
-HISTORY	m/transform/DeclarationReaderModListInjector.java:61	* is not that. Measured on the merged base and both carriers: none of their {@code ModList} readers reads properties,
-HISTORY	m/transform/EmptyFluidTypeTrackerInjector.java:25	* the empty type's too when a fluid is typed so. On the merged base the kernel gives the empty type to a fluid no
-HISTORY	m/transform/EnvironmentStripTransformer.java:162	*                 jar is unowned (merged base, carrier, library, a jar declaring no loader) or absent --
-HISTORY	m/transform/EnvironmentStripTransformer.java:83	* translates to the jars {@code MultiLoaderArbiter} gave to Fabric. The merged base, the runtime carriers, the MC
-HISTORY	m/transform/FlowerPotRepairInjector.java:27	* <p>The merged base also needed two edits of MinecraftForge's half of the class (its {@code useItemOn} lookup in
-HISTORY	m/transform/FlowerPotRepairInjector.java:29	* on the merged block registry; NeoForge's base has no such half and its own bake fills the table, so all three went in
-HISTORY	m/transform/ForbricBrandingInjector.java:35	* <p>The merged base's title screen draws NeoForge's {@code BrandingControl}: "NeoForge 26.2.0.88 (N mods loaded)",
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:280	* <p>On the merged base of Forbric 0.4 and earlier the class declared {@code IBlockStateExtension} (NeoForge) and
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:53	* kept its merged-base name; Stage 6 renames.)
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:530	* one is null for the life of the process. (The merged base of Forbric 0.4 and earlier carried both fields, and
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:58	* went with the merged base, and with them the game-class lookup this used to take.
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:660	* {@code (Identifier,Identifier,Map,Optional)} under that name (the merged base of Forbric 0.4 and earlier carried
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:835	* This is a vanilla-parity repair, not merge damage: NeoForge's own base draws the same way the merged base of
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:908	* decompile-recompile pipeline emitted (the merged base of Forbric 0.4 and earlier kept that body). It names no
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:909	* class from either ecosystem, so the old merge's {@code merge-conflicts.txt} — which reported conflicts by
-HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:985	* NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression (the merged base
-HISTORY	m/transform/GuestMixinPluginGuard.java:60	*       classes renumber in the merged base, so it threw {@code Could not resolve target ClassInfo} and killed
-HISTORY	m/transform/InterfaceDefaultConflictRepair.java:110	* lets a NeoForge item's override be reached (CraftingRemainderConflictTest, gate-m45). On the merged base the same
-HISTORY	m/transform/InterfaceDefaultConflictRepair.java:79	* {@code FabricItem} into {@code Item}; on the merged base of Forbric 0.4 and earlier, {@code Item}'s hierarchy also had
-HISTORY	m/transform/ItemUseOnInjector.java:48	* {@code Item.useOn} call. The event is NeoForge's own and is never posted here. (On the merged base, whose
-HISTORY	m/transform/ItemUseOnInjector.java:50	* that half went with the merged base.) On vanilla's body {@code useOn} is not changed. {@code -Dforbric.itemUseOn=off}
-HISTORY	m/transform/LifecycleHookInjector.java:115	// swap. (MinecraftForge's no-arg load()V, which an edit-spliced merge kept in front of NeoForge's, went with
-HISTORY	m/transform/LifecycleHookInjector.java:34	* Redirects the genuine-loader lifecycle trigger the merged base's byte-merge left woven into a vanilla entry
-HISTORY	m/transform/LifecycleHookInjector.java:60	* <p><b>Fail-loud.</b> If the targeted entry is transformed but no known trigger is found (the merged base moved
-HISTORY	m/transform/LoaderProbeRewriter.java:64	*                 {@code null} for the merged base, a universal jar, a library or the kernel itself
-HISTORY	m/transform/LocalRanges.java:40	* range. The merged base splices a carrier's statements into vanilla's body, and where it puts them between a local's
-HISTORY	m/transform/LocalRanges.java:78	/** {@code mergedGameClass}: whether an internal name is a class of the merged base (one with a native body). */
-HISTORY	m/transform/LootTableEventBridgeInjector.java:54	* <p>fabric-loot-api-v3's {@code ReloadableServerRegistriesMixin} cannot fit the merged base and stays pinned in
-HISTORY	m/transform/LootTableEventBridgeInjector.java:64	*       drops the table. A constant-pool scan of the whole merged base finds it named there and nowhere else.</li>
-HISTORY	m/transform/MergedBaseFieldDrift.java:35	* @param vanillaDesc the descriptor a vanilla-compiled reader carries — the one the merged base no longer has
-HISTORY	m/transform/MergedBaseFieldDrift.java:52	/** The row for {@code owner.name:desc}, or null when that access is fine on the merged base. */
-HISTORY	m/transform/MethodBodyNeuter.java:36	* <p>Used to neuter genuine-loader lifecycle hooks the merged base weaves into vanilla but that are meaningless
-HISTORY	m/transform/ModsButtonRedirector.java:115	* one, left by the byte merge) while the button a player can actually see went on opening NeoForge's list.
-HISTORY	m/transform/ModsButtonRedirector.java:254	* merged base's {@code PauseScreen.createPauseMenu} (Forbric 0.4 and earlier) added NeoForge's
-HISTORY	m/transform/ModsButtonRedirector.java:67	* NeoForge's base that is NeoForge's own {@code ModsButton}; the merged base of Forbric 0.4 and earlier carried a
-HISTORY	m/transform/ModsButtonRedirector.java:69	* MinecraftForge's), and which one the button was bound to was a byte-merge outcome, not a decision.
-HISTORY	m/transform/NativeCoremodParity.java:26	* the kernel never loads, so on the merged base — whose bodies are mostly NeoForge's and are written for those
-HISTORY	m/transform/NeoClientSetupHookInjector.java:50	* <p><b>The anchor is NeoForge's own call site</b>: the {@code ClientModLoader.finish()} invocation the merged base
-HISTORY	m/transform/NullPackGuardInjector.java:48	* <p>This is a BACKSTOP, not the fix. The reason a merged base produces a null pack in the first place is
-HISTORY	m/transform/OwnFluidTypeClausesInjector.java:39	* <p>On the merged base this injector answered the same clause where MinecraftForge's and NeoForge's patches sat side by
-HISTORY	m/transform/PackMetadataFailSoftInjector.java:102	// enclosing source does, and on a byte-merged base it shifts often. Most of the classes that match the
-HISTORY	m/transform/PackMetadataFailSoftInjector.java:66	* today — and anonymous numbering renumbers whenever the enclosing source shifts, which on a byte-merged base is
-HISTORY	m/transform/PackOverlayMutabilityInjector.java:51	* merged list, and the {@code POP}/{@code ALOAD} pair that used to bridge to {@code List.copyOf} is deleted. The
-HISTORY	m/transform/RepairDriftCensus.java:44	* <p>So: point this at a candidate merged base and its carriers, and it replays the claim ledger against them.
-HISTORY	m/transform/RepairDriftCensus.java:73	* @param jars the candidate merged base first, then its carriers — the same set a launch would stage
-HISTORY	m/transform/SpawnPositionCallsInjector.java:24	* spawns) and {@code SpawnUtil} (summoned mobs). The merged base kept NeoForge's bodies, so a Fabric mixin that
-HISTORY	m/transform/UnboundHolderDataInjector.java:30	* merged base asks NeoForge's data map first ({@code DataMapHooks.getNextOxidizedStage} / {@code getBlockWaxed},
-HISTORY	m/transform/VanillaEarlyReturns.java:79	* <p>Measured against 26.2 on the merged base of Forbric 0.4 and earlier: 3633 methods whose last return is reached by
-HISTORY	m/transform/VanillaMemberTwinInjector.java:293	// exactly as the merged base's forwarding stubs do.
-HISTORY	m/transform/VanillaMemberTwinInjector.java:49	* Adds back the vanilla members only the merged base's MinecraftForge half kept, on a base that lacks them — and does
-HISTORY	m/transform/VanillaMemberTwinInjector.java:50	* nothing on today's merged base, where every one of them is still declared.
-HISTORY	m/transform/VanillaMemberTwinInjector.java:57	* descriptor is left alone, which is the whole of its behaviour on the merged base. Three shapes, by what the consumer
-HISTORY	m/transform/VanillaMemberTwinInjector.java:60	*   <li>FIELD — vanilla's declaration, no initializer. The repair that already serves the merged base's copy writes it:
-HISTORY	m/transform/VanillaMemberTwinInjector.java:68	*       the merged base has for {@code AxeItem.evaluateNewBlockState}, so the {@code carrier-stubs.txt} row MixinStubRebind
-HISTORY	m/transform/VanillaMemberTwinInjector.java:79	*       merged base's does: the PiP repair clones this lookup into NeoForge's pooled one, and
-HISTORY	m/transform/WidenedFieldTwinInjector.java:75	* @param mergedDesc  the descriptor the merged base declares
-HISTORY	m/transform/WidenedFieldTwinInjector.java:93	* @param mergedType  the wider type the merged base declares it with (internal name)
-HISTORY	m/util/ForbricSwitches.java:206	// Stage 4: repairs of NeoForge hooks the merged base had lost; NeoForge's own base calls them itself.
-HISTORY	m/util/ForbricSwitches.java:213	// Stage 4: repairs of merged-base damage that NeoForge's own base does not have.
-HISTORY	m/util/KernelChunkExecutorGuard.java:27	* base — the merged {@code ServerChunkCache} and Lithium's {@code getChunkOffThread} were both measured
-HISTORY	r/runtime/KernelBiomeView.java:19	* values its constructor saw. On NeoForge nothing else writes those fields afterwards. On the merged base
-HISTORY	r/runtime/KernelBlockStateModelFormats.java:25	* {@code "fabric:type"} and otherwise a plain variant — so on the merged base NeoForge's key was never read.
-HISTORY	r/runtime/KernelBlockStateModelFormats.java:57	* @param neoForge what the redirected call itself returns, i.e. the merged base's own codec
-HISTORY	r/runtime/KernelDispatch.java:32	* the declarer's method is (an interface default) or forwards to the same way. The merged base writes such a forwarder into
-HISTORY	r/runtime/KernelFabricConditions.java:258	* <p>On the merged base the producer applies and the consumer does not. The merge left the class carrying TWO
-HISTORY	r/runtime/KernelFabricConditions.java:271	* <p>Because that is the merged consumer's OWN vocabulary for "this file's conditions were not met" — it is
-HISTORY	r/runtime/KernelFabricConditions.java:43	* <p>fabric-api reads that key from exactly two mixins, and the merged base defeats both:
-HISTORY	r/runtime/KernelFabricConditions.java:51	*       {@code lambda$scanDirectory$0(Map, Identifier, Object)}; the merged base's is
-HISTORY	r/runtime/KernelFabricConditions.java:64	* {@code createConditionalCodecWithConditions(Codec, String)}. A constant-pool scan of the merged base finds
-HISTORY	r/runtime/KernelForgePipRenderers.java:46	* renderers and must never be owned by a NeoForge pool. (On the merged base of Forbric 0.4 and earlier the map was
-HISTORY	r/runtime/KernelModFile.java:105	* the merged base has always had, and Stage 2 keeps it. {@code -Dforbric.modFilePerJar=on} is the native shape,
-HISTORY	r/runtime/KernelModFile.java:87	* MinecraftForge removal, which must not change behaviour on the merged base, and what a mod walking the index meets
-HISTORY	r/runtime/KernelModelFormats.java:48	* <p>Every block model on the merged base is read by {@code UnbakedModelParser.parse}, which goes through
-HISTORY	r/runtime/KernelModelFormats.java:60	*       its HEAD. On the merged base NeoForge's throw comes first, so every one of them was unreachable —
-HISTORY	r/runtime/KernelModelFormats.java:63	*       registry by a pair of injectors on {@code ModelManager} that cannot fit the merged base
-HISTORY	r/runtime/KernelNeoTooltips.java:31	* NeoForge's item tooltip appenders, built on the merged base, with Fabric's component tooltip providers in them.
-HISTORY	r/runtime/KernelNeoWorldgen.java:46	* time from about-to-start when that path applied nothing, which on the byte-merged base it never did at first; it went
-HISTORY	r/runtime/KernelNeoWorldgen.java:61	* fallback for a map that fails to load. (On the byte-merged base the list was null because nothing loaded the map, and
-HISTORY	r/runtime/KernelParticleProviders.java:36	* Same name, different descriptor is legal in the JVM, so the merged base carries BOTH — and the surviving
-HISTORY	r/runtime/KernelWrapOperations.java:10	* <p>The handler calls it with the arguments it was written for, in its own order; this puts each where the merged call
-HISTORY	r/runtime/KernelWrapOperations.java:11	* takes it, fills the merged call's other arguments with the values the call site had, and calls the real operation.
-HISTORY	r/runtime/package-info.java:31	* <p>Classes compiled into this package are compiled AGAINST the staged jars (the merged base plus the two
-HISTORY	r/runtime/package-info.java:41	*   <li><b>Yes:</b> public types of the merged base, and public types of the two carriers
-HISTORY	src/main/java/net/fabricmc/loader/api/MappingResolver.java:23	* Forbric kernel that is {@code named} (Mojmap), because the merged base is Mojmap-native.
-LEFT	m/access/AccessCensus.java:116	* @param retyped	 judged re-typed by the merge: an access-widener FIELD whose name is there under another
-LEFT	m/access/AccessCensus.java:118	*					are never overloaded, so that is a merge re-typing and nothing else
-LEFT	m/access/AccessCensus.java:31	* <p>Both transformers apply by visiting a class and widening what they meet; a directive for a member the merge
-LEFT	m/boot/FieldDriftAudit.java:50	* VANILLA descriptor. A class that names {@code KeyMapping} only as a type, or reads {@code MAP} with the merged
-LEFT	m/boot/KernelPackRepair.java:35	* mixin is right. On NeoForge there is no such mixin, so the patch is right. Merged, the mixin intercepts the
-LEFT	m/boot/KernelPackRepair.java:52	/** {@code off} restores the unpatched merged behaviour — i.e. puts the collision back. */
-LEFT	m/boot/KernelRegistryDirectories.java:88	* @param merged    what NeoForge's body computed (its prefixed directory)
-LEFT	m/classloading/LoaderProbePolicy.java:69	* which half of itself to run, and {@code MultiLoaderArbiter} has already picked its ecosystem. Those, the merged
-LEFT	m/mixin/AddedCallOccurrences.java:48	* earlier pass already counted over the current body ({@link CurrentBodyOrdinals}), and a target the merged body selects
-LEFT	m/mixin/CarrierDefaultChains.java:185	* longer performs: the constant pushed once natively and never merged, or the call (the occurrence the ordinal names, or
-LEFT	m/mixin/CarrierDefaultChains.java:186	* the only one) natively made and never merged. Null otherwise.
-LEFT	m/mixin/CarrierMethodReferences.java:73	*       method of the class — and absent merged; the point selects one call there (its ordinal's occurrence), which the
-LEFT	m/mixin/CarrierRenames.java:39	* fewer, at least half and at least two are the other's too — and makes some of them that the merged {@code method}
-LEFT	m/mixin/CarrierRenames.java:50	* <p>Each pair has one row per call or field access that moved: one the reference's {@code method} makes, the merged
-LEFT	m/mixin/FabricCreativePagerMixinAdapter.java:97	* is installed, the carrier's controls are exactly the shape the bridge can stand aside ({@code screen}, the merged
-LEFT	m/mixin/FabricFreezeHookMixinAdapter.java:58	* {@code freeze()} or on {@code bootStrap()} when Mixin binds it to that one method of the merged
-LEFT	m/mixin/FabricRegistryInitializationMixinAdapter.java:25	* <p>Injectors are read as Mixin reads them, never by spelling. A selector is the method it binds in the merged
-LEFT	m/mixin/FabricRegistryLoaderMixinAdapter.java:124	// (a merge declaring its overloads in another order) or to nothing, it would silently serve another
-LEFT	m/mixin/FinalMixinApplications.java:159	// Attached, but only inside a forwarding stub the merge kept for vanilla's signature, where the mod's own platform
-LEFT	m/mixin/ForeignMixinTargets.java:43	* may deliberately target a member that <em>another mod's mixin adds at runtime</em>, which is not in the merged
-LEFT	m/mixin/KernelGuestMixinAdapter.java:60	* in — {@code forge=195 neo=10161 MERGED=611}), so "Forge/NeoForge owns this class" describes ~93% of the jar. Measured over the 163
-LEFT	m/mixin/KernelMixinErrorHandler.java:89	// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
-LEFT	m/mixin/LateInjectionIsolation.java:58	* spruceui's NeoForge {@code GuiMixin} wraps {@code ClientHooks.extractScreen}, a call the merged
-LEFT	m/mixin/MergedSourceRenames.java:21	* merges (a lambda's implementation becomes {@code md<hash>$<mod>$lambda$...$<n>}), so a handler whose body creates a
-LEFT	m/mixin/MixinAbsorbedCallbackTransport.java:59	/** {@code peers}: the target as the other ecosystems compiled it natively, whose own way to the call a merge may keep. */
-LEFT	m/mixin/MixinAtWidenedCall.java:294	* <p>Judged on the CALL SITES, not on what the owner declares, and that distinction is the rule. The merged
-LEFT	m/mixin/MixinAtWidenedCall.java:43	* <p>A carrier routinely extends a vanilla method rather than replacing it, and the merge keeps whichever half
-LEFT	m/mixin/MixinAtWidenedCall.java:93	* <p>A {@code @Redirect} mirrors the call and REPLACES it, which is why the rule above leaves it alone: on the merged
-LEFT	m/mixin/MixinCameraRollAdapter.java:63	* <p>Vanilla's {@code Camera.alignWithEntity} sets the ordinary view's angles with {@code setRotation(FF)}; the merged
-LEFT	m/mixin/MixinDefaultCallbackTransport.java:72	// makesOpenTrapdoorAboveClimbable through Block's IBlockExtension, and only a byte merge that copied the defaults
-LEFT	m/mixin/MixinFieldInitialiserPlacement.java:162	* {@code this} that touches no other local and does not branch, and a {@code putfield} of a merged field of the class —
-LEFT	m/mixin/MixinFit.java:1405	* patched bases AND in the merge). A diagnostic that cries wolf is worse than none: it cost a full audit pass
-LEFT	m/mixin/MixinFit.java:48	* NeoForge as the base and spliced Forge in, {@code forge=195 neo=10161 MERGED=611}). "The target is a class
-LEFT	m/mixin/MixinFit.java:854	* {@code pictureInPictureRendererPools} while the merge kept the field; erasure hides the change from Mixin (both descriptors are just {@code List}), so
-LEFT	m/mixin/MixinHandlerShape.java:332	* merged {@code current} body of the same method: each {@code @Local} extra (by handler parameter) proved, by its
-LEFT	m/mixin/MixinHandlerShim.java:76	* order — and the order is taken from the local variable NAMES, each vanilla parameter matching exactly one merged
-LEFT	m/mixin/MixinHandlerShim.java:94	* <p>Refused too: a handler that captures locals after its {@code CallbackInfo} (the locals are the merged
-LEFT	m/mixin/MixinKeyActionAdapter.java:120	// Just before the join's first call: the hook, or another ecosystem's twin the merge kept in front of it.
-LEFT	m/mixin/MixinKeyActionAdapter.java:19	* join, in front of it), so a guest's {@code @Inject} at a native {@code RETURN} ordinal names a return the merged
-LEFT	m/mixin/MixinNativeEquivalence.java:87	* injector annotation off the handler it merges), so a proof asked once the target class is defined would otherwise
-LEFT	m/mixin/MixinRetarget.java:1544	* or fewer outright, an anchor now binding where nothing runs -- and is no longer one the adapter drops. UNFIT too: a mixin whose only injector is a selector the merge took over
-LEFT	m/mixin/MixinRetarget.java:266	// At least one @At member is absent from the stub and present in the delegate — the merge moved it.
-LEFT	m/mixin/MixinStubRebind.java:107	*       {@code Player.getDestroySpeed}; the merged stub has no {@code speed}, the body is the overload the game calls,
-LEFT	m/mixin/MixinStubRebind.java:97	*       stub. The merged dedicated server builds its fuel without calling it; the kernel's fuel bridge
-LEFT	m/mixin/MixinSubtypeOwnerRetarget.java:59	* and {@code Mob.lookAt} in the merged {@code tick}. debugify's MC-121706 fix injects AFTER {@code Monster.lookAt}; it
-LEFT	m/mixin/MixinSubtypeOwnerRetarget.java:64	* row's vanilla type and no class between it and the merged type redeclares the method, so a receiver that IS a vanilla
-LEFT	m/mixin/MixinSubtypeOwnerRetarget.java:66	* the merged type is told apart by where its receiver comes from — a {@code getfield} of the widened field on
-LEFT	m/mixin/NativeAbsentTargets.java:64	* initializers, its other methods, its interfaces, the handler itself — is merged as usual. A {@code @Group} counts
-LEFT	m/mixin/NativeCallInlining.java:89	*       subclass still makes the call as merged;</li>
-LEFT	m/mixin/NativeCallbackSeam.java:30	* ecosystems compiled it natively. A merge that keeps another ecosystem's own edit in front of the helper (its hook,
-LEFT	m/mixin/NativeCallbackSeam.java:34	* a merge gives a kept edit's own local a fresh slot where that ecosystem's compiler reused one.
-LEFT	m/mixin/NativeCallbackSeam.java:89	// The native prefix the current one is: the source's, or the peer's the merge kept.
-LEFT	m/mixin/NativeLocalMaterialization.java:57	*       and merged, and its point selects as many calls in both, the occurrence it picks being the same one;</li>
-LEFT	m/mixin/NativeOccurrencePoint.java:55	* are then aligned ({@link CodeAlignment}), and each native occurrence the point selects is mapped to the merged
-LEFT	m/mixin/NativeReferenceSources.java:49	* FABRIC's own compile). A base that declares a MinecraftForge interface (a Forge-patched base, or the merge, which
-LEFT	m/mixin/ReplacedCallRedirects.java:71	* @param merged     the carrier's call in its place, as an {@code @At} target
-LEFT	m/mixin/ReplacedDecisionValues.java:46	* merged; the native method makes that call exactly where the point picks it (once, or the occurrence its ordinal names)
-LEFT	m/mixin/UncalledValueRelay.java:43	* woven and never ran — and since the merged {@code playerDestroy} reaches NeoForge's drops again, the vanilla experience it
-LEFT	m/mixin/UncalledValueRelay.java:442	* the instance, a static field, or a static call on constants, read off the caller's native body and evaluated on the merged
-LEFT	m/transform/ChunkExecutorGuardInjector.java:34	* <p><b>Hardening, not a repair.</b> Nothing here is broken by the merge or by Forbric: the merged
-LEFT	m/transform/CompostablesFallbackInjector.java:54	* too, where NeoForge alone ignores it. Not covered: a farmer villager, whose merged {@code WorkAtComposter} asks the
-LEFT	m/transform/CustomPayloadInteropSeam.java:53	* {@code CustomPacketPayload$1$forbricneo} (two anonymous classes could not keep one name through the merge); on the
-LEFT	m/transform/DataPackHookInjector.java:34	* <p>That method is the genuine loader's own choke point for mod packs and it SURVIVED the byte merge — the merged
-LEFT	m/transform/DataPackHookInjector.java:93	// The anchor is gone: NeoForge changed the signature, or the merge stopped splicing it. Say so — the
-LEFT	m/transform/FlowerPotRepairInjector.java:25	* merge repair: NeoForge's own base stores null just the same.
-LEFT	m/transform/ForbricMergedBaseCompatTransformer.java:1291	* {@code Integer.parseInt("o:CONTROL_OR_COMMAND")}. That is MinecraftForge's own code, unchanged by the merge:
-LEFT	m/transform/ForbricMergedBaseCompatTransformer.java:1292	* the same instruction order is in the forge-patched base, so this is not a merge artifact and switching it off
-LEFT	m/transform/ForbricMergedBaseCompatTransformer.java:344	* <p>This is therefore a deliberate deviation from native NeoForge, not a merge repair: it gives every mod —
-LEFT	m/transform/ForbricMergedBaseCompatTransformer.java:531	* its merge tool could not initialise a re-typed vanilla field.) So the repair belongs here, where the whole class
-LEFT	m/transform/ForbricMergedBaseCompatTransformer.java:57	* No repair reads another class: the three that proved a merge delegate or a lost switch map from the superclass chain
-LEFT	m/transform/ForbricMergedBaseCompatTransformer.java:987	* merge's {@code merge-conflicts.txt} — which reported conflicts by reference — never mentioned it. A differential
-LEFT	m/transform/LifecycleHookInjector.java:106	* A genuine mod-loading trigger the byte-merge can leave in an entry, and the kernel hook it redirects to.
-LEFT	m/transform/LifecycleHookInjector.java:38	* <p><b>The base facts.</b> NeoForge won the byte-merge of both entries:
-LEFT	m/transform/LootTableEventBridgeInjector.java:60	* the merge, verbatim, are two single instructions in the class:
-LEFT	m/transform/ModelFormatFunnelInjector.java:42	* <h2>What the merge did</h2>
-LEFT	m/transform/PackOverlayMutabilityInjector.java:112	// The anchor is gone: NeoForge changed its patch, or the merge no longer splices it. Say so rather
-LEFT	m/transform/PackOverlayMutabilityInjector.java:57	* <p>Frame- and stack-neutral, so {@code ClassWriter(0)} writes the existing frames back untouched: the merged
-LEFT	m/transform/PayloadCodecFunnelInjector.java:41	* PacketFlow)}, which builds the protocol-aware codec NeoForge's networking needs. Every merged caller calls
-LEFT	m/transform/RegistryDirectoryOwnerInjector.java:45	*   ... merged                      // what the body computed
-LEFT	m/transform/ScopedClearRelayInjector.java:49	* MinecraftForge compiled the class) calls {@code Map.clear()} on a field read from {@code this}, and whose merged
-LEFT	m/transform/TailLocals.java:176	* stores between them. The data flow can hold a value in a slot the declared frame dropped — javac and the merge's
-LEFT	m/transform/TooltipOrderScrapeInjector.java:48	* Verifier-trivial, no frames, dead to the JIT, and derived from the merge's own bytes rather than a hand-typed
-LEFT	m/transform/VanillaDamageReadInjector.java:150	// MinecraftForge's own Hurt hook, which a merge keeping both sides' edits carries — feeds nothing it applies.
-LEFT	m/transform/VanillaDamageReadInjector.java:56	* parameter before armour does not make the body vanilla's: the edit-splicing merge keeps MinecraftForge's
-LEFT	m/transform/VanillaDamageReadInjector.java:59	* invulnerability check, so the read lands ahead of that merged Hurt call. {@code -Dforbric.vanillaDamageRead=off}.
-LEFT	m/transform/VanillaMemberTwinInjector.java:52	* <p>The genuine NeoForge-patched jar replaced or dropped a handful of vanilla members that the merge kept because
-LEFT	m/util/KernelChunkExecutorGuard.java:26	* <p><b>This is HARDENING, not a repair.</b> It fixes no defect of Forbric's and no defect of the merged
-LEFT	r/runtime/KernelFabricFluidBehaviors.java:37	* per-tick hook ({@code EntityMixin.handleCustomFluidInteractionUpdates}) and its air-bubble HUD ask the merged
-LEFT	r/runtime/KernelKeyMappingMap.java:36	* merged class keeps their two and not vanilla's. A Fabric mod that reads {@code KeyMapping.MAP} as a {@code Map}
-LEFT	r/runtime/KernelModelFormats.java:102	* falling through to the cuboid deserializer with the object still under {@code "loader"} — where the merged
-LEFT	r/runtime/KernelNeoConditions.java:207	* Inserted by the merged-base compat transformer in {@code OverlayEntry.listCodecForPackType}, which both the
-LEFT	r/runtime/KernelShears.java:12	* The {@code Operation} a Fabric handler written for vanilla's {@code stack.is(Items.SHEARS)} is handed where the merged
-LEFT	r/runtime/KernelWidenedFields.java:32	* ({@code RangedBowAttackGoal.mob}: vanilla {@code Monster}, merged {@code Mob}) and a drain for a field it
-LEFT	r/runtime/KernelWidenedFields.java:33	* re-typed ({@code AttributeSupplier$Builder.builder}: vanilla {@code ImmutableMap.Builder}, merged {@code Map}).
-LEGIT	m/access/ClassTweakerTransformer.java:80	* Merges every mod's class tweaker into one, or returns {@code null} when none were declared.
+LEGIT	m/mapping/ForbricMappings.java:80	// Re-root the merged tree on 'named' so Forge mods (which speak Mojmap) can be looked up directly.
+LEGIT	m/mapping/ForbricMappings.java:111	/** The merged tree (named-keyed), for driving a bytecode remapper (e.g. tiny-remapper) in the DEOBF_REMAP phase. */
+LEGIT	m/ui/DependencyDialogMain.java:708	* safest guess and immediately qualified: on a merged instance a Fabric build really can satisfy a Forge
 LEGIT	m/boot/CandidateContractScanner.java:32	/** {@code merged}: Mixin code runs inside its target, where access wideners and subclass access apply. */
 LEGIT	m/boot/CandidateContractScanner.java:46	/** Every declared Mixin target, and the members each Mixin (by class) merges into it. */
 LEGIT	m/boot/CandidateContractScanner.java:727	// What this Mixin merges into each target under its own name. Injector handlers are renamed
@@ -303,92 +19,213 @@ LEGIT	m/boot/CandidateContractScanner.java:728	// on merge, and shadows/overwrit
 LEGIT	m/boot/DatapackRegistryDeclaration.java:62	* A Mixin-merged injector method: {@code handler$cgo000$wover-core$wover_init}. Mixin names the merged method
 LEGIT	m/boot/DependencyAudit.java:46	* <p>The reason this belongs to Forbric rather than to either ecosystem is the other half: on a merged instance a
 LEGIT	m/boot/DuplicateModArbiter.java:45	* a NeoForge modpack are merged into one instance.
-LEGIT	m/boot/KernelBoot.java:1143	// changes its pattern to "game base". The wording follows the base: NeoForge's patched game, merged with nothing.
 LEGIT	m/boot/KernelBoot.java:216	// are merged. MultiLoaderArbiter cannot see that (it is keyed by jar path), and left alone both jars enter
+HISTORY	m/boot/KernelBoot.java:516	// payload codec, Hud's hotbar-and-decorations…), added where the base lacks them (on the merged base of Forbric
+LEGIT	m/boot/KernelBoot.java:532	// merged base of Forbric 0.4 and earlier had this splice built in, its builder's PASS 4b). Pre-Mixin, so the post-Mixin
 LEGIT	m/boot/KernelBoot.java:717	// WORLD: NeoForge's overlay-merge patch mutates a list fabric-api's PackMixin has just frozen, so
+HISTORY	m/boot/KernelBoot.java:995	// CapabilityProvider above Entity was the case on the merged base), and such a class fails VERIFICATION,
+HISTORY	m/boot/KernelBoot.java:1142	// gate-m17-installer.sh:340 greps this line ("it opened the merged base") and still names the old wording; C5
+HISTORY	m/boot/KernelBoot.java:1143	// changes its pattern to "game base". The wording follows the base: NeoForge's patched game, merged with nothing.
+HISTORY	m/boot/KernelClientPacks.java:36	* on the old merged base — nothing called it, because the vanilla/Forge pack-repository construction won that merge —
+HISTORY	m/boot/KernelClientSmoke.java:148	* <p>A multipart entity is where the client once disconnected: the merged base's tracking callback (Forbric 0.4 and earlier) read the other
+HISTORY	m/boot/KernelClientSmoke.java:1470	* merged base of Forbric 0.4 and earlier kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
 LEGIT	m/boot/KernelClientSmoke.java:2274	// Asked first so Mod Menu merges every entrypoint's provided factories into its map, as its list does.
+HISTORY	m/boot/KernelClientSmoke.java:2418	// each frame. That path crashed the render frame on the merged base for the life of the project and was
+HISTORY	m/boot/KernelLifecycle.java:107	* Each entry point has exactly one trigger; the merged base's server entry carried both ecosystems' copies of the
 LEGIT	m/boot/KernelLifecycle.java:1102	// Name what landed, not just how many: on the merged pack a count alone could not distinguish "the
+HISTORY	m/boot/KernelLifecycle.java:1894	// REGISTRY is the public read view (on a merged base it was Forge-wrapped); WRITABLE_REGISTRY is the
+HISTORY	m/boot/KernelLifecycle.java:2025	* <p>It may be called more than once (on the old merged base both ecosystems' ClientModLoaders routed here);
 LEGIT	m/boot/KernelModLoader.java:700	* <p>Merges rather than replaces, because more than one pass publishes containers and the later one must not
 LEGIT	m/boot/KernelPackRepair.java:78	* The overlay merge in {@code Pack.readPackMetadata}, plus the pack's name: {@code location} is the method's
+LEGIT	m/boot/KernelRegistryDirectories.java:88	* @param merged    what NeoForge's body computed (its prefixed directory)
+HISTORY	m/boot/LaunchInputCheck.java:76	* <p>Those installs ran a MERGED base (NeoForge's and MinecraftForge's patches in one jar) with a MinecraftForge
+HISTORY	m/boot/LaunchInputCheck.java:77	* carrier beside the NeoForge one. The merged base is NeoForge-patched too -- its {@code Block} implements
+HISTORY	m/boot/LaunchInputCheck.java:122	* whether a game jar is NeoForge's patched game -- and, for an old merged base, that MinecraftForge's
+HISTORY	m/boot/LaunchInputCheck.java:129	/** The package root MinecraftForge's extension interfaces on an old merged base's {@code Block} live under. */
+HISTORY	m/boot/LaunchInputCheck.java:131	/** MinecraftForge's half of the native-reference index the old merged base embedded. */
+HISTORY	m/boot/LaunchInputCheck.java:187	// An old install is refused whatever the switch says: the merged game cannot run on a kernel without
 LEGIT	m/boot/MergeReport.java:44	* Explains, to somebody who has never read this code, what happened when two modpacks were merged into one
 LEGIT	m/boot/MergeReport.java:48	* <p>The kernel's arbitration is correct but invisible — a player who merges a Fabric pack and a NeoForge pack sees
 LEGIT	m/boot/RegistrationEventSteps.java:208	* the file does not. That is what a Mixin injector into {@code init} leaves behind (its merged handler), and
-LEGIT	m/classloading/ForbricClassLoader.java:282	* costs is the loser's handful of platform-only classes — 40 across the nine superseded jars of the merged pack,
-LEGIT	m/classloading/ForbricClassLoader.java:767	* definition, it would leave every mixin class unstripped and Mixin would merge the client-only handlers Fabric
-LEGIT	m/classloading/VerifierTypeDeferral.java:373	/** One linear pass over a method, the way the split verifier walks it: frames replace the state, nothing merges. */
-LEGIT	m/discovery/ForbricModDiscoverer.java:92	* seeder, the merge report, the enum-extension loader, duplicate arbitration and the boot list — and each ask
-LEGIT	m/discovery/MetadataFailures.java:238	*                  passes (the merge report among them) still ask the arbiter about every file in {@code mods/}, so
-LEGIT	m/interop/protocol/modmenu/ModMenuConfigFactories.java:163	* Every entrypoint's provided factories, merged under the mods' own with {@code putIfAbsent} — on each lookup, as
+HISTORY	m/access/AccessCensus.java:68	* {@code Holder<Item>} on the merged base AND on both patched bases AND on stock 26.2 — a stale line that a
+HISTORY	m/access/AccessCensus.java:69	* native loader ignores in exactly the same way — and it was being reported as a merge re-typing that marked
+LEGIT	m/access/ClassTweakerTransformer.java:80	* Merges every mod's class tweaker into one, or returns {@code null} when none were declared.
+HISTORY	m/util/ForbricSwitches.java:206	// Stage 4: repairs of NeoForge hooks the merged base had lost; NeoForge's own base calls them itself.
+HISTORY	m/util/ForbricSwitches.java:213	// Stage 4: repairs of merged-base damage that NeoForge's own base does not have.
+HISTORY	m/util/KernelChunkExecutorGuard.java:27	* base — its {@code ServerChunkCache} (on the old merged base) and Lithium's {@code getChunkOffThread} were both measured
+HISTORY	m/interop/PayloadInterop.java:106	* Called from bytecode patched into NeoForge's {@code CustomPacketPayload$1.findCodec(...)} (on the old merged base, its
+HISTORY	m/interop/package-info.java:43	* repository. That made the kernel's runtime depend on a repo it does not build, and made a class the merged base
+HISTORY	m/interop/package-info.java:44	* hard-references invisible to the kernel's own tests. They are kernel classes now. (The merged base of Forbric 0.4
 LEGIT	m/interop/protocol/modmenu/ModMenuConfigFactories.java:48	*       for the mods built on it — is merged with {@code putIfAbsent} AFTER all of the mods' own, so a mod's own
-LEGIT	m/mapping/ForbricMappings.java:111	/** The merged tree (named-keyed), for driving a bytecode remapper (e.g. tiny-remapper) in the DEOBF_REMAP phase. */
-LEGIT	m/mapping/ForbricMappings.java:80	// Re-root the merged tree on 'named' so Forge mods (which speak Mojmap) can be looked up directly.
-LEGIT	m/metadata/forge/EcosystemVersions.java:46	* release line rather than a beta. This audit reports nothing for the merged pack at either. Two things follow. Silence here is now the assertion (gate-m9-client pins the set to empty), and
+LEGIT	m/interop/protocol/modmenu/ModMenuConfigFactories.java:163	* Every entrypoint's provided factories, merged under the mods' own with {@code putIfAbsent} — on each lookup, as
 LEGIT	m/mixin/AddedCallOccurrences.java:33	* {@code ClientPacketListener.handleCommands} assigns {@code commands} a second time (the server commands merged with
-LEGIT	m/mixin/CodeAlignment.java:26	* is a partial map from native instructions to the merged instructions that are the same step of the same program:
 LEGIT	m/mixin/ConsumedResultRegions.java:178	/** Direct definitions retain operand order. Sets are used only for a control-proved merge, never as an expression. */
-LEGIT	m/mixin/ContendedCallSites.java:229	// The merged handlers on this target that are another mod's call-point injector, by name and descriptor.
 LEGIT	m/mixin/ContendedCallSites.java:73	*   <li>a method merged into T from another mod's mixin ({@code @MixinMerged}) is that mixin's injector handler, and
+LEGIT	m/mixin/ContendedCallSites.java:229	// The merged handlers on this target that are another mod's call-point injector, by name and descriptor.
+HISTORY	m/mixin/FabricCommonPayloadMixinAdapter.java:63	* merged base turned off the same delivery ({@code CommonNetworkInteropInjector}'s play-phase hand-over, which went in
+HISTORY	m/mixin/FabricCommonPayloadMixinAdapter.java:67	/** The off switch (the name the merged base's play-phase hand-over in {@code CommonNetworkInteropInjector} had). */
 LEGIT	m/mixin/FabricMixinCompat.java:226	/** Sorted by lower bound, overlapping intervals merged. */
 LEGIT	m/mixin/FabricRegistryLoaderMixinAdapter.java:187	* Whether {@code merged} is {@code written} with parameters appended, and those exactly the ones the carrier appended
-LEGIT	m/mixin/FinalMixinApplications.java:170	// calls its merged handler; that is the miss a superseding repair answers for, as much as a modelled one's.
 LEGIT	m/mixin/FinalMixinApplications.java:19	/** Mixin's own injectors. Every successful injection emits a direct call to the merged handler in the target class,
 LEGIT	m/mixin/FinalMixinApplications.java:25	* each successful injection is a direct call to the merged handler too: zero references still proves the handler
+LEGIT	m/mixin/FinalMixinApplications.java:170	// calls its merged handler; that is the miss a superseding repair answers for, as much as a modelled one's.
 LEGIT	m/mixin/ForbricMixinService.java:527	// …and, after every rule that sets a handler's body aside, each such body is named for its own mixin: Mixin merges it into
-LEGIT	m/mixin/JoinedReturnExits.java:82	* merged). The discriminator cannot tell such a path apart — it carries the very values that reach the final return.
-LEGIT	m/mixin/KernelGuestMixinAdapter.java:1096	* nothing" requires exactly nothing — and {@code MixinConfig.InjectorOptions.mergeFrom} replaces only a 0 with the
+HISTORY	m/mixin/JoinedReturnExits.java:36	* merged base of Forbric 0.4 and earlier, MinecraftForge's twin of the hook stood there; NeoForge's base has the hook
+HISTORY	m/mixin/KernelGuestMixinAdapter.java:58	* hand-curated owned-class/package table. That was wrong at the root: even the merged base of Forbric 0.4 and
+HISTORY	m/mixin/KernelGuestMixinAdapter.java:60	* in — {@code forge=195 neo=10161 MERGED=611}), so "Forge/NeoForge owns this class" describes ~93% of the jar. Measured over the 163
 LEGIT	m/mixin/KernelGuestMixinAdapter.java:712	* references to each merged handler, and on a drifted target every handler binds cleanly — to the unrelated
+LEGIT	m/mixin/KernelGuestMixinAdapter.java:1096	* nothing" requires exactly nothing — and {@code MixinConfig.InjectorOptions.mergeFrom} replaces only a 0 with the
+HISTORY	m/mixin/LambdaShapeEvidence.java:46	* merged base could carry a name twice, one body per carrier, and the duplicate-lambda pruner dropped the orphaned one and
+HISTORY	m/mixin/MergedBaseAnonymousDrift.java:33	* {@code MergedBaseAnonymousDriftTest}; the merged base of Forbric &le; 0.4 gave the same RELOCATED and RESHAPED sets. The
+HISTORY	m/mixin/MergedBaseUncalledMethods.java:35	* re-derives from the staged jars and pins. (The class kept its merged-base name; Stage 6 renames.)
+HISTORY	m/mixin/MergedBaseUncalledMethods.java:51	* class): on the merged base of Forbric 0.4 and earlier, {@code Level.removeBlock(BlockPos, boolean)}, called
+HISTORY	m/mixin/MergedBaseUncalledMethods.java:93	*                   kernel silences (written with a leading {@value #SILENCED}; on the merged base, MinecraftForge's
 LEGIT	m/mixin/MergedSourceRenames.java:20	* rewritten to the merged ones, against the body the defined class carries; Mixin renames every synthetic method it
+LEGIT	m/mixin/MergedSourceRenames.java:21	* merges (a lambda's implementation becomes {@code md<hash>$<mod>$lambda$...$<n>}), so a handler whose body creates a
 LEGIT	m/mixin/MergedSourceRenames.java:32	* {@code renamed} does not name yet, under the one merged copy {@code host} carries of it: a method {@code merged}
 LEGIT	m/mixin/MixinAnonymousRetarget.java:123	// the target left, with the handler merged in and never called.
-LEGIT	m/mixin/MixinFieldInitialiserPlacement.java:110	/** {@code name + desc} of every instance field Mixin merged into {@code node}, with the mixin (internal name) it came from. */
+LEGIT	m/mixin/MixinDefaultCallbackTransport.java:72	// makesOpenTrapdoorAboveClimbable through Block's IBlockExtension, and only a byte merge that copied the defaults
 LEGIT	m/mixin/MixinFieldInitialiserPlacement.java:54	* <p>Recognised by what the woven class shows, never by whose field it is: a field Mixin merged
+LEGIT	m/mixin/MixinFieldInitialiserPlacement.java:110	/** {@code name + desc} of every instance field Mixin merged into {@code node}, with the mixin (internal name) it came from. */
+LEGIT	m/mixin/MixinFieldInitialiserPlacement.java:162	* {@code this} that touches no other local and does not branch, and a {@code putfield} of a merged field of the class —
+HISTORY	m/mixin/MixinFit.java:47	* <p>The base IS NeoForge's patched Minecraft (even the merged base of Forbric 0.4 and earlier was: its builder took
+HISTORY	m/mixin/MixinFit.java:48	* NeoForge as the base and spliced Forge in, {@code forge=195 neo=10161 MERGED=611}). "The target is a class
 LEGIT	m/mixin/MixinFit.java:557	* {@code @MixinMerged}, as Mixin marks what it merges: a selector allowed several matches passes over it there. */
-LEGIT	m/mixin/MixinGuiItemCaptureAdapter.java:30	* <p>Decided for any class and method, by comparing the tail the mod was compiled against with the merged one: the
-LEGIT	m/mixin/MixinHandlerShim.java:246	* One census row: {@code owner#name vanillaDesc -> mergedDesc p0,p1,…}, where {@code p[i]} is the merged index
+HISTORY	m/mixin/MixinFit.java:852	* owned-target rule exist. On the merged base of Forbric 0.4 and earlier NeoForge's {@code GuiRenderer.<init>}
+LEGIT	m/mixin/MixinFit.java:854	* {@code pictureInPictureRendererPools} while the merge kept the field; erasure hides the change from Mixin (both descriptors are just {@code List}), so
+HISTORY	m/mixin/MixinFit.java:1405	* patched bases AND in the merge). A diagnostic that cries wolf is worse than none: it cost a full audit pass
+HISTORY	m/mixin/MixinFluidReactionAdapter.java:20	* <p>Two older rewrites served the merged base, whose placement asked MinecraftForge's registry and whose neighbour change
+HISTORY	m/mixin/MixinFluidReactionAdapter.java:23	* NeoForge's own base asks {@code shouldSpreadLiquid} there, so they never applied and went with the merged base.
+HISTORY	m/mixin/MixinFluidReactionAdapter.java:141	* <p>On the merged base {@code NativeEntryRelay} served a HEAD handler instead: nothing there called
 LEGIT	m/mixin/MixinHandlerShim.java:369	* rule's suffix, and a mark of the mixin class. Mixin merges that body into the target as a plain method, by name; two
 LEGIT	m/mixin/MixinHandlerShim.java:370	* mixins on one target whose handlers share a name would otherwise merge one body ("Method overwrite conflict …
 LEGIT	m/mixin/MixinHandlerShim.java:387	* merges a plain method into the target by name, so two mixins on one target whose handlers share a name — two mods,
 LEGIT	m/mixin/MixinHandlerShim.java:388	* or two mixins of one mod — merged one body ("Method overwrite conflict … Skipping method"), and the second wrapper called
+HISTORY	m/mixin/MixinKeyActionAdapter.java:119	// Just before the join's first call: the hook (on the old merged base, MinecraftForge's twin stood in front of it).
 LEGIT	m/mixin/MixinLocalCapture.java:29	* For each {@code @Local} extra of {@code handler} (by handler parameter): the slot of {@code merged} it must read at
+LEGIT	m/mixin/MixinNativeEquivalence.java:87	* injector annotation off the handler it merges), so a proof asked once the target class is defined would otherwise
 LEGIT	m/mixin/MixinNativeEquivalence.java:296	/** No type resolution or name heuristics: same SSA origin survives a copy; a merge of values is unknown. */
-LEGIT	m/mixin/MixinNativeReplay.java:110	* is what the handler's receiver becomes once merged. Every exit leaves through a trampoline that empties the stack.
 LEGIT	m/mixin/MixinNativeReplay.java:23	* Re-runs a stretch of a native method's own instructions inside a handler a mixin will merge into the same class: the
+LEGIT	m/mixin/MixinNativeReplay.java:110	* is what the handler's receiver becomes once merged. Every exit leaves through a trampoline that empties the stack.
 LEGIT	m/mixin/MixinNullableCompositeCallback.java:115	/** Mixin's own merge metadata supplies aliases; a changed original body/helper cannot disable the older fallback. */
 LEGIT	m/mixin/MixinOperationSeamTransport.java:229	* a NeoForge mod into {@code ClientHooks.extractScreen}, JourneyMap's): it calls at least one method merged into
 LEGIT	m/mixin/MixinOperationSeamTransport.java:233	* added code that calls a method of the class no other mixin merged (a transformer's change, even in a body that
 LEGIT	m/mixin/MixinOverlapLint.java:56	* equal priority the second is skipped with one WARN line ({@code MixinApplicatorStandard.mergeMethod}). When two
 LEGIT	m/mixin/MixinOverlapLint.java:57	* {@code @Redirect} the same call Mixin keeps one of them. And every overwrite is merged before any injector is
-LEGIT	m/mixin/MixinPrivateDefaultCollision.java:157	/** A private, non-static, concrete method Mixin merges under its own name. */
 LEGIT	m/mixin/MixinPrivateDefaultCollision.java:43	* <p>A private instance method Mixin merges into a class keeps its name. When an interface of that class's hierarchy
 LEGIT	m/mixin/MixinPrivateDefaultCollision.java:46	* finds the merged one and adds no default, while interface dispatch does skip private methods, finds nothing and throws
+HISTORY	m/mixin/MixinPrivateDefaultCollision.java:53	* merged base {@code LivingEntity} declared {@code self()} itself.
+LEGIT	m/mixin/MixinPrivateDefaultCollision.java:157	/** A private, non-static, concrete method Mixin merges under its own name. */
+HISTORY	m/mixin/MixinRetarget.java:967	* each read off the settings; vanilla's method is gone from NeoForge's base (on the old merged base, MinecraftForge's reshaped one
+HISTORY	m/mixin/MixinReturnOrdinals.java:20	* early exit gives the method one more return in front of the one the guest named (on the old merged base, MinecraftForge's
+HISTORY	m/mixin/MixinShearsRelay.java:46	* compiled (bound nowhere). The merged base had put MinecraftForge's {@code canPerformAction(ToolActions.SHEARS_HARVEST)}
 LEGIT	m/mixin/MixinStubRebind.java:1693	/** Its own type, so no real value compares equal to it and a frame merge cannot drop it. */
 LEGIT	m/mixin/MixinTargetSelectors.java:36	* instance handler and methods another mixin merged in, though they still count toward its maximum; and a selector
-LEGIT	m/mixin/MixinUnusedArgumentObserverAdapter.java:28	// The method the handler binds in the class it was written against and in the merged one, as Mixin binds its
-LEGIT	m/mixin/NativeAbsentTargets.java:114	* as the base's alone for that platform ({@code merged-only} rows, a name the format keeps: a class the platform lacks
-LEGIT	m/mixin/NativeAbsentTargets.java:185	/** {@code <id> merged-only <owner>}: a class in vanilla's packages the base has and that platform does not (the name is the format's). */
+HISTORY	m/mixin/MixinTwinRebind.java:67	*       On the merged base Physics Mod's collapse hook captured MinecraftForge's {@code removeBlock(pos, canHarvest)}'s
+LEGIT	m/mixin/NativeAbsentTargets.java:64	* initializers, its other methods, its interfaces, the handler itself — is merged as usual. A {@code @Group} counts
 LEGIT	m/mixin/NativeAbsentTargets.java:70	* {@code otherMod$cached} on a vanilla class, which no platform declares either — and {@code mergeFrom} keeps it in
 LEGIT	m/mixin/NativeAbsentTargets.java:74	* constructor initializer, the lambda and the merged handler, with no call to the handler anywhere.
 LEGIT	m/mixin/NativeAbsentTargets.java:79	* resolves to another mixin's merged handler), a trailing {@code +} or {@code {n,}} is a quantifier whose minimum
+HISTORY	m/mixin/NativeAbsentTargets.java:99	* either. (On the merged base of Forbric 0.4 and earlier the table also spoke for MinecraftForge, and subtracted what
+HISTORY	m/mixin/NativeAbsentTargets.java:100	* the merge added; Stage 4 regenerated it from NeoForge's base.)
+LEGIT	m/mixin/NativeAbsentTargets.java:114	* as the base's alone for that platform ({@code merged-only} rows, a name the format keeps: a class the platform lacks
+LEGIT	m/mixin/NativeAbsentTargets.java:185	/** {@code <id> merged-only <owner>}: a class in vanilla's packages the base has and that platform does not (the name is the format's). */
 LEGIT	m/mixin/NativeCallInlining.java:338	/** Another mixin injects into, or merges into, the method {@code nameAndDesc} of {@code target}: inlining it would bypass that. */
 LEGIT	m/mixin/NativeCallInlining.java:353	/** Another mixin merges a method {@code nameAndDesc} into {@code target}. */
-LEGIT	m/mixin/NativeDeadValueConsumers.java:277	/** The mixin a method was merged from ({@code @MixinMerged}), or null. */
 LEGIT	m/mixin/NativeDeadValueConsumers.java:59	*   <li>the value stored there is computed, through its def chain, by a call of a handler Mixin merged into the class
+LEGIT	m/mixin/NativeDeadValueConsumers.java:277	/** The mixin a method was merged from ({@code @MixinMerged}), or null. */
+HISTORY	m/mixin/NativeGameReferences.java:213	// A base that embeds this ecosystem's index too (the old merged base) holds the authority the sidecar was proven
+HISTORY	m/mixin/NativeGameReferences.java:233	* built from another vanilla jar) — the embedded index answers instead. On the old merged base the two were equal row for
+HISTORY	m/mixin/NativeReferenceSources.java:25	* {@code META-INF/forbric/native-reference/<ECO>/} trees the old loader's merge tool embedded in the merged base of
+HISTORY	m/mixin/NativeReferenceSources.java:26	* Forbric 0.4 and earlier, read through the game class loader, with a null answer when absent. A base that is not that merge embeds nothing, and the
+HISTORY	m/mixin/NativeReferenceSources.java:34	*       is preferred over the base's embedded index for those ecosystems: on the old merged base the two were equal row
+HISTORY	m/mixin/NativeReferenceSources.java:39	*   <li><b>The base's embedded index</b>, for every other ecosystem it carries — NEOFORGE on the merged base of
+HISTORY	m/mixin/NativeReferenceSources.java:49	* FABRIC's own compile). A base that declares a MinecraftForge interface (a Forge-patched base, or the old merged base, which
+HISTORY	m/mixin/NativeReferenceSources.java:154	* Whether the base jar embeds {@code ecosystem}'s index itself (the old merged base did; NeoForge's does not). Where the
+HISTORY	m/mixin/NativeReferenceSources.java:208	* has no {@code Block}, or implements a MinecraftForge interface (an old Forge-patched or merged base, which
+HISTORY	m/mixin/PostMixinFixups.java:114	* <p>On the merged base this also swapped the map read for the registry's {@code keySet()}, because MinecraftForge's
 LEGIT	m/mixin/PostMixinFixups.java:310	/** The mixin (internal name) the handler method was merged from ({@code @MixinMerged}), or null. */
-LEGIT	m/mixin/ReplacedCallRedirects.java:55	* the mod was compiled against, and the same method in the merged one), its point and its slice's start by the member each
+LEGIT	m/mixin/ReplacedCallRedirects.java:71	* @param merged     the carrier's call in its place, as an {@code @At} target
 LEGIT	m/mixin/ReplacedDecisionValues.java:41	* there instead. A mod that changes the vanilla answer (a water-breathing origin that counts itself as submerged on land)
 LEGIT	m/mixin/SeamDeclines.java:15	* host method, and names the mixins that changed the method: the ones whose merged handler the final method calls,
 LEGIT	m/mixin/SeamDeclines.java:23	/** Mixins other than {@code excluded} (dotted names) merged into {@code method} or a lambda body it creates. */
+LEGIT	m/discovery/ForbricModDiscoverer.java:92	* seeder, the merge report, the enum-extension loader, duplicate arbitration and the boot list — and each ask
+LEGIT	m/discovery/MetadataFailures.java:238	*                  passes (the merge report among them) still ask the arbiter about every file in {@code mods/}, so
+LEGIT	m/classloading/ForbricClassLoader.java:282	* costs is the loser's handful of platform-only classes — 40 across the nine superseded jars of the merged pack,
+LEGIT	m/classloading/ForbricClassLoader.java:767	* definition, it would leave every mixin class unstripped and Mixin would merge the client-only handlers Fabric
+LEGIT	m/classloading/VerifierTypeDeferral.java:373	/** One linear pass over a method, the way the split verifier walks it: frames replace the state, nothing merges. */
+HISTORY	m/transform/AnchorSet.java:37	* the merged base and into the NeoForge carrier between two carrier versions; pinning which artifact a class
+HISTORY	m/transform/ChunkExecutorGuardInjector.java:34	* <p><b>Hardening, not a repair.</b> Nothing here is broken by the base or by Forbric: the old merged base's
+HISTORY	m/transform/CommonNetworkInteropInjector.java:136	* CONNECTION_INITIALIZED channel attribute is set), the splice matched nothing from then on, on the merged base and
+HISTORY	m/transform/CommonNetworkInteropInjector.java:188	* One claim per branch. (The merged base's play-phase fall-through, a REQUIRED claim on MinecraftForge's
 LEGIT	m/transform/CommonNetworkInteropInjector.java:488	* from the reply, within its basic block (up to a merge point's frame, a jump or an exit; line-number labels are not
-LEGIT	m/transform/EnvironmentStripTransformer.java:113	* pack, the popular pack and the merged pack no such jar carries the annotation.
+HISTORY	m/transform/CommonNetworkInteropInjector.java:509	* the handshake (on the merged base MinecraftForge did too), and NeoForge's client answers every declaration a server
+HISTORY	m/transform/CustomPayloadInteropSeam.java:39	* chooses by the payload's runtime class across every ecosystem's registry — the splice the merged base of Forbric
+HISTORY	m/transform/CustomPayloadInteropSeam.java:42	* <p>The previous-generation loader's {@code MergedBaseBuilder} (its PASS 4b) rewrote the merged codec class's
+HISTORY	m/transform/CustomPayloadInteropSeam.java:52	* {@code CustomPacketPayload.codec(FallbackProvider, List, ConnectionProtocol, PacketFlow)}. On the old merged base that was
+HISTORY	m/transform/CustomPayloadInteropSeam.java:53	* {@code CustomPacketPayload$1$forbricneo} (two anonymous classes could not keep one name through the merge); on the
+HISTORY	m/transform/CustomPayloadInteropSeam.java:59	* while the merged base's codec class carried the call itself; on NeoForge's base the splice always lands
+HISTORY	m/transform/DataPackHookInjector.java:35	* {@code ServerPacksSource.createPackRepository} calls it (it also survived the old byte merge), which is how a mod's
+HISTORY	m/transform/DeclarationReaderModListInjector.java:61	* is not that. Measured on the old merged base and both its carriers: none of their {@code ModList} readers reads properties,
 LEGIT	m/transform/EnvironmentStripTransformer.java:91	* answer has to be the same on both paths, or Mixin would merge a client-only handler that the defined class does not
+LEGIT	m/transform/EnvironmentStripTransformer.java:113	* pack, the popular pack and the merged pack no such jar carries the annotation.
+LEGIT	m/transform/FlowerPotRepairInjector.java:25	* merge repair: NeoForge's own base stores null just the same.
+HISTORY	m/transform/FlowerPotRepairInjector.java:27	* <p>The merged base also needed two edits of MinecraftForge's half of the class (its {@code useItemOn} lookup in
+HISTORY	m/transform/FlowerPotRepairInjector.java:29	* on the merged block registry; NeoForge's base has no such half and its own bake fills the table, so all three went in
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:53	* kept its merged-base name; Stage 6 renames.)
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:57	* No repair reads another class: the three that proved a merge delegate or a lost switch map from the superclass chain
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:58	* went with the merged base, and with them the game-class lookup this used to take.
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:280	* <p>On the merged base of Forbric 0.4 and earlier the class declared {@code IBlockStateExtension} (NeoForge) and
+LEGIT	m/transform/ForbricMergedBaseCompatTransformer.java:344	* <p>This is therefore a deliberate deviation from native NeoForge, not a merge repair: it gives every mod —
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:530	* one is null for the life of the process. (The merged base of Forbric 0.4 and earlier carried both fields, and
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:531	* its merge tool could not initialise a re-typed vanilla field.) So the repair belongs here, where the whole class
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:660	* {@code (Identifier,Identifier,Map,Optional)} under that name (the merged base of Forbric 0.4 and earlier carried
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:835	* This is a vanilla-parity repair, not merge damage: NeoForge's own base draws the same way the merged base of
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:908	* decompile-recompile pipeline emitted (the merged base of Forbric 0.4 and earlier kept that body). It names no
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:909	* class from either ecosystem, so the old merge's {@code merge-conflicts.txt} — which reported conflicts by
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:985	* NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression (the merged base
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:987	* merge's {@code merge-conflicts.txt} — which reported conflicts by reference — never mentioned it. A differential
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:1291	* {@code Integer.parseInt("o:CONTROL_OR_COMMAND")}. That is MinecraftForge's own code, unchanged by the merge:
+HISTORY	m/transform/ForbricMergedBaseCompatTransformer.java:1292	* the same instruction order is in the forge-patched base, so this is not a merge artifact and switching it off
 LEGIT	m/transform/ForeignFluidTypeInjector.java:45	// This closed getter has one native branch; replace its old frame with the explicit merge frames below.
 LEGIT	m/transform/ForeignModPresenceInjector.java:45	* frame has to be written for a merged control flow, and both calls are pure map lookups anyway.
-LEGIT	m/transform/PackOverlayMutabilityInjector.java:133	/** Rewrites every in-place overlay merge in {@code method}. Returns how many were found. */
+HISTORY	m/transform/InterfaceDefaultConflictRepair.java:79	* {@code FabricItem} into {@code Item}; on the merged base of Forbric 0.4 and earlier, {@code Item}'s hierarchy also had
+HISTORY	m/transform/InterfaceDefaultConflictRepair.java:110	* lets a NeoForge item's override be reached (CraftingRemainderConflictTest, gate-m45). On the merged base the same
+HISTORY	m/transform/ItemUseOnInjector.java:48	* {@code Item.useOn} call. The event is NeoForge's own and is never posted here. (On the merged base, whose
+HISTORY	m/transform/ItemUseOnInjector.java:50	* that half went with the merged base.) On vanilla's body {@code useOn} is not changed. {@code -Dforbric.itemUseOn=off}
+HISTORY	m/transform/LifecycleHookInjector.java:115	// swap. (MinecraftForge's no-arg load()V, which an edit-spliced merge kept in front of NeoForge's, went with
+HISTORY	m/transform/LootTableEventBridgeInjector.java:64	*       drops the table. A constant-pool scan of the whole old merged base found it named there and nowhere else.</li>
+HISTORY	m/transform/ModsButtonRedirector.java:67	* NeoForge's base that is NeoForge's own {@code ModsButton}; the merged base of Forbric 0.4 and earlier carried a
+HISTORY	m/transform/ModsButtonRedirector.java:69	* MinecraftForge's), and which one the button was bound to was a byte-merge outcome, not a decision.
+HISTORY	m/transform/ModsButtonRedirector.java:115	* one, left by the byte merge) while the button a player can actually see went on opening NeoForge's list.
+HISTORY	m/transform/ModsButtonRedirector.java:254	* merged base's {@code PauseScreen.createPauseMenu} (Forbric 0.4 and earlier) added NeoForge's
+HISTORY	m/transform/OwnFluidTypeClausesInjector.java:39	* <p>On the merged base this injector answered the same clause where MinecraftForge's and NeoForge's patches sat side by
 LEGIT	m/transform/PackOverlayMutabilityInjector.java:35	* Stops NeoForge's overlay-merge patch from mutating a list fabric-api's mixin just made immutable.
+LEGIT	m/transform/PackOverlayMutabilityInjector.java:51	* merged list, and the {@code POP}/{@code ALOAD} pair that used to bridge to {@code List.copyOf} is deleted. The
+LEGIT	m/transform/PackOverlayMutabilityInjector.java:133	/** Rewrites every in-place overlay merge in {@code method}. Returns how many were found. */
+LEGIT	m/transform/RegistryDirectoryOwnerInjector.java:45	*   ... merged                      // what the body computed
 LEGIT	m/transform/RegistryWalkProof.java:609	* through locals, stack shuffles, casts and {@code requireNonNull}, merged at joins. Parameters and unset locals carry
+HISTORY	m/transform/TailLocals.java:176	* stores between them. The data flow can hold a value in a slot the declared frame dropped — javac (and the old merge's
 LEGIT	m/transform/TransformChain.java:43	* <p>This merges Fabric's fixed pipeline with Forge's {@code @SortingIndex} + pre-depends coremod
-LEGIT	m/transform/VanillaEarlyReturns.java:496	* {@code false} comes last, the merged one first, and pairing by order moved the path vanilla sends to the tail).
-LEGIT	m/transform/WidenedFieldTwinInjector.java:37	* Restores vanilla's field descriptor BESIDE the merged one for the fields the merge re-typed.
+HISTORY	m/transform/VanillaDamageReadInjector.java:57	* check, so a mod rewriting such a read would still change nothing. (On the old merged base that read was
+HISTORY	m/transform/VanillaDamageReadInjector.java:58	* MinecraftForge's {@code damage = ForgeHooks.onLivingHurt(this, source, damage)}, kept by the edit-splicing merge.)
+HISTORY	m/transform/VanillaDamageReadInjector.java:149	// NeoForge's body armours the container's amount; there a read of the parameter before armour (on the old merged
+HISTORY	m/transform/VanillaEarlyReturns.java:79	* <p>Measured against 26.2 on the merged base of Forbric 0.4 and earlier: 3633 methods whose last return is reached by
+HISTORY	m/transform/VanillaMemberTwinInjector.java:49	* Adds back the vanilla members NeoForge's base lacks (on the merged base of Forbric 0.4 and earlier, its
+HISTORY	m/transform/VanillaMemberTwinInjector.java:52	* <p>The genuine NeoForge-patched jar replaced or dropped a handful of vanilla members that the old merge kept because
+HISTORY	m/transform/VanillaMemberTwinInjector.java:57	* descriptor is left alone, which was the whole of its behaviour on the old merged base. Three shapes, by what the consumer
+HISTORY	m/transform/VanillaMemberTwinInjector.java:60	*   <li>FIELD — vanilla's declaration, no initializer. The repair that served the old merged base's copy writes it:
+LEGIT	m/transform/VanillaMemberTwinInjector.java:68	*       the old merged base had for {@code AxeItem.evaluateNewBlockState}, so the {@code carrier-stubs.txt} row MixinStubRebind
+HISTORY	m/transform/VanillaMemberTwinInjector.java:79	*       old merged base's did: the PiP repair clones this lookup into NeoForge's pooled one, and
 LEGIT	m/transform/ZeroNameTagMigrationInjector.java:92	* {@code this}, a caught exception) gets its load as producer instead: merged with a constant 0 at a join, an
-LEGIT	m/ui/DependencyDialogMain.java:708	* safest guess and immediately qualified: on a merged instance a Fabric build really can satisfy a Forge
-LEGIT	r/runtime/KernelPayloadCodecs.java:34	* <p>The merged packet classes call only NeoForge's {@code codec(fallback, types, protocol, flow)}; vanilla's
+LEGIT	m/metadata/forge/EcosystemVersions.java:46	* release line rather than a beta. This audit reports nothing for the merged pack at either. Two things follow. Silence here is now the assertion (gate-m9-client pins the set to empty), and
+HISTORY	r/runtime/KernelDispatch.java:32	* the declarer's method is (an interface default) or forwards to the same way. The merged base of Forbric 0.4 and earlier wrote such a
+HISTORY	r/runtime/KernelFabricConditions.java:64	* {@code createConditionalCodecWithConditions(Codec, String)}. A constant-pool scan of the old merged base found
+HISTORY	r/runtime/KernelFabricConditions.java:259	* {@code lambda$scanDirectory$0} is NeoForge's {@code (Identifier,Identifier,Map,Optional)} (the old merged base also
+HISTORY	r/runtime/KernelForgePipRenderers.java:46	* renderers and must never be owned by a NeoForge pool. (On the merged base of Forbric 0.4 and earlier the map was
+HISTORY	r/runtime/KernelModFile.java:87	* MinecraftForge removal kept the merged base's behaviour, and what a mod walking the index meets changes with it;
+HISTORY	r/runtime/KernelModFile.java:105	* Forbric has always given (the old merged base too), and Stage 2 kept it. {@code -Dforbric.modFilePerJar=on} is the native shape,
+HISTORY	r/runtime/KernelModelFormats.java:101	* falling through to the cuboid deserializer with the object still under {@code "loader"} — where the old merged
+LEGIT	r/runtime/KernelNeoConditions.java:207	* Inserted by the merged-base compat transformer in {@code OverlayEntry.listCodecForPackType}, which both the
+HISTORY	r/runtime/KernelNeoWorldgen.java:46	* time from about-to-start when that path applied nothing, which on the byte-merged base it never did at first; it went
+HISTORY	r/runtime/KernelNeoWorldgen.java:61	* fallback for a map that fails to load. (On the byte-merged base the list was null because nothing loaded the map, and
