@@ -110,6 +110,17 @@ must save and shut down normally. Reports, logs, test worlds and input hashes st
 output directory; `--output` selects a new directory explicitly. See
 [the Carpet probe instructions](../../canary/carpet/README.md) for prerequisites and coverage.
 
+## Fabric item and shears adaptations
+
+`regress-gate.py --fabric-api <fabric-api-0.155.2+26.2.jar> --bclib <bclib-26.201.2.jar> --mod <worldweaver> --mod
+<wunderlib> [--staged-root DIR] [--port N] [--output DIR]` compiles the regress probe (a Fabric mod with a NeoForge half)
+and runs 15 cases in three dedicated servers: fabric-item-api's custom damage handler, BCLib's tag shears on sheep and
+snow golems beside a Fabric and a NeoForge item with an entity entry of their own, and fabric-item-api's stack-aware
+furnace remainder. The fixed run must pass every case with fabric-item-api's `ItemStackMixin` and BCLib's
+`SheepMixin` / `SnowGolemMixin` unsuspected; `-Dforbric.itemDamageHandler=off` must fail exactly the two `damage.*`
+handler cases and `-Dforbric.shearsRelayMobs=off` exactly the three tag-shears cases, each showing its mixin suspected
+again, so each check is known to be able to fail. See [the probe's instructions](../../canary/regress/README.md).
+
 ## Vanilla fluid parity
 
 `fluid-parity-gate.py [--output DIR] [--unfixed]` runs one datapack, unchanged, on a vanilla 26.2 dedicated server

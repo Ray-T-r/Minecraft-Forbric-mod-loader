@@ -1,0 +1,9 @@
+{
+  "schemaVersion": 1,
+  "id": "regressprobe",
+  "version": "1.0.0",
+  "name": "Forbric regress probe",
+  "environment": "*",
+  "entrypoints": { "main": ["forbric.regressprobe.RegressProbe"] },
+  "depends": { "fabricloader": "*", "fabric-api": "*" }
+}

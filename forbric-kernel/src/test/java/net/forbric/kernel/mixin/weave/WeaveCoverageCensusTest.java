@@ -140,7 +140,6 @@ class WeaveCoverageCensusTest {
 			Map.entry("FabricBlockStateCodecMixinAdapter", Switch.own("forbric.blockStateModelFormats")),
 			Map.entry("FabricCommonPayloadMixinAdapter", Switch.own("forbric.playPayloadFallThrough")), // FabricCommonPayloadMixinAdapterTest
 			Map.entry("MixinPrivateDefaultCollision", Switch.own("forbric.mixinPrivateDefaults")), // MixinPrivateDefaultCollisionTest
-			Map.entry("FabricItemDamageMixinAdapter", Switch.own("forbric.itemDamageHandler")), // FabricItemDamageMixinAdapterTest
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
 			Map.entry("CarrierHelperResults", Switch.own("forbric.carrierHelperResults")), // CarrierHelperResultsWeaveTest
 			Map.entry("CarrierMethodReferences", Switch.own("forbric.carrierMethodReferences")), // CarrierMethodReferencesWeaveTest
@@ -161,8 +160,13 @@ class WeaveCoverageCensusTest {
 			Map.entry("ContendedCallSites", Switch.own("forbric.contendedCallSites")));
 
 	private static final String NO_SCENARIO = "no weave scenario yet; ClassNode-level tests only";
-	/** Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave. */
-	static final Map<String, String> NOT_WOVEN_YET = notWovenYet();
+	/**
+	 * Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave.
+	 * FabricItemDamageMixinAdapter: FabricItemDamageMixinAdapterTest reads the real fabric-item-api mixin and the real
+	 * ItemStack at ClassNode level, and run/compat/regress-gate.py runs the moved handler in a dedicated server with
+	 * its switch on and off, but no weave scenario hands it to Mixin and MixinExtras in CI yet.
+	 */
+	static final Map<String, String> NOT_WOVEN_YET = notWovenYet("FabricItemDamageMixinAdapter");
 
 	@Test void everyPipelineStageIsWovenOrListedWithAReason() throws Exception {
 		Set<String> configTime = configTimeStages();
