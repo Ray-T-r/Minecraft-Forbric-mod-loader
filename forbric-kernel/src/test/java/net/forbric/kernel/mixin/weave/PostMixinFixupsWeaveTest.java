@@ -20,15 +20,16 @@ import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
 
 /**
- * PostMixinFixups' delegated-constructor replay through the real weave: Sodium's quad mixin initialises its own field
- * in a RETURN injection into the vanilla-shaped {@code BakedQuad} constructor, which the merged class turned into a
- * delegation to NeoForge's wider, canonical one.
+ * PostMixinFixups' delegated-constructor replay through the real weave: Sodium's (Fabric) quad mixin initialises its own
+ * field in a RETURN injection into the vanilla-shaped {@code BakedQuad} constructor, which NeoForge's class turned into a
+ * delegation to its wider, canonical one.
  *
  * <p>The probe builds a quad through each constructor and asks the mixin's added method. With the fixups on, the
  * injection Mixin wove at the end of the delegating constructor moves into the one it delegates to: both quads have
  * their face, and the narrow path still runs the handler once. With {@code -Dforbric.postMixinFixups=off} the handler
  * runs only for callers of the vanilla-shaped constructor, and a quad built the canonical way has none: the null that
- * made Sodium's mesher throw.
+ * made Sodium's mesher throw. The same mixin declared by a NeoForge mod is left where it was written, as on NeoForge,
+ * whose class it is.
  */
 class PostMixinFixupsWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/postmixinfixups");
@@ -46,7 +47,7 @@ class PostMixinFixupsWeaveTest {
 
 	@TempDir static Path work;
 	private static Path fixture;
-	private static WeaveHarness.Result fixed, off;
+	private static WeaveHarness.Result fixed, off, neoforge;
 
 	@BeforeAll static void weaveBothWays() throws Exception {
 		List<Path> sources;
@@ -55,8 +56,9 @@ class PostMixinFixupsWeaveTest {
 		}
 		assertEquals(4, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "postmixinfixups", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
-		fixed = run("fixed", Map.of());
-		off = run("fixups-off", Map.of(SWITCH, "off"));
+		fixed = run("fixed", Ecosystem.FABRIC, Map.of());
+		off = run("fixups-off", Ecosystem.FABRIC, Map.of(SWITCH, "off"));
+		neoforge = run("neoforge-mixin", Ecosystem.NEOFORGE, Map.of());
 	}
 
 	@Test void aQuadBuiltEitherWayHasItsFace() throws Exception {
@@ -75,6 +77,14 @@ class PostMixinFixupsWeaveTest {
 		// The injector attached where it was written; nothing reports the constructor its callers skip.
 		assertEquals(List.of(), unsettled(off), off.findings().toString());
 		WeaveHarness.assertWovenAndVerified(off, QUAD, fixture);
+	}
+
+	/** A NeoForge mixin's native class is the base's own, which delegates the same way: nothing moves. */
+	@Test void aNeoForgeMixinStaysWhereItWasWritten() throws Exception {
+		assertTrue(unfacedHolds(neoforge), neoforge.describe());
+		assertFalse(neoforge.printed("post-mixin repair"), neoforge.describe());
+		assertEquals(List.of(), unsettled(neoforge), neoforge.findings().toString());
+		WeaveHarness.assertWovenAndVerified(neoforge, QUAD, fixture);
 	}
 
 	/** The switch is the runs' only difference, so each run's predicate must reject the other. */
@@ -108,8 +118,8 @@ class PostMixinFixupsWeaveTest {
 		return run.findings().stream().filter(f -> f.modId().equals(MOD) && f.required() && !"RESOLVED".equals(f.confidence())).toList();
 	}
 
-	private static WeaveHarness.Result run(String label, Map<String, String> properties) throws Exception {
-		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.NEOFORGE, EnvType.CLIENT,
+	private static WeaveHarness.Result run(String label, Ecosystem ecosystem, Map<String, String> properties) throws Exception {
+		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, ecosystem, EnvType.CLIENT,
 				"fixture.postmixinfixups.Probe", "probe", properties);
 	}
 }

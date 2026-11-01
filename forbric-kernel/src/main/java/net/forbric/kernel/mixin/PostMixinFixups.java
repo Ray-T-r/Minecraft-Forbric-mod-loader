@@ -18,12 +18,15 @@ package net.forbric.kernel.mixin;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.function.BiFunction;
+import java.util.function.Function;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.AnnotationNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
 import org.objectweb.asm.tree.InsnList;
@@ -31,6 +34,7 @@ import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
+import net.forbric.api.Ecosystem;
 import net.forbric.kernel.boot.KernelRegistryAliases;
 import net.forbric.kernel.util.ByteScan;
 import net.forbric.kernel.util.ForbricLog;
@@ -48,6 +52,7 @@ import net.forbric.kernel.util.ForbricSwitches;
 public final class PostMixinFixups {
 	/** Mixin names every injected callback {@code handler$<id>$<method>}. */
 	private static final String HANDLER_PREFIX = "handler$";
+	private static final String MIXIN_MERGED = "Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;";
 
 	/** {@code -Dforbric.postMixinFixups=off} disables these repairs. */
 	static final String PROPERTY = "forbric.postMixinFixups";
@@ -69,7 +74,7 @@ public final class PostMixinFixups {
 		if (MAPPED_REGISTRY.equals(internal)) bytes = askTheRegistryWhetherAnAliasTargetExists(bytes);
 		// The fuel table a native build hands its caller, after every return hook (FabricFuelValuesInjector.afterMixin).
 		bytes = net.forbric.kernel.transform.FabricFuelValuesInjector.afterMixin(internal, bytes);
-		return replayDelegatedConstructorInjections(internal, bytes);
+		return replayDelegatedConstructorInjections(internal, bytes, NativeGameReferences::reference, MixinStubRebind::ecosystemOf);
 	}
 
 	private static final String MAPPED_REGISTRY = "net/minecraft/core/MappedRegistry";
@@ -173,19 +178,27 @@ public final class PostMixinFixups {
 
 	/**
 	 * Moves a guest mixin's constructor-injected handler from a DELEGATING constructor into the one it delegates to,
-	 * so the handler still runs when callers use the constructor the merge made canonical.
+	 * so the handler still runs when callers use the constructor the carrier made canonical.
 	 *
-	 * <p>The merge routinely adds a wider constructor overload and rewrites the vanilla-shaped one to delegate to it.
-	 * A guest mixin, written against vanilla, injects into the only constructor it knew about — the narrow one — so
-	 * every caller that uses the wide one now skips the mixin's field initialization entirely. The failure surfaces
-	 * far away, as a null field with no stack frame pointing at the cause.
+	 * <p>NeoForge adds wider constructor overloads to vanilla classes and rewrites the vanilla-shaped one to delegate to
+	 * them. A guest mixin written against vanilla injects into the only constructor it knew about — the narrow one — so
+	 * every caller that uses the wide one skips the mixin's field initialization entirely. The failure surfaces far away,
+	 * as a null field with no stack frame pointing at the cause.
 	 *
 	 * <p>Measured archetype: NeoForge made {@code BakedQuad}'s 12-arg constructor (adding {@code BakedNormals} +
 	 * {@code BakedColors}) canonical and made the vanilla 10-arg one delegate to it with {@code UNSPECIFIED} /
-	 * {@code DEFAULT}. Sodium's {@code BakedQuadMixin} injects into the 10-arg one to compute its {@code @Unique
+	 * {@code DEFAULT}. Sodium's {@code BakedQuadMixin} injected into the 10-arg one to compute its {@code @Unique
 	 * normalFace}, so every quad built through the 12-arg constructor carried a null {@code normalFace} and Sodium's
-	 * chunk mesher threw {@code NullPointerException} at {@code EncodingFormat.normalFace} — the crash that made
-	 * terrain unbuildable once the mesher was no longer being suppressed outright.
+	 * chunk mesher threw {@code NullPointerException} at {@code EncodingFormat.normalFace}. On NeoForge's own base the
+	 * same shape holds for fabric-object-builder's {@code BlockEntityType} blocks set, fabric-data-generation's
+	 * {@code TagsProvider} path resolver and fabric-model-loading's {@code ModelBakery} hook: each wide constructor is
+	 * NeoForge's and not vanilla's.
+	 *
+	 * <p>Only where the mixin's own platform does not delegate that way itself: when the class as the mixin's ecosystem
+	 * compiled it (its native reference) has the narrow constructor delegating to the same wide one — vanilla's own
+	 * {@code CommandSourceStack} does, into its private wide constructor — the handler natively runs for callers of the
+	 * narrow one only, and moving it would run it where it never runs natively. A NeoForge mixin's native class is the
+	 * base itself, so it is never moved. A mixin whose ecosystem or native class is unknown is moved as before.
 	 *
 	 * <p><b>The move is only performed when it is provably equivalent</b>, which is what keeps this general rather
 	 * than a hand-patch. It requires that, in the delegating constructor, the handler call sits immediately after the
@@ -195,7 +208,8 @@ public final class PostMixinFixups {
 	 * direct callers of the wide one. The argument sequence is cloned verbatim: the narrow constructor's parameters
 	 * are a prefix of the wide one's with identical types, so the local slots it loads are valid unchanged.
 	 */
-	private static byte[] replayDelegatedConstructorInjections(String internal, byte[] bytes) {
+	static byte[] replayDelegatedConstructorInjections(String internal, byte[] bytes,
+			BiFunction<Ecosystem, String, ClassNode> natives, Function<String, Ecosystem> ecosystemOf) {
 		// Cheapest pre-check first, on the raw bytes. This runs for EVERY class the game loads, and the one below
 		// it — cheap only by comparison — still parses the whole class including every instruction of every
 		// method. A class Mixin never wove cannot contain a handler name, and a method name lives in the constant
@@ -225,6 +239,8 @@ public final class PostMixinFixups {
 			if (!parametersArePrefix(replay.call.desc, wide.desc)) continue;
 			// If the mixin already injected into the wide constructor too, adding a second call would double-run it.
 			if (callsHandler(wide, replay.call)) continue;
+			// Natively the narrow constructor delegates the same way, so the handler natively skips the wide one's callers.
+			if (nativeDelegatesTheSameWay(node, narrow.desc, delegation.desc, replay.call, natives, ecosystemOf)) continue;
 
 			for (AbstractInsnNode insn = wide.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (insn.getOpcode() != Opcodes.RETURN) continue;
@@ -236,7 +252,7 @@ public final class PostMixinFixups {
 			changed = true;
 
 			ForbricLog.info("[Forbric/Mixin] post-mixin repair: replayed %s's constructor injection %s into the "
-					+ "constructor it delegates to (%s) — the merge made that overload canonical, so callers of it "
+					+ "constructor it delegates to (%s) — the carrier made that overload canonical, so callers of it "
 					+ "were skipping the guest mixin's initializer", internal.replace('/', '.'), replay.call.name,
 					delegation.desc);
 		}
@@ -245,6 +261,41 @@ public final class PostMixinFixups {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/**
+	 * Whether the class as the handler's mixin's ecosystem compiled it has constructor {@code narrowDesc} delegating
+	 * {@code this(...)} to {@code wideDesc}: then natively, too, only the narrow constructor's callers run the handler.
+	 * A NeoForge mixin's native class is the base itself. Unknown ecosystem or no native reference: false.
+	 */
+	static boolean nativeDelegatesTheSameWay(ClassNode node, String narrowDesc, String wideDesc, MethodInsnNode handler,
+			BiFunction<Ecosystem, String, ClassNode> natives, Function<String, Ecosystem> ecosystemOf) {
+		if (ecosystemOf == null) return false;
+		Ecosystem ecosystem = ecosystemOf.apply(mixinOf(node, handler));
+		if (ecosystem == Ecosystem.NEOFORGE) return true;
+		if (ecosystem == null || natives == null) return false;
+		ClassNode original = natives.apply(ecosystem, node.name);
+		if (original == null) return false;
+		MethodNode narrow = findOwn(original, "<init>", narrowDesc);
+		if (narrow == null) return false;
+		MethodInsnNode delegation = thisDelegation(original, narrow);
+		return delegation != null && delegation.desc.equals(wideDesc);
+	}
+
+	/** The mixin (internal name) the handler method was merged from ({@code @MixinMerged}), or null. */
+	private static String mixinOf(ClassNode node, MethodInsnNode handler) {
+		MethodNode method = findOwn(node, handler.name, handler.desc);
+		if (method == null) return null;
+		for (List<AnnotationNode> annotations : List.of(
+				method.visibleAnnotations == null ? List.<AnnotationNode>of() : method.visibleAnnotations,
+				method.invisibleAnnotations == null ? List.<AnnotationNode>of() : method.invisibleAnnotations)) {
+			for (AnnotationNode annotation : annotations) {
+				if (!MIXIN_MERGED.equals(annotation.desc)) continue;
+				Object mixin = MixinFit.value(annotation, "mixin");
+				if (mixin instanceof String name) return name.replace('.', '/');
+			}
+		}
+		return null;
 	}
 
 	/** A handler call plus the argument loads that feed it, as a contiguous instruction range. */
