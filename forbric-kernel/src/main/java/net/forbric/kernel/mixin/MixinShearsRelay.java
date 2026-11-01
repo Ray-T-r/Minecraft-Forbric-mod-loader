@@ -38,7 +38,10 @@ import org.objectweb.asm.tree.VarInsnNode;
  * {@code is} as its {@code original} ({@code KernelMobShears.vanillaIs}); where it answers yes for a stack that is not a
  * {@code ShearsItem} (one NeoForge's own path shears after {@code mobInteract}), NeoForge's shearing entry is run with that
  * stack ({@code KernelMobShears.shearAsShears}: {@code ShearsItem.interactLivingEntity}, which reads only its arguments), and
- * its answer, if it sheared, is {@code mobInteract}'s. A wrap that says no to real shears is not carried over there:
+ * its answer, if it sheared, is {@code mobInteract}'s. An item with an entity entry of its own ({@code interactLivingEntity})
+ * that is not a Fabric mod's is left to that entry, which {@code Player.interactOn} asks after {@code mobInteract} passes, as
+ * on NeoForge; a Fabric item's own entry is pre-empted, as native Fabric with BCLib pre-empts it (run/compat/regress-gate.py,
+ * {@code shears.sheep.ownEntry.*}). A wrap that says no to real shears is not carried over there:
  * NeoForge's path still shears with them, as on NeoForge. {@code -Dforbric.shearsRelayMobs=off} leaves these two wraps as
  * compiled (bound nowhere). The merged base had put MinecraftForge's {@code canPerformAction(ToolActions.SHEARS_HARVEST)}
  * in all three, and three rows relayed to it; they went with MinecraftForge.
