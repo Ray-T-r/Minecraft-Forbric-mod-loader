@@ -11,10 +11,11 @@ import net.minecraft.world.level.material.Fluid;
 import net.minecraft.world.level.redstone.Orientation;
 
 /**
- * Hand-written stand-in, not game code: the merged liquid block, as both fluid adapters expect it. Placing and
- * neighbour updates ask a carrier's fluid interaction registry (MinecraftForge's on one path, NeoForge's on the other),
- * once each, and schedule a fluid tick when nothing interacts; a shape update schedules one directly. Vanilla's
- * {@code shouldSpreadLiquid} is still declared, and nothing calls it. Public only so the probe can call the three paths.
+ * Hand-written stand-in, not game code: NeoForge 26.2.0.93's liquid block. Placing asks vanilla's
+ * {@code shouldSpreadLiquid} (javap: {@code onPlace} calls it at offset 4); a neighbour update asks NeoForge's fluid
+ * interaction registry instead ({@code neighborChanged} calls {@code canInteract} at offset 2, {@code ifne} over its one
+ * {@code scheduleTick}); each schedules a fluid tick when the question lets it; a shape update schedules one directly.
+ * Public only so the probe can call the three paths.
  */
 public class LiquidBlock extends Block {
 	private final Fluid fluid;
@@ -24,7 +25,7 @@ public class LiquidBlock extends Block {
 	}
 
 	public void onPlace(BlockState state, Level level, BlockPos pos, BlockState oldState, boolean movedByPiston) {
-		if (!net.minecraftforge.fluids.FluidInteractionRegistry.canInteract(level, pos)) level.scheduleTick(pos, fluid, 5);
+		if (this.shouldSpreadLiquid(level, pos, state)) level.scheduleTick(pos, fluid, 5);
 	}
 
 	public void neighborChanged(BlockState state, Level level, BlockPos pos, Block neighbor, Orientation orientation, boolean movedByPiston) {

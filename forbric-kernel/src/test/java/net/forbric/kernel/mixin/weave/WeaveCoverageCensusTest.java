@@ -110,7 +110,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("NativeCallInlining", Switch.own("forbric.nativeCallInlining", "forbric.nativeCallInlining.registeredMixins")), // NativeCallInliningWeaveTest, NativeCallInliningRegisteredMixinsWeaveTest
 			Map.entry("NativeLocalMaterialization", Switch.own("forbric.nativeLocalMaterialization")), // NativeLocalMaterializationWeaveTest
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
-			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest
+			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest
 			Map.entry("UncalledDecisionEntries", Switch.own("forbric.uncalledDecisionEntries")), // UncalledDecisionEntriesWeaveTest
 			Map.entry("NativeDecisionIsland", Switch.own("forbric.nativeDecisionIsland")), // NativeDecisionIslandWeaveTest
 			Map.entry("NativeConsumerStores", Switch.own("forbric.nativeConsumerStores")), // NativeConsumerStoresWeaveTest
@@ -125,8 +125,11 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),
 			Map.entry("InsertedLambdaArgumentShim", Switch.own("forbric.insertedLambdaArguments")),
 			Map.entry("MixinPlayerWorldCallbackAdapter", Switch.own("forbric.playerWorldCallbacks")),
-			// The neighbour-change wrap, TAIL and reaction-point handler: CarpetFluidMixinAdapterWeaveTest, MixinFluidReactionWeaveTest.
-			Map.entry("MixinFluidReactionAdapter", Switch.own("forbric.fluidReactionNeighbourChange")),
+			// The neighbour-change wrap, TAIL and reaction-point handler: CarpetFluidMixinAdapterWeaveTest, MixinFluidReactionWeaveTest;
+			// HEAD handlers: FluidPairMixinAdaptersWeaveTest. The adapter also stands down with forbric.playerWorldCallbacks
+			// (MixinPlayerWorldCallbackAdapter.PROPERTY, read through its enabled()), which no weave test flips: carpet-gate.py's
+			// baseline run does, in a dedicated server.
+			Map.entry("MixinFluidReactionAdapter", Switch.own("forbric.fluidReactionNeighbourChange", "forbric.fluidReactionNeighbourChange.head")),
 			Map.entry("NativeCoremodParity", Switch.own("forbric.flowerPotRepair")), // NativeCoremodParityWeaveTest
 			Map.entry("PostMixinFixups", Switch.own("forbric.postMixinFixups")), // PostMixinFixupsWeaveTest
 			Map.entry("UncalledValueRelay", Switch.own("forbric.uncalledValueRelay")), // UncalledValueRelayWeaveTest

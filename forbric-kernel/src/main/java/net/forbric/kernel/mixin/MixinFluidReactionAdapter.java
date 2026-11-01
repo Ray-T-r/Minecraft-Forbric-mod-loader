@@ -5,6 +5,7 @@ import static net.forbric.kernel.mixin.MixinPlayerWorldCallbackAdapter.*;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 import net.forbric.api.Ecosystem;
@@ -12,8 +13,9 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Runs a Fabric mod's fluid reaction callback on {@code shouldSpreadLiquid} where vanilla runs it, on a liquid block whose
- * neighbour change asks NeoForge's fluid interaction registry instead ({@link #neighbourChangeOnly}).
+ * Runs a Fabric mod's fluid callback on {@code shouldSpreadLiquid} where vanilla runs it, on a liquid block whose
+ * neighbour change asks NeoForge's fluid interaction registry instead ({@link #neighbourChangeOnly}): a TAIL handler, a
+ * handler at vanilla's reaction point, or a HEAD handler (fabric-block-api's flow veto, Create Fly's fluid reaction).
  *
  * <p>Two older rewrites served the merged base, whose placement asked MinecraftForge's registry and whose neighbour change
  * asked NeoForge's, so neither host called {@code shouldSpreadLiquid}: a TAIL handler wrapped into both registry calls, and
@@ -42,6 +44,11 @@ public final class MixinFluidReactionAdapter {
 	 * neighbour change asks a registry ({@link #neighbourChangeOnly}); the handler then runs on placement only.
 	 */
 	public static final String NEIGHBOUR_PROPERTY = "forbric.fluidReactionNeighbourChange";
+	/**
+	 * Off: a HEAD handler gets no wrap on a neighbour change (the TAIL and reaction-point wraps stay); it then runs on
+	 * placement only, as NeoForge's base runs it.
+	 */
+	public static final String HEAD_PROPERTY = "forbric.fluidReactionNeighbourChange.head";
 	static final String RUNTIME = "net/forbric/kernel/runtime/KernelFluidReactions";
 	static final String REACHES = "(L" + LIQUID + ";L" + LEVEL + ";" + POS + ")Z";
 	static final String TICK = "L" + LEVEL + ";scheduleTick(" + POS + "Lnet/minecraft/world/level/material/Fluid;I)V";
@@ -49,6 +56,10 @@ public final class MixinFluidReactionAdapter {
 
 	static boolean neighbourChangeEnabled() {
 		return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(NEIGHBOUR_PROPERTY, "on"));
+	}
+
+	static boolean headEnabled() {
+		return !"off".equalsIgnoreCase(net.forbric.kernel.util.ForbricSwitches.get(HEAD_PROPERTY, "on"));
 	}
 
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
@@ -116,14 +127,21 @@ public final class MixinFluidReactionAdapter {
 	 * {@code @WrapOperation} of the neighbour change's registry call, where vanilla would have run it: a TAIL handler where
 	 * the registry answers "not handled" ({@link #unhandledWrap}); the reaction-point handler before the registry, when
 	 * vanilla's walk reaches the point for this cell ({@code KernelFluidReactions.reachesWaterReaction}), with a fresh
-	 * callback as Mixin's own at an INVOKE point; if it
-	 * cancels, its answer, negated, is the registry's and the registry's interaction does not run, else the registry runs as
-	 * written. One such handler per mixin, an instance {@code @Inject} that Mixin binds to {@code shouldSpreadLiquid} alone,
-	 * no slice or group; only a mixin known to be a Fabric mod's (on NeoForge a NeoForge mod's runs on placement alone too, and
+	 * callback as Mixin's own at an INVOKE point; a HEAD handler before the registry every time, as vanilla enters
+	 * {@code shouldSpreadLiquid} on every neighbour change, with a fresh callback as Mixin's own at HEAD. If the reaction-point
+	 * or HEAD handler cancels, its answer, negated, is the registry's and the registry's interaction does not run (a HEAD
+	 * cancel with false: no tick and no reaction, as natively), else the registry runs as written. One such handler per
+	 * mixin (a TAIL or reaction-point handler first, a HEAD handler only where the mixin has neither), an instance
+	 * {@code @Inject} that Mixin binds to {@code shouldSpreadLiquid} alone, no slice or group; only a mixin known to be a
+	 * Fabric mod's (on NeoForge a NeoForge mod's runs on placement alone too, and
 	 * a mixin whose family is not known — a config two families claim — is left alone, as {@link MixinShearsRelay} and
 	 * {@link FabricItemDamageMixinAdapter} leave it). Placement and the neighbour change
 	 * must each make their one call, and the registry's answer must skip the tick. {@link #NEIGHBOUR_PROPERTY} off leaves the
-	 * handler as compiled.
+	 * handler as compiled; {@link #HEAD_PROPERTY} off leaves a HEAD handler alone.
+	 *
+	 * <p>On the merged base {@code NativeEntryRelay} served a HEAD handler instead: nothing there called
+	 * {@code shouldSpreadLiquid}, so it asked the method again in both hosts. NeoForge's base calls it on placement, so that
+	 * relay plans nothing here, and this HEAD wrap carries the neighbour change.
 	 */
 	private static int neighbourChangeOnly(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!neighbourChangeEnabled() || MixinStubRebind.ecosystemOf(mixin.name) != Ecosystem.FABRIC) return 0;
@@ -133,18 +151,19 @@ public final class MixinFluidReactionAdapter {
 		if (onPlace == null || changed == null || spreadCalls(onPlace) != 1 || !registryCalls(onPlace).isEmpty()) return 0;
 		List<MethodInsnNode> asked = registryCalls(changed);
 		if (asked.size() != 1 || spreadCalls(changed) != 0 || !handledSkipsTick(changed, asked.getFirst())) return 0;
-		MethodNode handler = MixinCallbackShape.unique(mixin, m -> MixinCallbackShape.shape(m, HANDLER) && MixinCallbackShape.instance(m)
-				&& MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, liquid, SPREAD)
-				&& (MixinCallbackShape.plainPoint(m, "TAIL", null) || reactionPoint(m)));
+		Predicate<MethodNode> callback = m -> MixinCallbackShape.shape(m, HANDLER) && MixinCallbackShape.instance(m)
+				&& MixinCallbackShape.kind(m, "Inject") && MixinCallbackShape.binds(m, liquid, SPREAD);
+		MethodNode handler = MixinCallbackShape.unique(mixin, m -> callback.test(m) && (MixinCallbackShape.plainPoint(m, "TAIL", null) || reactionPoint(m)));
+		if (handler == null && headEnabled()) handler = MixinCallbackShape.unique(mixin, m -> callback.test(m) && MixinCallbackShape.plainPoint(m, "HEAD", null));
 		if (handler == null || !HANDLER.equals(handler.desc)) return 0;
-		boolean tail = MixinCallbackShape.plainPoint(handler, "TAIL", null);
+		boolean tail = MixinCallbackShape.plainPoint(handler, "TAIL", null), head = MixinCallbackShape.plainPoint(handler, "HEAD", null);
 		MethodNode copy = MixinShearsRelay.copyOf(handler, handler.name + "$forbricOriginal");
 		copy.access = (handler.access & ~(Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED)) | Opcodes.ACC_PRIVATE;
 		copy.visibleAnnotations = new ArrayList<>(List.of(new AnnotationNode("Lorg/spongepowered/asm/mixin/Unique;")));
 		mixin.methods.add(copy);
 		MethodInsnNode call = asked.getFirst();
 		String name = "forbric$neighbourFluidReaction";
-		mixin.methods.add(tail ? unhandledWrap(mixin, name, changed, call, copy) : reactionWrap(mixin, name, changed, call, copy));
+		mixin.methods.add(tail ? unhandledWrap(mixin, name, changed, call, copy) : reactionWrap(mixin, name, changed, call, copy, !head));
 		ForbricLog.info("[Forbric/Mixin] %s: %s now also runs on a neighbour change, at %s's canInteract in %s — the base's "
 				+ "placement asks vanilla's shouldSpreadLiquid, where it binds as compiled, and its neighbour change asks the registry",
 				mixin.name.replace('/', '.'), handler.name, call.owner.substring(call.owner.lastIndexOf('/') + 1), changed.name);
@@ -152,19 +171,21 @@ public final class MixinFluidReactionAdapter {
 	}
 
 	/**
-	 * {@code @WrapOperation} of the registry's {@code call} in {@code host} for a handler at vanilla's reaction point: when
-	 * vanilla's walk reaches the point for this cell, {@code callee} runs with a fresh callback; cancelled, its answer negated
-	 * is the registry's and the registry's interaction does not run; otherwise (and when the walk does not reach the point)
-	 * the registry runs as written.
+	 * {@code @WrapOperation} of the registry's {@code call} in {@code host} for a handler at vanilla's reaction point
+	 * ({@code reached}: only when vanilla's walk reaches the point for this cell) or at HEAD (every time): {@code callee}
+	 * runs with a fresh callback; cancelled, its answer negated is the registry's and the registry's interaction does not
+	 * run; otherwise (and when the walk does not reach the point) the registry runs as written.
 	 */
-	private static MethodNode reactionWrap(ClassNode mixin, String name, MethodNode host, MethodInsnNode call, MethodNode callee) {
+	private static MethodNode reactionWrap(ClassNode mixin, String name, MethodNode host, MethodInsnNode call, MethodNode callee, boolean reached) {
 		MethodNode wrap = new MethodNode(Opcodes.ACC_PRIVATE, name, "(L"+LEVEL+";"+POS+"L"+OPERATION+";)Z",null,null);
 		wrap.visibleAnnotations = new ArrayList<>(List.of(wrapOperation(host.name+host.desc,at("L"+call.owner+";"+call.name+call.desc))));
 		InsnList code=wrap.instructions;LabelNode registry=new LabelNode();
-		code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new TypeInsnNode(Opcodes.CHECKCAST,LIQUID));
-		code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new VarInsnNode(Opcodes.ALOAD,2));
-		code.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"reachesWaterReaction",REACHES,false));code.add(new JumpInsnNode(Opcodes.IFEQ,registry));
-		// A callback at an INVOKE point starts without a return value, as Mixin's own does there.
+		if (reached) {
+			code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new TypeInsnNode(Opcodes.CHECKCAST,LIQUID));
+			code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new VarInsnNode(Opcodes.ALOAD,2));
+			code.add(new MethodInsnNode(Opcodes.INVOKESTATIC,RUNTIME,"reachesWaterReaction",REACHES,false));code.add(new JumpInsnNode(Opcodes.IFEQ,registry));
+		}
+		// A callback at HEAD or an INVOKE point starts without a return value, as Mixin's own does there.
 		code.add(new TypeInsnNode(Opcodes.NEW,CALLBACK));code.add(new InsnNode(Opcodes.DUP));code.add(new LdcInsnNode("forbricFluidReaction"));code.add(new InsnNode(Opcodes.ICONST_1));
 		code.add(new MethodInsnNode(Opcodes.INVOKESPECIAL,CALLBACK,"<init>","(Ljava/lang/String;Z)V",false));code.add(new VarInsnNode(Opcodes.ASTORE,4));
 		code.add(new VarInsnNode(Opcodes.ALOAD,0));code.add(new VarInsnNode(Opcodes.ALOAD,1));code.add(new VarInsnNode(Opcodes.ALOAD,2));

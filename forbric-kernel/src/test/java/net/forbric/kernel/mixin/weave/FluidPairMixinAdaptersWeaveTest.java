@@ -22,24 +22,25 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.NativeEntryRelay;
+import net.forbric.kernel.mixin.MixinFluidReactionAdapter;
 
 /**
- * {@code NativeEntryRelay} through the real weave with TWO guests on one decision method, and the same guests on the
- * liquid block their own loader has, as the oracle.
+ * {@code MixinFluidReactionAdapter}'s HEAD wrap through the real weave with TWO guests on one decision method, and the
+ * same guests on the liquid block their own loader has, as the oracle.
  *
  * <p>fabric-block-api's flow veto and Create Fly's fluid reaction both enter vanilla's {@code shouldSpreadLiquid} with a
- * cancellable {@code HEAD} {@code @Inject} that answers false. On the merged liquid block nothing calls that method —
- * placing asks MinecraftForge's interaction registry, a neighbour update NeoForge's — so both hooks bind and never run.
- * Relayed, placing and neighbour updates ask {@code shouldSpreadLiquid} again, first, and each carrier registry only where
- * it lets the decision through.
+ * cancellable {@code HEAD} {@code @Inject} that answers false. On NeoForge's liquid block placing still asks that method,
+ * so both hooks run there as compiled, but a neighbour update asks NeoForge's interaction registry instead, so natively
+ * neither hook would run on it. Wrapped, each hook runs ahead of the registry question on a neighbour update, and the
+ * registry only where the hooks let the decision through.
  *
  * <p>The probe registers one flow listener that denies "denied", then gives "lava" (where Create's registry reacts),
  * "water" and "denied" each a placement, a neighbour update and a shape update. In both config orders the trail of each
- * update is the trail the same guests leave on the native liquid block, with the carrier registries' own question added
- * exactly where the native method answered true — Mixin decides the order of the two hooks, as natively, and a shape
- * update (which vanilla never asks the method about) is not vetoed, as natively. Switched off, Create's hook stays in the
- * method nothing calls: lava flows.
+ * update is the trail the same guests leave on the native liquid block, with NeoForge's registry question added on a
+ * neighbour update exactly where the native method answered true — a shape update (which vanilla never asks the method
+ * about) is not vetoed, as natively — except that on a neighbour update the two hooks run in the reverse of their native
+ * order (pinned below). With {@code -Dforbric.fluidReactionNeighbourChange.head=off} the hooks run on
+ * placement alone: on a neighbour update Create never reacts, the veto is not asked, and lava flows.
  */
 class FluidPairMixinAdaptersWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/fluidpair");
@@ -50,11 +51,11 @@ class FluidPairMixinAdaptersWeaveTest {
 	private static final String CREATE_MIXIN = "com.zurrtum.create.mixin.LiquidBlockMixin";
 	private static final String FABRIC_MIXIN = "net.fabricmc.fabric.mixin.block.LiquidBlockMixin";
 	private static final String TARGET = "net/minecraft/world/level/block/LiquidBlock";
-	private static final String RELAYED = "[Forbric/Mixin] %s.shouldSpreadLiquid: net.minecraft.world.level.block.LiquidBlock.shouldSpreadLiquid";
+	private static final String WRAPPED = "[Forbric/Mixin] %s: shouldSpreadLiquid now also runs on a neighbour change, at FluidInteractionRegistry's canInteract in neighborChanged";
 	private static final String CONFLICT = "Method overwrite conflict";
 
 	@TempDir static Path work;
-	private static Path merged, natives;
+	private static Path genuine, natives;
 	private static WeaveHarness.Result createFirst, fabricFirst, nativeCreateFirst, nativeFabricFirst, off;
 
 	@BeforeAll static void weaveAll() throws Exception {
@@ -64,25 +65,39 @@ class FluidPairMixinAdaptersWeaveTest {
 		nativeSources.remove(SOURCES.resolve("net/minecraft/world/level/block/LiquidBlock.java"));
 		nativeSources.add(SOURCES.resolve("native/net/minecraft/world/level/block/LiquidBlock.java"));
 		natives = WeaveHarness.fixture(work, "fluidpair-native", nativeSources, configs, List.of("-g"));
-		merged = NativeWeaveReferences.with(work, WeaveHarness.fixture(work, "fluidpair", sources, configs, List.of("-g")),
+		genuine = NativeWeaveReferences.with(work, WeaveHarness.fixture(work, "fluidpair", sources, configs, List.of("-g")),
 				NativeWeaveReferences.classes(natives));
 		var create = new WeaveHarness.Config(CREATE_CONFIG, CREATE_MOD, Ecosystem.FABRIC);
 		var fabric = new WeaveHarness.Config(FABRIC_CONFIG, FABRIC_MOD, Ecosystem.FABRIC);
-		createFirst = run(merged, "create-first", List.of(create, fabric), Map.of());
-		fabricFirst = run(merged, "fabric-first", List.of(fabric, create), Map.of());
+		createFirst = run(genuine, "create-first", List.of(create, fabric), Map.of());
+		fabricFirst = run(genuine, "fabric-first", List.of(fabric, create), Map.of());
 		nativeCreateFirst = run(natives, "native-create-first", List.of(create, fabric), Map.of());
 		nativeFabricFirst = run(natives, "native-fabric-first", List.of(fabric, create), Map.of());
-		off = run(merged, "relay-off", List.of(create, fabric), Map.of(NativeEntryRelay.PROPERTY, "off"));
+		off = run(genuine, "head-off", List.of(create, fabric), Map.of(MixinFluidReactionAdapter.HEAD_PROPERTY, "off"));
 	}
 
 	@Test void createFirstEachUpdateIsTheNativeOneWithTheCarriersQuestionAdded() throws Exception {
-		assertTrue(relayed(createFirst, nativeCreateFirst), createFirst.describe() + "\nnative " + trail(nativeCreateFirst));
-		WeaveHarness.assertWovenAndVerified(createFirst, TARGET, merged);
+		assertTrue(relayed(createFirst, nativeCreateFirst, nativeFabricFirst), createFirst.describe() + "\nnative " + trail(nativeCreateFirst)
+				+ "\nnative, reversed " + trail(nativeFabricFirst));
+		WeaveHarness.assertWovenAndVerified(createFirst, TARGET, genuine);
 	}
 
 	@Test void fabricFirstEachUpdateIsTheNativeOneWithTheCarriersQuestionAdded() throws Exception {
-		assertTrue(relayed(fabricFirst, nativeFabricFirst), fabricFirst.describe() + "\nnative " + trail(nativeFabricFirst));
-		WeaveHarness.assertWovenAndVerified(fabricFirst, TARGET, merged);
+		assertTrue(relayed(fabricFirst, nativeFabricFirst, nativeCreateFirst), fabricFirst.describe() + "\nnative " + trail(nativeFabricFirst)
+				+ "\nnative, reversed " + trail(nativeCreateFirst));
+		WeaveHarness.assertWovenAndVerified(fabricFirst, TARGET, genuine);
+	}
+
+	/**
+	 * The one difference from native that the wraps keep, pinned so it cannot change unseen: two mixins' wraps of one
+	 * call chain with the later-applied one outside, so on a neighbour update the two hooks run in the reverse of their
+	 * native (HEAD) order. Where only one of them acts the outcome is the same; where the first native hook cancels, the
+	 * other one is asked too (here: Create reacts at "lava" either way, and the flow listener is asked there as well).
+	 */
+	@Test void onANeighbourUpdateTheTwoHooksRunInTheReverseOfTheirNativeOrder() {
+		assertNotEquals(update(nativeCreateFirst, "neighbor lava"), update(nativeFabricFirst, "neighbor lava"), "the oracle does not tell the orders apart");
+		assertEquals(update(nativeFabricFirst, "neighbor lava"), withoutCarrier(update(createFirst, "neighbor lava")));
+		assertEquals(update(nativeCreateFirst, "neighbor lava"), withoutCarrier(update(fabricFirst, "neighbor lava")));
 	}
 
 	@Test void theNativeOracleReactsAndVetoes() {
@@ -91,52 +106,67 @@ class FluidPairMixinAdaptersWeaveTest {
 		assertTrue(trail.contains("create reacted lava") && trail.contains("deny denied") && trail.contains("shape denied: flow denied"), trail);
 	}
 
-	@Test void switchedOffCreatesHookStaysInTheMethodNothingCallsAndLavaFlows() throws Exception {
+	@Test void switchedOffTheHooksRunOnPlacementAloneAndLavaFlowsOnANeighbourUpdate() throws Exception {
 		assertTrue(offHolds(off), off.describe());
-		WeaveHarness.assertWovenAndVerified(off, TARGET, merged);
+		WeaveHarness.assertWovenAndVerified(off, TARGET, genuine);
 	}
 
 	@Test void theControlFlipsEveryAssertion() throws Exception {
-		assertTrue(relayed(createFirst, nativeCreateFirst) && !relayed(off, nativeCreateFirst), "relay predicate does not separate the runs");
+		assertTrue(relayed(createFirst, nativeCreateFirst, nativeFabricFirst) && !relayed(off, nativeCreateFirst, nativeFabricFirst),
+				"wrap predicate does not separate the runs");
 		assertTrue(offHolds(off) && !offHolds(createFirst) && !offHolds(fabricFirst), "control predicate does not separate the runs");
 	}
 
 	/**
-	 * The merged run's trail, with the carrier registries' own questions taken out, is the native run's; each carrier
-	 * question stands exactly where the native method let the decision through (the update scheduled a tick natively);
-	 * both hooks are entered from the relayed method, which placing and neighbour updates call; nothing was skipped or
-	 * reported.
+	 * The run's trail, with NeoForge's registry question taken out, is the native run's — on a neighbour update the native
+	 * run's of the reverse config order ({@code reversed}; see the test above); that question stands, on a neighbour
+	 * update, exactly where the native method let the decision through (the update scheduled a tick natively), and never on
+	 * a placement, which asks {@code shouldSpreadLiquid} as natively; both hooks are entered from that method and from
+	 * {@code neighborChanged} (their wraps), both wraps were announced, and nothing was skipped or reported.
 	 */
-	private static boolean relayed(WeaveHarness.Result run, WeaveHarness.Result oracle) throws Exception {
-		String[] mergedUpdates = trail(run).split(" \\| "), nativeUpdates = trail(oracle).split(" \\| ");
-		if (mergedUpdates.length != nativeUpdates.length || mergedUpdates.length != 9) return false;
-		for (int i = 0; i < mergedUpdates.length; i++) {
-			if (!withoutCarrier(mergedUpdates[i]).equals(nativeUpdates[i])) return false;
-			boolean asked = mergedUpdates[i].contains(" none "), ticked = nativeUpdates[i].contains("flow ");
-			if (!mergedUpdates[i].startsWith("shape") && asked != ticked) return false;
+	private static boolean relayed(WeaveHarness.Result run, WeaveHarness.Result oracle, WeaveHarness.Result reversed) throws Exception {
+		String[] updates = trail(run).split(" \\| "), nativeUpdates = trail(oracle).split(" \\| "), reversedUpdates = trail(reversed).split(" \\| ");
+		if (updates.length != nativeUpdates.length || updates.length != 9 || reversedUpdates.length != 9) return false;
+		for (int i = 0; i < updates.length; i++) {
+			if (!withoutCarrier(updates[i]).equals((updates[i].startsWith("neighbor") ? reversedUpdates : nativeUpdates)[i])) return false;
+			boolean asked = updates[i].contains(" none "), ticked = nativeUpdates[i].contains("flow ");
+			if (updates[i].startsWith("neighbor") ? asked != ticked : asked) return false;
 		}
 		ClassNode node = woven(run);
-		return run.printed(String.format(RELAYED, CREATE_MIXIN)) || run.printed(String.format(RELAYED, FABRIC_MIXIN))
-				? calls(node, "onPlace", "shouldSpreadLiquid") && calls(node, "neighborChanged", "shouldSpreadLiquid")
-						&& entersFrom(node, "shouldSpreadLiquid", CREATE_MIXIN) && entersFrom(node, "shouldSpreadLiquid", FABRIC_MIXIN)
-						&& !run.printed(CONFLICT) && node.methods.stream().noneMatch(m -> m.name.contains("$forbricOriginal")) && findings(run).isEmpty()
-				: false;
+		return run.printed(String.format(WRAPPED, CREATE_MIXIN)) && run.printed(String.format(WRAPPED, FABRIC_MIXIN))
+				&& calls(node, "onPlace", "shouldSpreadLiquid") && !calls(node, "neighborChanged", "shouldSpreadLiquid")
+				&& entersFrom(node, "shouldSpreadLiquid", CREATE_MIXIN) && entersFrom(node, "shouldSpreadLiquid", FABRIC_MIXIN)
+				&& reaches(node, "neighborChanged", CREATE_MIXIN) && reaches(node, "neighborChanged", FABRIC_MIXIN)
+				&& !run.printed(CONFLICT) && findings(run).isEmpty();
 	}
 
-	/** One update's trail without the carrier registries' own questions ("forge none x", "neoforge none x"). */
+	/** The {@code name} update's trail ("neighbor lava: …") of {@code run}. */
+	private static String update(WeaveHarness.Result run, String name) {
+		return Arrays.stream(trail(run).split(" \\| ")).filter(update -> update.startsWith(name + ":")).findFirst().orElse("");
+	}
+
+	/** One update's trail without NeoForge's registry question ("neoforge none x"). */
 	private static String withoutCarrier(String update) {
 		int colon = update.indexOf(": ");
-		String steps = Arrays.stream(update.substring(colon + 2).split(", ")).filter(step -> !step.matches("(forge|neoforge) none .*"))
+		String steps = Arrays.stream(update.substring(colon + 2).split(", ")).filter(step -> !step.matches("neoforge none .*"))
 				.collect(Collectors.joining(", "));
 		return update.substring(0, colon + 2) + (steps.isEmpty() ? "-" : steps);
 	}
 
-	/** Create never reacts: its hook sits in the method nothing calls, so the merged block asks only the carriers. */
+	/**
+	 * The hooks run on placement alone: Create reacts on placing lava, but on a neighbour update it never reacts, the veto
+	 * is not asked, lava and "denied" flow, and neither hook is entered from {@code neighborChanged}.
+	 */
 	private static boolean offHolds(WeaveHarness.Result run) throws Exception {
 		String trail = trail(run);
-		boolean lavaFlowsOnPlacement = Arrays.stream(trail.split(" \\| ")).anyMatch(update -> update.startsWith("place lava:") && update.contains("flow lava"));
-		return !trail.contains("create reacted") && lavaFlowsOnPlacement && !calls(woven(run), "onPlace", "shouldSpreadLiquid")
-				&& entersFrom(woven(run), "shouldSpreadLiquid", CREATE_MIXIN);
+		List<String> updates = Arrays.asList(trail.split(" \\| "));
+		boolean placeReacts = updates.stream().anyMatch(update -> update.startsWith("place lava:") && update.contains("create reacted lava"));
+		boolean neighbourFlows = updates.contains("neighbor lava: neoforge none lava, flow lava")
+				&& updates.contains("neighbor denied: neoforge none denied, flow denied");
+		ClassNode node = woven(run);
+		return placeReacts && neighbourFlows && !run.printed(String.format(WRAPPED, CREATE_MIXIN)) && !run.printed(String.format(WRAPPED, FABRIC_MIXIN))
+				&& !reaches(node, "neighborChanged", CREATE_MIXIN) && !reaches(node, "neighborChanged", FABRIC_MIXIN)
+				&& entersFrom(node, "shouldSpreadLiquid", CREATE_MIXIN);
 	}
 
 	private static String trail(WeaveHarness.Result run) {
@@ -156,6 +186,28 @@ class FluidPairMixinAdaptersWeaveTest {
 		for (var insn : body.instructions) {
 			if (!(insn instanceof MethodInsnNode call) || !call.owner.equals(TARGET)) continue;
 			if (node.methods.stream().anyMatch(m -> m.name.equals(call.name) && m.desc.equals(call.desc) && mixin.equals(mergedFrom(m)))) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Whether a handler merged from {@code mixin} is reached from {@code method} of the woven class through its own methods
+	 * and the method handles it passes (an inner wrap runs from the lambda the outer one is handed as its operation).
+	 */
+	private static boolean reaches(ClassNode node, String method, String mixin) {
+		java.util.Deque<MethodNode> todo = new java.util.ArrayDeque<>(node.methods.stream().filter(m -> m.name.equals(method)).toList());
+		java.util.Set<MethodNode> seen = new java.util.HashSet<>(todo);
+		while (!todo.isEmpty()) {
+			for (var insn : todo.pop().instructions) {
+				List<String[]> called = new ArrayList<>();
+				if (insn instanceof MethodInsnNode call && call.owner.equals(TARGET)) called.add(new String[] {call.name, call.desc});
+				if (insn instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode dynamic) for (Object argument : dynamic.bsmArgs)
+					if (argument instanceof org.objectweb.asm.Handle handle && handle.getOwner().equals(TARGET)) called.add(new String[] {handle.getName(), handle.getDesc()});
+				for (String[] member : called) for (MethodNode m : node.methods) if (m.name.equals(member[0]) && m.desc.equals(member[1]) && seen.add(m)) {
+					if (mixin.equals(mergedFrom(m))) return true;
+					todo.add(m);
+				}
+			}
 		}
 		return false;
 	}
