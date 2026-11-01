@@ -17,11 +17,9 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
 import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Enumeration;
 import java.util.LinkedHashSet;
@@ -43,99 +41,40 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The full inventory of static fields the merge left with no assignment, against the REAL staged base.
+ * The full inventory of {@code static final} object fields that no code of their own class assigns, over the REAL
+ * staged base and NeoForge carrier.
  *
- * <p>When both families patch a class, one family's static initialiser wins whole and the loser's assignments go
- * with it — while the fields the loser ADDED are kept as declarations. Such a field is null for the life of the
- * process and nothing says so: the class links, loads and works until something reads it.
- *
- * <p>This is a census rather than a single case, because the value of knowing the list is that it cannot grow
- * quietly. Eight fields are in this state today; one has an obvious correct value and is repaired, and the other
- * seven carry codecs and callbacks that cannot be invented by a transformer and need the merge itself to stop
- * dropping them.
+ * <p>Such a field is null for the life of the process and nothing says so: the class links, loads and works until
+ * something reads it. The merged Forge+NeoForge base had seven of them, because when both families patched a class
+ * one family's static initialiser won whole and the loser's assignments went with it while the fields it added
+ * stayed (among them {@code ResourceManagerRegistryLoadTask.LOGGER}, which the compat transformer's
+ * giveTheUnwrittenLoggerAValue filled in, and {@code Ingredient}'s four vanilla codecs). NeoForge's own patched game
+ * is one family's compile, so the census is empty, and that is what this test holds: a new entry is a field the base
+ * ships null, which no transformer can be trusted to invent a value for.
  */
 class MergedBaseUnwrittenStaticsTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedBase();
-
-	/**
-	 * What the merge leaves unassigned today, each with what reading it costs.
-	 *
-	 * <p>A NEW entry here means the merge dropped something else and nobody noticed; a MISSING one means it was
-	 * repaired or the base stopped splitting that class. Either way the list has to be re-read, not re-blessed.
-	 */
-	private static final Set<String> KNOWN = new LinkedHashSet<>(List.of(
-			// Repaired by ForbricMergedBaseCompatTransformer — see theLoggerIsRepaired below.
-			"net/minecraft/resources/ResourceManagerRegistryLoadTask.LOGGER",
-			// A datapack entry's condition being false lands in a branch that reads this; needs the merge fixed.
-			"net/minecraft/world/item/crafting/Ingredient.VANILLA_CODEC",
-			"net/minecraft/world/item/crafting/Ingredient.VANILLA_MAP_CODEC",
-			"net/minecraft/world/item/crafting/Ingredient.VANILLA_CONTENTS_STREAM_CODEC",
-			// Read by a mod calling Ingredient.serializer() directly.
-			"net/minecraft/world/item/crafting/Ingredient.VANILLA_SERIALIZER",
-			"net/minecraft/client/particle/ParticleEngine.factories",
-			"net/minecraft/server/network/ServerConfigurationPacketListenerImpl.VANILLA_START"));
+	private static final List<Path> JARS = List.of(TestFixtures.stagedBase(), TestFixtures.neoCarrier());
 
 	@Test
-	void theCensusHasNotChanged() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
-
-		Set<String> found = unwrittenObjectStatics();
-		assertTrue(writesStatic(parse(readClass("net/minecraft/world/item/ItemDisplayContext.class")), "ADD_CALLBACK"),
-				"the actual native static initializer now retains the callback; it must not be reclassified as missing");
-
-		assertEquals(KNOWN, found,
-				"the set of static fields the merge leaves unassigned changed. A new entry means something else "
-						+ "was dropped silently; a missing one means it was repaired. Re-read the list, do not "
-						+ "just update it.");
-	}
-
-	@Test
-	void theLoggerIsRepaired() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
-		String owner = "net/minecraft/resources/ResourceManagerRegistryLoadTask";
-		byte[] in = readClass(owner + ".class");
-		assertTrue(in != null, "content drift: that class is absent from this base");
-
-		ClassNode before = parse(in);
-		assertTrue(before.fields.stream().anyMatch(f -> "LOGGER".equals(f.name)),
-				"content drift: no LOGGER field here any more — nothing to repair");
-		assertTrue(!writesStatic(before, "LOGGER"), "the premise: nothing assigns it in the base");
-
-		ClassNode after = parse(new ForbricMergedBaseCompatTransformer().transform(
-				owner.replace('/', '.'), in, null));
-
-		assertTrue(writesStatic(after, "LOGGER"), "the repair must assign it");
-		assertEquals("<clinit>", firstAssigningMethod(after, "LOGGER"),
-				"it has to be assigned by the class initialiser, not lazily by whoever reads it first");
-		assertTrue(assignedAtTheTopOfClinit(after),
-				"and at the TOP of the initialiser: anything else it does may log, and a repair that lands last "
-						+ "leaves exactly the window this closes");
-	}
-
-	@Test
-	void aClassWithAWrittenLoggerIsLeftAlone() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
-		// Any class whose logger IS assigned must come back byte-identical, or the repair is rewriting the base
-		// wholesale instead of filling one gap.
-		byte[] in = readClass("net/minecraft/server/MinecraftServer.class");
-		assertTrue(in != null, "content drift: MinecraftServer absent from this base");
-		assertTrue(writesStatic(parse(in), "LOGGER"), "content drift: MinecraftServer's logger is not assigned here either");
-
-		assertTrue(new ForbricMergedBaseCompatTransformer()
-				.transform("net.minecraft.server.MinecraftServer", in, null) == in,
-				"a class with nothing to repair must be returned untouched");
-	}
-
-	private static Set<String> unwrittenObjectStatics() throws IOException {
+	void theBaseAndCarrierLeaveNoStaticFinalUnassigned() throws Exception {
+		TestFixtures.requireFiles(Fixture.STAGED, "staged base or NeoForge carrier absent", JARS.toArray(Path[]::new));
 		Set<String> found = new LinkedHashSet<>();
-		try (ZipFile jar = new ZipFile(MERGED_BASE.toFile())) {
+		for (Path jar : JARS) found.addAll(unwrittenObjectStatics(jar));
+		assertEquals(Set.of(), found,
+				"a static final object field nothing in its class assigns: null for the life of the process. Find out "
+						+ "why the base ships it unassigned before anything papers over it.");
+	}
+
+	private static Set<String> unwrittenObjectStatics(Path jarPath) throws IOException {
+		Set<String> found = new LinkedHashSet<>();
+		try (ZipFile jar = new ZipFile(jarPath.toFile())) {
 			for (Enumeration<? extends ZipEntry> e = jar.entries(); e.hasMoreElements();) {
 				ZipEntry entry = e.nextElement();
-				if (!entry.getName().endsWith(".class")) continue;
+				if (!entry.getName().endsWith(".class") || entry.getName().startsWith("META-INF/")) continue;
 
-				ClassNode node;
+				ClassNode node = new ClassNode();
 				try (InputStream in = jar.getInputStream(entry)) {
-					node = parse(in.readAllBytes());
+					new ClassReader(in.readAllBytes()).accept(node, 0);
 				}
 				for (FieldNode field : node.fields) {
 					if ((field.access & Opcodes.ACC_STATIC) == 0) continue;
@@ -153,50 +92,14 @@ class MergedBaseUnwrittenStaticsTest {
 	}
 
 	private static boolean writesStatic(ClassNode node, String name) {
-		return firstAssigningMethod(node, name) != null;
-	}
-
-	private static String firstAssigningMethod(ClassNode node, String name) {
 		for (MethodNode method : node.methods) {
 			for (AbstractInsnNode insn : method.instructions) {
 				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTSTATIC
 						&& node.name.equals(f.owner) && name.equals(f.name)) {
-					return method.name;
-				}
-			}
-		}
-		return null;
-	}
-
-	private static boolean assignedAtTheTopOfClinit(ClassNode node) {
-		for (MethodNode method : node.methods) {
-			if (!"<clinit>".equals(method.name)) continue;
-			int seen = 0;
-			for (AbstractInsnNode insn : method.instructions) {
-				if (insn.getOpcode() < 0) continue; // labels, line numbers, frames
-				seen++;
-				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTSTATIC
-						&& "LOGGER".equals(f.name)) {
-					return seen <= 3; // ldc, invokestatic, putstatic
+					return true;
 				}
 			}
 		}
 		return false;
-	}
-
-	private static ClassNode parse(byte[] bytes) {
-		ClassNode node = new ClassNode();
-		new ClassReader(bytes).accept(node, 0);
-		return node;
-	}
-
-	private static byte[] readClass(String entry) throws IOException {
-		try (ZipFile jar = new ZipFile(MERGED_BASE.toFile())) {
-			ZipEntry e = jar.getEntry(entry);
-			if (e == null) return null;
-			try (InputStream in = jar.getInputStream(e)) {
-				return in.readAllBytes();
-			}
-		}
 	}
 }

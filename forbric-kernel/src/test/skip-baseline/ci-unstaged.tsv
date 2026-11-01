@@ -1797,9 +1797,7 @@ test	net.forbric.kernel.transform.MergedBaseTooltipOrderScrapeTest	aSecondPassCh
 test	net.forbric.kernel.transform.MergedBaseTooltipOrderScrapeTest	switchedOffItStandsDownAndDeclaresNoAnchor()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseTooltipOrderScrapeTest	theInsertedHeadIsOnlyGetstaticPopPairsAndTheRestIsUntouched()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseTooltipOrderScrapeTest	theScrapeOfTheTransformedMergedItemStackEqualsVanillas()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseUnwrittenStaticsTest	aClassWithAWrittenLoggerIsLeftAlone()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseUnwrittenStaticsTest	theCensusHasNotChanged()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseUnwrittenStaticsTest	theLoggerIsRepaired()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.MergedBaseUnwrittenStaticsTest	theBaseAndCarrierLeaveNoStaticFinalUnassigned()	[fixture:staged] staged base or NeoForge carrier absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseVanillaWriteByteTest	everyMergedSiteBecomesTheCallVanillaMakes()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseVanillaWriteByteTest	theExtensionsOverloadOnlyForwardsToVanillas()	[fixture:staged] NeoForge runtime not staged: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.transform.MergedBaseWidenedFieldTwinsTest	aSecondPassChangesNothingFurther()	[fixture:staged] staged merged base absent
