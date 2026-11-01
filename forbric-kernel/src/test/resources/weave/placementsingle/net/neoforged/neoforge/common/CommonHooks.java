@@ -1,4 +1,4 @@
-package net.minecraftforge.common;
+package net.neoforged.neoforge.common;
 
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.player.Player;
@@ -8,9 +8,9 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.pattern.BlockInWorld;
 
-/** A stand-in for MinecraftForge's placement transaction: vanilla's checks, then the Item.useOn call, then the stat. */
-public final class ForgeHooks {
-	private ForgeHooks() {
+/** A stand-in for NeoForge's placement transaction: vanilla's checks, then the Item.useOn call, then the stat. */
+public final class CommonHooks {
+	private CommonHooks() {
 	}
 
 	public static InteractionResult onPlaceItemIntoWorld(UseOnContext context) {

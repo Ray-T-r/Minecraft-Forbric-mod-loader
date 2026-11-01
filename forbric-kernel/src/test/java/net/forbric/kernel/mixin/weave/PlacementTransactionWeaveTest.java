@@ -19,8 +19,8 @@ import net.forbric.kernel.mixin.MixinCarrierCallbackAdapters;
  * {@code MixinPlacementTransactionAdapter} (one rule of {@code MixinCarrierCallbackAdapters}) through the real weave, on a
  * mod that is not Create and is not written as Create's pair: an {@code @Inject} just before vanilla's {@code Item.useOn}
  * call in {@code ItemStack.useOn} that captures the player (not the item) and shares the clicked position, and one at the
- * item-interaction check after the call that reads the share and captures nothing. The merged {@code useOn} hands the
- * whole placement to MinecraftForge's {@code ForgeHooks.onPlaceItemIntoWorld}, so neither point is in it.
+ * item-interaction check after the call that reads the share and captures nothing. NeoForge's {@code useOn} hands the
+ * whole placement to {@code CommonHooks.onPlaceItemIntoWorld}, so neither point is in it.
  *
  * <p>Three uses: a builder, an adventure-mode player whose placement vanilla refuses before the call, and no player
  * (vanilla reaches the call but not the check after it). Adapted, each handler runs exactly where vanilla would have run
@@ -50,7 +50,7 @@ class PlacementTransactionWeaveTest {
 				SOURCES.resolve("net/minecraft/world/entity/player/Player.java"),
 				SOURCES.resolve("net/minecraft/world/item/Item.java"),
 				SOURCES.resolve("net/minecraft/world/item/context/UseOnContext.java"),
-				SOURCES.resolve("net/minecraftforge/common/ForgeHooks.java"),
+				SOURCES.resolve("net/neoforged/neoforge/common/CommonHooks.java"),
 				SOURCES.resolve("fixture/placementsingle/Log.java"),
 				SOURCES.resolve("fixture/placementsingle/Probe.java"));
 		List<Path> sources = new ArrayList<>(shared);
@@ -65,7 +65,7 @@ class PlacementTransactionWeaveTest {
 		fixture = NativeWeaveReferences.with(work, fixture, NativeWeaveReferences.classes(original));
 		adapted = WeaveHarness.run(work, "adapted", fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER, "fixture.placementsingle.Probe", "probe", Map.of());
 		off = WeaveHarness.run(work, "adapter-off", fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER, "fixture.placementsingle.Probe", "probe",
-				// NativeCallInlining also puts Item.useOn back, by inlining MinecraftForge's placement hook: the control
+				// NativeCallInlining also puts Item.useOn back, by inlining the stand-in's placement hook: the control
 				// switches it off too, so it shows what this adapter alone repairs.
 				Map.of(MixinCarrierCallbackAdapters.PROPERTY, "off", net.forbric.kernel.mixin.NativeCallInlining.PROPERTY, "off"));
 	}

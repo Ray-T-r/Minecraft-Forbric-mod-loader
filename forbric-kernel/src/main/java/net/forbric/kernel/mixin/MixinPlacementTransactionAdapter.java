@@ -14,10 +14,12 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.util.Caught;
 
 /**
- * Keeps a mod's callbacks around vanilla's {@code Item.useOn} call in {@code ItemStack.useOn} once the merged game makes
- * that call inside the platform's placement transaction instead ({@code ForgeHooks.onPlaceItemIntoWorld} on the server,
- * a lambda on the client): an {@code @Inject} at the call, or at a later point of vanilla's method, has nothing to bind
- * to in the merged {@code useOn}.
+ * Keeps a mod's callbacks around vanilla's {@code Item.useOn} call in {@code ItemStack.useOn} on NeoForge's base, whose
+ * {@code useOn} makes that call inside NeoForge's placement transaction instead ({@code CommonHooks.onPlaceItemIntoWorld}
+ * on the server, the lambda handed to {@code onItemUse} on the client, both through the relay {@code ItemUseOnInjector}
+ * adds): an {@code @Inject} at the call, or at a later point of vanilla's method, has nothing to bind to in NeoForge's
+ * {@code useOn}, and goes unattached. Create Fly's {@code ItemStackMixin} (its super-glue and symmetry-wand placement
+ * hooks) is one: an {@code @Inject} at the call and one at the {@code wasItemInteraction} check after it.
  *
  * <p>Each such handler is kept on its own, and runs exactly when vanilla would have run it — which is what moving it to
  * the head or the return of {@code useOn} alone could not promise, since the placement can be refused before the call:
@@ -32,9 +34,9 @@ import net.forbric.kernel.util.Caught;
  * not read its callback (which now holds the returned value), nor its receiver (which the transaction may have
  * replaced), nor cancel.</li>
  * </ul>
- * Shares of a handler move with it. The move is proved, not assumed: the merged {@code useOn} no longer makes the call
+ * Shares of a handler move with it. The move is proved, not assumed: the base's {@code useOn} no longer makes the call
  * but reaches it through what it calls; vanilla's instructions up to the call store nothing and make only calls the
- * merged {@code useOn} makes anyway on its way to the call, so replaying them is not seen; the instructions from the call
+ * base's {@code useOn} makes anyway on its way to the call, so replaying them is not seen; the instructions from the call
  * to a later point store and call nothing, and are the only way to it. A handler alone at its point, written as Mixin
  * reads it, with the class the mod was compiled against at hand.
  */
@@ -50,7 +52,7 @@ final class MixinPlacementTransactionAdapter {
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;", AT = "Lorg/spongepowered/asm/mixin/injection/At;";
 	/** {@code -Dforbric.placementCallWitness=off}: a replayed later handler is conditioned on vanilla reaching the call alone. */
 	static final String WITNESS_PROPERTY = "forbric.placementCallWitness";
-	/** How many calls deep the merged {@code useOn} is searched for the call it moved. */
+	/** How many calls deep the base's {@code useOn} is searched for the call it moved. */
 	private static final int DEPTH = 3;
 
 	private MixinPlacementTransactionAdapter() { }
@@ -74,7 +76,7 @@ final class MixinPlacementTransactionAdapter {
 			}
 		};
 		if (!MixinNativeReplay.reaches(target, live, CALL, classes, DEPTH, repeated)) return 0;
-		// Where the merged useOn now makes the call: a handler replayed at its return runs only when one of them was reached.
+		// Where the base's useOn now makes the call: a handler replayed at its return runs only when one of them was reached.
 		List<MethodNode> sites = "off".equalsIgnoreCase(System.getProperty(WITNESS_PROPERTY, "on")) ? List.of()
 				: MixinNativeReplay.sites(target, live, CALL, classes, DEPTH);
 		MethodInsnNode call = MixinPlayerWorldCallbackAdapter.first(vanilla, CALL);
@@ -152,7 +154,7 @@ final class MixinPlacementTransactionAdapter {
 
 		/**
 		 * The one instruction of vanilla's {@code useOn} past the call that the handler's {@code @At} selects, reached only
-		 * from the call through instructions that store and call nothing, and absent from the merged {@code useOn}; -1 otherwise.
+		 * from the call through instructions that store and call nothing, and absent from the base's {@code useOn}; -1 otherwise.
 		 */
 		int after(MethodNode handler, MethodNode live) {
 			List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(handler));
@@ -258,7 +260,7 @@ final class MixinPlacementTransactionAdapter {
 		Type[] parameters = Type.getArgumentTypes(exit.desc);
 
 		// At the head: replay vanilla to the call, and there record that it was reached and the locals it had.
-		// The carrier can still refuse after the head (a cancelled event, a placement it rolls back): where every place the merged
+		// The carrier can still refuse after the head (a cancelled event, a placement it rolls back): where every place the base's
 		// useOn makes the call is a method of the class itself, those places count each time they are reached
 		// (CallWitness), the head reads the count, and the return replays the handler only when it changed.
 		boolean witnessed = !sites.isEmpty();
@@ -344,7 +346,7 @@ final class MixinPlacementTransactionAdapter {
 	}
 
 	/**
-	 * An {@code @Inject} at the call in {@code site}, the method of the class itself where the merged {@code useOn} now makes
+	 * An {@code @Inject} at the call in {@code site}, the method of the class itself where the base's {@code useOn} now makes
 	 * it, that counts each time the call is reached ({@link net.forbric.kernel.interop.CallWitness}).
 	 */
 	private static MethodNode witness(ClassNode mixin, AnnotationNode injector, String name, MethodNode site, String key) {

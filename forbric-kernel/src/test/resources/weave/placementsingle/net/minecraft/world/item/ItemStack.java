@@ -3,11 +3,11 @@ package net.minecraft.world.item;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.state.pattern.BlockInWorld;
-import net.minecraftforge.common.ForgeHooks;
+import net.neoforged.neoforge.common.CommonHooks;
 
 /**
- * A stand-in for the merged base's ItemStack: on the server, useOn hands the whole placement to MinecraftForge's
- * ForgeHooks.onPlaceItemIntoWorld, which makes the Item.useOn call vanilla's useOn made itself.
+ * A stand-in for NeoForge's ItemStack: on the server, useOn hands the whole placement to NeoForge's
+ * CommonHooks.onPlaceItemIntoWorld, which makes the Item.useOn call vanilla's useOn made itself.
  */
 public final class ItemStack {
 	private final Item item;
@@ -25,7 +25,7 @@ public final class ItemStack {
 	}
 
 	public InteractionResult useOn(UseOnContext context) {
-		if (!context.getLevel().isClientSide()) return ForgeHooks.onPlaceItemIntoWorld(context);
+		if (!context.getLevel().isClientSide()) return CommonHooks.onPlaceItemIntoWorld(context);
 		return InteractionResult.PASS;
 	}
 }
