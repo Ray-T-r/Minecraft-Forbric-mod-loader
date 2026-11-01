@@ -267,6 +267,9 @@ public final class KernelRuntimeClasses {
 		// The vanilla-shaped Operation a Fabric shears wrap is handed at the carrier's canPerformAction; called from the
 		// outer handler MixinShearsRelay writes into the guest mixin.
 		CLASSES.put("net.forbric.kernel.runtime.KernelShears", new Entry(Origin.COMPILED, List.of()));
+		// Vanilla's is() and NeoForge's shearing entry for a Fabric shears wrap of a sheep's or snow golem's mobInteract;
+		// called from the HEAD inject MixinShearsRelay writes into the guest mixin.
+		CLASSES.put("net.forbric.kernel.runtime.KernelMobShears", new Entry(Origin.COMPILED, List.of()));
 		// Whether vanilla's shouldSpreadLiquid reaches its lava-meets-water reaction for a cell; asked by the neighbour-change
 		// wrap MixinFluidReactionAdapter writes into a guest mixin of LiquidBlock.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidReactions", new Entry(Origin.COMPILED, List.of()));

@@ -20,8 +20,9 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /**
  * BCLib's three block wraps of vanilla's is(Items.SHEARS) also answer the carrier's canPerformAction(SHEARS_*) NeoForge
- * put in its place, with the carrier's answer as their original; the rows are pinned to both bodies. Its three mob wraps
- * are not relayed (see {@link #theMobWrapsAreLeftAsCompiled}).
+ * put in its place, with the carrier's answer as their original; the rows are pinned to both bodies. Its sheep and snow
+ * golem wraps answer NeoForge's shearing entry ({@link #theSheepAndSnowGolemWrapsAnswerNeoForgesShearingEntry}); its
+ * mooshroom wrap binds as compiled.
  */
 @ResourceLock("system-properties")
 class MixinShearsRelayTest {
@@ -31,6 +32,7 @@ class MixinShearsRelayTest {
 
 	@AfterEach void reset() {
 		System.clearProperty(MixinShearsRelay.PROPERTY);
+		System.clearProperty(MixinShearsRelay.MOB_PROPERTY);
 		MixinStubRebind.forget();
 	}
 
@@ -123,27 +125,68 @@ class MixinShearsRelayTest {
 		assertEquals(0, MixinShearsRelay.adapt(fabric("PumpkinBlockMixin"), n -> target));
 	}
 
+	/** NeoForge's base as the mob relay reads it: the mob's class, and ShearsItem for its shearing entry. */
+	private static java.util.function.Function<String, ClassNode> withShears(ClassNode target) throws Exception {
+		ClassNode shears = StagedFabricMixinFixture.game(MixinShearsRelay.SHEARS_ITEM, false);
+		return n -> n.equals(MixinShearsRelay.SHEARS_ITEM) ? shears : target;
+	}
+
 	/**
-	 * BCLib's Sheep, SnowGolem and MushroomCow wraps come back untouched. NeoForge 26.2.0.93 keeps vanilla's is(SHEARS) in
-	 * MushroomCow.mobInteract, where the wrap binds as compiled, and has no shears check in Sheep's or SnowGolem's (it
-	 * shears them through ShearsItem.interactLivingEntity), so those two wraps bind nowhere: an item BCLib calls shears
-	 * that is not a ShearsItem shears neither mob, which native Fabric would. The rows that relayed them went with
-	 * MinecraftForge's ToolActions; a relay onto NeoForge's ShearsItem path would be new Fabric-on-NeoForge adaptation.
+	 * BCLib's Sheep and SnowGolem wraps. NeoForge 26.2.0.93 has no shears check in either mobInteract (it shears them
+	 * through ShearsItem.interactLivingEntity), so as compiled they bind nowhere and an item BCLib calls shears that is
+	 * not a ShearsItem shears neither mob, which native Fabric does. Each moves aside behind a HEAD inject of mobInteract
+	 * that asks it vanilla's question about the held stack and, for a yes, runs NeoForge's shearing entry.
 	 */
-	@Test void theMobWrapsAreLeftAsCompiled() throws Exception {
-		for (String[] mob : List.of(new String[]{"SheepMixin", "net/minecraft/world/entity/animal/sheep/Sheep"},
-				new String[]{"SnowGolemMixin", "net/minecraft/world/entity/animal/golem/SnowGolem"},
-				new String[]{"MushroomCowMixin", "net/minecraft/world/entity/animal/cow/MushroomCow"})) {
-			ClassNode target = StagedFabricMixinFixture.game(mob[1], false);
-			assertTrue(MixinShearsRelay.ROWS.stream().noneMatch(row -> row.target().equals(mob[1])), mob[1] + " has no row");
-			ClassNode mixin = fabric(mob[0]);
-			int methods = mixin.methods.size();
-			Object point = MixinFit.value(StagedFabricMixinFixture.at(mixin, HANDLER), "target");
-			assertEquals(0, MixinShearsRelay.adapt(mixin, n -> target), mob[0]);
-			assertEquals(methods, mixin.methods.size(), mob[0] + ": nothing added or moved aside");
-			assertEquals(point, MixinFit.value(StagedFabricMixinFixture.at(mixin, HANDLER), "target"), mob[0] + ": its point is as compiled");
-			assertNotNull(MixinFit.injectorOf(only(mixin, HANDLER)), mob[0] + ": its injector stays");
+	@Test void theSheepAndSnowGolemWrapsAnswerNeoForgesShearingEntry() throws Exception {
+		assertTrue(MixinShearsRelay.shearsEntry(StagedFabricMixinFixture.game(MixinShearsRelay.SHEARS_ITEM, false)),
+				"premise: NeoForge's ShearsItem.interactLivingEntity asks IShearable");
+		assertFalse(MixinShearsRelay.shearsEntry(StagedFabricMixinFixture.game(MixinShearsRelay.SHEARS_ITEM, true)), "vanilla's ShearsItem has no such entry");
+		for (MixinShearsRelay.MobRow row : MixinShearsRelay.MOB_ROWS) {
+			ClassNode target = StagedFabricMixinFixture.game(row.target(), false);
+			MethodNode body = target.methods.stream().filter(m -> MixinShearsRelay.MOB_INTERACT.equals(m.name + m.desc)).findFirst().orElseThrow();
+			assertEquals(0, shearsChecks(body), row + ": premise, NeoForge's mobInteract asks no shears question");
+			assertEquals(1, shearsChecks(StagedFabricMixinFixture.game(row.target(), true).methods.stream()
+					.filter(m -> MixinShearsRelay.MOB_INTERACT.equals(m.name + m.desc)).findFirst().orElseThrow()), row + ": vanilla's does");
+			String name = row.target().substring(row.target().lastIndexOf('/') + 1) + "Mixin";
+			ClassNode mixin = fabric(name);
+			assertEquals(1, MixinShearsRelay.adapt(mixin, withShears(target)), name);
+			String innerName = MixinHandlerShim.asideName(mixin.name, HANDLER, MixinHandlerShim.INNER_SUFFIX);
+			MethodNode outer = only(mixin, HANDLER), inner = only(mixin, innerName);
+			assertNull(MixinFit.injectorOf(inner), name + ": the released body runs only from the inject");
+			assertEquals(MixinShearsRelay.HANDLER_DESC, inner.desc);
+			AnnotationNode inject = MixinFit.injectorOf(outer);
+			assertEquals("Lorg/spongepowered/asm/mixin/injection/Inject;", inject.desc);
+			assertEquals(List.of(MixinShearsRelay.MOB_INTERACT), MixinFit.value(inject, "method"));
+			assertEquals("HEAD", MixinFit.value(MixinFit.atNodes(inject).getFirst(), "value"));
+			assertEquals(true, MixinFit.value(inject, "cancellable"));
+			assertEquals(List.of("getItemInHand", "vanillaIs", innerName, "shearAsShears", "setReturnValue"), calls(outer),
+					name + ": the held stack, the wrap's own answer with vanilla's is as its original, then NeoForge's entry");
+			new Analyzer<>(new BasicVerifier()).analyze(mixin.name, outer);
+			assertEquals(0, MixinShearsRelay.adapt(mixin, withShears(target)), name + ": second adaptation is a no-op");
+
+			ClassNode off = fabric(name);
+			byte[] before = StagedFabricMixinFixture.bytes(off);
+			System.setProperty(MixinShearsRelay.MOB_PROPERTY, "off");
+			try {
+				assertEquals(0, MixinShearsRelay.adapt(off, withShears(target)), name + ": its own switch");
+			} finally {
+				System.clearProperty(MixinShearsRelay.MOB_PROPERTY);
+			}
+			assertArrayEquals(before, StagedFabricMixinFixture.bytes(off));
+			ClassNode noEntry = fabric(name);
+			assertEquals(0, MixinShearsRelay.adapt(noEntry, n -> target), name + ": without NeoForge's shearing entry nothing moves");
 		}
+	}
+
+	/** The mooshroom keeps vanilla's is(SHEARS) on NeoForge's base: its wrap binds as compiled and is left alone. */
+	@Test void theMooshroomWrapIsLeftAsCompiled() throws Exception {
+		ClassNode target = StagedFabricMixinFixture.game("net/minecraft/world/entity/animal/cow/MushroomCow", false);
+		assertTrue(MixinShearsRelay.ROWS.stream().noneMatch(row -> row.target().equals(target.name)));
+		assertTrue(MixinShearsRelay.MOB_ROWS.stream().noneMatch(row -> row.target().equals(target.name)));
+		ClassNode mixin = fabric("MushroomCowMixin");
+		byte[] before = StagedFabricMixinFixture.bytes(mixin);
+		assertEquals(0, MixinShearsRelay.adapt(mixin, withShears(target)));
+		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin));
 	}
 
 	private static List<String> calls(MethodNode method) {

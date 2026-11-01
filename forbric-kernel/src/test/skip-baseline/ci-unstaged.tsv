@@ -1221,7 +1221,8 @@ test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCalls
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapWhoseCallIsGoneMovesToTheCarrierCall()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	everyRowIsAVanillaShearsCheckTheMergeReplaced()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	onlyAFabricModsReviewedShapeIsRelayed()	[fixture:staged] actual game required
-test	net.forbric.kernel.mixin.MixinShearsRelayTest	theMobWrapsAreLeftAsCompiled()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinShearsRelayTest	theMooshroomWrapIsLeftAsCompiled()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinShearsRelayTest	theSheepAndSnowGolemWrapsAnswerNeoForgesShearingEntry()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	aCaptureNothingProvesIsNotGuessed()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	aLevelCaptureIsProvedByWhatThePlacementCallHandsTheMethod()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinStructurePlacementGeneralTest	aLoneIteratorWrapWithoutCapturesMovesWhateverItsSelectorSpelling()	[fixture:staged] current callback target declarations: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
