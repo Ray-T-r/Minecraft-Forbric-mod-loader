@@ -23,7 +23,6 @@ import java.util.Map;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Handle;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
@@ -35,7 +34,6 @@ import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.LabelNode;
-import org.objectweb.asm.tree.InvokeDynamicInsnNode;
 import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodInsnNode;
@@ -92,7 +90,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("repairLambdaBootstrapHandles", "addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "giveTheUnwrittenLoggerAValue", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps", "returnFromANestedBootstrapBeforeItsTail");
 
 	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
 
@@ -104,7 +102,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	@Override
 	public List<Claim> claims() {
 		List<Claim> out = new ArrayList<>();
-		out.add(scanned("repairLambdaBootstrapHandles", "any class whose invokedynamic still names the old loader's hook owners"));
 		out.add(fixed("addBlockStateModelConflictResolvers", "net/minecraft/client/renderer/block/dispatch/BlockStateModel",
 				"every block model's geometry key and conflict resolver are gone — the merged BlockStateModel lacks the methods both families call"));
 		out.add(scanned("addBlockStateAppearanceResolver",
@@ -229,7 +226,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
 			boolean changed = false;
-			changed |= claim(reporter, "repairLambdaBootstrapHandles", repairLambdaBootstrapHandles(node));
 			changed |= claim(reporter, "addBlockStateModelConflictResolvers", addBlockStateModelConflictResolvers(node));
 			changed |= claim(reporter, "addBlockStateAppearanceResolver", addBlockStateAppearanceResolver(node));
 			changed |= claim(reporter, "routeKeyMappingClickToPopulatedLookup", routeKeyMappingClickToPopulatedLookup(node));
@@ -381,28 +377,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final Map<String, String> LEGACY_INTEROP_OWNERS = Map.of(
 			"net/forbric/loader/impl/compat/ForbricCustomPayloadInterop", "net/forbric/kernel/interop/PayloadInterop",
 			"net/forbric/loader/impl/forge/runtime/ForbricClientShutdown", "net/forbric/kernel/interop/ClientShutdown");
-
-	private static boolean repairLambdaBootstrapHandles(ClassNode node) {
-		Map<String, MethodNode> methods = new HashMap<>();
-		for (MethodNode method : node.methods) {
-			methods.put(method.name + method.desc, method);
-		}
-
-		boolean changed = false;
-		for (MethodNode caller : node.methods) {
-			for (AbstractInsnNode insn = caller.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (!(insn instanceof InvokeDynamicInsnNode indy) || indy.bsmArgs == null) continue;
-				for (int i = 0; i < indy.bsmArgs.length; i++) {
-					if (!(indy.bsmArgs[i] instanceof Handle handle)) continue;
-					Handle repaired = repairLambdaHandle(node, methods, caller, indy, handle);
-					if (repaired == handle) continue;
-					indy.bsmArgs[i] = repaired;
-					changed = true;
-				}
-			}
-		}
-		return changed;
-	}
 
 	/**
 	 * Gives merged {@code BlockState} its own {@code getAppearance}, because it inherits TWO.
@@ -2071,90 +2045,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return false;
 	}
 
-	private static Handle repairLambdaHandle(ClassNode owner, Map<String, MethodNode> methods, MethodNode caller,
-			InvokeDynamicInsnNode indy, Handle handle) {
-		if (!owner.name.equals(handle.getOwner()) || !handle.getName().startsWith("lambda$")) return handle;
-
-		MethodNode target = methods.get(handle.getName() + handle.getDesc());
-		if (target == null) return handle;
-
-		boolean methodStatic = (target.access & Opcodes.ACC_STATIC) != 0;
-		boolean handleStatic = handle.getTag() == Opcodes.H_INVOKESTATIC;
-		if (methodStatic == handleStatic) return handle;
-
-		if (!methodStatic && handleStatic) {
-			if (!capturesOwner(owner, indy.desc)) {
-				if ((caller.access & Opcodes.ACC_STATIC) != 0 || !prependThisCapture(owner, caller, indy)) {
-					return handle;
-				}
-			}
-			ForbricLog.warn("[Forbric/MergedBaseCompat] repaired lambda bootstrap handle %s.%s%s "
-					+ "from static to instance; invokedynamic is now %s",
-					owner.name.replace('/', '.'), handle.getName(), handle.getDesc(), indy.desc);
-			return new Handle(Opcodes.H_INVOKEVIRTUAL, handle.getOwner(), handle.getName(), handle.getDesc(), false);
-		}
-
-		ForbricLog.warn("[Forbric/MergedBaseCompat] repaired lambda bootstrap handle %s.%s%s from tag %d to %d",
-				owner.name.replace('/', '.'), handle.getName(), handle.getDesc(), handle.getTag(), Opcodes.H_INVOKESTATIC);
-		return new Handle(Opcodes.H_INVOKESTATIC, handle.getOwner(), handle.getName(), handle.getDesc(), false);
-	}
-
-	private static boolean capturesOwner(ClassNode owner, String invokedynamicDesc) {
-		Type[] args = Type.getArgumentTypes(invokedynamicDesc);
-		return args.length > 0 && args[0].getSort() == Type.OBJECT && owner.name.equals(args[0].getInternalName());
-	}
-
-	private static boolean prependThisCapture(ClassNode owner, MethodNode caller, InvokeDynamicInsnNode indy) {
-		AbstractInsnNode insertionPoint = capturedArgsStart(indy);
-		if (insertionPoint == null) return false;
-		caller.instructions.insertBefore(insertionPoint, new VarInsnNode(Opcodes.ALOAD, 0));
-		indy.desc = prependArgument(Type.getObjectType(owner.name), indy.desc);
-		caller.maxStack = Math.max(caller.maxStack, caller.maxStack + 1);
-		return true;
-	}
-
-	private static AbstractInsnNode capturedArgsStart(InvokeDynamicInsnNode indy) {
-		Type[] args = Type.getArgumentTypes(indy.desc);
-		if (args.length == 0) return indy;
-
-		AbstractInsnNode cursor = indy.getPrevious();
-		AbstractInsnNode first = null;
-		for (int i = args.length - 1; i >= 0; i--) {
-			cursor = previousReal(cursor);
-			if (!isLocalLoadFor(args[i], cursor)) return null;
-			first = cursor;
-			cursor = cursor.getPrevious();
-		}
-		return first;
-	}
-
 	private static AbstractInsnNode previousReal(AbstractInsnNode cursor) {
 		while (cursor != null && cursor.getOpcode() < 0) {
 			cursor = cursor.getPrevious();
 		}
 		return cursor;
-	}
-
-	private static boolean isLocalLoadFor(Type type, AbstractInsnNode insn) {
-		return insn instanceof VarInsnNode var && var.getOpcode() == loadOpcode(type);
-	}
-
-	private static int loadOpcode(Type type) {
-		return switch (type.getSort()) {
-			case Type.LONG -> Opcodes.LLOAD;
-			case Type.FLOAT -> Opcodes.FLOAD;
-			case Type.DOUBLE -> Opcodes.DLOAD;
-			case Type.ARRAY, Type.OBJECT -> Opcodes.ALOAD;
-			default -> Opcodes.ILOAD;
-		};
-	}
-
-	private static String prependArgument(Type argument, String methodDesc) {
-		Type[] oldArgs = Type.getArgumentTypes(methodDesc);
-		Type[] newArgs = new Type[oldArgs.length + 1];
-		newArgs[0] = argument;
-		System.arraycopy(oldArgs, 0, newArgs, 1, oldArgs.length);
-		return Type.getMethodDescriptor(Type.getReturnType(methodDesc), newArgs);
 	}
 
 	private static final String GUI_RENDERER = "net/minecraft/client/gui/render/GuiRenderer";

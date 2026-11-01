@@ -501,15 +501,6 @@ public final class KernelBoot {
 		LifecycleHookInjector lifecycleHook = side.injector();
 		chain.register(TransformPhase.COREMOD, lifecycleHook);
 
-		// Repairs class-local invariants the 3-ABI byte-merge breaks. It was written but never wired — without it the
-		// merged base keeps divergent-pipeline lambda twins whose invokedynamic bootstrap handle disagrees with the
-		// surviving lambda's static-ness (e.g. PrepareSpawnTask$Ready: a REF_invokeStatic handle on lambda$spawn$1
-		// that merged in as an INSTANCE method, its static twin renamed lambda$spawn$2) → IncompatibleClassChangeError
-		// when the player spawns.
-		// With a class resolver: one of its repairs has to read the superclass chain to tell a stub that bypasses
-		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
-		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
-		// is still being built can see it.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricModelContextTransformer(path -> {
 			try (var in = loader.getGameResourceAsStream(path)) { return in == null ? null : in.readAllBytes(); }
 			catch (java.io.IOException unavailable) {
@@ -549,6 +540,10 @@ public final class KernelBoot {
 				}
 			}));
 		}
+		// With a class resolver: one of its repairs has to read the superclass chain to tell a stub that bypasses
+		// a real implementation from one that bypasses nothing. Reads a RESOURCE rather than loading a class, for
+		// the same reason MergedBaseFrameRecomputer does — loading one here would define it before the chain that
+		// is still being built can see it.
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
 			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
 				return in == null ? null : in.readAllBytes();
