@@ -98,7 +98,7 @@ public final class CarrierLanguages {
 	/**
 	 * Calls one carrier's loader and reports what landed in its table.
 	 *
-	 * <p>The context class loader is pointed at {@code cl} for the call: both loaders read their assets through
+	 * <p>The context class loader is pointed at {@code cl} for the call: the carrier's loader reads its assets through
 	 * {@code Thread.currentThread().getContextClassLoader()}, and the thread that reaches the kernel's mod-loading
 	 * window is not guaranteed to be carrying the loader that can see the carrier jars.
 	 *

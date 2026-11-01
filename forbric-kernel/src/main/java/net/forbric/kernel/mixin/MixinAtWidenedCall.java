@@ -40,8 +40,8 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Re-points an {@code @At} whose call the surviving carrier gave extra parameters.
  *
- * <p>A carrier routinely extends a vanilla method rather than replacing it, and the merge keeps whichever half
- * won. {@code CustomPacketPayload.codec} is vanilla's {@code (FallbackProvider, List)}; NeoForge's takes
+ * <p>A carrier routinely extends a vanilla method rather than replacing it, and its base may keep vanilla's
+ * beside it or drop it. {@code CustomPacketPayload.codec} is vanilla's {@code (FallbackProvider, List)}; NeoForge's takes
  * {@code (FallbackProvider, List, ConnectionProtocol, PacketFlow)}, and that is the one every call site in this
  * base uses — vanilla's is still DECLARED, so nothing looks wrong, and nothing calls it. A mixin compiled against
  * vanilla names the short descriptor, its injection point matches nothing, and Mixin reports only that an anchor
@@ -90,7 +90,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>A redirect of a widened static call</h2>
  *
- * <p>A {@code @Redirect} mirrors the call and REPLACES it, which is why the rule above leaves it alone: on the merged
+ * <p>A {@code @Redirect} mirrors the call and REPLACES it, which is why the rule above leaves it alone: on the game
  * base the call it would replace is the carrier's extended one, and what the carrier does with its appended arguments
  * is then gone at that call. For an instance call that also skips every override of the carrier's method
  * (fabric-renderer-api's {@code hasMaterialFlag} redirects would have overridden every NeoForge model's context-aware
@@ -291,9 +291,9 @@ public final class MixinAtWidenedCall {
 	/**
 	 * The one call inside {@code body} that is {@code target} with the carrier's extra parameters, or {@code null}.
 	 *
-	 * <p>Judged on the CALL SITES, not on what the owner declares, and that distinction is the rule. The merged
-	 * base still declares vanilla's two-argument {@code CustomPacketPayload.codec} beside NeoForge's four-argument
-	 * one, and nothing calls the short one — a declaration-based check would answer "it is right there" about a
+	 * <p>Judged on the CALL SITES, not on what the owner declares, and that distinction is the rule. The game
+	 * base, with VanillaMemberTwinInjector's twin, declares vanilla's two-argument {@code CustomPacketPayload.codec}
+	 * beside NeoForge's four-argument one, and nothing calls the short one — a declaration-based check would answer "it is right there" about a
 	 * method no instruction in this base reaches.
 	 */
 	public static String widenedIn(MethodNode body, String target) {

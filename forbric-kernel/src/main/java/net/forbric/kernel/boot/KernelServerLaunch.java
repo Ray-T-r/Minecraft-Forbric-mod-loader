@@ -18,7 +18,7 @@ package net.forbric.kernel.boot;
 
 /**
  * The dedicated-server boot entry (BOOT side). Thin wrapper over {@link KernelBoot}; the whole flow — sovereign
- * {@link net.forbric.kernel.classloading.ForbricClassLoader}, transform pipeline, tri-ecosystem discovery, Mixin,
+ * {@link net.forbric.kernel.classloading.ForbricClassLoader}, transform pipeline, Fabric and NeoForge discovery, Mixin,
  * native registration window — is shared with the client so the two sides cannot drift.
  *
  * <p>Owned (transform-loaded) jars are passed with {@code --gameJar} / {@code --runtimeJar}; MC libraries with

@@ -48,7 +48,7 @@ import java.util.Locale;
  *
  * <h2>Publishing</h2>
  *
- * <p>Once, during boot, by whoever has all three ecosystems' mods in hand — which is exactly one place. Readers
+ * <p>Once, during boot, by whoever has both ecosystems' mods in hand — which is exactly one place. Readers
  * are game-side (the Mods screen), so this lives in {@code net.forbric.api}, which is parent-loaded: the screen
  * and the boot code that filled it see the same class and the same list.
  */

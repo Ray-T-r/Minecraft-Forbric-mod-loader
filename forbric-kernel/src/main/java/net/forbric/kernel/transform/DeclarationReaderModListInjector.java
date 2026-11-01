@@ -58,7 +58,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>A class that enumerates {@code ModList} without reading properties — a mod list screen, a crash report section,
  * the handshake, a version checker — keeps the native answer: it is asking what the family LOADED, and a Fabric mod
- * is not that. Measured on the merged base and both carriers: none of their {@code ModList} readers reads properties,
+ * is not that. Measured on the old merged base and both its carriers: none of their {@code ModList} readers reads properties,
  * so no platform class is touched. A reader whose walk and whose property read sit in two different classes is not
  * reached either; on the packs measured, every reader has both in one class.
  */

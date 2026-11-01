@@ -83,9 +83,9 @@ import net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes;
  * of a jar the same file, which owns one {@link KernelModFileInfo} listing all of them in {@code [[mods]]} order and
  * is named after the first. Only NeoForge's: a universal jar whose Fabric half the kernel also describes as a mod
  * ({@code KernelDeclarationReaders}) keeps that Fabric mod on a file of its own — natively no NeoForge file lists a
- * Fabric mod, and the walk up from a NeoForge mod must not land on one. The switch is OFF in Stage 2 of the
- * MinecraftForge removal, which must not change behaviour on the merged base, and what a mod walking the index meets
- * changes with it; the genuine-base stage turns it on (stage2-measurements.md, Stage 4 obligations).
+ * Fabric mod, and the walk up from a NeoForge mod must not land on one. The switch is OFF by default: Stage 2 of the
+ * MinecraftForge removal kept the merged base's behaviour, and what a mod walking the index meets changes with it;
+ * turning it on on NeoForge's base is listed as a Stage 4 obligation (stage2-measurements.md) and has not been done.
  */
 public final class KernelModFile implements IModFile {
 	/**
@@ -102,7 +102,7 @@ public final class KernelModFile implements IModFile {
 
 	/**
 	 * Whether a NeoForge declaration with a jar gets that jar's one shared file. Off by default: a file per mod is what
-	 * the merged base has always had, and Stage 2 keeps it. {@code -Dforbric.modFilePerJar=on} is the native shape,
+	 * Forbric has always given (the old merged base too), and Stage 2 kept it. {@code -Dforbric.modFilePerJar=on} is the native shape,
 	 * which gate-m21 measures in a boot of its own.
 	 */
 	static boolean perJar() {

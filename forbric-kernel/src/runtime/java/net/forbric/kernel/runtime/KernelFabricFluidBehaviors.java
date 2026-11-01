@@ -34,7 +34,7 @@ import net.minecraft.world.level.material.FluidState;
  * NeoForge's {@code FluidType} instead ({@code canSwimInFluidType} in updateSwimming, {@code canDrownInFluidType} in
  * {@code CommonHooks.onLivingBreathe}, {@code supportsBoating} in the boat's {@code canBoatInFluid}), where
  * ForeignFluidTypeInjector gave such a fluid NeoForge's empty type — so none of it happened. Worse, fabric-api's own
- * per-tick hook ({@code EntityMixin.handleCustomFluidInteractionUpdates}) and its air-bubble HUD ask the merged
+ * per-tick hook ({@code EntityMixin.handleCustomFluidInteractionUpdates}) and its air-bubble HUD ask the current
  * {@code EntityFluidInteraction} about each registered tag, which answers only water and lava and throws for any
  * other: the first entity to tick after a Fabric mod registered a behaviour took the server down
  * (FabricFluidBehaviorInjector).

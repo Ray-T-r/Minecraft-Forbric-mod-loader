@@ -49,8 +49,9 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>A "universal" mod jar ships a manifest per loader — {@code fabric.mod.json}, {@code META-INF/mods.toml} AND
  * {@code META-INF/neoforge.mods.toml} — plus one glue class per family (a {@code net.minecraftforge} {@code @Mod},
  * a {@code net.neoforged} {@code @Mod}, a Fabric entrypoint). On a normal instance exactly one loader is running,
- * so exactly one of those is claimed. On Forbric ALL THREE are running, so without arbitration the same mod is
- * initialised three times: its content registers three times, its listeners fire three times. Some jars instead
+ * so exactly one of those is claimed. On Forbric two are running (Fabric and NeoForge; a MinecraftForge half is set
+ * aside), so without arbitration the same mod is initialised twice: its content registers twice, its listeners fire
+ * twice. Some jars instead
  * carry leftover manifests without those implementations; preference must not discard their only initializer.
  * Observed on real
  * mods — FallingTree and collective were each claimed by Fabric + MinecraftForge + NeoForge simultaneously.

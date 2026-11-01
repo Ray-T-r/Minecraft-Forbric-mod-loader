@@ -37,11 +37,11 @@ import net.forbric.kernel.util.Caught;
  * Gives a base method's local back the variable-table range that covers its own uses.
  *
  * <p>A compiler starts a local's range right after the store that declares it, so every read of the local is inside its
- * range. The merged base splices a carrier's statements into vanilla's body, and where it puts them between a local's
+ * range. NeoForge's base splices its statements into vanilla's body, and where it puts them between a local's
  * declaring store and the label its range starts at, the carrier's code reads and writes the local outside its range:
  * {@code ServerLevel.explode} stores {@code explosion}, then MinecraftForge's {@code if (onExplosionStart(this, explosion))
  * return;} and only then the label {@code explosion}'s range starts at; {@code BowItem.releaseUsing} stores
- * {@code timeHeld}, then both carriers' arrow-loose hooks store it again and test it, and only then its range begins.
+ * {@code timeHeld}, then the carrier's arrow-loose hook stores it again and test it, and only then its range begins.
  * Mixin and MixinExtras read locals off that table: a {@code @Local(name = "explosion")} of a {@code RETURN} handler is not
  * there at MinecraftForge's early return, and a {@code @ModifyVariable} at {@code timeHeld}'s store cannot bind the store
  * vanilla's own code makes — where, natively, the local is in scope.
@@ -75,7 +75,7 @@ public final class LocalRanges implements ClassTransformer {
 		});
 	}
 
-	/** {@code mergedGameClass}: whether an internal name is a class of the merged base (one with a native body). */
+	/** {@code mergedGameClass}: whether an internal name is a class of the game base (one with a native body). */
 	LocalRanges(Predicate<String> mergedGameClass) {
 		this.mergedGameClass = mergedGameClass;
 	}

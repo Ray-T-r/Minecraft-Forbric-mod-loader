@@ -36,9 +36,9 @@ import net.forbric.kernel.util.ForbricLog;
  * never fired.
  *
  * <p>The handler is renamed aside and a new one takes the current call's shape: it carries the annotation with the
- * {@code @At} moved to the merged call, and hands the original exactly the arguments it was written for, with an
+ * {@code @At} moved to the current call, and hands the original exactly the arguments it was written for, with an
  * {@code Operation} of the old shape ({@code KernelWrapOperations.reordered}): what it passes goes to the current call in
- * the merged order, the extra arguments as the merged call had them. Arguments it changes are changed; the call it skips
+ * the current order, the extra arguments as the current call had them. Arguments it changes are changed; the call it skips
  * is skipped; the carrier's own call, with whatever its extra arguments feed, still runs whenever the handler calls it.
  *
  * <p>Not {@code @Redirect}. A redirect REPLACES the call, and on the base that call is the carrier's extended

@@ -263,7 +263,7 @@ public final class MixinRetarget {
 		MethodNode delegate = delegateOf(owner, stub);
 		if (delegate == null) return null;
 
-		// At least one @At member is absent from the stub and present in the delegate — the merge moved it.
+		// At least one @At member is absent from the stub and present in the delegate — the base moved it.
 		boolean moved = false;
 		for (AnnotationNode at : MixinFit.atNodes(injector)) {
 			String atValue = MixinFit.asString(MixinFit.value(at, "value"));
@@ -964,8 +964,8 @@ public final class MixinRetarget {
 	 *
 	 * <p>NeoForge's {@code StructureTemplate.placeInWorld} calls {@code addEntitiesToWorld(level, pos, settings, reporter)}
 	 * where vanilla's called {@code placeEntities(level, pos, mirror, rotation, pivot, boundingBox, finalize, reporter)},
-	 * each read off the settings; vanilla's method is gone from the merged base, MinecraftForge's reshaped one beside it
-	 * runs nowhere. MoogsStructureLib's Fabric {@code EntityProcessorMixin} records the placement's context BEFORE the
+	 * each read off the settings; vanilla's method is gone from NeoForge's base (on the old merged base, MinecraftForge's reshaped one
+	 * beside it ran nowhere). MoogsStructureLib's Fabric {@code EntityProcessorMixin} records the placement's context BEFORE the
 	 * vanilla call, clears it AFTER, and at the HEAD of {@code placeEntities} runs its own entity processors and cancels.
 	 * Both points missed, and its name-only HEAD selector bound MinecraftForge's overload, whose descriptor its handler
 	 * does not have: an {@code InvalidInjectionException} the kernel reports as a failed feature, and the server stopped
@@ -1541,7 +1541,7 @@ public final class MixinRetarget {
 	/**
 	 * The plan KernelGuestMixinAdapter takes for a mixin judged {@code fit}, or null: one is asked for whenever the
 	 * verdict is PARTIAL or UNFIT, and taken when the rewritten mixin, judged by {@code evaluate}, misses fewer anchors --
-	 * or fewer outright, an anchor now binding where nothing runs -- and is no longer one the adapter drops. UNFIT too: a mixin whose only injector is a selector the merge took over
+	 * or fewer outright, an anchor now binding where nothing runs -- and is no longer one the adapter drops. UNFIT too: a mixin whose only injector is a selector the base took over
 	 * (MoogsStructureLib's HEAD of placeEntities alone) would otherwise be removed before the plan that moves it was
 	 * asked. MixinFitLivenessCensusStagedTest judges with this same decision.
 	 *

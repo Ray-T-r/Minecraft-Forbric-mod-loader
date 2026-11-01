@@ -22,7 +22,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code CustomUnbakedBlockStateModel.register}). NeoForge's patch builds {@code BlockStateModel.Unbaked.CODEC} and
  * {@code HARDCODED_WEIGHTED_CODEC} around its key. fabric-model-loading's {@code BlockStateModelUnbakedMixin}
  * redirects the two {@code flatComapMap} calls that build those fields and returns its own codecs, which read
- * {@code "fabric:type"} and otherwise a plain variant — so on the merged base NeoForge's key was never read.
+ * {@code "fabric:type"} and otherwise a plain variant — so without this NeoForge's key was never read.
  *
  * <p>What that cost: Sophisticated Backpacks' placed backpack ({@code "type": "sophisticatedbackpacks:backpack_model_loader"})
  * parsed as a plain variant of a model with no elements, and rendered as its selection outline only — whenever
@@ -54,7 +54,7 @@ public final class KernelBlockStateModelFormats {
 	 * The codec the redirected {@code flatComapMap} returns: NeoForge's answer and Fabric's, combined by the rule in
 	 * the class javadoc. Used for both fields — the variant list and the model — whose inputs differ only in shape.
 	 *
-	 * @param neoForge what the redirected call itself returns, i.e. the merged base's own codec
+	 * @param neoForge what the redirected call itself returns, i.e. the base's own codec
 	 * @param fabric   what fabric-model-loading's handler returns
 	 */
 	public static <A> Codec<A> either(Codec<A> neoForge, Codec<A> fabric) {

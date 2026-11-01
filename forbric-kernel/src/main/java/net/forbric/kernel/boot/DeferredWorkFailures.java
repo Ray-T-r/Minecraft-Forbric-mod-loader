@@ -29,14 +29,14 @@ import net.forbric.kernel.util.Caught;
  * Which mods' deferred setup tasks threw, read off a carrier's own {@code DeferredWorkQueue} after
  * {@code runTasks}.
  *
- * <p>Both families' queues have the same private shape — a {@code tasks} deque of {@code TaskInfo}, each with an
+ * <p>NeoForge's queue has a private shape — a {@code tasks} deque of {@code TaskInfo}, each with an
  * {@code owner} container and a {@code future} — and {@code runTasks} leaves the deque as it was, with a failed
  * task's future completed exceptionally. So the owners are read from there. The obvious alternative, reading
- * the mod id off the suppressed throwables {@code runTasks} throws, is not possible: both carriers wrap the raw
- * failure and put the mod id only in their log line, never on the exception.
+ * the mod id off the suppressed throwables {@code runTasks} throws, is not possible: NeoForge wraps the raw
+ * failure and puts the mod id only in its log line, never on the exception.
  *
  * <p>Any reflective failure — a renamed field, a container without {@code getModId} — answers an empty list and
- * one warning, so the callers' count-only report is the worst case; the staged carriers' field names are
+ * one warning, so the callers' count-only report is the worst case; the staged carrier's field names are
  * pinned by a test so a carrier bump goes red there rather than losing attribution silently.
  */
 public final class DeferredWorkFailures {

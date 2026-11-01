@@ -31,7 +31,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Nothing here knows a mod, a class or a method by name. A point is moved when its injector has one point, a call
  * ({@code INVOKE}/{@code INVOKE_ASSIGN}), one slice bounded by calls or field accesses (no {@code @Group}, no other
  * slice keys, no shift on its bounds); the method its selectors bind is the same natively (the class its ecosystem's mods
- * were compiled against) and merged; the native slice and ordinal pick exactly one call there and the merged slice picks
+ * were compiled against) and in the current class; the native slice and ordinal pick exactly one call there and the current slice picks
  * none; and the current method makes exactly one call of that member that is handed the same operands — each the same
  * expression over the method's own values (its receiver, its parameters, fields, calls, constants, and locals by the value
  * stored in them) — and made under every branch condition the native call is made under. The point then names that call

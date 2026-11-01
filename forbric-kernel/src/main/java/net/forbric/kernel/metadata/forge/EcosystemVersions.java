@@ -76,8 +76,8 @@ public final class EcosystemVersions {
 	}
 
 	/**
-	 * Records the ecosystem versions the runtime carriers declare, by reading each carrier's own
-	 * {@code mods.toml} / {@code neoforge.mods.toml} — the same file a genuine loader reports its version from.
+	 * Records the ecosystem versions the runtime carrier declares, by reading its own
+	 * {@code neoforge.mods.toml} (or a {@code mods.toml}) — the same file a genuine loader reports its version from.
 	 *
 	 * <p>Best-effort: an unreadable carrier simply contributes nothing, and an ecosystem with no recorded version
 	 * is never audited rather than being audited against a guess.

@@ -31,7 +31,7 @@ import net.forbric.kernel.util.ForbricLog;
  * against, when a carrier's code now stands between the point and that instruction.
  *
  * <p>Mixin resolves {@code by} by counting nodes in the instruction list: {@code n} places from what the point selects.
- * The count was right in the native body. A merge that keeps another family's code inside that stretch moves the count
+ * The count was right in the native body. A base that keeps another family's code inside that stretch moves the count
  * onto that code instead. Shoulder Surfing (NeoForge) modifies {@code Camera.calculateFov}'s {@code fov} at
  * {@code TAIL} {@code by = -2}: natively that is the load of {@code fov} that feeds
  * {@code modifyFovBasedOnDeathOrFluid}, whose result the method returns. The current body goes on after that call into
@@ -46,7 +46,7 @@ import net.forbric.kernel.util.ForbricLog;
  * re-spelled on the nearest call (or return) at or after that instruction, in the current body's own count, shifted back
  * by the nodes in between — never forward, so Mixin's {@code maxShiftBy} limit is never met. Only an injector with one
  * {@code @At} that shifts {@code BY}, no slice, no group, on a method its selector binds alone in both bodies with the
- * same descriptor, whose points were not already translated to the merged body; nothing moves where the native target
+ * same descriptor, whose points were not already translated to the current body; nothing moves where the native target
  * is not an instruction or its counterpart cannot be proved, and that is reported where the stretch differs.
  * {@code -Dforbric.shiftedPoints=off} leaves every point as compiled.
  */

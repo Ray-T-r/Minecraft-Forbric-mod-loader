@@ -20,7 +20,7 @@ import java.util.Collection;
 
 /**
  * Mapping resolution helper. The target namespace is always the one the loader currently runs in — for the
- * Forbric kernel that is {@code named} (Mojmap), because the merged base is Mojmap-native.
+ * Forbric kernel that is {@code named} (Mojmap), because NeoForge's patched game is Mojmap-native.
  */
 public interface MappingResolver {
 	Collection<String> getNamespaces();

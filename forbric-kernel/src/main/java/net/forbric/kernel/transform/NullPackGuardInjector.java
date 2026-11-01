@@ -45,7 +45,7 @@ import net.forbric.kernel.util.ForbricLog;
  * sources, where it is simply missing. Tectonic's is one such: it stores the result of
  * {@code Pack.readMetaAndCreate} and passes it straight through.
  *
- * <p>This is a BACKSTOP, not the fix. The reason a merged base produces a null pack in the first place is
+ * <p>This is a BACKSTOP, not the fix. The reason Forbric produces a null pack in the first place is
  * repaired by {@link PackOverlayMutabilityInjector}, and it has to be, because skipping alone would trade a crash
  * for a silently missing pack and quietly wrong terrain generation. The pairing, and why both are needed, is
  * written down in {@link KernelPackRepair}.

@@ -79,7 +79,7 @@ final class JoinedReturnExits {
 	 * the {@code occurrence}-th call of {@code member} (the call right before the one conditional jump that leads to it) answers
 	 * {@code nonZero} (true, or any non-zero int); in the current body that same call, on that same answer, jumps into the join
 	 * (Minecraft.handleGlobalKeyPress in keyPress: a global key it handled returns natively, and reaches NeoForge's hook
-	 * merged). The discriminator cannot tell such a path apart — it carries the very values that reach the final return.
+	 * in the current body). The discriminator cannot tell such a path apart — it carries the very values that reach the final return.
 	 */
 	record DecisionExit(int ordinal, String member, int occurrence, boolean nonZero) {
 	}

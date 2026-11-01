@@ -103,7 +103,7 @@ public final class PayloadInterop {
 	private static volatile ClassLoader mirroredLoader;
 
 	/**
-	 * Called from bytecode patched into NeoForge's {@code CustomPacketPayload$1.findCodec(...)} (on the merged base, its
+	 * Called from bytecode patched into NeoForge's {@code CustomPacketPayload$1.findCodec(...)} (on the old merged base, its
 	 * renamed twin {@code CustomPacketPayload$1$forbricneo}).
 	 *
 	 * @return an object implementing the live {@code net.minecraft.network.codec.StreamCodec} interface.
@@ -466,7 +466,7 @@ public final class PayloadInterop {
 	/**
 	 * Called from a mixin on {@code ServerConfigurationPacketListenerImpl.finishCurrentTask}. Fabric and NeoForge
 	 * both implement the same common-networking handshake on {@code c:version}/{@code c:register}, but expose
-	 * different {@code ConfigurationTask.Type}s. Treat those task ids as aliases on the merged base.
+	 * different {@code ConfigurationTask.Type}s. Treat those task ids as aliases on Forbric.
 	 */
 	public static boolean finishEquivalentCommonTask(Object listener, Object requestedType) {
 		if (protocolMovesAreNeoForges() && isCommonTask(taskId(requestedType))) {

@@ -30,7 +30,7 @@ import net.forbric.kernel.util.Caught;
  * that answer in has not caught up with the equipment yet.
  *
  * <p>Vanilla's {@code LivingEntity.canGlide()} — and MinecraftForge's, and so Fabric's — reads the equipment: any slot
- * holding a glider that fits it. NeoForge's, which NeoForge took, reads the {@code neoforge:gliding_flight} attribute
+ * holding a glider that fits it. NeoForge's base reads the {@code neoforge:gliding_flight} attribute instead
  * when its flag says so ({@code canGlide()} passes true) and the equipment only otherwise. That attribute is the same
  * answer cached: it is derived from the equipment in {@code collectEquipmentChanges}, once per entity tick. Between an
  * equipment change and the next tick the cache is stale, so a mod that equips an elytra and asks

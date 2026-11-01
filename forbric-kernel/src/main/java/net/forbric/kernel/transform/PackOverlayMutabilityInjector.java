@@ -54,7 +54,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p><b>Invariant for whoever edits this next:</b> no pre-Mixin transform may ADD a store to {@code overlaySet}
  * inside its local-variable scope. That is not a stylistic preference; it silently duplicates overlays.
  *
- * <p>Frame- and stack-neutral, so {@code ClassWriter(0)} writes the existing frames back untouched: the merged
+ * <p>Frame- and stack-neutral, so {@code ClassWriter(0)} writes the existing frames back untouched: the game
  * base has no stack-map frame anywhere between the store the patch makes and the one {@code List.copyOf} makes,
  * and the peak depth over the edited span is 2 before and after.
  *
@@ -109,7 +109,7 @@ public final class PackOverlayMutabilityInjector implements ClassTransformer {
 			repaired += repair(method);
 		}
 		if (repaired == 0) {
-			// The anchor is gone: NeoForge changed its patch, or the merge no longer splices it. Say so rather
+			// The anchor is gone: NeoForge changed its patch, or the base no longer carries it. Say so rather
 			// than passing silently — the crash this prevents looks like a mod bug and costs a day to re-find.
 			// KernelPackRepair.nullPackSkipped still keeps the world loadable, minus that pack.
 			ForbricLog.warn("[Forbric/PackRepair] %s.%s no longer matches the overlay-merge shape — the fabric-api "

@@ -45,22 +45,20 @@ import net.forbric.kernel.util.Reflect;
  *
  * <h2>Three model-format mechanisms, one deserializer</h2>
  *
- * <p>Every block model on the merged base is read by {@code UnbakedModelParser.parse}, which goes through
+ * <p>Every block model on NeoForge's base is read by {@code UnbakedModelParser.parse}, which goes through
  * {@code CuboidModel.GSON}, whose adapter for {@code UnbakedModel} is NeoForge's
- * {@code UnbakedModelParser$Deserializer}. Natively each ecosystem has its own way to plug a custom format in, and
- * two of the three sit BEHIND that deserializer:
+ * {@code UnbakedModelParser$Deserializer}. There are three ways to plug a custom format in, and two of the three sit
+ * BEHIND that deserializer:
  * <ul>
  *   <li>NeoForge: {@code "loader": "<id>"} dispatched to a registered {@code UnbakedModelLoader}. This is the
  *       deserializer itself, and it throws {@code Unknown loader} for any id it did not register — before it ever
  *       reaches {@code context.deserialize(json, CuboidModel.class)}.</li>
- *   <li>MinecraftForge: the same {@code "loader"} key, read by the vanilla {@code CuboidModel$Deserializer}
- *       ({@code getElements} asks {@code ForgeHooksClient.deserializeBlockModelGeometry}, which asks
- *       {@code GeometryLoaderManager}). Mods that add a format without a geometry loader hook that same
- *       deserializer: fusion's {@code CuboidModelDeserializerMixin} claims {@code "loader": "fusion:model"} at
- *       its HEAD. On the merged base NeoForge's throw comes first, so every one of them was unreachable —
- *       MinecraftForge's own {@code forge:} loaders included.</li>
+ *   <li>A guest hook on the vanilla {@code CuboidModel$Deserializer}: fusion's {@code CuboidModelDeserializerMixin}
+ *       claims {@code "loader": "fusion:model"} at its HEAD. NeoForge's throw comes first, so it was unreachable.
+ *       (On MinecraftForge the vanilla deserializer read the {@code "loader"} key itself, through
+ *       {@code GeometryLoaderManager}; NeoForge's vanilla deserializer does not read it at all.)</li>
  *   <li>Fabric: {@code "fabric:type"}, dispatched through fabric-model-loading's {@code UnbakedModelDeserializer}
- *       registry by a pair of injectors on {@code ModelManager} that cannot fit the merged base
+ *       registry by a pair of injectors on {@code ModelManager} that cannot fit NeoForge's base
  *       ({@code GuestInjectorPruner} removes them). NeoForge's deserializer never looks at the key, so the model
  *       parsed as a plain empty cuboid.</li>
  * </ul>
@@ -84,28 +82,29 @@ import net.forbric.kernel.util.Reflect;
  *       allows — is decided by the build that is installed, because only that build registered anything.
  *       {@code fabric:type} claims it only when fabric-model-loading has a deserializer under that id; a type
  *       nobody registered, or one that does not even parse, leaves the model to its {@code "loader"}, exactly
- *       as a loader without Fabric's reader would. Without that, installing the NeoForge or MinecraftForge build
+ *       as a loader without Fabric's reader would. Without that, installing the NeoForge build
  *       of such a mod next to fabric-api failed every one of its models on Fabric's "unknown type" error. When
  *       both ids ARE registered, fabric:type wins: the registration is the mod's Fabric build saying it is the
  *       one running, whereas a NeoForge id is as likely NeoForge's own built-in, and on Fabric — the only
  *       loader that reads this key — {@code "loader"} means nothing.</li>
- *   <li>A string loader nobody claims still fails the model — with MinecraftForge's
- *       {@code Model loader '%s' not found} instead of NeoForge's message, because that is the last deserializer
- *       that looked. There is no "whose namespace is this" heuristic: {@code forge:} is not a mod jar's namespace,
- *       and a loader's namespace need not be its mod's.</li>
+ *   <li>A string loader NeoForge did not register is handed to the vanilla deserializer whatever its namespace —
+ *       there is no "whose namespace is this" heuristic, since a loader's namespace need not be its mod's. One no
+ *       guest hook claims then parses as a plain model, because NeoForge's vanilla deserializer does not read the key
+ *       (on MinecraftForge it failed as {@code Model loader '%s' not found}; NeoForge alone fails it as
+ *       {@code Unknown loader}).</li>
  *   <li>NeoForge's object form, {@code {"id": ..., "optional": ...}}, is NeoForge's own dialect; a non-optional
  *       miss keeps NeoForge's error.</li>
  * </ul>
  *
  * <p>One NeoForge behaviour is repaired on the way through, because the funnel would otherwise inherit it: an
  * OPTIONAL object-form loader that is absent means "parse this as a plain model", and NeoForge does that by
- * falling through to the cuboid deserializer with the object still under {@code "loader"} — where the merged
- * {@code getElements} is MinecraftForge's, reads the key as a string and throws. The plain parse gets a copy
+ * falling through to the cuboid deserializer with the object still under {@code "loader"} — where the old merged
+ * base's {@code getElements} was MinecraftForge's, read the key as a string and threw. The plain parse gets a copy
  * without the key, which is what native NeoForge's deserializer would have seen.
  *
  * <h2>Linkage errors stay inside one model</h2>
  *
- * <p>The funnel runs guest code — a Fabric mod's deserializer, MinecraftForge's geometry loaders, fusion's hook —
+ * <p>The funnel runs guest code — a Fabric mod's deserializer, fusion's hook —
  * inside {@code ModelManager.lambda$loadBlockModels$2}, whose per-model {@code catch} covers {@code Exception}
  * and nothing else. A {@code NoSuchMethodError} or {@code NoClassDefFoundError} from code compiled against
  * another base is not an {@code Exception}: it would leave that catch, fail the whole block-model load, and a

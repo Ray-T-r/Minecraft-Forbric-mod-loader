@@ -721,7 +721,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * asking {@code VanillaClientListeners.getNameForClass}, and when that returns null it THROWS: "A non-vanilla
 	 * reload listener … was added via mixin before the AddClientReloadListenerEvent!". The assertion is written
 	 * for an instance whose only mods are NeoForge mods. Adding a listener by mixin is ordinary Fabric practice —
-	 * there is no event for it to go through — so on a tri-ecosystem instance it fires on CORRECT mod code, from
+	 * there is no event for it to go through — so on a Forbric instance it fires on CORRECT mod code, from
 	 * inside {@code ClientHooks.initClientHooks}, which runs inside {@code Minecraft.<init>}: vistas took the whole
 	 * client down before it drew a frame.
 	 *

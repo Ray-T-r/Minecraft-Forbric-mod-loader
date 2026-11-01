@@ -36,7 +36,7 @@ import net.forbric.kernel.transform.FabricFreezePointInjector;
 import net.forbric.api.ModCatalog;
 
 /**
- * The kernel-owned server lifecycle hook that runs where the merged base used to call the genuine
+ * The kernel-owned server lifecycle hook that runs where NeoForge's base calls the genuine
  * {@code ServerModLoader.load(...)}.
  *
  * <p>{@link net.forbric.kernel.transform.LifecycleHookInjector} rewrites that call (in
@@ -136,7 +136,7 @@ public final class KernelLifecycle {
 		ClassLoader cl = gameLoader != null ? gameLoader : Thread.currentThread().getContextClassLoader();
 		ForbricLog.info("[Forbric/Lifecycle] kernel %s mod-loading window (native, no FancyModLoader) — "
 				+ "registering ecosystem baselines", side.distName());
-		// Step 0c (client only): load each carrier's own built-in translations. Their loader is called from
+		// Step 0c (client only): load the carrier's own built-in translations. Their loader is called from
 		// ClientModLoader.begin(), whose call site the kernel redirects here, so the table FMLTranslations
 		// reads was never filled and every FML-side string — the branding line under the logo, the loading
 		// screen's continue button — rendered as its raw key. The dedicated server has its own entry point
@@ -1873,7 +1873,7 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Opens or closes the ROOT registry, which both ecosystems' {@code GameData} leaves alone.
+	 * Opens or closes the ROOT registry, which NeoForge's {@code GameData} leaves alone.
 	 *
 	 * <p>Called immediately around the Fabric entrypoints rather than folded into {@link #unfreeze}: NeoForge's
 	 * {@code NewRegistryEvent.fill()} registers the mod-declared registries into the root and re-freezes it on the
@@ -2020,9 +2020,9 @@ public final class KernelLifecycle {
 	 * Called from the game side: {@code ClientModLoader.setupModResourcePacks(PackRepository)} inside
 	 * {@code Minecraft.<init>}, redirected here by {@code ClientPackHookInjector}. This is the one correctly-timed
 	 * handle on the live client {@code PackRepository} — before the first resource reload — so the kernel serves the
-	 * ecosystem jars' assets (NeoForge's shaders, Forge mods' textures/models) here.
+	 * ecosystem jars' assets (NeoForge's shaders, mods' textures/models) here.
 	 *
-	 * <p>Both ecosystems' ClientModLoaders route here, so it may be called more than once;
+	 * <p>It may be called more than once (on the old merged base both ecosystems' ClientModLoaders routed here);
 	 * {@link KernelClientPacks#addTo} is cheap and the repository de-dups by pack id.
 	 */
 	public static void onClientResourcePacks(Object packRepository) {

@@ -329,7 +329,7 @@ final class MixinHandlerShape {
 
 	/**
 	 * For a handler whose anchor moves from {@code point} in the native {@code reference} to {@code currentPoint} in the
-	 * merged {@code current} body of the same method: each {@code @Local} extra (by handler parameter) proved, by its
+	 * {@code current} body of the same method: each {@code @Local} extra (by handler parameter) proved, by its
 	 * producer, to one current slot ({@link MixinLocalOriginProof#prove}). Null when any is not proved.
 	 */
 	Map<Integer, Integer> proveLocals(String owner, MethodNode reference, AbstractInsnNode point, MethodNode current, AbstractInsnNode currentPoint) {

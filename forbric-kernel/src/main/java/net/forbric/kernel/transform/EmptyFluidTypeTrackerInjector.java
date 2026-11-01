@@ -22,7 +22,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * A fluid typed as NeoForge's empty type is no fluid to NeoForge's entity code, as the type says.
  *
  * <p>NeoForge's {@code EntityFluidInteraction.update} skips an empty cell and gives every other cell's type a tracker,
- * the empty type's too when a fluid is typed so. On the merged base the kernel gives the empty type to a fluid no
+ * the empty type's too when a fluid is typed so. The kernel gives the empty type to a fluid no
  * loader types and no tag gives meaning — a Fabric mod's fluid in neither {@code minecraft:water} nor {@code
  * minecraft:lava} nor a Fabric behaviour's tag (KernelFluidTypes) — meaning "entities do not interact with it", which
  * is what vanilla does with such a fluid. But the walk made a tracker for it all the same, and NeoForge's entity code

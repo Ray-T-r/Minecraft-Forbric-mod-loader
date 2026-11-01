@@ -84,7 +84,7 @@ public final class MixinResourceContinuationAdapter {
         };
     }
     private static Move move(Source source,ClassNode target,ClassNode reference,Function<String,ClassNode> classes) {
-        // The host is the one method Mixin binds in the merged class, and the method the wrap was written for — the one it
+        // The host is the one method Mixin binds in the current class, and the method the wrap was written for — the one it
         // binds in the class the mod was compiled against — is that same member: however the selector is spelled. One
         // host, since the point is rewritten for every method the injector binds.
         MethodNode host=MixinTargetSelectors.one(source.handler(),target),old=MixinCallbackShape.written(source.handler(),reference);

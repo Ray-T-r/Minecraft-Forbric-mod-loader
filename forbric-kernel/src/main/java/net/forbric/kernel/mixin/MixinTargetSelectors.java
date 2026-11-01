@@ -156,7 +156,7 @@ final class MixinTargetSelectors {
 	/**
 	 * The one method the handler binds in {@code target} where that does not hang on declaration order: no selector that
 	 * binds one method could match another of the class. A bare name shared by overloads binds whichever is declared first,
-	 * which is the merge's order, not necessarily the one the mod was compiled against; null then, and as {@link #one}.
+	 * which is the base's order, not necessarily the one the mod was compiled against; null then, and as {@link #one}.
 	 */
 	static MethodNode unambiguous(MethodNode handler, ClassNode target) {
 		List<Reach> reach = reach(handler, target);
@@ -212,7 +212,7 @@ final class MixinTargetSelectors {
 	}
 
 	/**
-	 * The member ({@code name + desc}) the handler was written for in a class the merged game may no longer declare it in:
+	 * The member ({@code name + desc}) the handler was written for in a class the game may no longer declare it in:
 	 * the one method its injector binds in {@code nativeClass}, the class the mod was compiled against. Where that class is
 	 * missing or binds nothing, only a selector pinning the descriptor decides it — every selector Mixin accepts, its owner
 	 * (if any) the target, spelling one name and one method descriptor — since which overload a bare name, a wildcard or a

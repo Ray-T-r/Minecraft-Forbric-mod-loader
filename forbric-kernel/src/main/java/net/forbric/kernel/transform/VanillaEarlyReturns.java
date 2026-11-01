@@ -493,7 +493,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 	 *
 	 * <p>When one key's occurrences went to different returns in vanilla, order alone does not say which is which: the
 	 * recompiler may emit the blocks the other way round ({@code Identifier.equals}: vanilla's "not an Identifier"
-	 * {@code false} comes last, the merged one first, and pairing by order moved the path vanilla sends to the tail).
+	 * {@code false} comes last, the current one first, and pairing by order moved the path vanilla sends to the tail).
 	 * Those occurrences carry a lead ({@link #lead}) in the table, and pair by it; occurrences a lead cannot tell apart
 	 * stay on the tail. And a split that would leave the tail with no edge at all is not made: some edge vanilla sends
 	 * to the tail was taken for an early one.

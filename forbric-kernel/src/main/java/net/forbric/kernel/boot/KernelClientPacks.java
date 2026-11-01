@@ -32,9 +32,11 @@ import net.forbric.kernel.util.ForbricLog;
  * Serves the ecosystem jars' CLIENT ASSETS (shaders, textures, models, lang) to the real client
  * {@code PackRepository}.
  *
- * <p>Why: NeoForge's own {@code ResourcePackLoader.findResourcePacks} (its {@code mod_resources} source) is ORPHANED
- * on the merged base — nothing calls it, because the vanilla/Forge pack-repository construction won that merge. So
- * every ecosystem asset is unreachable. That is invisible until something actually needs one: NeoForge's
+ * <p>Why: NeoForge's own {@code ResourcePackLoader.findResourcePacks} (its {@code mod_resources} source) was ORPHANED
+ * on the old merged base — nothing called it, because the vanilla/Forge pack-repository construction won that merge —
+ * so every ecosystem asset was unreachable. On NeoForge's base its {@code setupModResourcePacks} reaches that source,
+ * and the kernel replaces that body with this one (below). An unreachable asset is invisible until something actually
+ * needs one: NeoForge's
  * {@code NeoForgeRenderPipelines} registers pipelines whose shaders live at {@code assets/neoforge/shaders/*}, and
  * without them {@code ShaderManager.apply} throws "Failed to load required shader programs" and the client dies before
  * the title screen. Forge-family mod jars have the same problem for their own textures/models.

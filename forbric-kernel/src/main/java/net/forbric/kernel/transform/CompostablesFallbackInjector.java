@@ -51,7 +51,7 @@ import net.forbric.kernel.util.Caught;
  * the block's own answer, as it is the block's answer on vanilla; writes still go to the map. Found by the read, not by
  * which mod makes it.
  * What a NeoForge mod still puts in the vanilla map (GlitchCore's {@code registerCompostable} does) is read on a miss
- * too, where NeoForge alone ignores it. Not covered: a farmer villager, whose merged {@code WorkAtComposter} asks the
+ * too, where NeoForge alone ignores it. Not covered: a farmer villager, whose {@code WorkAtComposter} asks the
  * data map's {@code canVillagerCompost}, not fabric-api's villager-compostable list.
  *
  * <p>All or nothing per class, on the reviewed shape: exactly one {@code getValue} in each of the four methods, no

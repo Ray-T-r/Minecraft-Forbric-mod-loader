@@ -31,7 +31,7 @@ import net.forbric.kernel.util.ForbricLog;
  * Gives {@code ServerChunkCache$MainThreadExecutor} an {@code execute} that refuses work once its own
  * thread is dead.
  *
- * <p><b>Hardening, not a repair.</b> Nothing here is broken by the merge or by Forbric: the merged
+ * <p><b>Hardening, not a repair.</b> Nothing here is broken by the base or by Forbric: the old merged base's
  * {@code ServerChunkCache} and Lithium's {@code getChunkOffThread} were both measured byte-for-byte
  * equivalent to vanilla. This exists because one class of MOD bug — keeping a {@code ServerLevel} from an
  * integrated server that has already stopped — cashes out as three permanently parked threads and a
@@ -42,7 +42,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>{@code ServerChunkCache.getChunk} is the obvious place and the wrong one: Lithium {@code @Overwrite}s
  * it, so a guard there is deleted on any install that has Lithium — which is most of them, and was this
- * one. Both the merged base's own off-thread branch and Lithium's replacement reach the executor through
+ * one. Both the base's own off-thread branch and Lithium's replacement reach the executor through
  * {@code this.mainThreadProcessor}, so guarding the executor covers both and cannot be overwritten out
  * from under itself.
  *

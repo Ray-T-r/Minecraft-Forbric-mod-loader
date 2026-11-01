@@ -28,7 +28,7 @@ import net.neoforged.neoforge.common.tooltip.TooltipLocation;
 import net.neoforged.neoforge.event.RegisterTooltipAppendersEvent;
 
 /**
- * NeoForge's item tooltip appenders, built on the merged base, with Fabric's component tooltip providers in them.
+ * NeoForge's item tooltip appenders, with Fabric's component tooltip providers in them.
  *
  * <p>NeoForge's {@code ItemStack.addDetailsToTooltip} is a dispatcher: it walks the head, middle and tail
  * appender lists {@code ItemTooltipHandler.init} fills — every vanilla component line (enchantments, lore, attribute

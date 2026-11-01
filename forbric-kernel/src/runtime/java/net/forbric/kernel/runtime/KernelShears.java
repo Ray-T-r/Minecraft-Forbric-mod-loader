@@ -9,7 +9,7 @@ import net.minecraft.core.TypedInstance;
 import net.minecraft.world.item.Items;
 
 /**
- * The {@code Operation} a Fabric handler written for vanilla's {@code stack.is(Items.SHEARS)} is handed where the merged
+ * The {@code Operation} a Fabric handler written for vanilla's {@code stack.is(Items.SHEARS)} is handed where the current
  * body asks the carrier's {@code stack.canPerformAction(<shears ability>)} instead (MixinShearsRelay).
  *
  * <p>The handler calls it as it would vanilla's call. Asked about shears — the question the site asked on vanilla — it

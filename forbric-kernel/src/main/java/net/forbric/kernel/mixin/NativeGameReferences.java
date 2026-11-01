@@ -210,7 +210,7 @@ public final class NativeGameReferences {
 					byte[] base = sources.baseClass(owner);
 					return base != null ? base : resources.apply(owner + ".class");
 				}, !embeds);
-				// A base that embeds this ecosystem's index too (the merged base) holds the authority the sidecar was proven
+				// A base that embeds this ecosystem's index too (the old merged base) holds the authority the sidecar was proven
 				// equal to: what the sidecar cannot verify, that index answers, read from the base jar itself.
 				yield embeds ? verifiedAgainst(sidecar, indexed(ecosystem, sources::baseResource, sources::baseClass, false))
 						: sidecar;
@@ -230,9 +230,9 @@ public final class NativeGameReferences {
 	 * The sidecar's answers, each held to the base's own embedded index for the same ecosystem: an answer is taken when
 	 * the embedded index has no row for the class or pins the very hash the sidecar's row pins. Otherwise — a hash-only
 	 * row the base's bytes no longer match (a sidecar built against another base), or a row pinning other bytes (one
-	 * built from another vanilla jar) — the embedded index answers instead. On the merged base the two are equal row for
+	 * built from another vanilla jar) — the embedded index answers instead. On the old merged base the two were equal row for
 	 * row (VanillaReferenceStagedTest), so with a current sidecar this never fires; with a stale one, the evidence every
-	 * adapter compares against is still the merged base's own rather than silently missing.
+	 * adapter compares against is still the base's own rather than silently missing.
 	 */
 	private static Pins verifiedAgainst(Indexed sidecar, Indexed embedded) {
 		return new Pins() {

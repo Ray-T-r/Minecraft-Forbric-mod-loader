@@ -39,8 +39,8 @@ import net.forbric.kernel.util.ForbricLog;
  * experience there — a {@code @ModifyVariable} at the store of {@code i} (PuzzlesLib's takes it and pays it out later), a
  * cancel at its start. NeoForge removed those calls: the same value is {@code BlockDropsEvent}'s experience, computed from the
  * block's {@code getExpDrop} (the same provider, sampled), processed the same way, and popped once by
- * {@code CommonHooks.handleBlockDrops}. Nothing in the merged game calls {@code tryDropExperience}, so every such hook was
- * woven and never ran — and since the merged {@code playerDestroy} reaches NeoForge's drops again, the vanilla experience it
+ * {@code CommonHooks.handleBlockDrops}. Nothing in the game calls {@code tryDropExperience}, so every such hook was
+ * woven and never ran — and since the current {@code playerDestroy} reaches NeoForge's drops again, the vanilla experience it
  * meant to replace or take was popped as well, on top of what the mod paid out itself.
  *
  * <p>So, after Mixin, the method's woven body is copied into a relay of the same class ({@code tryDropExperience$forbricrelay}),
@@ -439,7 +439,7 @@ public final class UncalledValueRelay {
 
 	/**
 	 * What the native {@code caller} hands the contract method's unread parameter, as a function of the instance: a field of
-	 * the instance, a static field, or a static call on constants, read off the caller's native body and evaluated on the merged
+	 * the instance, a static field, or a static call on constants, read off the caller's native body and evaluated on the current
 	 * classes; null when it is anything else.
 	 */
 	static java.util.function.Function<Object, Object> nativeArgument(Class<?> type, Contract contract, String caller) {

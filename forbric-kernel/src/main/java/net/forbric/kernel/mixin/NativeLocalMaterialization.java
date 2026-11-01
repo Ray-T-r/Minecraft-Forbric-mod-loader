@@ -54,7 +54,7 @@ import net.forbric.kernel.util.Caught;
  * call point and no slice:
  * <ul>
  *   <li>the method its selectors bind is the same method natively (the class its ecosystem's mods were compiled against)
- *       and merged, and its point selects as many calls in both, the occurrence it picks being the same one;</li>
+ *       and in the current class, and its point selects as many calls in both, the occurrence it picks being the same one;</li>
  *   <li>a {@code @Local} of the handler resolves, as MixinExtras resolves it, to one local at the native call, and that
  *       local is what the native call is handed as one of its operands, loaded from it with nothing in between able to
  *       change it ({@link MixinLocalOriginProof#atCall});</li>

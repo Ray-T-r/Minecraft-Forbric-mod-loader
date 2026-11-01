@@ -223,7 +223,7 @@ public final class KernelBoot {
 
 		// Forge/NeoForge mod jars (Mojmap-compiled like the base → load directly, no remap), plus the
 		// libraries they nest at META-INF/jarjar/ — see extractForgeFamilyJarJar.
-		// Learn what each carrier says its own version is BEFORE discovery reads the mods, so a mod whose
+		// Learn what the carrier says its own version is BEFORE discovery reads the mods, so a mod whose
 		// versionRange this instance cannot satisfy says so as it is discovered rather than failing later.
 		EcosystemVersions.record(runtimeJars);
 		ForgeFamilyMods forgeFamily = discoverForgeFamilyModJars(gameDir.resolve("mods"), topLevelDupes);
@@ -707,7 +707,7 @@ public final class KernelBoot {
 					net.forbric.kernel.transform.FabricFreezePointInjector.PROPERTY);
 		}
 
-		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric all three parsers are
+		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric both loaders' parsers are
 		// live — so a Fabric-only build gets its neoforge:overlays section read by NeoForge's parser and throws on a
 		// condition only a NeoForge build would have registered. Vanilla drops the ENTIRE pack for that. Registered
 		// unconditionally: the datapack path runs on a dedicated server too, and that is where it crashed.
@@ -751,9 +751,9 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.PredicateGetterResultRecorder());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagTrackerSourceInjector());
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.mixin.NativeTagSourceFacadeInjector());
-		// A base method that asks one fluid both families' type (Fluid.entityInside, BucketItem.playEmptySound) asks each
-		// family only the type it gave the fluid: where the kernel's tag-derived stand-in would answer, that family's empty
-		// type does — a NeoForge or Fabric fluid in minecraft:water no longer puts out fire by MinecraftForge's water type.
+		// NeoForge's fire clause (Fluid.entityInside) asks a fluid only the NeoForge type it gave itself: where the kernel's
+		// tag-derived stand-in would answer, NeoForge's empty type does — a Fabric fluid in minecraft:water no longer puts
+		// out fire by water's type, as on Fabric.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.OwnFluidTypeClausesInjector());
 		// NeoForge's empty fluid type gets no tracker: a fluid the kernel types empty (a Fabric fluid in no tag) is no fluid
 		// to NeoForge's entity code, as on Fabric. After the native tag-tracker source, which proves the walk as it is.

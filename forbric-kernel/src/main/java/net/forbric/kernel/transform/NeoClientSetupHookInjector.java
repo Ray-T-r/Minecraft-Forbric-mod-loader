@@ -47,7 +47,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>So the order inside one constructor is: singleton assigned → Fabric client entrypoints → {@code Options}
  * built → NeoForge client setup. Both ecosystems get the state they were written against.
  *
- * <p><b>The anchor is NeoForge's own call site</b>: the {@code ClientModLoader.finish()} invocation the merged base
+ * <p><b>The anchor is NeoForge's own call site</b>: the {@code ClientModLoader.finish()} invocation the game base
  * already carries in {@code Minecraft.<init>}. That is precisely where genuine NeoForge completes client mod
  * loading, so anchoring there inherits its timing instead of guessing at it — and the kernel already neuters
  * {@code finish()}'s body (it would re-drive the discovery the kernel owns), so the call site is otherwise inert.

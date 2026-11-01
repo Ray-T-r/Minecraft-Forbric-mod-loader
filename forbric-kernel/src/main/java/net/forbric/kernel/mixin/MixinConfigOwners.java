@@ -36,7 +36,7 @@ import net.forbric.kernel.util.ForbricLog;
  * point, including Mixin's own messages, could only name a file.
  *
  * <p>A player reading "sodium-common.mixins.json failed" has to already know which jar that is. On a
- * tri-ecosystem instance, where the same mod may be present as a Fabric build and a NeoForge build and only one
+ * Forbric instance, where the same mod may be present as a Fabric build and a NeoForge build and only one
  * of them won arbitration, that is not a reasonable thing to expect them to know.
  *
  * <h2>Ambiguity is answered with silence, never with a guess</h2>

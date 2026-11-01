@@ -69,7 +69,7 @@ import net.forbric.api.ModCatalog;
  * registries that do not exist yet, and after the freeze would throw.
  *
  * <p>The {@code main} entrypoints are guarded to run at most once per process, mirroring the old weld's shared
- * {@code ForbricFabricMains} guard: once the tri-in-one client/server paths both open registration windows, only
+ * {@code ForbricFabricMains} guard: once the client and server paths both open registration windows, only
  * the first may run them.
  */
 public final class KernelFabricEcosystem {
@@ -842,7 +842,7 @@ public final class KernelFabricEcosystem {
 	/**
 	 * The physical side this boot is running on, or {@code null} while the Fabric side has not been brought up.
 	 *
-	 * <p>There is no other authority for this in the kernel: the merged base carries the client classes even on a
+	 * <p>There is no other authority for this in the kernel: the game base carries the client classes even on a
 	 * dedicated server, so "can I load Minecraft.class" answers the wrong question. Callers that would have to
 	 * guess should treat {@code null} as "do not judge side-scoped things" rather than picking a side.
 	 */

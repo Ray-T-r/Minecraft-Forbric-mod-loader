@@ -49,7 +49,7 @@ public final class MixinSharedResultTransport {
             AnnotationNode at = points.getFirst();
             if (!"INVOKE".equals(MixinFit.value(at, "value")) || MixinFit.value(at, "shift") != null
                     || MixinFit.value(at, "ordinal") instanceof Number n && n.intValue() >= 0) continue;
-            // The host is the one method Mixin binds in the merged class, and the method the redirect was written for —
+            // The host is the one method Mixin binds in the current class, and the method the redirect was written for —
             // the one it binds in the class the mod was compiled against — is that same member: however the selector
             // is spelled, never by comparing its spelling with a name.
             List<MethodNode> hosts = MixinTargetSelectors.bound(handler, current);

@@ -81,7 +81,7 @@ public final class MixinCollectionSourceAdapter {
 		if (opcode instanceof Number n && n.intValue() != -1 && n.intValue() != Opcodes.GETSTATIC) return null;
 		if (ordinal instanceof Number n && n.intValue() > 0 || MixinFit.value(at, "shift") != null) return null;
 		// The field the redirect names, as Mixin resolves its target: spelled in full, that field; shortened, the one field
-		// it selects in the method the mod was compiled against (the merged body no longer reads it).
+		// it selects in the method the mod was compiled against (the current body no longer reads it).
 		String named = MixinCallbackShape.pointMember(at, null);
 		if (named == null) named = MixinCallbackShape.pointMember(at, MixinCallbackShape.written(handler, nativeTarget.get()));
 		Field original = field(named);

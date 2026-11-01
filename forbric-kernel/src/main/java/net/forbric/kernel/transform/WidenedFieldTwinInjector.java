@@ -34,7 +34,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Restores vanilla's field descriptor BESIDE the merged one for the fields the merge re-typed.
+ * Restores vanilla's field descriptor BESIDE the base's one for the fields the base re-typed.
  *
  * <p>A JVM field is identified by name AND descriptor. NeoForge widened {@code RangedBowAttackGoal.mob} from
  * {@code Monster} to {@code Mob} and re-typed {@code AttributeSupplier$Builder.builder} from
@@ -72,7 +72,7 @@ public final class WidenedFieldTwinInjector implements ClassTransformer {
 	 * @param owner       the class (internal name)
 	 * @param name        the field name both descriptors share
 	 * @param vanillaDesc the descriptor a vanilla-compiled reader carries — the twin's
-	 * @param mergedDesc  the descriptor the merged base declares
+	 * @param mergedDesc  the descriptor the base declares
 	 */
 	record Row(String owner, String name, String vanillaDesc, String mergedDesc, Shape shape) {
 	}
@@ -90,7 +90,7 @@ public final class WidenedFieldTwinInjector implements ClassTransformer {
 	 * @param owner       the class declaring the field (internal name)
 	 * @param name        the field
 	 * @param vanillaType the type vanilla declares it with (internal name)
-	 * @param mergedType  the wider type the merged base declares it with (internal name)
+	 * @param mergedType  the wider type the base declares it with (internal name)
 	 */
 	public record Narrowed(String owner, String name, String vanillaType, String mergedType) {
 	}

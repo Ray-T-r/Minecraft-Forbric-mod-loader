@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M46 — a Fabric mod's injector that Mixin binds to a merge-added delegating stub reaches the body again.
+# M46 — a Fabric mod's injector that Mixin binds to a carrier-added delegating stub reaches the body again.
 #
 # Mixin binds a selector without a descriptor to the FIRST declared method of that name. A carrier that widened a vanilla
 # method kept vanilla's signature in front as a stub — Player.getDestroySpeed(BlockState) forwards to NeoForge's

@@ -97,7 +97,7 @@ final class DatapackRegistryDeclaration {
 	 * Puts back into NeoForge's list what a {@code RegistryDataLoader.<clinit>} TAIL injector added after NeoForge
 	 * had already copied it. Returns what it declared.
 	 *
-	 * <p>The two initialisers are circular in the merged base, and which one runs first decides what NeoForge sees.
+	 * <p>The two initialisers are circular on NeoForge's base, and which one runs first decides what NeoForge sees.
 	 * {@code DataPackRegistriesHooks.<clinit>} copies {@code RegistryDataLoader.WORLDGEN_REGISTRIES}, and NeoForge
 	 * patched {@code RegistryDataLoader.<clinit>} to call {@code DataPackRegistriesHooks.grabNetworkableRegistries}
 	 * just before it returns. Hooks first — step 3a's order, and native NeoForge's — and the copy happens after the

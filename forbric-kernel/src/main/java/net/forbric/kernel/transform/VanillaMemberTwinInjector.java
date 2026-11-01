@@ -46,18 +46,18 @@ import net.forbric.kernel.mixin.NativeGameReferences;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Adds back the vanilla members only the merged base's MinecraftForge half kept, on a base that lacks them — and does
- * nothing on today's merged base, where every one of them is still declared.
+ * Adds back the vanilla members NeoForge's base lacks (on the merged base of Forbric 0.4 and earlier, its
+ * MinecraftForge half kept them, so this did nothing there).
  *
- * <p>The genuine NeoForge-patched jar replaced or dropped a handful of vanilla members that the merge kept because
+ * <p>The genuine NeoForge-patched jar replaced or dropped a handful of vanilla members that the old merge kept because
  * MinecraftForge left them alone. Each has a measured consumer compiled against vanilla: a Fabric mixin that names it,
  * a {@code @Shadow}, a field fabric-api reads directly, or a kernel repair that finds the vanilla member and wires it
  * to NeoForge's live one. Without the member those turn from "binds, and the kernel connects it" into a mixin with no
  * target or a {@code NoSuchFieldError}. Every row is add-if-absent: a member already declared under its name and
- * descriptor is left alone, which is the whole of its behaviour on the merged base. Three shapes, by what the consumer
+ * descriptor is left alone, which was the whole of its behaviour on the old merged base. Three shapes, by what the consumer
  * needs:
  * <ul>
- *   <li>FIELD — vanilla's declaration, no initializer. The repair that already serves the merged base's copy writes it:
+ *   <li>FIELD — vanilla's declaration, no initializer. The repair that served the old merged base's copy writes it:
  *       {@code GuiRenderer.pictureInPictureRenderers} is filled in the constructor by
  *       {@code ForbricMergedBaseCompatTransformer.bridgeOrphanedPipRenderers}, and
  *       {@code ParticleResources.providers:Int2ObjectMap} becomes a live view of NeoForge's identifier-keyed map in
@@ -65,7 +65,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       this is registered before that transformer;</li>
  *   <li>DELEGATE — vanilla's signature as a pure stub that forwards to NeoForge's widened overload of the same name,
  *       its own arguments where the types match and null, zero or false for what NeoForge appended. Exactly the shape
- *       the merged base has for {@code AxeItem.evaluateNewBlockState}, so the {@code carrier-stubs.txt} row MixinStubRebind
+ *       the old merged base had for {@code AxeItem.evaluateNewBlockState}, so the {@code carrier-stubs.txt} row MixinStubRebind
  *       moves Fabric injectors along keeps working; a vanilla-compiled caller gets NeoForge's live body;</li>
  *   <li>VANILLA_BODY — vanilla's own method, copied from the vanilla reference ({@code native-reference/FABRIC}, the
  *       hash-pinned vanilla classes the kernel already resolves Fabric mixins against) where the consumers anchor
@@ -76,7 +76,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       an unresolved injector. The copy calls only what the class itself still declares (checked: a reference to a
  *       member vanilla declared and this class does not stands the row down), its private lambdas come with it under a
  *       fresh name when the class already has a different body under theirs, and the live path reaches it where the
- *       merged base's does: the PiP repair clones this lookup into NeoForge's pooled one, and
+ *       old merged base's did: the PiP repair clones this lookup into NeoForge's pooled one, and
  *       {@code PayloadCodecFunnelInjector} routes NeoForge's {@code CustomPacketPayload.codec} through vanilla's.</li>
  * </ul>
  * Not twinned, on purpose: {@code collectParts} (NeoForge's default method already bridges it), {@code dumpValue}
@@ -290,7 +290,7 @@ public final class VanillaMemberTwinInjector implements ClassTransformer {
 		}
 		boolean isInterface = (node.access & Opcodes.ACC_INTERFACE) != 0;
 		// javac's own choice for each (a private method of a class is invokevirtual since nestmates), so the stub reads
-		// exactly as the merged base's forwarding stubs do.
+		// exactly as the base's own forwarding stubs do.
 		int opcode = isStatic ? Opcodes.INVOKESTATIC : row.name().equals("<init>") ? Opcodes.INVOKESPECIAL
 				: isInterface ? Opcodes.INVOKEINTERFACE : Opcodes.INVOKEVIRTUAL;
 		stub.instructions.add(new MethodInsnNode(opcode, node.name, row.name(), row.live(), isInterface));

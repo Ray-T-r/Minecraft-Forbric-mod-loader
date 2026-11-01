@@ -38,7 +38,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>NeoForge's {@code CustomPacketPayload} has both overloads, each with its own body: vanilla's
  * {@code codec(FallbackProvider, List)} and NeoForge's {@code codec(FallbackProvider, List, ConnectionProtocol,
- * PacketFlow)}, which builds the protocol-aware codec NeoForge's networking needs. Every merged caller calls
+ * PacketFlow)}, which builds the protocol-aware codec NeoForge's networking needs. Every caller in the base calls
  * NeoForge's, so vanilla's is declared and never run. A mod's {@code @At(INVOKE)} on the call is moved by
  * {@code MixinAtWidenedCall}; an injector INTO vanilla's method has nothing to move to. Carpet's is one: at its HEAD
  * it adds {@code carpet:hello} to the type list and re-calls the method with the longer list — so the type was in

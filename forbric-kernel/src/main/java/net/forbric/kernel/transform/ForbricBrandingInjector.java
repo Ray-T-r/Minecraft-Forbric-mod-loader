@@ -32,9 +32,9 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Shows Forbric's release where the game shows the loader: the title screen's bottom-left and F3's version line.
  *
- * <p>The merged base's title screen draws NeoForge's {@code BrandingControl}: "NeoForge 26.2.0.88 (N mods loaded)",
+ * <p>NeoForge's title screen draws its {@code BrandingControl}: "NeoForge 26.2.0.88 (N mods loaded)",
  * where N is NeoForge's {@code ModList} — only the NeoForge mods. It now reads
- * {@code forbric-v0.3.1-beta (N mods loaded)} with N every mod the player installed, of all three ecosystems
+ * {@code forbric-v0.3.1-beta (N mods loaded)} with N every mod the player installed, of both ecosystems
  * ({@code ForbricBranding.installedModCount}, what Forbric's Mods screen lists). F3's
  * "Minecraft 26.2 (26.2-forbric/neoforge)" — the launcher's profile id and the client brand — reads
  * "Minecraft 26.2 (forbric-v0.3.1-beta/forbric)".

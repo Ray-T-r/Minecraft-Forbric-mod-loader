@@ -23,8 +23,8 @@ import java.util.concurrent.atomic.AtomicBoolean;
 /**
  * Refuses work offered to a chunk-cache executor whose thread is already dead.
  *
- * <p><b>This is HARDENING, not a repair.</b> It fixes no defect of Forbric's and no defect of the merged
- * base — the merged {@code ServerChunkCache} and Lithium's {@code getChunkOffThread} were both measured
+ * <p><b>This is HARDENING, not a repair.</b> It fixes no defect of Forbric's and no defect of the game
+ * base — its {@code ServerChunkCache} (on the old merged base) and Lithium's {@code getChunkOffThread} were both measured
  * byte-for-byte equivalent to vanilla. It exists so that one particular way for a MOD to be wrong stops
  * costing the player an unreadable death.
  *

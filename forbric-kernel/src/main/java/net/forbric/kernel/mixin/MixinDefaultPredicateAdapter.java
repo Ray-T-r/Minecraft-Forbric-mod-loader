@@ -84,7 +84,7 @@ public final class MixinDefaultPredicateAdapter {
         MethodNode body = MixinTargetSelectors.boundAsWritten(handler, host, nativeHost);
         if (body == null || (handler.access & Opcodes.ACC_STATIC) == 0 && (body.access & Opcodes.ACC_STATIC) != 0) return null;
         // The call the redirect names, as Mixin resolves its target: spelled in full, that member; shortened, the one call
-        // it selects in the method the mod was compiled against (the merged body no longer makes it).
+        // it selects in the method the mod was compiled against (the current body no longer makes it).
         String named = MixinCallbackShape.pointMember(at, null);
         if (named == null) {
             // Only a current body that still calls a method of that name (on that owner, where given) can hold the live

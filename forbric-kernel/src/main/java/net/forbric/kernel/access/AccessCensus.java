@@ -28,7 +28,7 @@ import net.forbric.kernel.util.ForbricLog;
  * The access directives — MinecraftForge/NeoForge {@code accesstransformer.cfg} lines and Fabric access-widener
  * entries — that named a member their target class does not have.
  *
- * <p>Both transformers apply by visiting a class and widening what they meet; a directive for a member the merge
+ * <p>Both transformers apply by visiting a class and widening what they meet; a directive for a member the base
  * renamed or dropped meets nothing and says nothing, and the mod that needed the access dies later on an
  * {@code IllegalAccessError} that names neither the directive nor the mod. Each transformer records such a
  * directive here as it finishes the class, with the jar the directive came from; {@link #report} says how many,
@@ -113,9 +113,9 @@ public final class AccessCensus {
 	}
 
 	/**
-	 * @param retyped	 judged re-typed by the merge: an access-widener FIELD whose name is there under another
+	 * @param retyped	 judged re-typed by the base: an access-widener FIELD whose name is there under another
 	 *					descriptor — a Fabric widener is written against the exact vanilla version and field names
-	 *					are never overloaded, so that is a merge re-typing and nothing else
+	 *					are never overloaded, so that is a base re-typing and nothing else
 	 * @param namePresent the name is there under another descriptor but the case is NOT judged: a method (an
 	 *					overload this Minecraft lacks is at least as likely — bagus_lib's Model.animate, YACL's
 	 *					Tooltip constructor — and a Forge AT is carried across versions unchanged)

@@ -72,8 +72,8 @@ import net.forbric.kernel.util.ForbricLog;
  * aborted, and a dedicated server with bclib died on "Failed to load datapacks" before it made a world.
  *
  * <p>So {@code lambda-permutations.txt}, which LambdaPermutationCensusTest re-derives from the vanilla jar and the
- * staged merged base, lists every vanilla lambda the current class declares once with the same parameters in another
- * order — and the order is taken from the local variable NAMES, each vanilla parameter matching exactly one merged
+ * staged game base, lists every vanilla lambda the current class declares once with the same parameters in another
+ * order — and the order is taken from the local variable NAMES, each vanilla parameter matching exactly one current
  * one by name and type. The type-only guard below would refuse WorldLoader's (two {@code List}s, two
  * {@code Executor}s); a row does not need it, because a row is not a guess. A row is used only when the handler fits
  * its vanilla descriptor, does not fit the live one, and the live descriptor IS the row's current one: a table left
@@ -91,7 +91,7 @@ import net.forbric.kernel.util.ForbricLog;
  * injection silently receiving the wrong object, which is the worst outcome this package can produce. Both are
  * refused, and the mixin fails exactly as it did before.
  *
- * <p>Refused too: a handler that captures locals after its {@code CallbackInfo} (the locals are the merged
+ * <p>Refused too: a handler that captures locals after its {@code CallbackInfo} (the locals are the current
  * method's, not the one it was written against, so a mapping by type would be inventing them), a name-only
  * selector that names more than one method (which target?), and a static target with an instance handler (there
  * is no receiver to call it on).
@@ -243,7 +243,7 @@ public final class MixinHandlerShim {
 	}
 
 	/**
-	 * One census row: {@code owner#name vanillaDesc -> mergedDesc p0,p1,…}, where {@code p[i]} is the merged index
+	 * One census row: {@code owner#name vanillaDesc -> mergedDesc p0,p1,…}, where {@code p[i]} is the current index
 	 * holding vanilla's parameter {@code i}.
 	 */
 	record Permutation(String owner, String name, String vanillaDesc, String mergedDesc, int[] perm) {

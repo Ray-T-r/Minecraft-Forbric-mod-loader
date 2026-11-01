@@ -173,8 +173,8 @@ final class TailLocals {
 	/**
 	 * Whether the verifier's own state at {@code from} types {@code local}'s slot as the local's type: the frame declared
 	 * last before {@code from} (only a branch target carries one, so none lies between it and {@code from}), and the
-	 * stores between them. The data flow can hold a value in a slot the declared frame dropped — javac and the merge's
-	 * frame writer both drop a local whose scope ended, and ThrownEnderpearl.tick's path into its tail arrives with only
+	 * stores between them. The data flow can hold a value in a slot the declared frame dropped — javac (and the old merge's
+	 * frame writer) drops a local whose scope ended, and ThrownEnderpearl.tick's path into its tail arrives with only
 	 * {@code this} and the level declared — and the verifier reads the declared state, not the data flow.
 	 */
 	private static boolean declaredAt(String owner, MethodNode method, int from, LocalVariableNode local) {

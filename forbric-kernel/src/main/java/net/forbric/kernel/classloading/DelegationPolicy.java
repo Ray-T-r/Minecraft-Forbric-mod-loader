@@ -58,7 +58,7 @@ public final class DelegationPolicy {
 			// UNSHADED package name, and in that copy StampedConfig.valueMap() is the 3.7.4 stub that throws
 			// "StampedConfig does not support valueMap() yet." Because the carrier is one of this loader's own
 			// jars, child-first handed every NightConfig class to that copy — shadowing the working 3.8.x on the
-			// parent classpath — while the merged base's NeoForge half was compiled against 3.8.x, where
+			// parent classpath — while NeoForge was compiled against 3.8.x, where
 			// valueMap() returns a real view. Any config read that descends a dotted path into a sub-config then
 			// died: a mod's config file is stored as nested tables, so `get("mixin.perf.surface")` has to descend.
 			// zfastnoise is where this surfaced (its mixin plugin reads config in its constructor, so the plugin
@@ -90,7 +90,7 @@ public final class DelegationPolicy {
 			// copy still believed it had done the work.
 			"net.forbric.kernel.interop.",
 			// The unified Forbric API. Parent-loaded for the same reason net.fabricmc.api. is: it is the
-			// vocabulary the kernel and all three compatibility layers share, so there must be exactly ONE
+			// vocabulary the kernel and both compatibility layers share, so there must be exactly ONE
 			// copy of it in the JVM. Two copies would make an Ecosystem constant handed across the boot/game
 			// boundary fail == against itself, which is the kind of defect that reads as "the branch is just
 			// wrong" for a day.

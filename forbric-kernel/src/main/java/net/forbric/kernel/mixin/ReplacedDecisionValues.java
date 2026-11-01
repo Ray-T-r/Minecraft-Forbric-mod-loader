@@ -43,7 +43,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Nothing here knows a mod, a class or a method by name. One injector is moved when its only point is a call, with no
  * slice and no {@code @Group}; its method is the same natively (the class its ecosystem's mods were compiled against) and
- * merged; the native method makes that call exactly where the point picks it (once, or the occurrence its ordinal names)
+ * in the current class; the native method makes that call exactly where the point picks it (once, or the occurrence its ordinal names)
  * and the current method never; the native call is followed by a conditional jump; and the current method makes exactly
  * one call the native method never makes, of the same return type, followed by the same conditional jump over a block
  * identical, instruction for instruction, to the native one — or the native call is stored straight into a local the

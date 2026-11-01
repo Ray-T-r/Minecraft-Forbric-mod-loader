@@ -70,7 +70,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <ul>
  *   <li>it is a {@code @Redirect} with one {@code INVOKE} point, no slice and no {@code @Group}, static, bound natively to one
  *       static method that is a lambda's implementation — the handle of exactly one {@code LambdaMetafactory} call in one
- *       method of the class — and absent merged; the point selects one call there (its ordinal's occurrence), which the
+ *       method of the class — and absent from the current class; the point selects one call there (its ordinal's occurrence), which the
  *       handler does not make itself;</li>
  *   <li>the current method makes exactly one {@code LambdaMetafactory} call of the same functional method and types, handed on to
  *       the same consumer, whose handle is a method reference to another class's instance method on a captured receiver; the

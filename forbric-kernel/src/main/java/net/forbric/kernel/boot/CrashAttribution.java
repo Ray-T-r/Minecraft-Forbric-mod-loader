@@ -58,7 +58,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>A jar file name is not a mod id — {@code xaeroworldmap-forge-26.2-1.46.1.jar} carries ids from the
  * {@code xaerominimap} family, and jars renamed to a content hash are real. So every name found in the trace is
  * looked up in {@link ModCatalog}, and a name no row carries contributes nothing. That also supplies the
- * deny-list for free: the merged base, the runtime carriers, the kernel's own jar and Minecraft's libraries are
+ * deny-list for free: the game base, the runtime carrier, the kernel's own jar and Minecraft's libraries are
  * not mods, so they are not in the catalogue, so they cannot be blamed.
  *
  * <p>Same rule for the other two forms. {@code MixinConfigOwners}' policy is the one this inherits: a

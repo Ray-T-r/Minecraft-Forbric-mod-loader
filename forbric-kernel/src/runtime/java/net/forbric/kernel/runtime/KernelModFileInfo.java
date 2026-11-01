@@ -123,7 +123,7 @@ public final class KernelModFileInfo implements IModFileInfo {
 	}
 
 	/**
-	 * Both carriers report the first mod's resolved version, not the raw jar manifest's version. The owner is
+	 * NeoForge reports the first mod's resolved version, not the raw jar manifest's version. The owner is
 	 * back-filled before this file info is published, and already carries discovery's TOML/manifest substitutions.
 	 */
 	@Override

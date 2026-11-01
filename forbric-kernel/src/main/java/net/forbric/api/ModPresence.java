@@ -52,7 +52,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>It is the first domain where the three compatibility layers align to a Forbric-owned answer rather than to
  * each other, so it is the first one to move out of {@code net.forbric.kernel.boot}. The move is what makes that
- * real rather than nominal: {@code ForeignModPresenceInjector} rewrites both families' {@code ModList.isLoaded}
+ * real rather than nominal: {@code ForeignModPresenceInjector} rewrites NeoForge's {@code ModList.isLoaded}
  * to call {@code net/forbric/api/ModPresence.isLoaded}, so the bytecode crossing from game code into the kernel
  * now lands on an API type instead of a boot-side internal.
  *
@@ -131,7 +131,7 @@ public final class ModPresence {
 	/**
 	 * Whether a mod with this id is running in this instance, in ANY ecosystem.
 	 *
-	 * <p>Called from game code: the transform chain rewrites both families' {@code ModList.isLoaded} to OR their
+	 * <p>Called from game code: the transform chain rewrites NeoForge's {@code ModList.isLoaded} to OR its
 	 * own answer with this one. Never throws — a presence check that can fail is worse than one that says no.
 	 */
 	public static boolean isLoaded(String id) {
@@ -160,7 +160,7 @@ public final class ModPresence {
 	 * The spelling-insensitive form of a mod id: lower case, with {@code -} and {@code _} unified.
 	 *
 	 * <p>Only those two, and nothing else. This is not a fuzzy match — it encodes exactly one fact, that the
-	 * three ecosystems disagree about which separator a mod id may contain, and nothing about what a mod is.
+	 * loaders disagree about which separator a mod id may contain, and nothing about what a mod is.
 	 */
 	public static String spellingKey(String id) {
 		return id.replace('-', '_').toLowerCase(java.util.Locale.ROOT);

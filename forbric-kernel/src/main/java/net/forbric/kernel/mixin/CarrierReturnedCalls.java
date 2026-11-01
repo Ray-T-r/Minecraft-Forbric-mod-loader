@@ -42,7 +42,7 @@ import net.forbric.kernel.util.Caught;
  * ran exactly when the method returned through that call.
  *
  * <p>This moves the wrap to the method's answer on exactly those ways: a {@code @ModifyReturnValue} at each return the
- * merged method reaches under the conditions the native call was made under (and on no way the native call was not made),
+ * current method reaches under the conditions the native call was made under (and on no way the native call was not made),
  * which hands the mod's handler, as written, the values the native call was handed and an {@code Operation} that answers
  * with the carrier's answer. It moves only where all of this is read off the classes, never off a name:
  * <ul>

@@ -65,7 +65,7 @@ public final class KernelModCatalog {
 	 * Builds and publishes the catalogue.
 	 *
 	 * @param mods every mod of every ecosystem, already arbitrated — the caller is the one place in the boot that
-	 *             holds all three families at once
+	 *             holds both families at once
 	 */
 	public static void publish(List<DiscoveredMod> mods) {
 		publish(mods, null);

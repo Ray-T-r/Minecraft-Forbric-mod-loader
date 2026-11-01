@@ -86,7 +86,7 @@ import net.forbric.kernel.util.Caught;
  *       whose dispatch is known: a static call; a call to a private method of the class itself; or an instance call whose
  *       receiver's exact class is proved — a new instance, the result of a static method every return of which is a new
  *       instance of one class, or the method's own receiver, guarded at run time by {@code getClass()} so an instance of a
- *       subclass still makes the call as merged;</li>
+ *       subclass still makes the call as the base has it;</li>
  *   <li>everything the inlined code names is reachable from the class it moves into, or is a field or a static method of a
  *       class this loader still has to define, which is then made public (never a private instance method, whose widening
  *       would turn a same-named method of a subclass into an override);</li>

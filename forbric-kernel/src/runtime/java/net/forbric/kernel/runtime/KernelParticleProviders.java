@@ -33,8 +33,8 @@ import net.minecraft.resources.Identifier;
  *
  * <p>Vanilla 26.2 declares {@code providers} as {@code Int2ObjectMap<ParticleProvider<?>>} keyed by the particle
  * type's registry id. NeoForge 26.2.0.88 RE-TYPES that same field to {@code Map<Identifier, ParticleProvider<?>>}.
- * Same name, different descriptor is legal in the JVM, so the merged base carries BOTH — and the surviving
- * {@code <init>} writes only NeoForge's. The vanilla-typed one is null forever.
+ * Same name, different descriptor is legal in the JVM, so VanillaMemberTwinInjector declares vanilla's beside it —
+ * and NeoForge's {@code <init>} writes only its own. The vanilla-typed one is null forever.
  *
  * <p>That is not a dormant curiosity. fabric-api's {@code DirectParticleProviderRegistry.register} reads the field
  * DIRECTLY — a raw {@code getfield providers:Lit/unimi/dsi/fastutil/ints/Int2ObjectMap;}, then

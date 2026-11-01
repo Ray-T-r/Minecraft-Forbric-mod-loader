@@ -63,7 +63,7 @@ import net.forbric.kernel.util.ForbricLog;
  * catching {@code Throwable} here would swallow {@code StackOverflowError} and {@code OutOfMemoryError}.
  *
  * <p>The target is matched STRUCTURALLY, never by name. It is an anonymous class — {@code ResourceMetadata$2}
- * today — and anonymous numbering renumbers whenever the enclosing source shifts, which on a byte-merged base is
+ * today — and anonymous numbering renumbers whenever the enclosing source shifts, which on a patched base is
  * a thing that happens. The three implementors in the nest are told apart by the {@code DataResult.getOrThrow}
  * call, which only the JSON-backed one makes: the {@code EMPTY} singleton returns {@code Optional.empty()}
  * unconditionally, and the map-backed one reads an already-parsed map.
@@ -99,7 +99,7 @@ public final class PackMetadataFailSoftInjector implements ClassTransformer {
 	@Override
 	public AnchorSet anchors() {
 		// Matched by nest-member prefix rather than by name, on purpose: anonymous numbering shifts whenever the
-		// enclosing source does, and on a byte-merged base it shifts often. Most of the classes that match the
+		// enclosing source does, and on a patched base it shifts often. Most of the classes that match the
 		// prefix are correctly left alone, so "handed a class and made no edit" is the normal case here and
 		// cannot be read as a failure. This one needs a per-repair claim, not a per-class anchor.
 		return AnchorSet.scanned("matches ResourceMetadata's nest members structurally; most correctly go untouched");

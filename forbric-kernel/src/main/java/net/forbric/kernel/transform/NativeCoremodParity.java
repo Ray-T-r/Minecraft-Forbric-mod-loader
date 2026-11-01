@@ -23,8 +23,8 @@ import org.objectweb.asm.tree.MethodNode;
  * What NeoForge's own coremods do to the game, done by the kernel, after Mixin, where NeoForge does it.
  *
  * <p>NeoForge ships its coremods in a separate jar ({@code neoforge-coremods}, a {@code ClassProcessorProvider}) that
- * the kernel never loads, so on the merged base — whose bodies are mostly NeoForge's and are written for those
- * rewrites — none of them ever ran:
+ * the kernel never loads, so on NeoForge's base — whose bodies are written for those rewrites — none of them would
+ * run:
  * <ul>
  *   <li>{@code FlowerPotBlock.potted} → {@code getPotted()}. NeoForge's constructors store null in the field and
  *       keep the plant in a supplier, so every pot threw on pick-block, planting and taking a plant out.</li>

@@ -33,7 +33,7 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Replaces the body of named methods with a minimal type-correct return — a general kernel stub tool.
  *
- * <p>Used to neuter genuine-loader lifecycle hooks the merged base weaves into vanilla but that are meaningless
+ * <p>Used to neuter genuine-loader lifecycle hooks the game base weaves into vanilla but that are meaningless
  * without the corresponding ecosystem lifecycle (which the kernel does not run). For M1 (zero mods) this is
  * strictly loss-free: e.g. NeoForge's {@code ServerLifecycleHooks.runModifiers} applies mod-added biome/structure
  * modifiers by looking up the {@code neoforge:biome_modifier} datapack registry — with no mods there are no

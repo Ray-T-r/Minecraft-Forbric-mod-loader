@@ -86,7 +86,7 @@ public final class KernelMixinErrorHandler implements IMixinErrorHandler {
 		}
 		{
 			// The reason, when the kernel worked one out while READING the mixin. "InvalidInjectionException" is
-			// true and tells a player nothing; what the merge did to the target is the sentence worth carrying.
+			// true and tells a player nothing; what the base did to the target is the sentence worth carrying.
 			String why = MixinOverloadPin.reasonFor(mixinName);
 			String detail = why != null
 					? "its mixin " + mixinName + " " + what + cause + " — " + why

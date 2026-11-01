@@ -32,8 +32,8 @@ import net.minecraft.client.KeyMapping;
  * Vanilla's {@code KeyMapping.MAP} — every bound key to the mappings bound to it — as a read-only view of the
  * mappings by name, which NeoForge's {@code KeyMapping} still keeps as vanilla's {@code ALL}.
  *
- * <p>Both ecosystems re-type vanilla's {@code MAP:Ljava/util/Map;} to their own {@code KeyMappingLookup}, and the
- * merged class keeps their two and not vanilla's. A Fabric mod that reads {@code KeyMapping.MAP} as a {@code Map}
+ * <p>NeoForge re-types vanilla's {@code MAP:Ljava/util/Map;} to its own {@code KeyMappingLookup}, and its class
+ * keeps that one and not vanilla's. A Fabric mod that reads {@code KeyMapping.MAP} as a {@code Map}
  * (LiquidBounce's inventory movement, on every key press in a screen) died on {@code NoSuchFieldError}. The field is
  * given back as this view: what vanilla keeps in it, grouped from the same mappings, keyed by each one's current key.
  *

@@ -31,7 +31,7 @@ import net.minecraft.network.protocol.common.custom.CustomPacketPayload;
  * Builds every custom-payload codec through vanilla's {@code codec(fallback, types)} again, so a mod hooking that
  * method takes part, while the codec built is still NeoForge's protocol-aware one.
  *
- * <p>The merged packet classes call only NeoForge's {@code codec(fallback, types, protocol, flow)}; vanilla's
+ * <p>The packet classes call only NeoForge's {@code codec(fallback, types, protocol, flow)}; vanilla's
  * overload is still there, with its own body, and nothing calls it. Carpet adds its {@code carpet:hello} type at
  * the HEAD of vanilla's overload (and re-calls it with the longer list), so its type was in no codec: a dedicated
  * server running Carpet could not encode the hello and disconnected every player as they logged in.

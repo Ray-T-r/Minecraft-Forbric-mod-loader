@@ -28,7 +28,7 @@ import net.forbric.kernel.util.ForbricLog;
  * refuses the injection.
  *
  * <p>Nothing here knows a mod, a class or a method by name. For one injector with one call or field point and no slice,
- * whose method is the same natively (the class its ecosystem's mods were compiled against) and merged, and whose point
+ * whose method is the same natively (the class its ecosystem's mods were compiled against) and in the current class, and whose point
  * selects as many instructions in both: each {@code @Local} that resolves to one local at the native point and not to
  * one at the current point is pinned ({@code @Local(index)}) to the current local that holds what the native one holds —
  * proved by the instruction that produced it ({@link MixinLocalOriginProof#prove}), or, where that proof is not

@@ -31,16 +31,16 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Moves a mod's injector off a merge-added delegating stub onto the method that carries the body, when the mod was
+ * Moves a mod's injector off a carrier-added delegating stub onto the method that carries the body, when the mod was
  * compiled against a class where that signature was the body.
  *
  * <p>Mixin binds a selector without a descriptor to the FIRST declared method of that name (the selector's default
  * quantifier is one match; {@code TargetSelectors} stops there), and one with a descriptor to exactly that method. A
  * carrier that widened a vanilla method usually kept vanilla's signature in place as a stub —
- * {@code Player.getDestroySpeed(BlockState)} is {@code return getDestroySpeed(state, null)} on the merged base — and
+ * {@code Player.getDestroySpeed(BlockState)} is {@code return getDestroySpeed(state, null)} on NeoForge's base — and
  * put the body in the new overload after it. A Fabric mod was compiled against vanilla, where that one method IS the
  * body, so its injector lands on the stub: an anchor inside the body is simply missing, and a {@code HEAD} or
- * {@code RETURN} injection runs only when something calls the stub. Nothing on the merged base calls
+ * {@code RETURN} injection runs only when something calls the stub. Nothing on NeoForge's base calls
  * {@code getDestroySpeed(BlockState)}: architectury's and Collective's break-speed events never fired.
  *
  * <p>The injector's selector moves to the delegate. A handler that captures the target's arguments is wrapped: the
@@ -94,7 +94,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       int)} captures all three, the stub feeds the first two into a {@code Builder}, and moving it to
  *       {@code (Builder, int)} made MixinExtras reject the handler and the whole required mixin with it. It now
  *       stays on the stub, where it binds, and is reported SUSPECTED: it then runs only where something calls the
- *       stub. The merged dedicated server builds its fuel without calling it; the kernel's fuel bridge
+ *       stub. NeoForge's dedicated server builds its fuel without calling it; the kernel's fuel bridge
  *       ({@code KernelFabricFuel.throughVanillaReturnHooks}) now calls it there, so this one runs on both sides unless
  *       {@code -Dforbric.fabricFuel.returnHooks=off} ({@code -Dforbric.mixinStubRebind.stubFinding=off} drops the
  *       finding); puzzleslib's {@code getDestroySpeed(float, BlockState)} still moves,
@@ -104,7 +104,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       type across a body the carrier widened), at {@code LOAD}/{@code STORE} with no slice, when the stub has no
  *       local of that name and the delegate's table has it in one slot of the handler's type, accessed while live more
  *       times than the {@code @At}'s ordinal. torrential's Conduit Power mining bonus names {@code speed} in
- *       {@code Player.getDestroySpeed}; the merged stub has no {@code speed}, the body is the overload the game calls,
+ *       {@code Player.getDestroySpeed}; the carrier's stub has no {@code speed}, the body is the overload the game calls,
  *       and the bonus silently never applied. One discriminated by {@code ordinal} alone moves only with the slot it
  *       reads pinned as its {@code index}: the native method's ordinal-picked local and exactly one non-added local of
  *       the delegate holding the same values ({@link #ordinalLocalPinned}) — puzzleslib's explosion hook spares entities
@@ -450,7 +450,7 @@ public final class MixinStubRebind {
 	/**
 	 * Whether {@code method} of {@code target} heads a carrier-stubs.txt row where a mod of {@code ecosystem} was compiled
 	 * against code, by either selector form: an injector of that mod attached only there runs just for callers of the
-	 * old signature, which on the merged base are often none (FinalMixinApplications reports it).
+	 * old signature, which on NeoForge's base are often none (FinalMixinApplications reports it).
 	 */
 	public static boolean isStubOverBody(ClassNode target, MethodNode method, Ecosystem ecosystem) {
 		if (target == null || method == null || ecosystem == null) return false;

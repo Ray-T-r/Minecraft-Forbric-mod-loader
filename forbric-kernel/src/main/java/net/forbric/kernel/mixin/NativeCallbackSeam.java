@@ -27,11 +27,11 @@ final class NativeCallbackSeam {
     /**
      * {@link #derive(ClassNode, ClassNode, MethodNode, String, Function)}, where the current method may reach the helper
      * by the way one of {@code peers} reaches its own copy of the call instead: {@code peers} are the same class as other
-     * ecosystems compiled it natively. A merge that keeps another ecosystem's own edit in front of the helper (its hook,
+     * ecosystems compiled it natively. A base that keeps another ecosystem's own edit in front of the helper (its hook,
      * re-deriving the very operands the call is handed) leaves a prefix no longer the source's, but exactly that
      * ecosystem's — where its own body makes the same call, final, from the same operand wires. Locals other than the
      * parameters and those wires are compared as the variables they are (their def-use webs, by first appearance), as
-     * a merge gives a kept edit's own local a fresh slot where that ecosystem's compiler reused one.
+     * a base gives a kept edit's own local a fresh slot where that ecosystem's compiler reused one.
      */
     static Plan derive(ClassNode original, List<ClassNode> peers, ClassNode current, MethodNode source, String target,
             Function<String, ClassNode> classes) {
@@ -86,7 +86,7 @@ final class NativeCallbackSeam {
                 if (projection[p] < 0) complete = false; hostSlot += hostArgs[p].getSize();
             }
             if (!complete) continue;
-            // The native prefix the current one is: the source's, or the peer's the merge kept.
+            // The native prefix the current one is: the source's, or the peer's the base kept.
             Plan candidate = new Plan(current.name, source.name + source.desc, member, helper.name, body.name + body.desc,
                 projection, currentPrefix, currentPrefix, MixinInstructionFingerprint.hash(body));
             if (found != null) return null; found = candidate;

@@ -268,7 +268,7 @@ check_absent "no bridge reported missing"       "bridge\(s\) MISSING"           
 # and the world rendered as the checkerboard with no other symptom.
 check "ModelManagerMixin trimmed, not pinned" "GuestInjectorPruner\] pruned 2 injector\(s\) from .*ModelManagerMixin" "$LOG"
 check_absent "block models still parse"       "JSON data was null or empty"                "$LOG"
-# G1: an injector bound by explicit descriptor to a merge-added DELEGATING STUB (NeoForge moved the body of
+# G1: an injector bound by explicit descriptor to a carrier-added DELEGATING STUB (NeoForge moved the body of
 # SimpleContainer.setItem(int,ItemStack) into a 3-arg overload) is rebound to the delegate, so fabric-transfer's
 # setChanged suppression applies again instead of reading PARTIAL. MixinStubRebind makes the move (setItem is a
 # carrier-stubs.txt row, and MixinFit judges it where it lands); with it off, MixinRetarget's renamed-body rule makes

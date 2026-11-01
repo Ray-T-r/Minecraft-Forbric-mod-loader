@@ -55,7 +55,7 @@ import net.forbric.kernel.util.ForbricLog;
  * not: it makes {@code InjectionInfo.postInject} throw for every injector that lands fewer times than its
  * {@code expect} (1 unless written), which the kernel's relaxed {@code require}/{@code defaultRequire} do not govern.
  * The crash this was found on is of the second kind. With lambdynamiclights in a pack and {@code countInjections} on,
- * spruceui's NeoForge {@code GuiMixin} wraps {@code ClientHooks.extractScreen}, a call the merged
+ * spruceui's NeoForge {@code GuiMixin} wraps {@code ClientHooks.extractScreen}, a call the current
  * {@code Gui.extractRenderState} no longer makes; its {@code @WrapOperation} found nothing, the check threw, and
  * {@code Gui} was defined without fabric-screen-api's {@code GuiExtensions}, architectury's {@code MixinGui} or anyone
  * else's: {@code Minecraft.<init>} died on the cast. balm's {@code FabricCropBlockMixin}, whose moisture wrap needs the

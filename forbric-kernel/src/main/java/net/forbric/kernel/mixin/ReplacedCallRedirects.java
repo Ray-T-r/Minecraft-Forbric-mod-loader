@@ -52,7 +52,7 @@ import net.forbric.kernel.util.ForbricLog;
  * compiled).
  *
  * <p>The redirect is read as Mixin reads it, never by its spelling: its selectors by the method they bind (in the class
- * the mod was compiled against, and the same method in the merged one), its point and its slice's start by the member each
+ * the mod was compiled against, and the same method in the current one), its point and its slice's start by the member each
  * names in the method it was written for ({@link MixinCallbackShape#member}) — whitespace, a dotted owner, and a target
  * without its owner or descriptor that selects only that member's instructions there are the same redirect.
  */

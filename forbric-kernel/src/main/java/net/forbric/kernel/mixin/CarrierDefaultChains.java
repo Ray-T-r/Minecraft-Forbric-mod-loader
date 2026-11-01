@@ -181,9 +181,9 @@ public final class CarrierDefaultChains {
 	}
 
 	/**
-	 * The vanilla operation the injector names in the native method {@code was}, which the merged method {@code selected} no
-	 * longer performs: the constant pushed once natively and never merged, or the call (the occurrence the ordinal names, or
-	 * the only one) natively made and never merged. Null otherwise.
+	 * The vanilla operation the injector names in the native method {@code was}, which the current method {@code selected} no
+	 * longer performs: the constant pushed once natively and absent from the current body, or the call (the occurrence the ordinal names, or
+	 * the only one) natively made and absent from the current body. Null otherwise.
 	 */
 	private static AbstractInsnNode vanillaOperation(MethodNode was, MethodNode selected, AnnotationNode at, Object constant) {
 		if (constant != null) {

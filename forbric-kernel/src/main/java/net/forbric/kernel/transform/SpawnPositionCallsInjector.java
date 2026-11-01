@@ -21,7 +21,7 @@ import org.objectweb.asm.tree.*;
  * decision to them: {@code EventHooks.checkSpawnPositionSpawner(mob, level, SPAWNER, spawnData, this)} in
  * {@code BaseSpawner.serverTick} (where vanilla skips the rules for spawn data with custom rules), and
  * {@code EventHooks.checkSpawnPosition(mob, level, reason)} in {@code NaturalSpawner} (natural and chunk-generation
- * spawns) and {@code SpawnUtil} (summoned mobs). The merged base kept NeoForge's bodies, so a Fabric mixin that
+ * spawns) and {@code SpawnUtil} (summoned mobs). The base carries NeoForge's bodies, so a Fabric mixin that
  * redirects those calls finds nothing: architectury's {@code MixinBaseSpawner} and {@code MixinNaturalSpawner}
  * (its spawn-check event) are required injections, and on the popular pack each stopped a STRICT dedicated server.
  *

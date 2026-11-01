@@ -156,7 +156,7 @@ public final class FinalMixinApplications {
     String replacement=lost||optionalMiss||state==Outcome.UNKNOWN&&references==0
       ?MixinEquivalentImplementations.proof(mixin,injector.name(),injector.desc(),injector.bodyHash(),target):null;
     if(replacement!=null)state=Outcome.EQUIVALENT;
-    // Attached, but only inside a forwarding stub the merge kept for vanilla's signature, where the mod's own platform
+    // Attached, but only inside a forwarding stub the base kept for vanilla's signature, where the mod's own platform
     // ran code: it runs only when something still calls that old signature. torrential's fuel hook stays on
     // FuelValues.vanillaBurnTimes' stub (its captures need the stub's arguments), which the server never calls
     // until the kernel's fuel bridge began handing its table through it (KernelFabricFuel.throughVanillaReturnHooks).

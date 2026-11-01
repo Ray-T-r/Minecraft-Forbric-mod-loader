@@ -57,7 +57,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       {@code ModList} was never seeded and the client died in {@code Options.<init>} seconds later with an
  *       unrelated NPE. Sodium lost a mixin accessor in the same sweep.</li>
  *   <li>CustomSkinLoader's plugin resolves {@code SkinManager$3} from {@code acceptTargets}; anonymous inner
- *       classes renumber in the merged base, so it threw {@code Could not resolve target ClassInfo} and killed
+ *       classes renumber in the game base, so it threw {@code Could not resolve target ClassInfo} and killed
  *       the boot outright — {@code Exception in thread "main"}, no crash report, no clue.</li>
  * </ul>
  *

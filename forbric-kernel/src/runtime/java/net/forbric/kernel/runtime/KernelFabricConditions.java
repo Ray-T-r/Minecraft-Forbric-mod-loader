@@ -40,7 +40,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>Why nothing evaluates them</h2>
  *
- * <p>fabric-api reads that key from exactly two mixins, and the merged base defeats both:
+ * <p>fabric-api reads that key from exactly two mixins, and NeoForge's base defeats both:
  * <ul>
  *   <li>{@code RegistryLoadTaskPendingRegistrationMixin} injects at {@code Decoder.parse} inside
  *       {@code loadFromResource}. NeoForge's patch of that method replaced the call with {@code Codec.parse}
@@ -48,7 +48,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       anchor does not exist — and the kernel rewrites every guest config's {@code defaultRequire} to 0, so it
  *       SOFT-SKIPS. Silently.</li>
  *   <li>{@code SimpleJsonResourceReloadListenerMixin.skipData} targets
- *       {@code lambda$scanDirectory$0(Map, Identifier, Object)}; the merged base's is
+ *       {@code lambda$scanDirectory$0(Map, Identifier, Object)}; NeoForge's is
  *       {@code (Identifier, Identifier, Map, Optional)}, because NeoForge's patch made the value optional and
  *       reordered the captures. Mixin rejects the class, taking the sibling injection with it.</li>
  * </ul>
@@ -61,7 +61,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <h2>Why one insertion is enough</h2>
  *
  * <p>{@code ConditionalOps} has four public factories and they all funnel into
- * {@code createConditionalCodecWithConditions(Codec, String)}. A constant-pool scan of the merged base finds
+ * {@code createConditionalCodecWithConditions(Codec, String)}. A constant-pool scan of the old merged base found
  * seven classes reaching them — the datapack-registry loader, {@code SimpleJsonResourceReloadListener} (both its
  * {@code scanDirectory} and its {@code scanDirectoryWithModifier}, which is the one recipes use), loot tables,
  * recipes, advancements and the datapack generator. Wrapping the funnel covers all of them; wrapping a call site
@@ -255,10 +255,10 @@ public final class KernelFabricConditions {
 	 * marker is a bare {@code new Object()}. The consumer is an {@code @Inject} on {@code lambda$scanDirectory$0}
 	 * that recognises the marker and cancels the map-put.
 	 *
-	 * <p>On the merged base the producer applies and the consumer does not. The merge left the class carrying TWO
-	 * methods named {@code lambda$scanDirectory$0} — NeoForge's {@code (Identifier,Identifier,Map,Optional)} and
-	 * vanilla's {@code (Codec,Identifier,Map,Object)} — and the live {@code invokedynamic} binds the first. So
-	 * fabric's {@code @Inject}, written against the second, attaches to nothing, and the bare Object flows into
+	 * <p>On NeoForge's base the producer applies and the consumer does not. The class's one
+	 * {@code lambda$scanDirectory$0} is NeoForge's {@code (Identifier,Identifier,Map,Optional)} (the old merged base also
+	 * kept vanilla's {@code (Codec,Identifier,Map,Object)}, which nothing called). So fabric's {@code @Inject}, written
+	 * against vanilla's, attaches to nothing, and the bare Object flows into
 	 * {@code DataResult.ifSuccess} whose consumer casts it to {@code Optional}: ClassCastException, datapack load
 	 * fails, "can't proceed with server load", and the server never starts.
 	 *
@@ -268,7 +268,7 @@ public final class KernelFabricConditions {
 	 *
 	 * <h2>Why Optional.empty()</h2>
 	 *
-	 * <p>Because that is the merged consumer's OWN vocabulary for "this file's conditions were not met" — it is
+	 * <p>Because that is the current consumer's OWN vocabulary for "this file's conditions were not met" — it is
 	 * what the surviving lambda already does with an empty value, and it logs exactly that. The substitution says
 	 * what fabric's unattached {@code skipData} would have said.
 	 *

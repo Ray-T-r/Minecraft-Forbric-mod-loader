@@ -53,10 +53,10 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Applied to {@code LivingEntity} and {@code Player} (which overrides it the same way), only where the method opens
  * with the invulnerability check and armours the container's amount rather than the parameter. A read of the
- * parameter before armour does not make the body vanilla's: the edit-splicing merge keeps MinecraftForge's
- * {@code damage = ForgeHooks.onLivingHurt(this, source, damage)} right after the check, whose result NeoForge's body
- * never reads again, so a mod rewriting that first read would still change nothing. Placed right after the
- * invulnerability check, so the read lands ahead of that merged Hurt call. {@code -Dforbric.vanillaDamageRead=off}.
+ * parameter before armour does not make the body vanilla's: NeoForge's body never reads the parameter again after the
+ * check, so a mod rewriting such a read would still change nothing. (On the old merged base that read was
+ * MinecraftForge's {@code damage = ForgeHooks.onLivingHurt(this, source, damage)}, kept by the edit-splicing merge.)
+ * Placed right after the invulnerability check. {@code -Dforbric.vanillaDamageRead=off}.
  *
  * <p>The same for vanilla's value at the absorption call. Vanilla holds the damage left after absorption in the parameter
  * when it calls {@code setAbsorptionAmount}, and goes on to the health with that value; NeoForge's body stores the
@@ -146,8 +146,8 @@ public final class VanillaDamageReadInjector implements ClassTransformer {
 		}
 		// No armour call at all, or no container, is not this method's shape. Vanilla's flow armours the parameter
 		// itself (its float argument is `fload 3`), so a mod changing the parameter changes the damage: nothing to do.
-		// NeoForge's body armours the container's amount; there a read of the parameter before armour — such as
-		// MinecraftForge's own Hurt hook, which a merge keeping both sides' edits carries — feeds nothing it applies.
+		// NeoForge's body armours the container's amount; there a read of the parameter before armour (on the old merged
+		// base, MinecraftForge's own Hurt hook) feeds nothing it applies.
 		if (armour < 1 || containers == null || load(code.get(armour - 1), Opcodes.FLOAD, 3)) return false;
 
 		InsnList read = new InsnList();

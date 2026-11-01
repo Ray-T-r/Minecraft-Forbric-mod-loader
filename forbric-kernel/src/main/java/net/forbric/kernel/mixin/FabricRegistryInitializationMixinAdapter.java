@@ -22,7 +22,7 @@ import net.forbric.kernel.util.ForbricLog;
  * everything but its second {@code bootStrap()} — a second freeze of frozen registries throws. What the callbacks call
  * besides is theirs and stays as written.
  *
- * <p>Injectors are read as Mixin reads them, never by spelling. A selector is the method it binds in the merged
+ * <p>Injectors are read as Mixin reads them, never by spelling. A selector is the method it binds in the current
  * {@code Bootstrap} ({@link MixinCallbackShape#selectsMember}); a caller with no class at hand gets the member every
  * selector, as Mixin parses it, can only name. A point is the member it names ({@link MixinCallbackShape#plainPoint}):
  * whitespace and a dotted owner are the same target, and one without its owner or descriptor names the member where the

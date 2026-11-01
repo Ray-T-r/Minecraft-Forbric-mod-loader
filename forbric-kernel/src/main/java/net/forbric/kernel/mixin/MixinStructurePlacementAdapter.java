@@ -52,7 +52,7 @@ public final class MixinStructurePlacementAdapter {
 	}
 
 	/**
-	 * {@code references} gives the class the mod was compiled against: the merged game no longer declares the native
+	 * {@code references} gives the class the mod was compiled against: the game no longer declares the native
 	 * {@code placeEntities}, so which method a bare name or pattern bound there is read off the native class
 	 * ({@link MixinTargetSelectors#nativeMember}); without it only a selector spelling that descriptor names it.
 	 */
@@ -156,7 +156,7 @@ public final class MixinStructurePlacementAdapter {
 
 	/**
 	 * One {@code @At(INVOKE)} at vanilla's call of {@code placeEntities} (read in {@code nativeCaller}, the method that made
-	 * it, when at hand), or at the merged call it was already moved to (read in {@code liveCaller}): the target as Mixin
+	 * it, when at hand), or at the current call it was already moved to (read in {@code liveCaller}): the target as Mixin
 	 * resolves it ({@link MixinCallbackShape#names}), not as it is spelled.
 	 */
 	private static boolean pointsAtTheCall(MethodNode handler, MethodNode nativeCaller, MethodNode liveCaller) {
@@ -183,7 +183,7 @@ public final class MixinStructurePlacementAdapter {
 		return BODY.contains(kind) && MixinCallbackShape.kind(handler, kind);
 	}
 
-	/** Whether the handler was written for the native {@code placeEntities}, the method the merged game no longer calls. */
+	/** Whether the handler was written for the native {@code placeEntities}, the method the game no longer calls. */
 	private static boolean authoredFor(MethodNode handler, ClassNode source) {
 		return OLD.equals(MixinTargetSelectors.nativeMember(handler, source, TARGET));
 	}

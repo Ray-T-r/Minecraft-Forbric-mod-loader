@@ -41,12 +41,12 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Names every installed mod that uses a fabric-api surface the merged base still switches off, and marks it
+ * Names every installed mod that uses a fabric-api surface NeoForge's base still switches off, and marks it
  * DEGRADED in the catalog so the loss reaches the log and {@code .forbric-kernel/load-report.txt} instead of
  * failing silently somewhere downstream.
  *
  * <p>{@link net.forbric.kernel.mixin.MergedBaseMixinCompat} pins a handful of fabric-api mixins that cannot fit
- * the merged base. Most of what they carried is restored by other means now (loot events by
+ * NeoForge's base. Most of what they carried is restored by other means now (loot events by
  * {@link LootTableEventDispatch}, model-loading plugins by {@link GuestInjectorPruner}, {@code fabric:type} model
  * formats by {@link ModelFormatFunnelInjector}); what is NOT is listed here, one surface per row, with the
  * predicate that says whether it is still lost on THIS boot — so switching a restoration off with its

@@ -52,7 +52,7 @@ import net.forbric.kernel.util.Caught;
  * point is, it is read as its injector reads it: once over the current body Mixin hands it, and once over the native body
  * of the same method (the hash-pinned native-reference bytes of the mod's platform, {@link NativeReferenceSources}), as a second target
  * of the same injector. Only when the two disagree in number does anything change. The native body and the current body
- * are then aligned ({@link CodeAlignment}), and each native occurrence the point selects is mapped to the merged
+ * are then aligned ({@link CodeAlignment}), and each native occurrence the point selects is mapped to the current
  * instruction that is the same step:
  * <ul>
  * <li>a numbered point selects the counterpart of its native occurrence;</li>

@@ -45,8 +45,8 @@ import net.forbric.kernel.util.Caught;
  * back goes into the field; the carrier's subset map stays the method's local, so a guest's {@code @Local} of the
  * native copy finds it where the native copy was.
  *
- * <p>Applied only where it is proved, never by a class or mod name: in a method whose native reference (as Fabric or
- * MinecraftForge compiled the class) calls {@code Map.clear()} on a field read from {@code this}, and whose merged
+ * <p>Applied only where it is proved, never by a class or mod name: in a method whose native reference (as Fabric
+ * compiled the class) calls {@code Map.clear()} on a field read from {@code this}, and whose current
  * body calls no {@code clear()} on that field and instead removes {@code local.keySet()} from it through a
  * {@code Map::remove} method reference, as javac lowers {@code local.keySet().forEach(this.field::remove)}.
  * {@code -Dforbric.scopedClearRelay=off} leaves such bodies as shipped.

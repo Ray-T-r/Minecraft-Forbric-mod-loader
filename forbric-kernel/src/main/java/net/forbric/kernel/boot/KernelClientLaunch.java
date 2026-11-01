@@ -20,7 +20,7 @@ package net.forbric.kernel.boot;
  * The client boot entry (BOOT side). Thin wrapper over {@link KernelBoot} in {@code CLIENT} mode; shares the whole
  * flow with {@link KernelServerLaunch}.
  *
- * <p>The launch script must add the client-only JVM setup the merged base's rendering stack needs — on macOS
+ * <p>The launch script must add the client-only JVM setup the game's rendering stack needs — on macOS
  * {@code -XstartOnFirstThread} (GLFW must own the main thread) and {@code -Djava.library.path} pointing at the
  * LWJGL natives. Everything after {@code --} is forwarded to {@code net.minecraft.client.main.Main} (which, unlike
  * the dedicated server, accepts {@code --gameDir} / {@code --assetsDir} / {@code --assetIndex} / account args).

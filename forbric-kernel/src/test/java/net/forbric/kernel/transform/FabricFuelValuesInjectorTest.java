@@ -30,7 +30,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 /**
  * NeoForge's DataMapHooks.populateFuelValues runs Fabric's fuel events on its builder just before building it, then
- * hands the table through vanillaBurnTimes' return hooks, whose merge-added body returns it without rebuilding vanilla's.
+ * hands the table through vanillaBurnTimes' return hooks, whose carrier-added body returns it without rebuilding vanilla's.
  */
 @ResourceLock("system-properties")
 class FabricFuelValuesInjectorTest {

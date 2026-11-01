@@ -15,8 +15,7 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * NeoForge joins {@code KeyboardHandler.keyPress}'s exits into one {@code ClientHooks.onKeyInput(event, action)} call just
- * before its final return (the current body keeps MinecraftForge's own {@code ForgeHooksClient.onKeyInput} in the same
- * join, in front of it), so a guest's {@code @Inject} at a native {@code RETURN} ordinal names a return the merged
+ * before its final return, so a guest's {@code @Inject} at a native {@code RETURN} ordinal names a return the current
  * body no longer has, and its {@code TAIL} also runs on the paths whose native returns came earlier.
  *
  * <p>Which native return a handler names is read off the native body the guest was compiled against
@@ -117,7 +116,7 @@ public final class MixinKeyActionAdapter {
 			guard = exits.joined(ordinal);
 			// Before the hook, a cancelled callback would also cancel the carrier's event, which the native return never had.
 			if (guard == null || Boolean.TRUE.equals(MixinFit.value(injector, "cancellable"))) return false;
-			// Just before the join's first call: the hook, or another ecosystem's twin the merge kept in front of it.
+			// Just before the join's first call: the hook (on the old merged base, MinecraftForge's twin stood in front of it).
 			MixinPlayerWorldCallbackAdapter.set(at, "value", "INVOKE");
 			MixinPlayerWorldCallbackAdapter.set(at, "target", exits.entry());
 			MixinPlayerWorldCallbackAdapter.set(at, "ordinal", exits.entryOrdinal());

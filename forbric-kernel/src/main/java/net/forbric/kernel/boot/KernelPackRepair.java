@@ -27,12 +27,12 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * The boot-side hooks for the two pack repairs, and the one place the whole failure is written down.
  *
- * <p>A merged base runs two sets of patches over one {@code Pack.readPackMetadata}, and they collide. NeoForge's
+ * <p>Forbric runs two sets of patches over one {@code Pack.readPackMetadata}, and they collide. NeoForge's
  * patch appends its own {@code neoforge:overlays} to the vanilla overlay list, and it does that the obvious way —
  * copy into an {@code ArrayList}, {@code addAll}, freeze. fabric-api's {@code fabric-resource-conditions-api-v1}
  * ships a mixin that hooks every STORE of that same local and always hands back a {@code List.copyOf}, i.e. an
  * IMMUTABLE list. On Fabric there is exactly one such store and nothing mutates the local afterwards, so the
- * mixin is right. On NeoForge there is no such mixin, so the patch is right. Merged, the mixin intercepts the
+ * mixin is right. On NeoForge there is no such mixin, so the patch is right. Together, the mixin intercepts the
  * store NeoForge's patch just made and the very next instruction is {@code addAll} on an immutable list.
  *
  * <p>What that costs is out of all proportion to it. {@code readPackMetadata} catches {@code Exception} across
@@ -42,14 +42,14 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code Cannot invoke "Pack.streamSelfAndChildren()" because "pack" is null}. One list's mutability, and the
  * world will not load.
  *
- * <p>{@link #concat} is the repair: the merged base stops assuming a mutability it can no longer guarantee.
+ * <p>{@link #concat} is the repair: the base stops assuming a mutability it can no longer guarantee.
  * {@link #nullPackSkipped} is the backstop one layer out, because a {@code RepositorySource} emitting a null pack
  * is always a bug in that source — vanilla's own sources null-check before calling the consumer, and NeoForge's
  * {@code ResourcePackLoader} does too. Both, not either: the backstop alone would turn a loud crash into a
  * silently missing pack and quietly wrong terrain, which is the worse failure.
  */
 public final class KernelPackRepair {
-	/** {@code off} restores the unpatched merged behaviour — i.e. puts the collision back. */
+	/** {@code off} restores the unpatched behaviour — i.e. puts the collision back. */
 	static final String PROPERTY = "forbric.packRepair";
 
 	private static final AtomicBoolean NULL_PACK_REPORTED = new AtomicBoolean();

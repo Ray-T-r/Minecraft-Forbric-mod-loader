@@ -176,7 +176,7 @@ public final class InsertedLambdaArgumentShim {
         // The second evidence: the class the mod was compiled against (its own platform's native game) declares the lambda
         // in exactly the shape the selector names, and the current class, whose one lambda of that name the selector binds,
         // has it in no such shape: the carrier's body has an argument vanilla's lacks. Screenshot.grab's lambda$grab$3 is
-        // (NativeImage, File, ScreenshotEvent, Consumer) on both carriers and (NativeImage, File, Consumer) on Fabric;
+        // (NativeImage, File, ScreenshotEvent, Consumer) on NeoForge's base and (NativeImage, File, Consumer) on Fabric;
         // Essential's capture handler, written for Fabric's, failed its whole mixin on the descriptor.
         // -Dforbric.insertedLambdaArguments.nativeShapes=off leaves this evidence out.
         if (natives == null || !nativeShapes()) return null;

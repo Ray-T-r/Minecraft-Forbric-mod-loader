@@ -7,8 +7,8 @@ import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
  * The {@code Operation} a wrapped {@code @WrapOperation} handler is handed when the surviving carrier reordered or widened
  * its call (MixinWrapOperationShim).
  *
- * <p>The handler calls it with the arguments it was written for, in its own order; this puts each where the merged call
- * takes it, fills the merged call's other arguments with the values the call site had, and calls the real operation.
+ * <p>The handler calls it with the arguments it was written for, in its own order; this puts each where the current call
+ * takes it, fills the current call's other arguments with the values the call site had, and calls the real operation.
  * So what the handler changes is changed, and a call it skips is skipped.
  */
 public final class KernelWrapOperations {

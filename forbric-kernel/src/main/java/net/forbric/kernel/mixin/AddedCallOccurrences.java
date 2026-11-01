@@ -44,8 +44,8 @@ import net.forbric.kernel.util.ForbricLog;
  * those: one native occurrence becomes its ordinal; several, in an injector whose {@code at} is a list, become one
  * {@code @At} each; a numbered point, which counts the native occurrences, takes the number of the same call here
  * (Architectury's right-click-air hook names vanilla's second {@code ItemStack.isEmpty} in {@code Minecraft.startUseItem},
- * the one in front of {@code useItem}; MinecraftForge and NeoForge each put an empty-hand check in front of it). A point in a slice, an injector in a callback group or with a slice, a handler whose ordinals an
- * earlier pass already counted over the current body ({@link CurrentBodyOrdinals}), and a target the merged body selects
+ * the one in front of {@code useItem}; NeoForge puts an empty-hand check in front of it). A point in a slice, an injector in a callback group or with a slice, a handler whose ordinals an
+ * earlier pass already counted over the current body ({@link CurrentBodyOrdinals}), and a target the current body selects
  * other calls with are left as written. {@code -Dforbric.addedCallOccurrences=off} leaves every point as compiled.
  */
 public final class AddedCallOccurrences {

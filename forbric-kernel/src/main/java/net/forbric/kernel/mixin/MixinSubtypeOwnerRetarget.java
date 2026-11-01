@@ -53,17 +53,17 @@ import net.forbric.kernel.util.Caught;
  *
  * <h2>Through a field the base widened</h2>
  *
- * <p>javac records a call's owner as the static type of its receiver, so when both carriers widened
+ * <p>javac records a call's owner as the static type of its receiver, so when NeoForge widened
  * {@code RangedBowAttackGoal.mob} from {@code Monster} to {@code Mob} (the goal takes any {@code Mob} there), every call
  * through the field changed owner with it: {@code this.mob.lookAt(target, 30, 30)} is {@code Monster.lookAt} in vanilla
- * and {@code Mob.lookAt} in the merged {@code tick}. debugify's MC-121706 fix injects AFTER {@code Monster.lookAt}; it
+ * and {@code Mob.lookAt} in the current {@code tick}. debugify's MC-121706 fix injects AFTER {@code Monster.lookAt}; it
  * attached nowhere, and its {@code require=1} miss stopped a strict launch that native Fabric runs.
  *
  * <p>That is the same method only when the receiver is the field, so the point moves only for those calls, along a
  * NARROW row of {@link WidenedFieldTwinInjector} (the ledger of fields the base widened): the recorded owner is the
- * row's vanilla type and no class between it and the merged type redeclares the method, so a receiver that IS a vanilla
+ * row's vanilla type and no class between it and the current type redeclares the method, so a receiver that IS a vanilla
  * type dispatches exactly as before; the selected method makes no call with the recorded owner; and each call through
- * the merged type is told apart by where its receiver comes from — a {@code getfield} of the widened field on
+ * the current type is told apart by where its receiver comes from — a {@code getfield} of the widened field on
  * {@code this}, possibly through locals, or anything else. {@code tick} makes {@code Mob.lookAt} twice, once on the
  * vehicle and once on the field, and only the second was vanilla's {@code Monster.lookAt}: the point becomes
  * {@code Mob.lookAt} with the ordinal of that call (with no ordinal, exactly one such call; with ordinal n, the n-th).

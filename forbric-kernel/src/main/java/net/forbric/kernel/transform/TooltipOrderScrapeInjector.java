@@ -45,7 +45,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>The repair copies the scrape VIEW of the renamed body — each component type in order, the attribute call as
  * its marker — into the head of {@code addDetailsToTooltip} as straight-line {@code GETSTATIC; POP} pairs.
- * Verifier-trivial, no frames, dead to the JIT, and derived from the merge's own bytes rather than a hand-typed
+ * Verifier-trivial, no frames, dead to the JIT, and derived from the base's own bytes rather than a hand-typed
  * list, so a NeoForge rename of the private body stands the repair down loudly instead of serving a stale
  * order. The ordering FEATURE itself is NeoForge's ({@code ItemTooltipHandler} orders tooltips on this base), and
  * Fabric's providers are drawn inside it by {@code KernelNeoTooltips}; Fabric's anchors are the order scraped here.

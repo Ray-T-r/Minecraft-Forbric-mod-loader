@@ -41,7 +41,7 @@ import net.forbric.kernel.util.Caught;
  * half-life, and nothing in this tree measured it: the staged test proves the repairs land on the base that is
  * here, which says nothing about the base that is coming.
  *
- * <p>So: point this at a candidate merged base and its carriers, and it replays the claim ledger against them.
+ * <p>So: point this at a candidate game base and its carrier, and it replays the claim ledger against them.
  * A repair whose anchor moved reports as a MISS — by name, before the build is adopted, instead of as whatever
  * the mod that needed it does three weeks later.
  *
@@ -70,7 +70,7 @@ public final class RepairDriftCensus {
 	/**
 	 * Replays every fixed-target claim against {@code jars}.
 	 *
-	 * @param jars the candidate merged base first, then its carriers — the same set a launch would stage
+	 * @param jars the candidate game base first, then its carrier — the same set a launch would stage
 	 */
 	public static Drift replay(List<Path> jars) throws IOException {
 		for (Path jar : jars) {

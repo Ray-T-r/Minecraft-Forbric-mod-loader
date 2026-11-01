@@ -40,7 +40,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>{@link MixinFit} resolves a guest mixin's anchors against the BASE, and {@link KernelGuestMixinAdapter}
  * drops the mixin when none of them resolve ({@link MixinFit.Verdict#UNFIT}) on the reasoning that it "was going to
  * be dead weight". That reasoning has one blind spot, and it is exactly the inter-mod compatibility layer: a mixin
- * may deliberately target a member that <em>another mod's mixin adds at runtime</em>, which is not in the merged
+ * may deliberately target a member that <em>another mod's mixin adds at runtime</em>, which is not in the game
  * base and never will be.
  *
  * <p>Measured, with Physics Mod on a Sodium + Iris instance — the two mixins it needs to integrate with them are the
@@ -52,7 +52,7 @@ import net.forbric.kernel.util.ForbricLog;
  *   <li>{@code physicsmod.mixins.json:liquid.MixinProgramManager} injects {@code VertexFormat.bindAttributesIris},
  *       which <b>Iris</b> adds via its {@code MixinVertexFormat}.
  * </ul>
- * Neither member exists in the merged base, so every anchor failed to resolve, both were auto-suppressed, and
+ * Neither member exists in the game base, so every anchor failed to resolve, both were auto-suppressed, and
  * Physics Mod lost its Sodium and Iris rendering integration silently — no error, just no effects.
  *
  * <p>So the adapter asks this class first: is some other registered config also mixing into that target? If it is,

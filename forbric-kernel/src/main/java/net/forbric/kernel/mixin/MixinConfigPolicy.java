@@ -40,7 +40,7 @@ public final class MixinConfigPolicy {
 	 * trailing {@code *} is a prefix glob).
 	 *
 	 * <p>{@code -Dforbric.enableMixinConfigs} (csv) forces a config back ON over the built-in list. That list is a
-	 * record of what was true when each entry was measured, and the merged base keeps changing underneath it — so
+	 * record of what was true when each entry was measured, and the game base keeps changing underneath it — so
 	 * re-testing an entry has to be one flag, not an edit-and-rebuild. It overrides only the built-in list, never an
 	 * explicit {@code -Dforbric.disableMixinConfigs} on the same command line.
 	 */

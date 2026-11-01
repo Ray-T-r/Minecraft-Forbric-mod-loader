@@ -16,7 +16,7 @@ import net.neoforged.neoforge.common.world.ModifiableBiomeInfo;
  *
  * <p>Natively NeoForge's coremod makes every biome read go through {@code getModifiedClimateSettings()} and
  * {@code getModifiedSpecialEffects()}, and the pass builds that modified view from the biome's ORIGINAL info — the
- * values its constructor saw. On NeoForge nothing else writes those fields afterwards. On the merged base
+ * values its constructor saw. On NeoForge nothing else writes those fields afterwards. On Forbric
  * fabric-biome-api does: its weather modifications replace {@code Biome.climateSettings} at server construction,
  * before NeoForge's pass. Starting from the original would silently drop them once the reads go through the view
  * (NativeCoremodParity), so the pass starts from what the biome holds now: its current climate and effects over the

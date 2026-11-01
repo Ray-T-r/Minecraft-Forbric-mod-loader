@@ -43,7 +43,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>A mod built for another loader version links fine at load and dies at the first call into a class that is
  * not there — a {@code NoClassDefFoundError} inside a deferred task, a listener, a render pass — and the report
  * names the class, not the mod. This reads every class's constant pool for the Forge-family classes it names and
- * resolves each against the carriers, the merged base and every installed jar (a Fabric port of a Forge library
+ * resolves each against the carrier, the game base and every installed jar (a Fabric port of a Forge library
  * legitimately ships {@code net.minecraftforge.*} classes for its dependants); what resolves nowhere is dangling.
  *
  * <p>A jar that carries a MinecraftForge half ({@code META-INF/mods.toml}) is not judged for its

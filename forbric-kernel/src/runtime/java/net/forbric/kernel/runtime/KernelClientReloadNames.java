@@ -39,7 +39,7 @@ import net.forbric.kernel.util.ForbricLog;
  * must go through that event." That assertion is written for an instance where the only mods are NeoForge mods.
  *
  * <p>Adding a reload listener by mixin is ordinary Fabric practice — it is how a Fabric mod has always done it,
- * and there is no event for it to go through. So on a tri-ecosystem instance the assertion fires on correct mod
+ * and there is no event for it to go through. So on a Forbric instance the assertion fires on correct mod
  * code, from inside {@code ClientHooks.initClientHooks}, which runs inside {@code Minecraft.<init>}: vistas took
  * the whole client down before it drew a frame.
  *

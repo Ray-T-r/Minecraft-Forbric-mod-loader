@@ -121,7 +121,7 @@ public final class FabricRegistryLoaderMixinAdapter {
 					// binds it to that same method, or to its twin widened by exactly the parameters the carrier appended to
 					// the dead loader (the loader's own lambda, widened with it, which the moved wrap now runs) — and to one
 					// that still runs there. Bound to a dead loader or to what only a dead loader reaches, to another overload
-					// (a merge declaring its overloads in another order) or to nothing, it would silently serve another
+					// (a base declaring its overloads in another order) or to nothing, it would silently serve another
 					// method or none, which nothing here can map for certain: the whole mixin is left alone.
 					String bound=here==null?null:here.name+here.desc;
 					if(here==null||!key.equals(bound)&&!widenedAlike(compiled,here,widenedOf)

@@ -27,7 +27,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * <p>Vanilla's oxidation, waxing and stripping lookups read static maps keyed by the {@code Block} object:
  * {@code WeatheringCopper.getNext} is {@code NEXT_BY_BLOCK.get().get(block)}, {@code HoneycombItem.getWaxed}
  * {@code WAXABLES}, {@code AxeItem.getStripped} {@code STRIPPABLES}. They answer for any block, registered or not. The
- * merged base asks NeoForge's data map first ({@code DataMapHooks.getNextOxidizedStage} / {@code getBlockWaxed},
+ * base asks NeoForge's data map first ({@code DataMapHooks.getNextOxidizedStage} / {@code getBlockWaxed},
  * {@code BlockState.getData(STRIPPABLES)}, and {@code ItemStack.getData(COMPOSTABLES)} in the composter), and each of
  * them ends in {@code Holder.Reference.getData}, which asks {@code key()} — and an intrusive holder has no key until
  * its value is registered, so {@code key()} throws {@code Trying to access unbound value}. fabric-api's

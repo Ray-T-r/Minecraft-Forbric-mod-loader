@@ -27,10 +27,10 @@ import net.forbric.kernel.util.Caught;
  * verification. Item Glint Relight's capture of {@code GuiGraphicsExtractor.item}'s render state was the first seen;
  * the same fold is on thousands of current methods.
  *
- * <p>Decided for any class and method, by comparing the tail the mod was compiled against with the merged one: the
+ * <p>Decided for any class and method, by comparing the tail the mod was compiled against with the current one: the
  * handler is an {@code @Inject} at {@code TAIL} with a locals capture, whose leading parameters are exactly the target
  * method's arguments and its callback and whose other parameters are all captured locals (no sugar); the native tail
- * serves the capture ({@link #tailServes}, when the class the mod was compiled against is at hand); the merged tail's
+ * serves the capture ({@link #tailServes}, when the class the mod was compiled against is at hand); the current tail's
  * frame does not declare them (so Mixin cannot capture them there); and exactly one edge into the tail carries them —
  * by the data flow, every captured slot holds a value there, and the method's table names those slots, first after the
  * arguments, with the captured types, at the instruction that leaves for the tail. That instruction must be a call (or

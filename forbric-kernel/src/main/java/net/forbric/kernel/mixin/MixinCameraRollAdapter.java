@@ -60,7 +60,7 @@ public final class MixinCameraRollAdapter {
      * Moves a {@code @ModifyArgs} from the call its point picks natively to the current call that plays that call's role,
      * where the carrier made that call through a widened overload of the same method.
      *
-     * <p>Vanilla's {@code Camera.alignWithEntity} sets the ordinary view's angles with {@code setRotation(FF)}; the merged
+     * <p>Vanilla's {@code Camera.alignWithEntity} sets the ordinary view's angles with {@code setRotation(FF)}; the current
      * camera first posts NeoForge's angles event and sets them with {@code setRotation(FFF)}, the event's roll appended. A
      * guest that hooks that call by its vanilla point — {@code setRotation(FF)}, ordinal 0 after the minecart branch's
      * {@code setPosition} — matched the first two-float call left in that slice, the sleeper's, and its angles callback ran
@@ -317,7 +317,7 @@ public final class MixinCameraRollAdapter {
         }
         if(changed==0)return 0;
         if(roll!=null) {
-            // The roll modifier was written for the method its selector binds natively; in the merged class that method's
+            // The roll modifier was written for the method its selector binds natively; in the current class that method's
             // name family may carry the rotation in another overload (setRotation(FF) now delegates to setRotation(FFF)).
             List<MethodNode> nativeRoll=MixinTargetSelectors.bound(roll,source);
             Set<String> family=nativeRoll==null?Set.of():nativeRoll.stream().map(m->m.name).collect(java.util.stream.Collectors.toSet());

@@ -19,7 +19,7 @@ package net.forbric.api;
 import java.util.Locale;
 
 /**
- * Which physical side this process is: the one side vocabulary for all three ecosystems.
+ * Which physical side this process is: the one side vocabulary for both ecosystems.
  *
  * <p>The kernel had four spellings of this. {@code net.fabricmc.api.EnvType} stood in as the kernel's own notion;
  * sixteen methods took a bare {@code boolean client}; the string {@code client ? "CLIENT" : "DEDICATED_SERVER"}

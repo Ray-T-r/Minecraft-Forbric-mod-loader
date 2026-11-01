@@ -41,13 +41,13 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Names every installed jar, and its mod, that reads a vanilla field with a descriptor the merged base no longer
+ * Names every installed jar, and its mod, that reads a vanilla field with a descriptor the base no longer
  * has ({@link MergedBaseFieldDrift#KNOWN}) — at boot, statically, so the finding is complete before
  * {@code load-report.txt} is written rather than a {@code NoSuchFieldError} whenever the access runs.
  *
  * <p>Same shape as the retired {@code CapabilityUseAudit}: a {@link ByteScan} needle over each class for the owner names
  * (cheap, no inflate beyond the bytes), then an ASM confirm on the hit — the field reference must carry the
- * VANILLA descriptor. A class that names {@code KeyMapping} only as a type, or reads {@code MAP} with the merged
+ * VANILLA descriptor. A class that names {@code KeyMapping} only as a type, or reads {@code MAP} with the base's
  * descriptor (a NeoForge build), is not a finding. {@code -Dforbric.fieldDriftAudit=off} skips the scan.
  */
 public final class FieldDriftAudit {

@@ -165,7 +165,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 	/**
 	 * The ecosystem whose code a class this loader defined is: the arbitrated family of the jar it was defined from
 	 * ({@link #familyOfClass}), else the selected mod that owns its class file ({@link #ecosystemOfResource}). Null for
-	 * a class another loader defined, and for one no single ecosystem owns — the merged base, a runtime carrier, a
+	 * a class another loader defined, and for one no single ecosystem owns — the game base, a runtime carrier, a
 	 * library, a jar two ecosystems claim.
 	 */
 	public Ecosystem ecosystemOfClass(Class<?> type) {
@@ -750,7 +750,7 @@ public final class ForbricClassLoader extends URLClassLoader {
 
 	/**
 	 * The loader family of the jar {@code binaryName} is being defined from, or {@code null} if it is unowned —
-	 * the merged base, a runtime carrier, an MC library, a jar declaring no loader, or a kernel class. A universal jar
+	 * the game base, a runtime carrier, an MC library, a jar declaring no loader, or a kernel class. A universal jar
 	 * answers the ecosystem {@code MultiLoaderArbiter} chose for it.
 	 */
 	public LoaderProbePolicy.Family familyOfClass(String binaryName) {

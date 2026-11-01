@@ -29,8 +29,8 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * The two write shapes {@code WidenedFieldTwinInjector} needs: a guarded narrowing for a field NeoForge widened
- * ({@code RangedBowAttackGoal.mob}: vanilla {@code Monster}, merged {@code Mob}) and a drain for a field it
- * re-typed ({@code AttributeSupplier$Builder.builder}: vanilla {@code ImmutableMap.Builder}, merged {@code Map}).
+ * ({@code RangedBowAttackGoal.mob}: vanilla {@code Monster}, NeoForge's {@code Mob}) and a drain for a field it
+ * re-typed ({@code AttributeSupplier$Builder.builder}: vanilla {@code ImmutableMap.Builder}, NeoForge's {@code Map}).
  */
 public final class KernelWidenedFields {
 	private static final Set<String> NOT_MONSTERS = ConcurrentHashMap.newKeySet();

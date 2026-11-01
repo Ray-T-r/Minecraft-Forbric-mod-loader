@@ -34,8 +34,8 @@ import net.forbric.kernel.util.ForbricLog;
  * if (doesClassExist("net.fabricmc.loader.api.FabricLoader"))     use FabricAbstractions;
  * }</pre>
  *
- * <p>On every real loader exactly one of those answers yes. On Forbric all three are live in one instance, so a
- * Fabric mod takes the Forge branch — code its author compiled against a different ABI and, on Fabric, never once
+ * <p>On every real loader exactly one of those answers yes. On Forbric more than one is live in one instance (all three
+ * on Forbric 0.4 and earlier), so a Fabric mod could take a Forge-family branch — code its author compiled against a different ABI and, on Fabric, never once
  * executed. Observed: Flashback nests {@code mixinconstraints}, whose {@code ForgeAbstractionsImpl} calls
  * {@code LoadingModList.get()} as a public static on a CLASS. Real MinecraftForge 26.2 declares
  * {@code LoadingModList} as an INTERFACE whose {@code get()} is private, so the JVM refuses the call site with
@@ -66,8 +66,8 @@ import net.forbric.kernel.util.ForbricLog;
  * <h2>Universal jars are exempt</h2>
  *
  * <p>A jar carrying more than one loader's manifest is genuinely multi-platform: its probes are how it finds out
- * which half of itself to run, and {@code MultiLoaderArbiter} has already picked its ecosystem. Those, the merged
- * base, the runtime carriers and the kernel's own classes have no family here and probe as before.
+ * which half of itself to run, and {@code MultiLoaderArbiter} has already picked its ecosystem. Those, the game
+ * base, the runtime carrier and the kernel's own classes have no family here and probe as before.
  *
  * <p>Escape hatch: {@code -Dforbric.loaderProbes=off} restores the pre-policy behaviour (every probe answers yes).
 

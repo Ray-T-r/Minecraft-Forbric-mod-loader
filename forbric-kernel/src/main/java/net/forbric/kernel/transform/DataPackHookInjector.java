@@ -31,8 +31,8 @@ import net.forbric.kernel.util.ForbricLog;
  * Gives the kernel the server datapack {@code PackRepository}, by prepending one call to the head of
  * {@code ResourcePackLoader.populatePackRepository(PackRepository, PackType, boolean)}.
  *
- * <p>That method is the genuine loader's own choke point for mod packs and it SURVIVED the byte merge — the merged
- * base's {@code ServerPacksSource.createPackRepository} still calls it, which is how a mod's
+ * <p>That method is the genuine loader's own choke point for mod packs and NeoForge's
+ * {@code ServerPacksSource.createPackRepository} calls it (it also survived the old byte merge), which is how a mod's
  * {@code AddPackFindersEvent} handler runs today. What does not survive is its payload: the mod packs come from
  * {@code ModList.get().getModFiles()}, which the kernel leaves empty, so the call adds nothing. Hooking here rather
  * than at {@code ServerPacksSource} keeps the kernel's packs in exactly the position NeoForge puts its own —
@@ -90,7 +90,7 @@ public final class DataPackHookInjector implements ClassTransformer {
 			changed = true;
 		}
 		if (!changed) {
-			// The anchor is gone: NeoForge changed the signature, or the merge stopped splicing it. Say so — the
+			// The anchor is gone: NeoForge changed the signature, or the base stopped calling it. Say so — the
 			// failure it guards is silent, and looks like a bug in whichever mod first misses its own data.
 			ForbricLog.warn("[Forbric/DataPacks] %s.%s%s no longer exists — Forge-family mods' own data/ is UNSERVED; "
 					+ "re-derive DataPackHookInjector's target", TARGET, METHOD, DESC);

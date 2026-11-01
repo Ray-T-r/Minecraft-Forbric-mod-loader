@@ -31,11 +31,11 @@ import net.forbric.api.ForeignType;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Redirects the genuine-loader lifecycle trigger the merged base's byte-merge left woven into a vanilla entry
+ * Redirects the genuine-loader lifecycle trigger NeoForge's base weaves into a vanilla entry
  * point ({@code Main.main}) to the kernel's own native lifecycle hook — so the kernel, not FancyModLoader / FML,
  * owns the lifecycle.
  *
- * <p><b>The base facts.</b> NeoForge won the byte-merge of both entries:
+ * <p><b>The base facts.</b> NeoForge's base calls its loader from both entries:
  * <ul>
  *   <li><b>Server</b> — {@code net.minecraft.server.Main.main} calls
  *       {@code net.neoforged.neoforge.server.loading.ServerModLoader.load(Z)V} between {@code Bootstrap.bootStrap()}
@@ -57,7 +57,7 @@ import net.forbric.kernel.util.ForbricLog;
  * The other client mod-loader calls ({@code ClientModLoader.finish/completeModLoading/setupModResourcePacks}) are
  * stubbed separately (see {@code KernelClientLaunch}'s {@code MethodBodyNeuter} targets).
  *
- * <p><b>Fail-loud.</b> If the targeted entry is transformed but no known trigger is found (the merged base moved
+ * <p><b>Fail-loud.</b> If the targeted entry is transformed but no known trigger is found (the base moved
  * the call), {@link #missedRequiredExcision()} reports it so the kernel refuses to boot rather than silently
  * firing a genuine lifecycle or leaving the entry un-hooked.
  *
@@ -103,7 +103,7 @@ public final class LifecycleHookInjector implements ClassTransformer {
 	}
 
 	/**
-	 * A genuine mod-loading trigger the byte-merge can leave in an entry, and the kernel hook it redirects to.
+	 * A genuine mod-loading trigger the base can leave in an entry, and the kernel hook it redirects to.
 	 *
 	 * <p>{@code popSlots} = how many argument slots to POP before the (no-arg) kernel hook, when the trigger's
 	 * descriptor carries arguments the hook does not want. When {@code popSlots == 0} the descriptor is kept and it

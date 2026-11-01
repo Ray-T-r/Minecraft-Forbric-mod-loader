@@ -86,7 +86,7 @@ public final class MixinDefaultPredicateTransport {
 		List<AnnotationNode> ats = MixinFit.atNodes(injector);
 		if (ats.size() != 1 || !"MIXINEXTRAS:EXPRESSION".equals(MixinFit.value(ats.getFirst(), "value"))
 				|| MixinFit.value(ats.getFirst(), "ordinal") != null || MixinFit.value(ats.getFirst(), "shift") != null) return null;
-		// The one method Mixin binds in the merged class, and the same member bound in the class the mod was compiled
+		// The one method Mixin binds in the current class, and the same member bound in the class the mod was compiled
 		// against: as Mixin reads the selector, however it is spelled.
 		MethodNode body = MixinTargetSelectors.one(handler, current), nativeBody = MixinCallbackShape.written(handler, original);
 		if (body == null || nativeBody == null || !body.name.equals(nativeBody.name) || !body.desc.equals(nativeBody.desc)) return null;

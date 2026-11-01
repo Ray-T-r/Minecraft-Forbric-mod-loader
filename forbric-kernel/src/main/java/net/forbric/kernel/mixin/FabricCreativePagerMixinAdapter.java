@@ -94,7 +94,7 @@ public final class FabricCreativePagerMixinAdapter {
 
 	/**
 	 * Decides, from a guest pager seen while configs are read, whether its controls are the ones drawn: no Forge-family mod
-	 * is installed, the carrier's controls are exactly the shape the bridge can stand aside ({@code screen}, the merged
+	 * is installed, the carrier's controls are exactly the shape the bridge can stand aside ({@code screen}, the current
 	 * screen with its code), and the pager has an injector to keep for them. Decided by the first guest pager seen, once
 	 * for the boot.
 	 *

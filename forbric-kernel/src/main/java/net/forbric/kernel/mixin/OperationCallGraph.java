@@ -31,7 +31,7 @@ final class OperationCallGraph implements Opcodes {
     }
     /**
      * The plan for a callback at {@code member} ({@code Lowner;name(desc)}, as the point resolves it) in {@code nativeHost},
-     * the method its injector binds in {@code source}, the class it was written against, which the merged game moved out
+     * the method its injector binds in {@code source}, the class it was written against, which the game moved out
      * of {@code host}, the method the injector binds in {@code target}. The caller binds both as Mixin binds the handler.
      */
     static Plan derive(ClassNode source,ClassNode target,MethodNode nativeHost,MethodNode host,String member,Function<String,ClassNode> classes,BiFunction<Ecosystem,String,ClassNode> natives) {

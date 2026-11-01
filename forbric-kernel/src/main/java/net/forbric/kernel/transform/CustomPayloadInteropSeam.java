@@ -36,8 +36,8 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Makes NeoForge's custom-payload stream codec look its codec up through {@code PayloadInterop.findCodec}, which
- * chooses by the payload's runtime class across every ecosystem's registry — the splice the merged base already
- * carries, moved into the kernel so a base that was never merged gets it too.
+ * chooses by the payload's runtime class across every ecosystem's registry — the splice the merged base of Forbric
+ * 0.4 and earlier carried, moved into the kernel so NeoForge's own base gets it too.
  *
  * <p>The previous-generation loader's {@code MergedBaseBuilder} (its PASS 4b) rewrote the merged codec class's
  * {@code findCodec(Identifier)} at build time: NeoForge's body asks its own local map, then NeoForge's
@@ -49,7 +49,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code CustomPayloadStreamCodecMixin} wraps exactly these {@code findCodec} calls).
  *
  * <p>The class is found the way the builder found it, not by name: the one {@code NEW} in NeoForge's
- * {@code CustomPacketPayload.codec(FallbackProvider, List, ConnectionProtocol, PacketFlow)}. On the merged base that is
+ * {@code CustomPacketPayload.codec(FallbackProvider, List, ConnectionProtocol, PacketFlow)}. On the old merged base that was
  * {@code CustomPacketPayload$1$forbricneo} (two anonymous classes could not keep one name through the merge); on the
  * genuine base it is {@code CustomPacketPayload$1}, which is also the class fabric-networking's mixin names. The body is
  * PASS 4b's, field for field: {@code findCodec(idToType, id, protocol, packetFlow, fallback)}, cast back to
@@ -132,7 +132,7 @@ public final class CustomPayloadInteropSeam implements ClassTransformer {
 
 	/**
 	 * The class NeoForge's {@code codec} overload instantiates, read once from {@code CustomPacketPayload}. Nothing
-	 * when the interface cannot be read: guessing by name would splice the merged base's vanilla-shaped {@code $1},
+	 * when the interface cannot be read: guessing by name could splice a vanilla-shaped {@code $1},
 	 * whose lookup has no protocol to hand over.
 	 */
 	private String target(ClassNode candidate) {

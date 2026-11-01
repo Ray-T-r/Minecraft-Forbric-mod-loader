@@ -31,7 +31,7 @@ import net.fabricmc.api.EnvType;
  *
  * <p>The hook is the kernel's real {@code KernelFabricFuel}, compiled from {@code src/runtime/java} against stand-ins for
  * fabric-content-registries' events and context, items and tags, NeoForge's {@code DataMapHooks}, and a
- * {@code FuelValues} whose two vanilla overloads forward to the merge-added {@code vanillaBurnTimes(Builder, int)}.
+ * {@code FuelValues} whose two vanilla overloads forward to the carrier-added {@code vanillaBurnTimes(Builder, int)}.
  * torrential's RETURN injector is modelled as Mixin would weave it after the kernel's chain: a call ahead of that body's
  * one {@code areturn}.
  */
@@ -136,7 +136,7 @@ class FabricFuelValuesInjectorExecutionTest {
 							return vanillaBurnTimes(new Builder(registries, features), smeltingTime);
 						}
 
-						/** The merge-added body the forwarding overload calls: vanilla's table. */
+						/** The carrier-added body the forwarding overload calls: vanilla's table. */
 						public static FuelValues vanillaBurnTimes(Builder builder, int smeltingTime) {
 							builder.add(Items.COAL, smeltingTime * 8);
 							return builder.build();
@@ -295,7 +295,7 @@ class FabricFuelValuesInjectorExecutionTest {
 		return InjectorExecution.compile(work, sources);
 	}
 
-	/** torrential's RETURN injector, as Mixin weaves it into the merge-added body after the kernel's chain. */
+	/** torrential's RETURN injector, as Mixin weaves it into the carrier-added body after the kernel's chain. */
 	private static byte[] withTorrential(byte[] fuelValues) {
 		ClassNode node = new ClassNode();
 		new ClassReader(fuelValues).accept(node, 0);

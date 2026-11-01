@@ -61,7 +61,7 @@ public final class LoaderProbeRewriter implements ClassTransformer {
 
 	/**
 	 * @param familyOf resolves a binary class name to the loader family of the jar it is being defined from, or
-	 *                 {@code null} for the merged base, a universal jar, a library or the kernel itself
+	 *                 {@code null} for the game base, a universal jar, a library or the kernel itself
 	 */
 	public LoaderProbeRewriter(Function<String, LoaderProbePolicy.Family> familyOf) {
 		this.familyOf = familyOf;

@@ -36,7 +36,7 @@ import net.forbric.kernel.util.Caught;
  * <p>A pair {@code method -> renamed} is in the table when: in each listed ecosystem's own jar the class declares
  * {@code method} and not {@code renamed}; the base declares both, with the same descriptor and static-ness;
  * {@code renamed} is made of that jar's {@code method} — of the calls and field accesses of whichever of the two makes
- * fewer, at least half and at least two are the other's too — and makes some of them that the merged {@code method}
+ * fewer, at least half and at least two are the other's too — and makes some of them that the current {@code method}
  * no longer makes; and the current class still calls {@code renamed}, from {@code method} itself (a call, or the method
  * handle of a lambda it creates) or from another of its methods — or, marked {@link #UNCALLED}, {@code renamed} is
  * private and nothing in its class or its nest calls it. NeoForge's
@@ -47,7 +47,7 @@ import net.forbric.kernel.util.Caught;
  * and, of several renamed methods of one method, any it does not call itself (the pieces of a split, such as
  * NeoForge's four HUD layers out of {@code Hud.extractPlayerHealth}, are what it dispatches to).
  *
- * <p>Each pair has one row per call or field access that moved: one the reference's {@code method} makes, the merged
+ * <p>Each pair has one row per call or field access that moved: one the reference's {@code method} makes, the current
  * {@code method} makes less often, and {@code renamed} makes. An anchor that is not among them was not in vanilla's
  * body where the mod looked — on the reference the mod misses too — and a row is no reason to move it. A row also says
  * how often the reference's {@code method} makes its call: where {@code renamed} makes it more often, the carrier added

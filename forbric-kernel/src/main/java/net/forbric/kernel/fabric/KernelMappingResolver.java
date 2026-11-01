@@ -24,7 +24,7 @@ import net.fabricmc.loader.api.MappingResolver;
 /**
  * The kernel's {@link MappingResolver}.
  *
- * <p>The sovereign kernel runs the merged base in the <b>named</b> (Mojmap) namespace, and modern Fabric mods
+ * <p>The sovereign kernel runs NeoForge's patched game in the <b>named</b> (Mojmap) namespace, and modern Fabric mods
  * for this game version ship already compiled against Mojmap too — a constant-pool scan of fabric-api 0.154.0
  * and Jade 26.2.9 finds zero {@code class_}/{@code method_}/{@code field_} intermediary symbols. So no runtime
  * remapping happens and every lookup is the identity.

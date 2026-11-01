@@ -55,7 +55,7 @@ import net.forbric.kernel.util.ForbricLog;
  * ViaFabricPlus' registry hook before {@code createContents()} runs there and registers what it needs to.
  *
  * <p>Selectors and points are read as Mixin reads them, never by how they are spelled. An injector is on
- * {@code freeze()} or on {@code bootStrap()} when Mixin binds it to that one method of the merged
+ * {@code freeze()} or on {@code bootStrap()} when Mixin binds it to that one method of the current
  * {@code BuiltInRegistries} ({@link MixinCallbackShape#binds}): a bare name, a descriptor, an owner prefix, a dotted
  * owner, whitespace, or an array of several such spellings are then the same injector. Its point is at the call of
  * {@code freeze()} when its target names {@code BuiltInRegistries.freeze()} and nothing else
@@ -94,7 +94,7 @@ public final class FabricFreezeHookMixinAdapter {
 
 	/**
 	 * Rewrites eligible injectors of {@code mixin} in place; returns how many. Idempotent. {@code targets} gives the
-	 * merged {@code BuiltInRegistries}, where the selectors bind; a point is read in the class the mod was compiled
+	 * current {@code BuiltInRegistries}, where the selectors bind; a point is read in the class the mod was compiled
 	 * against ({@link NativeGameReferences}).
 	 */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
@@ -137,7 +137,7 @@ public final class FabricFreezeHookMixinAdapter {
 	/**
 	 * The hook {@code handler}'s injector moves to — {@link FabricFreezePointInjector#HEAD_HOOK} or
 	 * {@link FabricFreezePointInjector#TAIL_HOOK} — or null when it is not one this adapter may move. {@code target} is
-	 * the merged {@code BuiltInRegistries} its selectors bind in; {@code source}, or null, the one the mod was compiled
+	 * the current {@code BuiltInRegistries} its selectors bind in; {@code source}, or null, the one the mod was compiled
 	 * against, where its point is read.
 	 */
 	static String hookFor(MethodNode handler, ClassNode target, ClassNode source) {

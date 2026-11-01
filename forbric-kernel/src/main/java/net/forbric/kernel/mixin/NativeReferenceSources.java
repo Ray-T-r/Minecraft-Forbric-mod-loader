@@ -46,8 +46,8 @@ import org.objectweb.asm.ClassReader;
  *
  * <p>Which ecosystem a base belongs to is read off the base, never guessed from a file name: its {@code Block} declares
  * NeoForge's block extension interface and no MinecraftForge one (NEOFORGE), or neither (plain vanilla, which is
- * FABRIC's own compile). A base that declares a MinecraftForge interface (a Forge-patched base, or the merge, which
- * embeds its index) has no own ecosystem to answer for: no ecosystem Forbric loads compiled against its bytes.
+ * FABRIC's own compile). A base that declares a MinecraftForge interface (a Forge-patched base, or the old merged base, which
+ * embedded its index) has no own ecosystem to answer for: no ecosystem Forbric loads compiled against its bytes.
  *
  * <p>{@link #describe()} is the one boot line naming those sources; gates assert its wording.
  */
