@@ -41,7 +41,7 @@ public final class FinalMixinApplications {
  private record Plan(String mixin, Config config, List<String> targets, List<Injector> injectors, boolean complete) { }
  record Renamed(String name, String desc) { }
  interface Renames { List<Renamed> find(String mixin, String name, String desc); }
- /** NEVER_RUNS: attached, but only in methods nothing in the merged game calls (MergedBaseUncalledMethods). */
+ /** NEVER_RUNS: attached, but only in methods nothing in the game calls (MergedBaseUncalledMethods). */
  private enum Outcome { ATTACHED, OPTIONAL, EQUIVALENT, MISSING, NEVER_RUNS, UNKNOWN }
  private static final Map<String, Set<Config>> CONFIGS = new ConcurrentHashMap<>();
  private static final Map<String, Plan> PLANS = new ConcurrentHashMap<>();
@@ -141,7 +141,7 @@ public final class FinalMixinApplications {
     List<MethodNode> candidates=merged.get(mixin).stream().filter(m->rename.stream().anyMatch(n->n.name().equals(m.name)&&n.desc().equals(m.desc))).toList();
     Outcome state=Outcome.UNKNOWN;
     int references=candidates.size()==1?references(target,candidates.getFirst()):-1;
-    // Attached is not run: every call of the handler in a method nothing in the merged game calls. Judged whatever the
+    // Attached is not run: every call of the handler in a method nothing in the game calls. Judged whatever the
     // injector's shape, because a call in dead code is dead however it is counted; a mandatory one is then a loss.
     String dead=references>0?neverRuns(plan,target,candidates.getFirst()):null;
     if(dead!=null)
@@ -266,9 +266,9 @@ public final class FinalMixinApplications {
   }
   return result;
  }
- /** "Hud.extractHotbarAndDecorations (nothing in the merged game calls it; …)" when every method of the final class that
+ /** "Hud.extractHotbarAndDecorations (nothing in the game calls it; …)" when every method of the final class that
   * calls {@code handler} is one MergedBaseUncalledMethods lists for the config's ecosystem, or a body a carrier renamed
-  * that nothing in the merged game calls (CarrierRenames: malilib's tooltip hook, which R3 moves where vanilla's
+  * that nothing in the game calls (CarrierRenames: malilib's tooltip hook, which R3 moves where vanilla's
   * tooltip body is); null when any may run. */
  private static String neverRuns(Plan plan,ClassNode target,MethodNode handler) {
   if(!MixinFit.asksLiveness()||!MergedBaseUncalledMethods.lists(target.name)&&!CarrierRenames.listsUncalled(target.name))return null;

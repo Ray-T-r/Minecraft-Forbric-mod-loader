@@ -62,7 +62,7 @@ import net.forbric.kernel.util.Caught;
  * goldenpotions' {@code CreativeModeTabs.lambda$bootstrap$21} to {@code lambda$bootstrap$24}: each a method of the same
  * shape that happened to carry the anchor and that vanilla itself declares, so no carrier renamed anything. malilib's
  * and trinkets' {@code ItemStack.addDetailsToTooltip} went to {@code addDetailsToTooltipComponents}: NeoForge's renamed
- * body, but nothing in the merged game calls it — NeoForge draws tooltips from its own appenders — so the injection
+ * body, but nothing in the game calls it — NeoForge draws tooltips from its own appenders — so the injection
  * bound, never ran, and read as fitting. That pair is now a row marked {@link #UNCALLED}: the move binds the injector
  * where the body is and says it never runs, as MixinFit and the final-class check report it ({@link #neverRuns}), so
  * malilib's required tooltip hook is a reported loss that marks its row and does not stop a strict launch.
@@ -221,7 +221,7 @@ public final class CarrierRenames {
 					|| !row.ecosystems().contains(ecosystem)) continue;
 			if (called(owner, method)) return null;
 			String original = row.method().substring(0, row.method().indexOf('('));
-			return "a carrier moved " + original + "'s vanilla body into it and nothing in the merged game calls it";
+			return "a carrier moved " + original + "'s vanilla body into it and nothing in the game calls it";
 		}
 		return null;
 	}

@@ -41,12 +41,12 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Injector targets the mod's own platform lacks as well as the merged base: the misses native Mixin drops without a
- * word, and which are therefore nothing the merge cost the mod.
+ * Injector targets the mod's own platform lacks as well as the base: the misses native Mixin drops without a word,
+ * and which are therefore nothing running on this base cost the mod.
  *
  * <p>Not Enough Crashes 4.4.9 for 26.2 is the worked case. Its {@code MixinTileEntity} injects into
  * {@code BlockEntity.populateCrashReport} — the Yarn name of what 26.2 calls {@code fillCrashReportCategory}, in a
- * mod built from Yarn sources for an unobfuscated game. Neither vanilla nor the merged base has that method.
+ * mod built from Yarn sources for an unobfuscated game. Neither vanilla nor the base has that method.
  * {@link MixinFit} found no anchor, called the mixin UNFIT, and the adapter left it out as a CONFIRMED loss the
  * config's {@code required: true} made required — so the default STRICT policy stopped a server that native Fabric
  * Loader 0.19.5 starts with the same jar.
@@ -54,7 +54,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <h2>What native Mixin does with an injector whose selector matches nothing</h2>
  *
  * <p>Read from sponge-mixin 0.17.3 (the kernel's, and native NeoForge 26.2.0.88's), 0.17.4 (Fabric Loader 0.19.5's)
- * and upstream Mixin 0.8.7 (MinecraftForge 26.2-65.0.1's), which agree here. {@code InjectionInfo.parseRequirements}
+ * and upstream Mixin 0.8.7, which agree here. {@code InjectionInfo.parseRequirements}
  * takes the injector's own {@code require} when it is 0 or more, else — for an injector in no {@code @Group} — the
  * config's {@code injectors.defaultRequire}, which is 0 unless the config says otherwise.
  * {@code TargetSelectors.validate} then throws only when that count is above 0 ("Critical injection failure: … could
@@ -82,63 +82,57 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>Whose native: the mod's own platform</h2>
  *
- * <p>A Fabric mod's native game is vanilla 26.2. A MinecraftForge or NeoForge mod's is its own platform's patched
- * game, which declares methods vanilla does not — {@code KeyMapping.getKeyModifier()}, {@code AxeItem.canPerformAction},
- * NeoForge's {@code EnderDragon.getParts()} — and some of those the merge dropped or retyped. For such a mod "vanilla
- * lacks it too" proves nothing: natively the injector applies, and here it cannot, which is the merge's loss. So the
- * question is asked of the owning mod's platform ({@link MixinConfigOwners#ecosystemOf}), and a config no single mod
- * claims is not asked at all. The patched jars are the whole of what those platforms declare in vanilla's packages:
- * neither runtime ships a class there, and their own transformers add no method there (MinecraftForge 65.0.1's
- * coremods are one redirect list, {@code finalize_spawn_targets.json}; NeoForge 26.2.0.88's coremods jar holds
+ * <p>A Fabric mod's native game is vanilla 26.2. A NeoForge mod's is NeoForge's patched game, which is the base itself,
+ * so nothing it lacks is a loss and the table has no rows for it. For a Fabric mod "vanilla lacks it too" is the
+ * question, asked of the owning mod's platform ({@link MixinConfigOwners#ecosystemOf}); a config no single mod claims
+ * is not asked at all. The patched jar is the whole of what NeoForge declares in vanilla's packages: its runtime ships
+ * no class there, and its own transformers add no method there (NeoForge 26.2.0.93's coremods jar holds
  * {@code MethodRedirector}, {@code ReplaceFieldWithGetterAccess} and {@code ReplaceFieldComparisonWithInstanceOf},
  * which rewrite instructions only).
  *
  * <h2>Which misses the platform shares</h2>
  *
- * <p>The kernel sees only the merged base at run time, and none of the three platform jars is shipped with it. What is
- * shipped is the difference: {@value #TABLE}, which NativeOnlyMethodsCensusTest re-derives from vanilla 26.2's own jar,
- * the staged MinecraftForge and NeoForge patched jars and the staged merged base, and pins. Measured, every class the
- * three declare in vanilla's packages is in the merged base, and only 565 of vanilla's methods, 424 of
- * MinecraftForge's and 14 of NeoForge's are not (most of them lambdas and anonymous classes the merge renumbered), so a
- * platform's declared methods are the merged class's own minus what the merge added, plus that platform's rows for
- * that class. A method the merged class does not declare and no row of the platform names is a method the platform
- * does not declare either.
+ * <p>The kernel sees only the base at run time, and vanilla's jar is not shipped with it. What is shipped is the
+ * difference: {@value #TABLE}, which NativeOnlyMethodsCensusTest re-derives from vanilla 26.2's own jar and the staged
+ * base, and pins. A platform's declared methods are the base class's own plus that platform's rows for that class, so
+ * a method the base class does not declare and no row of the platform names is a method the platform does not declare
+ * either. (On the merged base of Forbric 0.4 and earlier the table also spoke for MinecraftForge, and subtracted what
+ * the merge added; Stage 4 regenerated it from NeoForge's base.)
  *
- * <p>"The merged class's own" means the merged base's RAW bytes, before the kernel's transform chain: the chain
- * removes some methods (orphaned lambda twins, interface-default shadowing stubs), and a method only the chain took
- * away may well be the platform's — the census never saw that removal. So a method the raw class still declares is
- * never called absent; the miss stays the merge's, as before.
+ * <p>"The base class's own" means the base's RAW bytes, before the kernel's transform chain: the chain adds and removes
+ * some methods (the vanilla twins, interface-default shadowing stubs), and a method only the chain took away may well be
+ * the platform's — the census never saw that removal. So a method the raw class still declares is never called absent;
+ * the miss stays a miss.
  *
- * <p>The rows hold only for the merged base they were derived from, and a base that lost a method the staged one kept
- * would have no row for it — the direction that hides a loss. So the table carries that base's members digest
+ * <p>The rows hold only for the base they were derived from, and a base that lost a method the staged one kept would
+ * have no row for it — the direction that hides a loss. So the table carries that base's members digest
  * ({@link #membersDigest}: every class in vanilla's packages with its methods' names and descriptors, bodies left out,
  * so a rebuild that changes only code still matches), and nothing is answered for a class served by a jar whose digest
- * differs, or by no jar the kernel can read; such a miss counts as the merge's, as before, and one warning names the
- * mismatch.
+ * differs, or by no jar the kernel can read; such a miss stays a miss, and one warning names the mismatch.
  *
  * <p>Only classes in vanilla's own packages are asked, and only those the raw view can see and the table does not list
- * as the merged base's alone for that platform (a class the platform lacks fails natively for a different reason:
- * Mixin cannot find the target and skips the whole mixin). Another mod's class is never asked: {@link MixinFit} judges
- * those as foreign.
+ * as the base's alone for that platform ({@code merged-only} rows, a name the format keeps: a class the platform lacks
+ * fails natively for a different reason — Mixin cannot find the target and skips the whole mixin). Another mod's class
+ * is never asked: {@link MixinFit} judges those as foreign.
  *
  * <h2>Minecraft's own libraries</h2>
  *
  * <p>{@code com/mojang/} is also where Minecraft's libraries live — brigadier, DataFixerUpper, authlib and five more —
- * and the kernel loads those from their own jars, beside the merged base, so a mod can mixin into them as it can
- * natively. Their raw bytes are what every platform loads: vanilla 26.2 lists them in its version JSON, and
- * MinecraftForge 65.0.1's and NeoForge 26.2.0.88's launcher profiles both inherit that list and add no
- * {@code com.mojang} library (measured on their installers), and no platform jar or merged base ships one of their
+ * and the kernel loads those from their own jars, beside the base, so a mod can mixin into them as it can natively.
+ * Their raw bytes are what every platform loads: vanilla 26.2 lists them in its version JSON, and NeoForge 26.2.0.93's
+ * launcher profile inherits that list and adds no {@code com.mojang} library (measured on its installer), and neither
+ * the base nor the carrier ships one of their
  * classes. So the table also records each of those jars' members digest ({@code library} lines, re-derived from the
- * version JSON), and a class served by one of exactly those jars is answered from its raw bytes, as the merged base's
+ * version JSON), and a class served by one of exactly those jars is answered from its raw bytes, as the base's
  * classes are. A library jar of another version, or a mod's own copy, has another digest and is not answered for.
  *
  * <h2>Whose native: the version the mod asks for</h2>
  *
- * <p>The rows describe one game per platform: vanilla 26.2, MinecraftForge 65.0.1's patched 26.2 and NeoForge
- * 26.2.0.88's, which the table's {@code platform} lines record ({@code minecraft=}, {@code forge=}, {@code neoforge=}).
- * A mod whose mandatory {@code minecraft} range, or {@code forge}/{@code neoforge} range for its platform, excludes that
+ * <p>The rows describe one game per platform: vanilla 26.2 and NeoForge 26.2.0.93's, which the table's
+ * {@code platform} lines record ({@code minecraft=}, {@code neoforge=}). A mod whose mandatory {@code minecraft} range,
+ * or {@code neoforge} range for a NeoForge mod, excludes that
  * version is not native to that game: its own loader would refuse it there, and the newer game it was built for may
- * well declare the method this one lacks. Such a mod is not answered for — the miss is the merge's, as before — and
+ * well declare the method this one lacks. Such a mod is not answered for — the miss stays a miss — and
  * one line names the requirement. Nor is a mod whose declared requirements the kernel cannot see (the config's owner
  * has no metadata in {@link net.forbric.api.ModPresence}), or whose range cannot be read: being asked is the claim that
  * would hide a loss, so it needs a requirement that is shown to admit the table's game.
@@ -172,7 +166,7 @@ public final class NativeAbsentTargets {
 		return false;
 	}
 
-	/** {@code base <digest>}: the members digest of the merged base the rows were derived from. */
+	/** {@code base <digest>}: the members digest of the raw base the rows were derived from. */
 	static final String BASE = "base ";
 
 	/**
@@ -183,12 +177,12 @@ public final class NativeAbsentTargets {
 
 	/**
 	 * {@code platform <id> <requirement>=<version>...}: the table speaks for this platform, whose game is the one those
-	 * versions name — {@code minecraft=} always, and {@code forge=} or {@code neoforge=} for those two. A platform
+	 * versions name — {@code minecraft=} always, and {@code neoforge=} for NeoForge. A platform
 	 * without the line is never answered for.
 	 */
 	static final String PLATFORM = "platform ";
 
-	/** {@code <id> merged-only <owner>}: a class in vanilla's packages the merged base has and that platform does not. */
+	/** {@code <id> merged-only <owner>}: a class in vanilla's packages the base has and that platform does not (the name is the format's). */
 	static final String MERGED_ONLY = "merged-only ";
 
 	/** The requirement id every platform's game answers to. */
@@ -204,7 +198,7 @@ public final class NativeAbsentTargets {
 	/**
 	 * What one evaluation needs to ask.
 	 *
-	 * @param raw            the merged base's bytes before the transform chain, by resource path
+	 * @param raw            the base's bytes before the transform chain, by resource path
 	 * @param defaultRequire how many injections the config's {@code injectors.defaultRequire} makes native Mixin require,
 	 *                       as {@link KernelGuestMixinAdapter#declaredDefaultRequire} reads it: 0 or more — the
 	 *                       {@code -1} a mod writes requires none, so it is 0 here — or
@@ -225,9 +219,9 @@ public final class NativeAbsentTargets {
 	/**
 	 * One platform's rows.
 	 *
-	 * @param methods    owner → {@code name + descriptor} of every method the platform declares there and the merged
+	 * @param methods    owner → {@code name + descriptor} of every method the platform declares there and the base's
 	 *                   class does not
-	 * @param mergedOnly classes in vanilla's packages the merged base has and the platform does not
+	 * @param mergedOnly classes in vanilla's packages the base has and the platform does not
 	 * @param versions   requirement id → the version of the game the rows describe, from the {@code platform} line
 	 */
 	record Rows(Map<String, Set<String>> methods, Set<String> mergedOnly, Map<String, String> versions) {
@@ -354,7 +348,7 @@ public final class NativeAbsentTargets {
 		return null;
 	}
 
-	/** The shipped table, read once; an unreadable table is empty, which makes every miss the merge's again. */
+	/** The shipped table, read once; an unreadable table is empty, which makes every miss a miss again. */
 	static Table shipped() {
 		Table loaded = shipped;
 		if (loaded != null) return loaded;
@@ -415,7 +409,7 @@ public final class NativeAbsentTargets {
 			if (OUTSIDE.add(mod.getId() + " " + unmet)) {
 				ForbricLog.info("[Forbric/Mixin] %s requires %s, which %s does not satisfy, so its own loader would not run "
 						+ "it on the game %s describes; an injector target that game lacks is not judged absent from the game "
-						+ "the mod was built for, and counts as the merge's miss", mod.getId(), unmet,
+						+ "the mod was built for, and stays a miss", mod.getId(), unmet,
 						describe(context.platform(), table), TABLE);
 			}
 			return false;
@@ -532,7 +526,7 @@ public final class NativeAbsentTargets {
 	/**
 	 * Whether {@code platform}'s own {@code owner} provably declares no method {@code name} — of descriptor
 	 * {@code desc}, or of any when it is null. False whenever that cannot be shown: no platform, one the table does
-	 * not speak for, a class outside vanilla's packages or listed as the merged base's alone, a class {@code raw}
+	 * not speak for, a class outside vanilla's packages or listed as the base's alone, a class {@code raw}
 	 * cannot serve, a method the raw class still declares, or a row.
 	 */
 	static boolean nativeLacks(Ecosystem platform, String owner, String name, String desc, Function<String, byte[]> raw,
@@ -584,13 +578,13 @@ public final class NativeAbsentTargets {
 
 	/**
 	 * The one warning for a class the table does not speak for. It names the serving jar by its members digest and calls
-	 * it neither base nor library, because it may be either: a merged base built from other inputs, or a library jar
+	 * it neither base nor library, because it may be either: a base built from other inputs, or a library jar
 	 * of another version.
 	 */
 	static String mismatch(String owner, String running, String expected) {
-		return String.format("[Forbric/Mixin] %s is served by %s, which is neither the merged base %s was derived from "
+		return String.format("[Forbric/Mixin] %s is served by %s, which is neither the base %s was derived from "
 				+ "(members %s) nor one of the Minecraft library jars it lists; no injector target there is judged absent "
-				+ "from a mod's own platform, and every such miss counts as the merge's", owner,
+				+ "from a mod's own platform, and every such miss stays a miss", owner,
 				running == null ? "no jar the kernel can read" : "a jar with members " + running, TABLE,
 				expected == null ? "not recorded" : expected);
 	}
@@ -644,8 +638,8 @@ public final class NativeAbsentTargets {
 	}
 
 	/**
-	 * {@link MembersDigest} of every class in a jar: what the table's {@code base} line records for the staged merged
-	 * base, and each {@code library} line for one of Minecraft's library jars.
+	 * {@link MembersDigest} of every class in a jar: what the table's {@code base} line records for the staged raw base,
+	 * and each {@code library} line for one of Minecraft's library jars.
 	 */
 	public static String membersDigest(Path jar) throws IOException {
 		MembersDigest digest = new MembersDigest();

@@ -435,7 +435,7 @@ public final class MixinRetarget {
 				// A value the handler shares lives per method: its partners in selected must all move with it.
 				if (shares && !shareGroupMoves(mixin, oneTarget, handler, target, selected, renamed, resolver)) continue;
 				why = !carried.called()
-						? "a carrier renamed the vanilla body to " + renamed.name + ", which nothing in the merged game calls: bound "
+						? "a carrier renamed the vanilla body to " + renamed.name + ", which nothing in the game calls: bound "
 								+ "there as in the body, the injector never runs (carrier-renames.txt)"
 						: carried.kind() == CarrierRenames.Kind.RENAME
 						? "a carrier renamed the vanilla body to " + renamed.name + ", which the class still calls (carrier-renames.txt)"

@@ -23,7 +23,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 import net.forbric.api.Ecosystem;
 
 /**
- * The boot-time scan of the installed mods reads their calls into uncalled merged-base methods by the census's own rules,
+ * The boot-time scan of the installed mods reads their calls into uncalled base methods by the census's own rules,
  * with shipped rows, synthetic classes of unrelated names and no staged jar: an override's super call of itself is no
  * call; an {@code @Invoker} binds only the method of its name and descriptor in the classes its {@code @Mixin} targets; a
  * static method is reached only by a static call naming its class or a subclass — and a mixin's call of its own class
@@ -123,7 +123,7 @@ class MergedBaseGuestScanTest {
 	@Test
 	void anOverridesSuperCallOfItselfIsNoCallButACallOfItIs() {
 		ClassNode living = owner(LIVING, "createCookie", TRAVEL_IN_FLUID, Opcodes.ACC_PROTECTED);
-		assertNotNull(neverRuns(living, Ecosystem.FABRIC), "the shipped row: nothing in the merged game calls it");
+		assertNotNull(neverRuns(living, Ecosystem.FABRIC), "the shipped row: nothing in the game calls it");
 
 		// A mod's entity overriding it and calling super: dead itself, as the census's own override is.
 		MergedBaseUncalledMethods.noteGuest(bytes(caller("org/tidewrack/net/Listener", LIVING, "createCookie", TRAVEL_IN_FLUID,

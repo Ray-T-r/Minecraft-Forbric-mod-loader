@@ -38,7 +38,7 @@ class MixinTwinRebindWeaveTest {
 	private static final String MOVED_LOG = "[Forbric/Mixin] com.example.xray.mixin.RendererMixin: xray now targets "
 			+ "net.minecraft.client.renderer.block.ModelBlockRenderer.shouldRenderFace(Lnet/minecraft/client/renderer/block/"
 			+ "BlockAndTintGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;"
-			+ "Lnet/minecraft/core/Direction;Lnet/minecraft/core/BlockPos;)Z — the merged game calls it where vanilla called "
+			+ "Lnet/minecraft/core/Direction;Lnet/minecraft/core/BlockPos;)Z — the game calls it where vanilla called "
 			+ "shouldRenderFace";
 
 	@TempDir static Path work;

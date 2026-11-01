@@ -20,7 +20,7 @@ import net.forbric.kernel.util.Caught;
  * place.
  *
  * <p>NeoForge's {@code placeInWorld} calls {@code addEntitiesToWorld(level, pos, settings, reporter)} where vanilla's called
- * {@code placeEntities(level, pos, mirror, rotation, pivot, box, finalize, reporter)}, and nothing in the merged game calls
+ * {@code placeEntities(level, pos, mirror, rotation, pivot, box, finalize, reporter)}, and nothing in the game calls
  * vanilla's method any more. Each injector written for it is moved on its own, whatever else the mixin holds:
  * <ul>
  * <li>an {@code @Inject} at the call in {@code placeInWorld}: its point names the call the merged method makes there;

@@ -33,7 +33,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>NeoForge turned vanilla's {@code Hud.extractPlayerHealth} into {@code extractHealthLevel; extractArmorLevel;
  * extractFoodLevel; extractAirLevel} ({@link CarrierHelpers} {@code SPLIT}) and draws each piece as a HUD layer of its own;
- * nothing in the merged game calls {@code extractPlayerHealth} any more ({@link MergedBaseUncalledMethods}). Balm's
+ * nothing in the game calls {@code extractPlayerHealth} any more ({@link MergedBaseUncalledMethods}). Balm's
  * {@code RENDER_GUI_HEALTH_PRE}/{@code POST} are a cancellable {@code HEAD} and a {@code TAIL} of it: bound there they bind
  * and never run, so every listener of either event heard nothing, frame after frame.
  *
@@ -176,7 +176,7 @@ public final class MixinSplitBodyEdges {
 	}
 
 	/**
-	 * The pieces of {@code named}, in its order, when it is a census-proven split nothing in the merged game calls and the
+	 * The pieces of {@code named}, in its order, when it is a census-proven split nothing in the game calls and the
 	 * merged game reaches every piece from one other method of the class, the same for all, in that order; else null.
 	 */
 	static List<MethodNode> pieces(ClassNode target, MethodNode named, Ecosystem ecosystem,

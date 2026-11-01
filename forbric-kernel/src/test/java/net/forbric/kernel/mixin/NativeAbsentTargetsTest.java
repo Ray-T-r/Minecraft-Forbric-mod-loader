@@ -257,7 +257,7 @@ class NativeAbsentTargetsTest {
 
 		String warning = NativeAbsentTargets.mismatch(dispatcher, "an older brigadier", "e49c");
 		assertTrue(warning.contains(dispatcher + " is served by a jar with members an older brigadier, which is neither the "
-				+ "merged base"), warning);
+				+ "base"), warning);
 		assertTrue(warning.contains("nor one of the Minecraft library jars it lists"), warning);
 		assertFalse(warning.contains("a base with members"), warning);
 		assertTrue(NativeAbsentTargets.mismatch(dispatcher, null, null).contains("served by no jar the kernel can read"));

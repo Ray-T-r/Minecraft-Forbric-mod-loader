@@ -57,7 +57,7 @@ class MixinRetargetRenamedBodyStagedTest {
 			"net/fabricmc/fabric/mixin/entity/event/ServerPlayerMixin#onSetSpawnPoint -> lambda$startSleepInBed$0",
 			"net/fabricmc/fabric/mixin/entity/event/ServerPlayerMixin#redirectSleepDirection -> lambda$startSleepInBed$0",
 			"net/fabricmc/fabric/mixin/resource/ServerConfigurationPacketListenerImplMixin#filterKnownPacks -> runConfiguration");
-	/** fabric-item-api's three moves into addDetailsToTooltipComponents, which nothing in the merged game calls. */
+	/** fabric-item-api's three moves into addDetailsToTooltipComponents, which nothing in the game calls. */
 	private static final Set<String> FABRIC_API_DEAD = Set.of(
 			"net/fabricmc/fabric/mixin/item/ItemStackMixin#preAppendComponentTooltip -> addDetailsToTooltipComponents",
 			"net/fabricmc/fabric/mixin/item/ItemStackMixin#preAttributeModifiers -> addDetailsToTooltipComponents",

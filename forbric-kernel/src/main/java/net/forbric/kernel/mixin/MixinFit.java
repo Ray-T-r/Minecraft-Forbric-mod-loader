@@ -453,7 +453,7 @@ public final class MixinFit {
 			this.bound = bound;
 		}
 
-		/** An injector bound only to methods nothing in the merged game calls: soft, and bound. */
+		/** An injector bound only to methods nothing in the game calls: soft, and bound. */
 		static Anchor neverRuns(String detail) {
 			return new Anchor("@Inject target", detail, false, true, false, true);
 		}
@@ -724,7 +724,7 @@ public final class MixinFit {
 				hits = new ArrayList<>(List.of(live != null ? live : piece));
 			}
 		}
-		// Bound is not run. An injector whose every method is one nothing in the merged game calls attaches and
+		// Bound is not run. An injector whose every method is one nothing in the game calls attaches and
 		// never fires: Better Mount HUD's XP redirect in Hud.extractHotbarAndDecorations, whose vanilla caller
 		// NeoForge's HUD layers replaced, and malilib's tooltip hook in the renamed tooltip body R3 moves it to. Soft —
 		// it makes the mixin PARTIAL with the reason, never UNFIT, and no injector moves because of it.

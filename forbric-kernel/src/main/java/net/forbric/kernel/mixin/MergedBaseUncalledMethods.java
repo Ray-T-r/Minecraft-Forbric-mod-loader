@@ -30,42 +30,40 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Methods of the merged base that the game a mod was built against calls, and that nothing in the merged game calls —
- * the shipped table {@code uncalled-methods.txt}, which UncalledMethodCensusTest re-derives from the staged jars and
- * pins.
+ * Methods of the base (NeoForge's patched game, after the vanilla twins) that the game a mod was built against calls,
+ * and that nothing in this game calls — the shipped table {@code uncalled-methods.txt}, which UncalledMethodCensusTest
+ * re-derives from the staged jars and pins. (The class kept its merged-base name; Stage 6 renames.)
  *
  * <p>Better Mount HUD redirects {@code MultiPlayerGameMode.hasExperience()} inside {@code
- * Hud.extractHotbarAndDecorations} to hide the XP number over the jump bar. The merged base still has that method, with
- * that call in it, so the anchor resolves and the redirect attaches — but vanilla calls the method from {@code
- * Hud.extractRenderState}, NeoForge's HUD layers replaced that call, and no class in the merged jar, the carriers or
- * the kernel calls it any more. The redirect never runs; resolution alone called it FIT.
+ * Hud.extractHotbarAndDecorations} to hide the XP number over the jump bar. The base has that method (the vanilla twin
+ * puts it back), with that call in it, so the anchor resolves and the redirect attaches — but vanilla calls the method
+ * from {@code Hud.extractRenderState}, NeoForge's HUD layers replaced that call, and no class in the base, the NeoForge
+ * carrier or the kernel calls it. The redirect never runs; resolution alone called it FIT.
  *
- * <p>A row says: {@code owner#method} is declared in the merged base; every instruction or method handle in the merged
- * jar, {@code forge-runtime-interop.jar}, {@code neoforge-runtime.jar} or the kernel's own classes that names its name
- * and descriptor (whatever the owner, so a virtual call through any type counts) is in a method that is itself
- * uncalled, or in code the kernel silences (the leaves MinecraftForge's builder puts in its vanilla HUD tree, each
- * replaced before the tree bakes) — a fixpoint, listed as the row's last column; no supertype declares it (a call
- * through that type, from anywhere, would reach it), and no string constant in that code spells its name (a call the
- * kernel synthesizes, or a reflective lookup). A PRIVATE method is reached only through its own class, so only a call
- * or handle naming that class counts, and only a string a call can be made from (beside its descriptor, inside one
- * owner-qualified target, or in a class that looks methods up reflectively and names the class): {@code
- * Level.removeBlock(BlockPos, boolean)}, called everywhere, had hidden that nothing calls {@code
- * ServerPlayerGameMode}'s private method of the same name and descriptor, and Physics Mod's collapse hook bound there
- * read as running. A STATIC method is reached only by a static call (or handle) naming its class or a subclass that
- * does not declare it again: {@code TripWireBlock}'s instance {@code shouldConnectTo(BlockState, Direction)}, which
- * runs, had hidden that nothing calls {@code RedStoneWireBlock}'s static method of that name and descriptor (NeoForge
- * asks the block's {@code canConnectRedstone} there instead), and Create's redstone-connection hook read as running. An
+ * <p>A row says: {@code owner#method} is declared in the base; every instruction or method handle in the base,
+ * {@code neoforge-runtime.jar} or the kernel's own classes that names its name and descriptor (whatever the owner, so a
+ * virtual call through any type counts) is in a method that is itself uncalled, or in code the kernel silences (a
+ * leading {@value #SILENCED} in the last column; none on NeoForge's base) — a fixpoint, listed as the row's last column;
+ * no supertype declares it (a call through that type, from anywhere, would reach it), and no string constant in that
+ * code spells its name (a call the kernel synthesizes, or a reflective lookup). A PRIVATE method is reached only through
+ * its own class, so only a call or handle naming that class counts, and only a string a call can be made from (beside
+ * its descriptor, inside one owner-qualified target, or in a class that looks methods up reflectively and names the
+ * class): on the merged base of Forbric 0.4 and earlier, {@code Level.removeBlock(BlockPos, boolean)}, called
+ * everywhere, had hidden that nothing called {@code ServerPlayerGameMode}'s private method of the same name and
+ * descriptor. A STATIC method is reached only by a static call (or handle) naming its class or a subclass that does not
+ * declare it again: {@code TripWireBlock}'s instance {@code shouldConnectTo(BlockState, Direction)}, which runs, had
+ * hidden that nothing calls {@code RedStoneWireBlock}'s static method of that name and descriptor (NeoForge asks the
+ * block's {@code canConnectRedstone} there instead), and Create's redstone-connection hook read as running. An
  * override's super call of itself runs only when the override runs, so a method named by nothing else is uncalled
- * unless a supertype outside the merged game declares it. And the listed ecosystems' own jars — vanilla for Fabric, the
- * patched game plus its runtime for MinecraftForge and NeoForge — call it from the listed methods, each of which runs
- * there (the same fixpoint, by the same rules, over the reference), or is one a mod may call and the merged game no
- * longer makes the call from. A method no reference runs either is not here: a mod targeting it is promised nothing the
- * merged game breaks. NeoForge drew the four pieces of {@code Hud.extractPlayerHealth} as layers of their own: vanilla
- * still calls it only from the uncalled {@code extractHotbarAndDecorations}, MinecraftForge only from a silenced leaf,
- * and Balm's health events there were read as running.
+ * unless a supertype outside the game declares it. And the listed ecosystems' own jars — vanilla for Fabric, the
+ * patched game plus its runtime for NeoForge — call it from the listed methods, each of which runs there (the same
+ * fixpoint, by the same rules, over the reference), or is one a mod may call and this game no longer makes the call
+ * from. A method no reference runs either is not here: a mod targeting it is promised nothing this game breaks.
+ * NeoForge drew the four pieces of {@code Hud.extractPlayerHealth} as layers of their own: vanilla still calls it only
+ * from the uncalled {@code extractHotbarAndDecorations}, and Balm's health events there were read as running.
  *
  * <p>What the census cannot see is the installed mods, and they do call some of these: fabric-resource-loader, Iris and
- * Collective all call {@code Language.loadFromJson(InputStream, BiConsumer)}, the stub the merged game no longer does,
+ * Collective all call {@code Language.loadFromJson(InputStream, BiConsumer)}, the stub this game no longer calls,
  * so owo's mixin there runs. {@link #scanGuests} therefore reads every installed jar's constant pool at boot, beside
  * the other guest audits and before Mixin prepares a config, by the census's own rules: a row any of them calls or
  * takes a handle to is live — but not through an override's super call of itself; a private row only through a call
@@ -91,8 +89,9 @@ public final class MergedBaseUncalledMethods {
 	 * @param method     {@code name + descriptor}
 	 * @param ecosystems whose own game calls it — the mods that expect it to run
 	 * @param callers    where those games call it from, {@code class#name+descriptor}
-	 * @param deadSites  every place the merged game names it, {@code class#name+descriptor}, each itself uncalled or code the
-	 *                   kernel silences (MinecraftForge's vanilla HUD leaves, written with a leading {@value #SILENCED}): the
+	 * @param deadSites  every place the game names it, {@code class#name+descriptor}, each itself uncalled or code the
+	 *                   kernel silences (written with a leading {@value #SILENCED}; on the merged base, MinecraftForge's
+	 *                   vanilla HUD leaves; none on NeoForge's): the
 	 *                   re-check against live bytes leaves these out, so a call from anywhere else still makes the method live
 	 */
 	record Row(String owner, String method, Set<Ecosystem> ecosystems, List<String> callers, Set<String> deadSites) {
@@ -181,7 +180,7 @@ public final class MergedBaseUncalledMethods {
 				}
 			}
 		} catch (IOException unreadable) {
-			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; every merged-base method reads as called", TABLE);
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read %s; every base method reads as called", TABLE);
 		}
 		// Rows a census of another base (a weave test's own stand-in game) adds, in the same format.
 		String extra = System.getProperty(EXTRA_PROPERTY);
@@ -217,7 +216,7 @@ public final class MergedBaseUncalledMethods {
 	}
 
 	/**
-	 * What the census proved never runs in the merged game, {@code class#name+descriptor}: every row's method and every
+	 * What the census proved never runs in the game, {@code class#name+descriptor}: every row's method and every
 	 * uncalled or silenced place a row names. The live-bytes re-check starts only from code outside this set.
 	 */
 	static Set<String> dead() {
@@ -281,12 +280,12 @@ public final class MergedBaseUncalledMethods {
 					}
 				}
 			} catch (IOException | RuntimeException unreadable) {
-				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s for calls into uncalled merged-base methods; "
+				Caught.warn(unreadable, "[Forbric/Mixin] could not read %s for calls into uncalled base methods; "
 						+ "what it calls reads as uncalled", jar.getFileName());
 			}
 		}
 		if (!GUEST_CALLED.isEmpty()) {
-			ForbricLog.info("[Forbric/Mixin] installed mods call %d of the %d merged-base method(s) nothing in the merged game "
+			ForbricLog.info("[Forbric/Mixin] installed mods call %d of the %d base method(s) nothing in the game "
 					+ "calls; an injector there counts as running", GUEST_CALLED.size(), keys().size());
 		}
 	}
@@ -310,7 +309,7 @@ public final class MergedBaseUncalledMethods {
 			reader = new ClassReader(classBytes);
 		} catch (RuntimeException notAClass) {
 			Caught.warn(notAClass, "[Forbric/Mixin] a .class entry of %d bytes is not a class ASM can read; its calls into "
-					+ "uncalled merged-base methods are not seen", classBytes == null ? -1 : classBytes.length);
+					+ "uncalled base methods are not seen", classBytes == null ? -1 : classBytes.length);
 			return;
 		}
 		Set<String> wanted = keys();
@@ -332,7 +331,7 @@ public final class MergedBaseUncalledMethods {
 			reader.accept(node, ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		} catch (RuntimeException unreadable) {
 			// Its code cannot be read: what its pool names counts as called, whatever the owner, as it did before code was read.
-			Caught.warn(unreadable, "[Forbric/Mixin] could not read the code of %s; every uncalled merged-base method its "
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read the code of %s; every uncalled base method its "
 					+ "constant pool names counts as called by it", reader.getClassName());
 			notePool(reader, wanted, buf);
 			return;
@@ -586,7 +585,7 @@ public final class MergedBaseUncalledMethods {
 		return new String[] {h.getOwner(), h.getName() + h.getDesc(), h.getTag() == org.objectweb.asm.Opcodes.H_INVOKESTATIC ? "s" : ""};
 	}
 
-	/** "nothing in the merged game calls it; vanilla and MinecraftForge call it from Hud.extractRenderState" */
+	/** "nothing in the game calls it; vanilla calls it from Hud.extractRenderState" */
 	static String describe(Row row) {
 		List<String> games = new ArrayList<>();
 		for (Ecosystem e : Ecosystem.values()) {
@@ -601,7 +600,7 @@ public final class MergedBaseUncalledMethods {
 			String simple = owner + "." + name;
 			if (!from.contains(simple)) from.add(simple);
 		}
-		return "nothing in the merged game calls it; " + String.join(" and ", games) + (games.size() == 1 ? " calls" : " call")
+		return "nothing in the game calls it; " + String.join(" and ", games) + (games.size() == 1 ? " calls" : " call")
 				+ " it from " + String.join(", ", from);
 	}
 }

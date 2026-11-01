@@ -359,7 +359,7 @@ public final class KernelBoot {
 		// Which installed jars read a vanilla field with a descriptor the merge no longer declares (NoSuchFieldError
 		// at that access); reported after the catalog is published, so the rows reach load-report.txt.
 		FieldDriftAudit.scan(shadowCandidates);
-		// Which merged-base methods nothing in the merged game calls an installed mod calls itself: an injector bound
+		// Which merged-base methods nothing in the game calls an installed mod calls itself: an injector bound
 		// there still runs. Read before Mixin prepares a config, so MixinFit's liveness verdict can ask.
 		net.forbric.kernel.mixin.MergedBaseUncalledMethods.scanGuests(shadowCandidates);
 		// Which installed jars name a Forge-family class that exists in no carrier, not the merged base and no
@@ -561,7 +561,7 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.VanillaEarlyReturns.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaEarlyReturns(), Integer.MAX_VALUE);
 		} else {
-			ForbricLog.warn("[Forbric/EarlyReturns] -D%s=off — merged methods keep their early returns folded into the "
+			ForbricLog.warn("[Forbric/EarlyReturns] -D%s=off — the base's methods keep their early returns folded into the "
 					+ "tail, and a Fabric mod's TAIL handler also runs where vanilla's body returned early",
 					net.forbric.kernel.transform.VanillaEarlyReturns.PROPERTY);
 		}

@@ -45,16 +45,16 @@ import net.forbric.kernel.util.Caught;
 
 /**
  * Offline driver for {@link MixinFit}: reports what every guest mixin in a mods directory would be judged as,
- * against a merged base, without booting the game.
+ * against the base (NeoForge's patched game), without booting the game.
  *
  * <p>This exists because the runtime path cannot enumerate. {@code run/mixin-inventory.sh} boots iteratively for one
  * finding per round, because under {@code -Dforbric.mixinDiagnostics} an {@code InjectionError} escapes as a fatal
  * {@code MixinTransformerError} that {@code required:false} does not catch. A static pass over the same inputs
  * produces the whole table in seconds and cannot break anything.
  *
- * <p>Usage: {@code MixinFitReport <merged-base.jar> <mods-dir> [--verbose]}
+ * <p>Usage: {@code MixinFitReport <base.jar> <mods-dir> [--verbose]}
  *
- * <p><b>Known divergence from runtime:</b> this resolves against RAW merged-jar bytes, whereas the kernel resolves
+ * <p><b>Known divergence from runtime:</b> this resolves against RAW base-jar bytes, whereas the kernel resolves
  * against post-transform-chain bytes ({@code getPreMixinClassBytes}). The chain both adds members (the
  * {@code KeyMapping.MAP} initializer) and removes them (the interface-default shadowing overrides), so a handful of
  * verdicts here can differ from the live ones. The orphaned-field rule matches writes by exact owner and descriptor,
@@ -70,14 +70,14 @@ public final class MixinFitReport {
 
 	public static void main(String[] args) throws IOException {
 		if (args.length < 2) {
-			System.err.println("usage: MixinFitReport <merged-base.jar> <mods-dir> [--verbose]");
+			System.err.println("usage: MixinFitReport <base.jar> <mods-dir> [--verbose]");
 			System.exit(2);
 		}
 		boolean verbose = args.length > 2 && args[2].contains("verbose");
 
 		Map<String, byte[]> merged = readJar(Path.of(args[0]));
-		System.out.printf("[fit] merged base: %d classes from %s%n", merged.size(), Path.of(args[0]).getFileName());
-		// The jar given here serves every class, as the merged base does at runtime: one digest for all of them.
+		System.out.printf("[fit] base: %d classes from %s%n", merged.size(), Path.of(args[0]).getFileName());
+		// The jar given here serves every class, as the base does at runtime: one digest for all of them.
 		String members = NativeAbsentTargets.membersDigest(merged);
 		Function<String, String> base = owner -> members;
 

@@ -136,14 +136,14 @@ public final class KernelGuestMixinAdapter {
 			String key = handed.configName() + ":" + handed.mixin();
 			boolean fits = fit.verdict() == MixinFit.Verdict.FIT;
 			ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s as handed to Mixin — %d anchor(s) the config-time read missed now land "
-							+ "where the merged game runs them, withdrawn: %s; verdict %s→%s%s", MixinConfigOwners.describe(handed.configName()),
+							+ "where the game runs them, withdrawn: %s; verdict %s→%s%s", MixinConfigOwners.describe(handed.configName()),
 					handed.mixin(), landed.size(), String.join(", ", landed), handed.kept().verdict(), fit.verdict(),
 					fits ? "" : " (" + fit.reason() + ")");
 			if (fits) {
 				PARTIAL.remove(key);
 				REJECTING.remove(key);
 				MixinCompatibility.resolveAs(MixinCompatibility.id(handed.configName(), handed.pkg() + "." + handed.mixin()), handed.configName(),
-						"every anchor lands where the merged game runs it, as the mixin is handed to Mixin");
+						"every anchor lands where the game runs it, as the mixin is handed to Mixin");
 			}
 		} catch (RuntimeException unreadable) {
 			Caught.warn(unreadable, "[Forbric/Mixin] could not read guest mixin %s again as it is handed to Mixin; its config-time verdict stands",
@@ -179,7 +179,7 @@ public final class KernelGuestMixinAdapter {
 	/** The one line a gate greps: the count, and what it costs. */
 	public static String partialSummary() {
 		int rejecting = REJECTING.size();
-		String head = "[Forbric/Mixin] " + PARTIAL.size() + " guest mixin(s) apply only partially on the merged base — ";
+		String head = "[Forbric/Mixin] " + PARTIAL.size() + " guest mixin(s) apply only partially on this base — ";
 		if (rejecting == 0) return head + "each keeps the handlers that bound and loses the rest, with no error at either end";
 		return head + (PARTIAL.size() - rejecting) + " keep the handlers that bound and lose the rest, with no error at either "
 				+ "end; " + rejecting + " keep an injector Mixin rejects outright (-D"
@@ -310,7 +310,7 @@ public final class KernelGuestMixinAdapter {
 			config = MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
 			Caught.warn(notAMixinConfig, "[Forbric/Mixin] could not parse mixin config %s; none of its mixins is checked "
-					+ "against the merged base", configName);
+					+ "against the base", configName);
 			return List.of();
 		}
 
@@ -371,8 +371,8 @@ public final class KernelGuestMixinAdapter {
 					MixinFit.Result accessors = MixinFit.evaluate(classBytes, resource,
 							net.forbric.kernel.classloading.DelegationPolicy::alwaysGame);
 					if (!accessors.unresolved().isEmpty()) {
-						ForbricLog.info("[Forbric/Mixin] guest accessor mixin %s:%s cannot bind — %s (kept; the merge "
-								+ "re-typed or removed the member, so the generated accessor will throw when called)",
+						ForbricLog.info("[Forbric/Mixin] guest accessor mixin %s:%s cannot bind — %s (kept; NeoForge's "
+								+ "patches re-typed or removed the member, so the generated accessor will throw when called)",
 								MixinConfigOwners.describe(configName), mixin, String.join(", ", accessors.unresolved()));
 					}
 					continue;
@@ -419,7 +419,7 @@ public final class KernelGuestMixinAdapter {
 					// and Mixin will drop it here the same way, the rest of the mixin applying around it.
 					ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s names %s, which %s lacks too; native Mixin drops "
 							+ "that injector without a word (nothing requires it to inject), and so will this boot — not a "
-							+ "merged-base loss", MixinConfigOwners.describe(configName), mixin,
+							+ "loss of this base", MixinConfigOwners.describe(configName), mixin,
 							String.join(", ", fit.nativeAbsent()), NativeAbsentTargets.describe(platform));
 				}
 				if (!fit.shouldSuppress()) {
@@ -489,7 +489,7 @@ public final class KernelGuestMixinAdapter {
 						notePartial(configName, mixin, kept);
 						preflight(configName, pkg, mixin, pluginClass, classBytes, required, kept.reason(), kept.unresolved());
 						handed(configName, pkg, mixin, resource, added, nativeView, kept);
-						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on the merged base "
+						ForbricLog.info("[Forbric/Mixin] guest mixin %s:%s applies only partially on this base "
 								+ "— %s (kept; -Dforbric.mixinFit=strict drops these%s)", MixinConfigOwners.describe(configName), mixin,
 								kept.reason(), rejectionNote(kept));
 					}
@@ -526,10 +526,10 @@ public final class KernelGuestMixinAdapter {
 							+ "integration is not applicable on this boot", MixinConfigOwners.describe(configName), mixin, optional);
 					continue;
 				}
-				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on the merged base (%s)",
+				ForbricLog.info("[Forbric/Mixin] auto-suppressing guest mixin %s:%s — %s on this base (%s)",
 						MixinConfigOwners.describe(configName), mixin, fit.verdict(), fit.reason());
 				report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, classBytes,
-						"guest mixin " + mixin + " did not fit the merged game and was left out",
+						"guest mixin " + mixin + " did not fit the game and was left out",
 						CompatibilityFinding.Confidence.CONFIRMED, required, List.of(fit.reason(), "kernel suppressed this mixin"));
 			} catch (RuntimeException perMixin) {
 				Caught.warn(perMixin, "[Forbric/Mixin] could not scan guest mixin %s:%s; it is applied unchecked",
@@ -656,14 +656,14 @@ public final class KernelGuestMixinAdapter {
 			// The kernel's measured decision, with a named repair doing the whole job: not a loss the player decides on.
 			// Left out before Mixin reads the config, so nothing is lost until the target class is defined; the row is a
 			// note until the repair is seen in the class the game defines, or shown not to be there.
-			String detail = "the kernel leaves out its mixin " + mixin + " on the merged game";
+			String detail = "the kernel leaves out its mixin " + mixin + " on this base";
 			evidence.add(SUPERSEDE_PENDING);
 			report(MixinCompatibility.id(configName, binary), configName, pkg, mixin, pluginClass, classBytes, detail,
 					CompatibilityFinding.Confidence.SUSPECTED, false, evidence);
 			SupersededMixins.awaitProofProvisionally(configName, binary, detail, evidence);
 		} else {
 			report(MixinCompatibility.id(configName, binary), configName, pkg, mixin, pluginClass, classBytes,
-					"guest mixin " + mixin + " did not fit the merged game and was left out",
+					"guest mixin " + mixin + " did not fit the game and was left out",
 					CompatibilityFinding.Confidence.CONFIRMED, required, evidence);
 		}
 		return null;
@@ -784,7 +784,7 @@ public final class KernelGuestMixinAdapter {
 				Caught.warn(unreadable, "[Forbric/Mixin] could not read the targets of %s:%s; its removal is reported "
 						+ "without them", MixinConfigOwners.describe(configName), mixin);
 			}
-			String detail = "the kernel leaves out its mixin " + mixin + " on the merged game";
+			String detail = "the kernel leaves out its mixin " + mixin + " on this base";
 			List<String> evidence = new ArrayList<>(List.of("kernel suppressed this mixin by name", "source=" + e.getValue(),
 					"config required=" + required));
 			// A repair claims this mixin's whole job: nothing is lost before its target class is defined, so the row is
@@ -908,7 +908,7 @@ public final class KernelGuestMixinAdapter {
 						row.target().substring(row.target().lastIndexOf('/') + 1), String.join(", ", unsupplied));
 				report(MixinCompatibility.id(configName, pkg + "." + mixin), configName, pkg, mixin, pluginClass, e.getValue(),
 						"guest mixin " + mixin + " was left out: it relies on " + contract + ", which nothing implements "
-								+ "on the merged game",
+								+ "on this base",
 						CompatibilityFinding.Confidence.CONFIRMED, false,
 						List.of("it implements, casts to or calls through " + row.contract(),
 								"only " + row.pin() + " implements it, and the kernel leaves that mixin out",

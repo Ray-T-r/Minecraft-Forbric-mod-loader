@@ -24,7 +24,7 @@ import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 
 /**
- * The final-class ledger does not count a handler called only from a method nothing in the merged game calls as
+ * The final-class ledger does not count a handler called only from a method nothing in the game calls as
  * attached: Better Mount HUD's XP redirect, merged into {@code Hud.extractHotbarAndDecorations}, whose vanilla caller
  * NeoForge's HUD layers replaced. Without this the whole-mixin suspicion was discharged and the load report had no
  * "partly did not run" line for a hook that never fires.
@@ -52,7 +52,7 @@ class FinalMixinApplicationsLivenessTest {
 		CompatibilityFinding injector = injector();
 		assertEquals(CompatibilityFinding.Confidence.CONFIRMED, injector.confidence(), injector.toString());
 		assertFalse(injector.required(), "inferred from the census, so it marks the row and asks nothing");
-		assertTrue(injector.detail().contains("attached only in Hud.extractHotbarAndDecorations (nothing in the merged game calls it"),
+		assertTrue(injector.detail().contains("attached only in Hud.extractHotbarAndDecorations (nothing in the game calls it"),
 				injector.detail());
 		assertTrue(CompatibilityFindings.confirmedRequired().isEmpty());
 		assertEquals(CompatibilityFinding.Confidence.SUSPECTED, whole().confidence(), "a handler that never runs discharges nothing");

@@ -22,8 +22,8 @@ import org.objectweb.asm.ClassReader;
  *
  * <p>{@link NativeGameReferences} answers "how did ecosystem E compile class C" — the evidence dozens of mixin adapters
  * compare against before they touch a guest mixin. That evidence used to have exactly one home: the
- * {@code META-INF/forbric/native-reference/<ECO>/} trees the old loader's merge tool embeds in the merged base, read
- * through the game class loader, with a null answer when absent. A base that is not that merge embeds nothing, and the
+ * {@code META-INF/forbric/native-reference/<ECO>/} trees the old loader's merge tool embedded in the merged base of
+ * Forbric 0.4 and earlier, read through the game class loader, with a null answer when absent. A base that is not that merge embeds nothing, and the
  * null answer is silent: measured on the genuine NeoForge-patched jar, every adapter that compares against vanilla stood
  * down, 26 Fabric injectors warned that had not before, and fabric-api alone left 13 vanilla datapack registries empty.
  * So the sources are spelled out here instead of being whatever the classpath happens to hold:
@@ -31,10 +31,11 @@ import org.objectweb.asm.ClassReader;
  * <ol>
  *   <li><b>The vanilla-reference sidecar</b> ({@code --nativeReference}, built by the installer from the vanilla jar and
  *       the base): the references of every ecosystem whose index it carries — FABRIC, in what the installer writes. It
- *       is preferred over the base's embedded index for those ecosystems: on the merged base the two are equal row for
- *       row (VanillaReferenceStagedTest), and on any other base only the sidecar exists. Where the base embeds the same
- *       index, that index still answers, class by class, whatever the sidecar cannot verify against it: a sidecar built
- *       against another base never costs the merged base evidence it carries itself.</li>
+ *       is preferred over the base's embedded index for those ecosystems: on the old merged base the two were equal row
+ *       for row, and on NeoForge's base only the sidecar exists (VanillaReferenceStagedTest proves every class it
+ *       indexes is vanilla's own). Where a base embeds the same index, that index still answers, class by class,
+ *       whatever the sidecar cannot verify against it: a sidecar built against another base never costs a base evidence
+ *       it carries itself.</li>
  *   <li><b>The base's embedded index</b>, for every other ecosystem it carries — NEOFORGE on the merged base of
  *       Forbric &le; 0.4 (which no launch accepts any more; tests still drive the format). Read through the game class
  *       loader exactly as before.</li>
@@ -150,7 +151,7 @@ public final class NativeReferenceSources {
 	}
 
 	/**
-	 * Whether the base jar embeds {@code ecosystem}'s index itself — the merged base does, for all three. Where the
+	 * Whether the base jar embeds {@code ecosystem}'s index itself (the old merged base did; NeoForge's does not). Where the
 	 * sidecar is that ecosystem's source, the embedded index answers every class the sidecar cannot verify.
 	 */
 	boolean baseEmbeds(Ecosystem ecosystem) {

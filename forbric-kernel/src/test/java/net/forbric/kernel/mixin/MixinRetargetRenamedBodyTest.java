@@ -156,7 +156,7 @@ class MixinRetargetRenamedBodyTest {
 
 		MixinRetarget.Plan plan = MixinRetarget.plan(MixinFit.parse(mixin), resolver);
 		assertEquals(List.of("addDetailsToTooltipComponents" + TOOLTIP), targets(plan), plan.describe());
-		assertTrue(plan.rewrites().get(0).why().contains("nothing in the merged game calls")
+		assertTrue(plan.rewrites().get(0).why().contains("nothing in the game calls")
 				&& plan.rewrites().get(0).why().contains("never runs"), plan.describe());
 		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, after.verdict(), after.reason());

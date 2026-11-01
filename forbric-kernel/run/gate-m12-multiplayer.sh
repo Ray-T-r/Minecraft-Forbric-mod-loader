@@ -199,7 +199,7 @@ check "no channel has a payload type and nothing declaring it" "registered-but-n
 # nothing could notice the number moving.
 #
 # A ceiling, not an equality: what is healthy depends on the mod set, and this number is supposed to go DOWN.
-check "the partial-application census ran" "guest mixin\(s\) apply only partially on the merged base" "$SLOG"
+check "the partial-application census ran" "guest mixin\(s\) apply only partially on this base" "$SLOG"
 PARTIAL_MIXINS="$(grep -aoE 'Forbric/Mixin\] [0-9]+ guest mixin\(s\) apply only partially' "$SLOG" | grep -oE '[0-9]+' | tail -1)"
 if [ -n "${PARTIAL_MIXINS:-}" ] && [ "$PARTIAL_MIXINS" -le "${M12_PARTIAL_CEILING:-30}" ]; then
   echo "[kernel] PASS partially applied guest mixins within the ceiling ($PARTIAL_MIXINS <= ${M12_PARTIAL_CEILING:-30})"

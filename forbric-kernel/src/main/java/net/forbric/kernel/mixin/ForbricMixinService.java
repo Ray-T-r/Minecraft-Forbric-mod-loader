@@ -492,7 +492,7 @@ public final class ForbricMixinService
 		// …and an @Inject anchored on a call the merged body makes through a subtype of the same method
 		// (Decoder.parse → Codec.parse: lithostitched's Fabric load predicates) moves to that one call.
 		MixinSubtypeOwnerRetarget.adapt(node, this::mergedBaseNodeWithCode);
-		// …and an injector written for vanilla's signature of a method nothing in the merged game calls any more moves to
+		// …and an injector written for vanilla's signature of a method nothing in the game calls any more moves to
 		// the overload the carrier added in its place, still handed vanilla's arguments (LiquidBounce's X-Ray face test on
 		// ModelBlockRenderer.shouldRenderFace, which NeoForge gave the block's position). After the pin: a pinned selector
 		// spells vanilla's descriptor, and this reads both forms.

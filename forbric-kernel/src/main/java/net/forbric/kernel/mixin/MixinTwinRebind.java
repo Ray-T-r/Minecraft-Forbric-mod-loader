@@ -31,14 +31,14 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Moves a mod's injector off vanilla's signature of a method, which the merged base keeps but nothing in the merged game
- * calls, onto the overload the carrier added in its place — the one the merged game calls where vanilla called vanilla's —
- * and hands the handler the arguments it was written for.
+ * Moves a mod's injector off vanilla's signature of a method, which the base keeps but nothing in the game calls, onto
+ * the overload NeoForge added in its place — the one the game calls where vanilla called vanilla's — and hands the
+ * handler the arguments it was written for.
  *
  * <p>NeoForge gave {@code ModelBlockRenderer.shouldRenderFace} the block's own position, for its face-hiding hooks:
- * {@code (level, pos, state, direction, neighborPos)}. MinecraftForge kept vanilla's {@code (level, state, direction,
- * neighborPos)}, so the merged class has both: NeoForge's first, the one the merged tesselate bodies call, and vanilla's
- * after it, private and called by nothing. LiquidBounce's X-Ray wraps the face test with a {@code @ModifyReturnValue}
+ * {@code (level, pos, state, direction, neighborPos)}, and kept vanilla's {@code (level, state, direction, neighborPos)}
+ * beside it, so the class has both: NeoForge's first, the one the tesselate bodies call, and vanilla's after it, private
+ * and called by nothing. LiquidBounce's X-Ray wraps the face test with a {@code @ModifyReturnValue}
  * selected by name that takes vanilla's four arguments after the result. Mixin binds the name to the first overload,
  * rejects the handler there and fails the whole mixin, and X-Ray's block filter, full-bright and transparency go with
  * it. A selector spelling vanilla's descriptor would bind, and never run.
@@ -49,7 +49,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       method is in {@code uncalled-methods.txt} for the mod's ecosystem and is no carrier stub
  *       ({@link MixinStubRebind}'s); the class declares exactly one other method of that name, with the same return type
  *       and static-ness, whose parameters include each of vanilla's, matched one to one by local variable name and type;
- *       and every method the ecosystem's own game calls vanilla's from calls that overload in the merged base;</li>
+ *       and every method the ecosystem's own game calls vanilla's from calls that overload in the base;</li>
  *   <li>only while vanilla's method is still uncalled ({@link MergedBaseUncalledMethods}: no installed mod references it
  *       and nothing in its class calls it);</li>
  *   <li>selectors naming the method alone or with vanilla's descriptor, however Mixin reads them (an owner prefix, a
@@ -64,9 +64,11 @@ import net.forbric.kernel.util.ForbricLog;
  *       of the overload's locals or arguments live there with its local variable name and type (the census's own evidence
  *       for the arguments), and one the call itself is handed (an operand loaded straight from the slot) must be handed as
  *       the same operand in the overload too. The outer handler reads them as MixinExtras {@code @Local}s by index.
- *       Physics Mod's collapse hook captures MinecraftForge's {@code removeBlock(pos, canHarvest)}'s {@code state} and
- *       {@code removed} before {@code Block.destroy}; NeoForge's {@code removeBlock(pos, state, canHarvest, tool)} — the one
- *       the merged {@code destroyBlock} calls — hands that call its {@code state} argument and keeps {@code removed};</li>
+ *       On the merged base Physics Mod's collapse hook captured MinecraftForge's {@code removeBlock(pos, canHarvest)}'s
+ *       {@code state} and {@code removed} before {@code Block.destroy}, and NeoForge's {@code removeBlock(pos, state,
+ *       canHarvest, tool)} handed that call its {@code state} argument and kept {@code removed}; no row of NeoForge's own
+ *       table has a capture that holds a local beyond the arguments (TwinCapturedLocalsWeaveTest captures at
+ *       {@code shouldRenderFace}'s neighbour read);</li>
  *   <li>every {@code @At} a {@code HEAD} or {@code TAIL}; a {@code RETURN}, held as often by both bodies when an ordinal or
  *       an {@code allow} counts them; or an {@code INVOKE}/{@code FIELD} point the overload holds exactly as often as
  *       vanilla's method, so an ordinal means what the mod wrote.</li>
@@ -86,7 +88,7 @@ public final class MixinTwinRebind {
 	/**
 	 * @param owner      the class (internal name)
 	 * @param name       the method's name
-	 * @param vanilla    vanilla's descriptor, which the merged game no longer calls
+	 * @param vanilla    vanilla's descriptor, which the game no longer calls
 	 * @param overload   the descriptor of the carrier's overload it calls instead
 	 * @param positions  for each of vanilla's parameters, the overload's parameter carrying it
 	 * @param ecosystems the mods compiled against vanilla's signature as the method that runs
@@ -463,8 +465,8 @@ public final class MixinTwinRebind {
 		for (int i = 0; i + 1 < injector.values.size(); i += 2) {
 			if ("method".equals(injector.values.get(i))) injector.values.set(i + 1, new ArrayList<>(List.of(overload.name + overload.desc)));
 		}
-		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — the merged game calls it where vanilla called %s%s, "
-				+ "which the merge keeps but nothing calls%s", mixin.name.replace('/', '.'), name,
+		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — the game calls it where vanilla called %s%s, "
+				+ "which the base keeps but nothing calls%s", mixin.name.replace('/', '.'), name,
 				target.name.replace('/', '.'), overload.name, overload.desc, plan.vanilla().name, plan.vanilla().desc,
 				plan.wrap() ? "; the handler still receives vanilla's arguments" : "");
 		return carrier;

@@ -43,7 +43,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Vanilla's {@code RedStoneWireBlock.getConnectingSide} asks the static {@code shouldConnectTo(state, direction)} whether
  * the wire connects to a neighbour — once directly and twice through {@code shouldConnectTo(state)}, which only forwards
  * {@code (state, null)}. NeoForge asks the neighbour's {@code state.canRedstoneConnectTo(level, pos, direction)} at those three
- * places instead, and nothing in the merged game calls {@code shouldConnectTo} any more. A cancellable {@code @Inject} at its
+ * places instead, and nothing in the game calls {@code shouldConnectTo} any more. A cancellable {@code @Inject} at its
  * {@code HEAD} (Create's redstone-connection hook, which answers for every block of its own that connects) binds and never
  * runs: no Create block ever connects to redstone.
  *

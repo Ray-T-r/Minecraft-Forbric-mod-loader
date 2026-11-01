@@ -32,7 +32,7 @@ class KernelGuestMixinAdapterWeaveTest {
 	private static final String TARGET = "net/minecraft/fixture/unfit/Widget";
 	private static final String STAMPED = "fixture/unfit/Stamped";
 	private static final String AUTO_SUPPRESSED = "[Forbric/Mixin] auto-suppressing guest mixin unfit (unfit.mixins.json):"
-			+ "StaleWidgetMixin — UNFIT on the merged base (no anchor resolves (@Inject target Widget.oldLabel))";
+			+ "StaleWidgetMixin — UNFIT on this base (no anchor resolves (@Inject target Widget.oldLabel))";
 	private static final String REMOVED = "[Forbric/Mixin] suppressed mixin StaleWidgetMixin from unfit (unfit.mixins.json)";
 	private static final String LEFT_OUT = "mixin:unfit.mixins.json:fixture.unfit.mixin.StaleWidgetMixin";
 

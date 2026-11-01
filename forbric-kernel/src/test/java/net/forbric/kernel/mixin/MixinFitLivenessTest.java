@@ -18,7 +18,7 @@ import org.objectweb.asm.Opcodes;
 import net.forbric.api.Ecosystem;
 
 /**
- * An injector bound only to a merged-base method nothing in the merged game calls is reported as not running — the
+ * An injector bound only to a merged-base method nothing in the game calls is reported as not running — the
  * shape of Better Mount HUD's XP redirect in {@code Hud.extractHotbarAndDecorations}, whose one vanilla caller NeoForge's
  * HUD layers replaced — with the shipped row, synthetic classes, and no staged jar.
  */
@@ -43,7 +43,7 @@ class MixinFitLivenessTest {
 		MixinFit.Result fit = MixinFit.evaluate(redirect(HUD, HOTBAR, HAS_EXPERIENCE), resolver(Map.of(HUD, hud(false))));
 		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.unresolved().toString());
 		assertEquals(1, fit.resolved(), "the @At member is still there");
-		assertEquals(List.of("@Inject target Hud.extractHotbarAndDecorations never runs: nothing in the merged game calls it; "
+		assertEquals(List.of("@Inject target Hud.extractHotbarAndDecorations never runs: nothing in the game calls it; "
 				+ "vanilla calls it from Hud.extractRenderState"), fit.unresolved());
 		assertTrue(!fit.shouldSuppress(), "soft: reported, never dropped");
 	}
@@ -137,7 +137,7 @@ class MixinFitLivenessTest {
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		MixinFit.Result fit = MixinFit.evaluate(inject(HUD, HEALTH), resolver(Map.of(HUD, healthHud(false))));
 		assertEquals(MixinFit.Verdict.PARTIAL, fit.verdict(), fit.unresolved().toString());
-		assertEquals(List.of("@Inject target Hud.extractPlayerHealth never runs: nothing in the merged game calls it; vanilla "
+		assertEquals(List.of("@Inject target Hud.extractPlayerHealth never runs: nothing in the game calls it; vanilla "
 				+ "calls it from Hud.extractHotbarAndDecorations"), fit.unresolved());
 	}
 

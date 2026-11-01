@@ -130,7 +130,7 @@ step "load-report.txt carries every reason"
 if [ -f "$REPORT" ]; then
   echo "[kernel] PASS the load report was written ($REPORT)"
   cp "$REPORT" "$BUILD/gate-m30-load-report.txt"   # the control run below wipes the instance's copy
-  check "the unfit mixin"          "guest mixin UnfitMixin did not fit the merged game and was left out" "$REPORT"
+  check "the unfit mixin"          "guest mixin UnfitMixin did not fit the game and was left out" "$REPORT"
   check "the apply failure"        "its mixin forbric.mixincanary.mixin.ApplyFailingMixin failed to apply" "$REPORT"
   check "two reasons on one row"   "left out; its mixin|ApplyFailingMixin.*; guest mixin UnfitMixin"        "$REPORT"
   check "the broken subscriber"    "its @EventBusSubscriber BrokenSubscriber could not be registered"    "$REPORT"

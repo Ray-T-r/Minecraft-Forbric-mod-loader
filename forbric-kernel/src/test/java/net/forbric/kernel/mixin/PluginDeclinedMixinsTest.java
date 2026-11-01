@@ -51,7 +51,7 @@ class PluginDeclinedMixinsTest {
 	private static final String MIXIN_CLASS = "com.moulberry.flashback.mixin." + MIXIN_ENTRY;
 	private static final String TARGET = "de.johni0702.minecraft.bobby.mixin.IntegratedServerMixin";
 	private static final String OTHER_TARGET = "net.minecraft.client.server.IntegratedServer";
-	private static final String DETAIL = "guest mixin " + MIXIN_ENTRY + " did not fit the merged game and was left out";
+	private static final String DETAIL = "guest mixin " + MIXIN_ENTRY + " did not fit the game and was left out";
 
 	private List<ModCatalog.Entry> previous;
 

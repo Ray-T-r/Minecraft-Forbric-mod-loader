@@ -63,22 +63,23 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Gives a merged method back the early {@code return}s vanilla compiled, so that a mixin's {@code @At("TAIL")} runs on
+ * Gives a method of the base back the early {@code return}s vanilla compiled, so that a mixin's {@code @At("TAIL")} runs on
  * the paths it runs on in vanilla, and on no others.
  *
- * <p>Mixin's TAIL is a method's LAST return instruction. Both carriers' bases come out of a decompile-recompile
+ * <p>Mixin's TAIL is a method's LAST return instruction. NeoForge's base comes out of a decompile-recompile
  * pipeline, and the decompiler turns a guard clause inside out: vanilla's
  * {@code if (player == null || this.level == null) return; ...body...} comes back as
  * {@code if (player != null && this.level != null) { ...body... }}. The early return is gone, and the paths that took it
  * now jump to the one return at the end — the one TAIL names. On vanilla, and so on Fabric, a TAIL handler runs only
- * after the body ran; on the merged game it also runs when the guard bailed out. Issue #31: TaCZ's
+ * after the body ran; on NeoForge's base it also runs when the guard bailed out. Issue #31: TaCZ's
  * {@code Camera.update} TAIL handler asks {@code getCameraEntityPartialTicks}, which reads {@code this.level}, and
  * every frame of the title screen died on it — the body it was written to follow had returned early because there is
  * no level.
  *
- * <p>Measured against 26.2: 3633 methods whose last return is reached by more control-flow edges in the merged base
- * than in vanilla — 1319 of them {@code void}. A sweep of 1100 local mod jars found 70 Fabric TAIL injectors on them.
- * No ecosystem names any of these methods differently, so nothing in {@code merge-conflicts.txt} ever showed them.
+ * <p>Measured against 26.2 on the merged base of Forbric 0.4 and earlier: 3633 methods whose last return is reached by
+ * more control-flow edges than in vanilla — 1319 of them {@code void} — and a sweep of 1100 local mod jars found 70
+ * Fabric TAIL injectors on them; NeoForge's own base is the same pipeline's output (the regenerated table holds 3276
+ * methods). No ecosystem names any of these methods differently, so no name-based diff ever showed them.
  *
  * <p><b>How the paths are told apart.</b> An edge into a return is keyed by how it got there: the condition under which
  * it is taken (a conditional jump's opcode, the inverse of the one it falls past, or "unconditional") and the
@@ -86,7 +87,7 @@ import net.forbric.kernel.util.ForbricLog;
  * parameters erased — the recompiler renumbers those). The decompiler inverts conditions and swaps fall-through for
  * jumps, but it does not change what a block computes, so the same key finds the same path in both bodies. The census
  * ({@code VanillaEarlyReturnsCensusTest}) keys vanilla's edges and writes, per affected method, the vanilla return
- * each key went to; {@code vanilla-early-returns.txt} ships that. At run time this class keys the merged body the same
+ * each key went to; {@code vanilla-early-returns.txt} ships that. At run time this class keys the base's body the same
  * way and gives an edge its own return only when its key occurs as many times in both bodies and vanilla sent that
  * occurrence to an early return. Several occurrences of one key that vanilla sent to different returns — a block that
  * is only {@code iconst_0} — are told apart by what leads into them, not by the order the recompiler happened to emit
@@ -103,11 +104,11 @@ import net.forbric.kernel.util.ForbricLog;
  * exactly the ranges the tail is.
  *
  * <p><b>Who sees it.</b> TAIL now means what vanilla means, which is what a Fabric mod was compiled against. A
- * NeoForge or MinecraftForge mod was compiled against the folded body, where TAIL ran on every path;
+ * NeoForge mod was compiled against the folded body, where TAIL ran on every path;
  * {@code MixinNativeTail} rewrites those mods' TAIL to the returns that were the tail before, from
  * {@link #splitOf}, so their handlers keep running exactly where they always ran.
  *
- * <p>{@code -Dforbric.vanillaEarlyReturns=off} leaves every body as merged (and the TAIL rewrite stands down with it).
+ * <p>{@code -Dforbric.vanillaEarlyReturns=off} leaves every body as the base has it (and the TAIL rewrite stands down with it).
  */
 public final class VanillaEarlyReturns implements ClassTransformer {
 	public static final String PROPERTY = "forbric.vanillaEarlyReturns";
@@ -191,7 +192,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 			ForbricLog.debug("[Forbric/EarlyReturns] %s: %d method(s) return early again where vanilla does", className, methods);
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
-			Caught.warn(e, "[Forbric/EarlyReturns] could not restore %s's early returns; left as merged", className);
+			Caught.warn(e, "[Forbric/EarlyReturns] could not restore %s's early returns; left as the base has it", className);
 			return classBytes;
 		}
 	}
@@ -288,7 +289,7 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 		Map<String, Map<String, Map<String, List<String>>>> out = new HashMap<>();
 		try (InputStream in = VanillaEarlyReturns.class.getResourceAsStream(TABLE)) {
 			if (in == null) {
-				ForbricLog.warn("[Forbric/EarlyReturns] %s is missing — no merged method gets vanilla's early returns back", TABLE);
+				ForbricLog.warn("[Forbric/EarlyReturns] %s is missing — no method of the base gets vanilla's early returns back", TABLE);
 				return out;
 			}
 			for (String line : new String(in.readAllBytes(), StandardCharsets.UTF_8).split("\n")) {
@@ -311,8 +312,8 @@ public final class VanillaEarlyReturns implements ClassTransformer {
 			}
 		}
 		int methods = out.values().stream().mapToInt(Map::size).sum();
-		ForbricLog.info("[Forbric/EarlyReturns] %d merged methods in %d classes get vanilla's early returns back as they load, "
-				+ "so a mixin's TAIL runs where it runs on vanilla (-D%s=off keeps the merged shape)", methods, out.size(), PROPERTY);
+		ForbricLog.info("[Forbric/EarlyReturns] %d methods of the base in %d classes get vanilla's early returns back as they load, "
+				+ "so a mixin's TAIL runs where it runs on vanilla (-D%s=off keeps the base's shape)", methods, out.size(), PROPERTY);
 		return out;
 	}
 

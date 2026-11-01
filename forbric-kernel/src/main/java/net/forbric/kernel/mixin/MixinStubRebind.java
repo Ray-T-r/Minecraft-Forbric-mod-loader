@@ -1383,7 +1383,7 @@ public final class MixinStubRebind {
 	 * A stub's delegate, and for each stub parameter the delegate position it reaches unchanged (-1: not directly).
 	 * {@code computed}: the stub works an argument out — a call, a field of an object, a lambda over what it captures —
 	 * rather than only loading, constructing and forwarding. Such a stub heads a row of {@code carrier-stubs.txt} only
-	 * where nothing in the merged game calls it (CarrierStubCensusTest): an injector there never runs. One the game
+	 * where nothing in the game calls it (CarrierStubCensusTest): an injector there never runs. One the game
 	 * still calls runs its injectors for every caller it has, and the delegate may have callers of its own the stub
 	 * never stood for — NeoForge's registry snapshot calls {@code MappedRegistry.register(int, …)} directly, where
 	 * fabric-registry-sync's add-entry callback on {@code register(ResourceKey, …)} has no business firing.

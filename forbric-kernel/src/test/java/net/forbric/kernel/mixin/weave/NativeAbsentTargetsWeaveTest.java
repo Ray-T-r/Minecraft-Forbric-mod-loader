@@ -56,7 +56,7 @@ class NativeAbsentTargetsWeaveTest {
 	private static final String NAMED = "[Forbric/Mixin] guest mixin vanillaabsent (vanillaabsent.mixins.json):GadgetMixin names "
 			+ "@Inject target Gadget.populateReport, which vanilla 26.2 lacks too";
 	private static final String AUTO_SUPPRESSED = "[Forbric/Mixin] auto-suppressing guest mixin vanillaabsent "
-			+ "(vanillaabsent.mixins.json):GadgetMixin — UNFIT on the merged base (no anchor resolves (@Inject target "
+			+ "(vanillaabsent.mixins.json):GadgetMixin — UNFIT on this base (no anchor resolves (@Inject target "
 			+ "Gadget.populateReport))";
 	private static final String REMOVED = "[Forbric/Mixin] suppressed mixin GadgetMixin from vanillaabsent (vanillaabsent.mixins.json)";
 	private static final String LEFT_OUT = "mixin:vanillaabsent.mixins.json:fixture.vanillaabsent.mixin.GadgetMixin";
@@ -111,7 +111,7 @@ class NativeAbsentTargetsWeaveTest {
 	@Test void onABaseTheTableWasNotDerivedFromTheMissIsTheMergesAsBefore() throws Exception {
 		assertTrue(offHolds(unmatched), unmatched.describe() + "\nfindings " + unmatched.findings());
 		assertTrue(unmatched.printed(TARGET + " is served by a jar with members " + fixtureMembers + ", which is neither the "
-				+ "merged base "), unmatched.describe());
+				+ "base "), unmatched.describe());
 		assertFalse(kept.printed(" is served by "), kept.describe());
 		assertEquals(List.of(), node(unmatched).interfaces, unmatched.describe());
 	}

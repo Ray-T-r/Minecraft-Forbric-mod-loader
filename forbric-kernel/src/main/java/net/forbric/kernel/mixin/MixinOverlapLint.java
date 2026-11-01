@@ -50,7 +50,7 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Two mods' mixins that claim the same method in ways that cannot both take effect.
  *
- * <p>{@link MixinFit} asks whether ONE mixin still fits the merged base. A mixed pack fails a second way that no
+ * <p>{@link MixinFit} asks whether ONE mixin still fits the base. A mixed pack fails a second way that no
  * single-mixin judgement can see: each mod fits, and the two of them together do not. When two mods {@code @Overwrite}
  * the same method only one body survives: a higher-priority overwrite replaces a lower one without a word, and at
  * equal priority the second is skipped with one WARN line ({@code MixinApplicatorStandard.mergeMethod}). When two
@@ -74,7 +74,7 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Runtime ({@link #reportRegistered}): one {@link CompatibilityFinding.Confidence#SUSPECTED} finding per mod and
  * conflict, and {@link #conflictsIn} for {@code CrashAttribution}. {@code -Dforbric.mixinOverlapLint=off} skips both.
- * Offline: {@code MixinOverlapLint <merged-base.jar> <mods-dir> [--json out]}.
+ * Offline: {@code MixinOverlapLint <base.jar> <mods-dir> [--json out]}.
  */
 public final class MixinOverlapLint {
 	public static final String SWITCH = "forbric.mixinOverlapLint";
@@ -550,13 +550,13 @@ public final class MixinOverlapLint {
 	private static final Pattern TOML_MOD_ID = Pattern.compile("(?m)^\\s*modId\\s*=\\s*\"([^\"]+)\"");
 
 	/**
-	 * Usage: {@code MixinOverlapLint <merged-base.jar> <mods-dir> [--json out]}. Every mixin config of every jar and
-	 * nested jar in {@code mods-dir}, against the merged base; a mixin into another mod's class resolves against that
+	 * Usage: {@code MixinOverlapLint <base.jar> <mods-dir> [--json out]}. Every mixin config of every jar and
+	 * nested jar in {@code mods-dir}, against the base; a mixin into another mod's class resolves against that
 	 * mod's class. Resolves against RAW jar bytes, as {@link MixinFitReport} does.
 	 */
 	public static void main(String[] args) throws IOException {
 		if (args.length < 2) {
-			System.err.println("usage: MixinOverlapLint <merged-base.jar> <mods-dir> [--json out]");
+			System.err.println("usage: MixinOverlapLint <base.jar> <mods-dir> [--json out]");
 			System.exit(2);
 		}
 		Path json = null;
@@ -570,7 +570,7 @@ public final class MixinOverlapLint {
 			stream.filter(p -> p.toString().endsWith(".jar") && Files.isRegularFile(p)).sorted().forEach(jars::add);
 		}
 
-		// Pass 1: every mixin, and the classes they target that the merged base does not have.
+		// Pass 1: every mixin, and the classes they target that the base does not have.
 		List<Pending> pending = new ArrayList<>();
 		Set<String> seen = new LinkedHashSet<>();
 		Set<String> foreignTargets = new LinkedHashSet<>();
@@ -632,7 +632,7 @@ public final class MixinOverlapLint {
 		long ms = (System.nanoTime() - started) / 1_000_000;
 		Map<Rule, Integer> counts = counts(overlaps);
 
-		System.out.printf("[overlap] merged base: %d classes from %s%n", merged.size(), Path.of(args[0]).getFileName());
+		System.out.printf("[overlap] base: %d classes from %s%n", merged.size(), Path.of(args[0]).getFileName());
 		System.out.printf("[overlap] %d jar(s), %d mod(s) with mixins, %d mixin(s) (%d unreadable), %d claim(s), %d ms%n",
 				jars.size(), mods.size(), pending.size(), failed, claims.size(), ms);
 		for (Rule r : Rule.values()) {
