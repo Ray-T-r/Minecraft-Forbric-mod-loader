@@ -68,7 +68,8 @@ the shared fixture; two overlapped and were discarded (`INVALID-overlap-*`); eve
   name change being the litematica rename above. Each review-fix commit compiles (`compileJava compileRuntimeJava
   compileTestJava`, temporary worktree).
 - B F1: this file. B F2 (PostMixinFixups alias parity, MixinRelocatedCall / MixinPlacementTransactionAdapter) is not in
-  the C3 work list (`c3-repairs.md`); handed to the orchestrator as unowned. B F6 / A F6 / B F7 / B F8: handoff notes.
+  the C3 work list (`c3-repairs.md`); handed to the orchestrator as unowned. The orchestrator later gave the two
+  use-on adapters to lane c3b-useon-relocation (both KEEP): see `stage4-c3-useon-relocation.md`. B F6 / A F6 / B F7 / B F8: handoff notes.
 
 ## Commands
 
