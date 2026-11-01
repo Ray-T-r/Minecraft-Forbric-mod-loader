@@ -155,6 +155,19 @@ class NativeCallInliningRegisteredMixinsStagedTest {
 				"the switch off: the list is not read");
 	}
 
+	/**
+	 * A registered mixin Mixin does not apply (its config served without it) declines nothing: spruceui's anchor, when
+	 * spruceui's mixin is not applied, leaves the inline planned and applied when Gui is defined.
+	 */
+	@Test void aRegisteredMixinMixinDoesNotApplyLeavesTheInlinePlannedAndApplied() throws Exception {
+		ClassNode fabric = fabricScreen(), spruce = spruceGui(), gui = StagedFabricMixinFixture.game(GUI, false);
+		assertEquals(1, NativeCallInlining.adapt(fabric, code(gui), NativeCallTestEvidence.staged(), loader, () -> List.of(spruce),
+				name -> !name.equals(spruce.name)), "spruceui's mixin is not applied, so its anchor is no conflict");
+		ClassNode defined = defined(gui);
+		assertEquals(0, gatewayCalls(spruce, defined), "and the inline is applied when Gui is defined");
+		assertEquals(1, screenDraws(fabric, defined));
+	}
+
 	/** A registered mixin that anchors nothing the inline removes does not stop it (spruceui's common GuiMixin, on setScreen). */
 	@Test void aRegisteredMixinAnchoringElsewhereLeavesTheInlinePlanned() throws Exception {
 		ClassNode common = spruceClass("dev/lambdaurora/spruceui/mixin/GuiMixin"), gui = StagedFabricMixinFixture.game(GUI, false);
@@ -211,6 +224,17 @@ class NativeCallInliningRegisteredMixinsStagedTest {
 
 	private static Function<String, ClassNode> code(ClassNode gui) {
 		return name -> name.equals(gui.name) ? gui : CarpetMixinAdapterTest.target(name);
+	}
+
+	/** Gui as NativeCallInlining defines it with the plans registered so far. */
+	private ClassNode defined(ClassNode gui) {
+		return MixinFit.parse(NativeCallInlining.transform(loader, GUI.replace('/', '.'), StagedFabricMixinFixture.bytes(gui)));
+	}
+
+	/** The screen draws fabric-screen-api's wrap selects in {@code gui}. */
+	private static int screenDraws(ClassNode fabric, ClassNode gui) {
+		MethodNode handler = StagedFabricMixinFixture.method(fabric, "onExtractGui");
+		return MixinCallbackShape.calls(MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst(), MixinTargetSelectors.one(handler, gui)).size();
 	}
 
 	private static int gatewayCalls(ClassNode spruce, ClassNode gui) {

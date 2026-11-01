@@ -116,7 +116,7 @@ public final class ForbricMixinService
 		// The native shape first, as getClassNode does: a call put back into its method, a value kept in its local, a @Local
 		// pinned — so the transports below see a call that is there again and leave it to the mod's own injector.
 		java.util.function.Function<String,ClassNode> code=owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);};
-		int changed=NativeCallInlining.adapt(source,code,NativeGameReferences::reference,loader(),ForbricMixinService::registeredMixins);
+		int changed=NativeCallInlining.adapt(source,code,NativeGameReferences::reference,loader(),ForbricMixinService::registeredMixins,ForbricMixinService::registeredMixinApplies);
 		changed+=NativeLocalMaterialization.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeEntryRelay.adapt(source,code,NativeGameReferences::reference,loader());
@@ -341,7 +341,8 @@ public final class ForbricMixinService
 		MixinAtShape.normalise(node);
 		// …and a call an injector anchors on, which the surviving carrier now makes inside a helper of its own, is made in the
 		// method again: the helper is inlined there before any adapter below, or Mixin, reads the target.
-		NativeCallInlining.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader(), ForbricMixinService::registeredMixins);
+		NativeCallInlining.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader(), ForbricMixinService::registeredMixins,
+				ForbricMixinService::registeredMixinApplies);
 		// …and a value a @Local asks for at a call, which the merged method hands that call straight from the stack, is also
 		// kept in the local the native method keeps it in.
 		NativeLocalMaterialization.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
@@ -813,9 +814,46 @@ public final class ForbricMixinService
 	private static final java.util.Map<String, AdapterClass> ADAPTER_CLASS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 	private static final byte[] NOT_FOUND = new byte[0];
 
-	/** Every mixin a config registered this run applies on this side, as its jar has it (NativeCallInlining's conflicts). */
-	private static java.util.List<ClassNode> registeredMixins() {
-		return ForeignMixinTargets.registeredMixins(ForbricMixinService::readAdapterClass);
+	/**
+	 * Every mixin a config registered this run applies on this side, as its jar has it (NativeCallInlining's conflicts):
+	 * each config as Mixin was served it ({@link #servedConfig}), less the mixins the kernel names as suppressed for it,
+	 * so a mixin Mixin never applies cannot decline an inline.
+	 */
+	static java.util.List<ClassNode> registeredMixins() { // package-private for ForbricMixinServiceTest
+		java.util.List<ClassNode> mixins = new ArrayList<>();
+		for (ForeignMixinTargets.Registered one : ForeignMixinTargets.registeredMixins(ForbricMixinService::servedConfig,
+				ForbricMixinService::readAdapterClass)) {
+			REGISTERED.put(one.mixin().name, one);
+			if (stillApplied(one.config(), one.entry())) mixins.add(one.mixin());
+		}
+		return mixins;
+	}
+
+	/** Each mixin {@link #registeredMixins} listed, by internal name, with its config and entry. */
+	private static final java.util.Map<String, ForeignMixinTargets.Registered> REGISTERED = new java.util.concurrent.ConcurrentHashMap<>();
+	/** Each served config's entries for this side, parsed once per served JSON. */
+	private static final java.util.Map<String, java.util.Map.Entry<byte[], java.util.Set<String>>> SERVED_ENTRIES = new java.util.concurrent.ConcurrentHashMap<>();
+
+	/**
+	 * Whether a mixin {@link #registeredMixins} listed is still one Mixin applies, asked each time NativeCallInlining reads
+	 * its conflicts: a config served after the list was read may have dropped it (named, or derived by
+	 * {@link KernelGuestMixinAdapter#unfitMixins}). A mixin the list never named is taken as applied.
+	 */
+	static boolean registeredMixinApplies(String mixin) {
+		ForeignMixinTargets.Registered one = REGISTERED.get(mixin);
+		return one == null || stillApplied(one.config(), one.entry());
+	}
+
+	private static boolean stillApplied(String config, String entry) {
+		if (suppressedMixinsFor(config).contains(entry)) return false;
+		byte[] served = SERVED.get(config);
+		if (served == null) return true; // not read by Mixin yet, or passed through as its jar has it
+		java.util.Map.Entry<byte[], java.util.Set<String>> parsed = SERVED_ENTRIES.get(config);
+		if (parsed == null || parsed.getKey() != served) {
+			parsed = java.util.Map.entry(served, ForeignMixinTargets.declaredEntries(config, served));
+			SERVED_ENTRIES.put(config, parsed);
+		}
+		return parsed.getValue().contains(entry);
 	}
 
 	/**

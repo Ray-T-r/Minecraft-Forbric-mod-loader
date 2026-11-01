@@ -120,38 +120,53 @@ public final class ForeignMixinTargets {
 		}
 	}
 
+	/** A mixin a registered config declares for this side: its class as its jar has it, the config, and its entry there. */
+	public record Registered(ClassNode mixin, String config, String entry) {
+	}
+
 	/**
-	 * Every mixin, as its jar has it, that a config registered this run applies on this side: what
-	 * {@link NativeCallInlining} reads as the other mixins a call it would put back may belong to, before their configs are
-	 * read. Best-effort, as the index: an unreadable config or mixin is skipped.
+	 * Every mixin, as its jar has it, that a registered config declares for this side: what {@link NativeCallInlining}
+	 * reads as the other mixins a call it would put back may belong to, before their configs are planned. Each config is
+	 * read through {@code configJson} — the JSON as Mixin was served it, so a mixin the kernel already dropped is not
+	 * listed — and each mixin class through {@code resource}. Best-effort, as the index: an unreadable config or mixin is
+	 * skipped. Whether a listed mixin is still applied (a config served later may drop it) is the caller's to ask.
 	 */
-	public static List<ClassNode> registeredMixins(Function<String, byte[]> resource) {
-		List<ClassNode> mixins = new ArrayList<>();
+	public static List<Registered> registeredMixins(Function<String, byte[]> configJson, Function<String, byte[]> resource) {
+		List<Registered> mixins = new ArrayList<>();
 		for (String config : ForbricMixinService.registeredConfigNames()) {
-			byte[] json = resource.apply(config);
-			if (json != null) mixinsOf(config, json, resource, mixins);
+			byte[] json = configJson.apply(config);
+			if (json != null) mixinsOf(config, json, resource, (entry, mixin) -> mixins.add(new Registered(mixin, config, entry)));
 		}
 		return mixins;
 	}
 
+	/** The entries one config's JSON declares for this side (empty when it is not a mixin config). */
+	public static Set<String> declaredEntries(String name, byte[] configJson) {
+		UnmodifiableConfig config = parse(name, configJson);
+		return config == null ? Set.of() : KernelGuestMixinAdapter.appliedEntries(config, ForbricMixinService.side());
+	}
+
 	/** Every class the mixins declared by one config's JSON target. Best-effort: an unreadable entry is skipped. */
 	private static List<String> targetsOf(String name, byte[] configJson, Function<String, byte[]> resource) {
-		List<ClassNode> mixins = new ArrayList<>();
-		mixinsOf(name, configJson, resource, mixins);
 		List<String> targets = new ArrayList<>();
-		for (ClassNode mixin : mixins) targets.addAll(MixinFit.mixinTargets(mixin));
+		mixinsOf(name, configJson, resource, (entry, mixin) -> targets.addAll(MixinFit.mixinTargets(mixin)));
 		return targets;
 	}
 
-	/** The mixins one config's JSON declares for this side, parsed, added to {@code into}. */
-	private static void mixinsOf(String name, byte[] configJson, Function<String, byte[]> resource, List<ClassNode> into) {
-		UnmodifiableConfig config;
+	private static UnmodifiableConfig parse(String name, byte[] configJson) {
 		try (Reader reader = new InputStreamReader(new ByteArrayInputStream(configJson), StandardCharsets.UTF_8)) {
-			config = MixinConfigJson.parse(reader);
+			return MixinConfigJson.parse(reader);
 		} catch (RuntimeException | java.io.IOException notAMixinConfig) {
 			Caught.warn(notAMixinConfig, "[Forbric/Mixin] could not parse mixin config %s; its targets are not indexed", name);
-			return;
+			return null;
 		}
+	}
+
+	/** Each mixin one config's JSON declares for this side, parsed, handed to {@code into} with its entry. */
+	private static void mixinsOf(String name, byte[] configJson, Function<String, byte[]> resource,
+			java.util.function.BiConsumer<String, ClassNode> into) {
+		UnmodifiableConfig config = parse(name, configJson);
+		if (config == null) return;
 
 		Object pkg = config.get(List.of("package"));
 		if (pkg == null) return;
@@ -166,7 +181,7 @@ public final class ForeignMixinTargets {
 			byte[] bytes = resource.apply(pkgPath + "/" + mixin.replace('.', '/') + ".class");
 			if (bytes == null) continue;
 			try {
-				into.add(MixinFit.parse(bytes));
+				into.accept(mixin, MixinFit.parse(bytes));
 			} catch (RuntimeException unreadable) {
 				// One unparseable mixin must not cost the whole config's contribution to the index.
 				Caught.warn(unreadable, "[Forbric/Mixin] could not read the targets of mixin %s.%s in %s; it is not indexed",

@@ -153,6 +153,56 @@ class ForbricMixinServiceTest {
 		}
 	}
 
+	/**
+	 * What NativeCallInlining reads as the registered mixins an inline may conflict with: only the ones Mixin applies. A
+	 * mixin named as suppressed is not listed; one the list named is asked again later, so a config served afterwards
+	 * without it (here a property-named drop, as a derived one would be) takes it out of the conflicts too.
+	 */
+	@Test
+	void theRegisteredMixinsAnInlineConflictsWithAreTheOnesMixinApplies(@org.junit.jupiter.api.io.TempDir java.nio.file.Path dir)
+			throws Exception {
+		String early = "registered-early.mixins.json", late = "registered-late.mixins.json";
+		java.nio.file.Path jar = dir.resolve("registered.jar");
+		try (var out = new java.util.jar.JarOutputStream(java.nio.file.Files.newOutputStream(jar))) {
+			for (var config : java.util.Map.of(early, List.of("Kept", "Named"), late, List.of("Late", "DroppedLater")).entrySet()) {
+				out.putNextEntry(new java.util.jar.JarEntry(config.getKey()));
+				out.write(("{\"package\":\"x.y\",\"mixins\":[\"" + String.join("\",\"", config.getValue()) + "\"]}")
+						.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+				out.closeEntry();
+				for (String mixin : config.getValue()) {
+					out.putNextEntry(new java.util.jar.JarEntry("x/y/" + mixin + ".class"));
+					org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+					writer.visit(org.objectweb.asm.Opcodes.V21, org.objectweb.asm.Opcodes.ACC_PUBLIC, "x/y/" + mixin, null, "java/lang/Object", null);
+					writer.visitEnd();
+					out.write(writer.toByteArray());
+					out.closeEntry();
+				}
+			}
+		}
+		System.setProperty("forbric.suppressMixins", early + ":Named");
+		ForbricMixinService.setGuestConfigs(List.of(early, late));
+		try (var loader = new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[] {jar.toUri().toURL()},
+				getClass().getClassLoader())) {
+			ForbricMixinService.bind(loader, net.fabricmc.api.EnvType.CLIENT);
+			assertEquals(List.of("x/y/Kept", "x/y/Late", "x/y/DroppedLater"),
+					ForbricMixinService.registeredMixins().stream().map(m -> m.name).toList(), "a mixin named as suppressed is not listed");
+			assertFalse(ForbricMixinService.registeredMixinApplies("x/y/Named"));
+			assertTrue(ForbricMixinService.registeredMixinApplies("x/y/DroppedLater"), "listed, and its config not served yet");
+
+			System.setProperty("forbric.suppressMixins", late + ":DroppedLater");
+			try (var in = new ForbricMixinService().getResourceAsStream(late)) {
+				assertFalse(new String(in.readAllBytes(), java.nio.charset.StandardCharsets.UTF_8).contains("DroppedLater"), "precondition");
+			}
+			System.clearProperty("forbric.suppressMixins");
+			assertFalse(ForbricMixinService.registeredMixinApplies("x/y/DroppedLater"), "its config was served without it");
+			assertTrue(ForbricMixinService.registeredMixinApplies("x/y/Late"));
+			assertTrue(ForbricMixinService.registeredMixinApplies("x/y/NeverListed"), "a mixin the list never named is applied");
+		} finally {
+			ForbricMixinService.bind(null, net.fabricmc.api.EnvType.SERVER);
+			net.forbric.api.CompatibilityFindings.reset();
+		}
+	}
+
 	@Test
 	void keepMixinsOverridesTheShippedSuppressionList() {
 		System.setProperty(FabricRegistryInitializationMixinAdapter.PROPERTY, "off");

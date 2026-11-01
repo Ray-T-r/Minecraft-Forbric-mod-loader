@@ -94,8 +94,10 @@ import net.forbric.kernel.util.Caught;
  *       instance call would dispatch to (checked again when the class is transformed, with every mixin prepared by then).</li>
  * </ul>
  *
- * <p>"Other mixin" means every mixin of every config registered on this side, read from its own jar, not only the mixins
- * planned so far: configs are read one after another, so a mixin of a later config is not planned yet when an earlier
+ * <p>"Other mixin" means every mixin of every config registered on this side that Mixin applies (the config as the kernel
+ * serves it, without the mixins it suppresses, asked again each time a conflict is read — a config Mixin has not read
+ * yet counts as its jar has it less the mixins named as suppressed, its derived drops once it is served), each read from
+ * its own jar, not only the mixins planned so far: configs are read one after another, so a mixin of a later config is not planned yet when an earlier
  * one's inline is decided. Deciding on the mixins seen so far registered the inline, and the class transform withdrew
  * it once the later mixin was there — leaving the injector it was for with neither the inline nor the adapter that would
  * have served it had the call never looked put back. fabric-screen-api's wrap of the screen draw in
@@ -158,6 +160,11 @@ public final class NativeCallInlining {
 		final Set<Bound> bound = ConcurrentHashMap.newKeySet();
 		/** Every registered config's mixins were remembered (once per loader, the first time a plan's conflicts are read). */
 		volatile boolean indexed;
+		/** Mixins remembered only from the registered list, not planned: each conflicts only while {@link #applied} holds. */
+		final Set<String> listedOnly = ConcurrentHashMap.newKeySet();
+		final Set<String> planned = ConcurrentHashMap.newKeySet();
+		/** Whether a listed mixin is still one Mixin applies (a config served later may have dropped it). */
+		volatile java.util.function.Predicate<String> applied = mixin -> true;
 	}
 
 	private static final Map<ClassLoader, Registry> REGISTRIES = Collections.synchronizedMap(new WeakHashMap<>());
@@ -203,8 +210,23 @@ public final class NativeCallInlining {
 	 */
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> code, BiFunction<Ecosystem, String, ClassNode> natives,
 			ForbricClassLoader loader, java.util.function.Supplier<? extends java.util.Collection<ClassNode>> registered) {
+		return adapt(mixin, code, natives, loader, registered, null);
+	}
+
+	/**
+	 * As {@link #adapt(ClassNode, Function, BiFunction, ForbricClassLoader, java.util.function.Supplier)}; a mixin known
+	 * only from {@code registered} conflicts only while {@code applied} holds for its internal name — Mixin may never
+	 * apply it (a config the kernel serves without it). A mixin handed to this method itself, which Mixin is loading,
+	 * always conflicts. Null: every listed mixin conflicts.
+	 */
+	public static int adapt(ClassNode mixin, Function<String, ClassNode> code, BiFunction<Ecosystem, String, ClassNode> natives,
+			ForbricClassLoader loader, java.util.function.Supplier<? extends java.util.Collection<ClassNode>> registered,
+			java.util.function.Predicate<String> applied) {
 		if (!enabled() || mixin == null || loader == null || code == null || natives == null) return 0;
 		Registry registry = registry(loader);
+		if (applied != null) registry.applied = applied;
+		registry.planned.add(mixin.name);
+		registry.listedOnly.remove(mixin.name);
 		remember(registry, mixin);
 		Runnable index = registered == null || !registeredMixinsConflict() ? () -> { } : () -> index(registry, registered);
 		Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
@@ -276,6 +298,7 @@ public final class NativeCallInlining {
 				java.util.Collection<ClassNode> all = registered.get();
 				if (all != null) for (ClassNode one : all) {
 					if (one == null) continue;
+					if (!registry.planned.contains(one.name)) registry.listedOnly.add(one.name);
 					remember(registry, one);
 					count++;
 				}
@@ -308,7 +331,7 @@ public final class NativeCallInlining {
 		String anchoredBy(String target, String nameAndDesc) {
 			index.run();
 			for (Anchor anchor : registry.anchors)
-				if (!anchor.mixin().equals(self) && anchor.target().equals(target) && anchor.nameAndDesc().equals(nameAndDesc)) return anchor.mixin();
+				if (!anchor.mixin().equals(self) && anchor.target().equals(target) && anchor.nameAndDesc().equals(nameAndDesc) && live(anchor.mixin())) return anchor.mixin();
 			return null;
 		}
 
@@ -318,15 +341,20 @@ public final class NativeCallInlining {
 			String name = nameAndDesc.substring(0, nameAndDesc.indexOf('(')), desc = nameAndDesc.substring(nameAndDesc.indexOf('('));
 			for (Bound bound : registry.bound)
 				if (!bound.mixin().equals(self) && bound.target().equals(target) && bound.name().equals(name)
-						&& (bound.desc() == null || bound.desc().equals(desc))) return bound.mixin();
+						&& (bound.desc() == null || bound.desc().equals(desc)) && live(bound.mixin())) return bound.mixin();
 			return addedBy(target, nameAndDesc);
+		}
+
+		/** A mixin known only from the registered list conflicts only while Mixin still applies it. */
+		private boolean live(String mixin) {
+			return !registry.listedOnly.contains(mixin) || registry.applied.test(mixin);
 		}
 
 		/** Another mixin merges a method {@code nameAndDesc} into {@code target}. */
 		String addedBy(String target, String nameAndDesc) {
 			index.run();
 			for (Added added : registry.added)
-				if (!added.mixin().equals(self) && added.target().equals(target) && added.nameAndDesc().equals(nameAndDesc)) return added.mixin();
+				if (!added.mixin().equals(self) && added.target().equals(target) && added.nameAndDesc().equals(nameAndDesc) && live(added.mixin())) return added.mixin();
 			return null;
 		}
 	}
