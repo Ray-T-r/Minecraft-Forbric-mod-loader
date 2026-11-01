@@ -426,13 +426,19 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * Restores {@code Bootstrap.bootStrap()}'s call to its own {@code wrapStreams()}, which routes
 	 * {@code System.out}/{@code System.err} into log4j.
 	 *
-	 * <p>Vanilla calls it as the last thing bootstrap does. NeoForge's patch spends that exact slot on
-	 * {@code GameData.vanillaSnapshot()} instead, and the byte merge kept NeoForge's half — so the merged
-	 * {@code bootStrap()} runs the snapshot and never wraps the streams. Measured: stock 26.2 has
-	 * {@code invokestatic wrapStreams:()V} at bci 81; in the merged base the ONLY class mentioning
-	 * {@code wrapStreams} is {@code Bootstrap} itself, and inside it the only mention is the declaration.
-	 * The method's body survived the merge intact — it still builds {@code LoggedPrintStream("STDOUT")} and
-	 * calls {@code System.setOut} — so nothing needs writing, only calling.
+	 * <p>Vanilla calls it as the last thing bootstrap does. NeoForge's patch replaces that call with
+	 * {@code GameData.vanillaSnapshot()}, so NeoForge's own {@code bootStrap()} runs the snapshot and never wraps the
+	 * streams. Measured on NeoForge 26.2.0.93's patched game: stock 26.2 has {@code invokestatic wrapStreams:()V} at
+	 * bci 81, NeoForge's has {@code GameData.vanillaSnapshot()} at bci 80 and no call to {@code wrapStreams} anywhere;
+	 * the method itself is still declared with vanilla's body — it builds {@code LoggedPrintStream("STDOUT")} and
+	 * calls {@code System.setOut} — so nothing needs writing, only calling. Nothing else in a native NeoForge
+	 * install (FML, its early display, the event bus, log4j, terminalconsoleappender) calls {@code System.setOut}
+	 * or {@code System.setErr} either, so under native NeoForge a mod's printed line stays on raw stdout and never
+	 * reaches latest.log. Native Fabric runs vanilla's unpatched bootstrap and wraps.
+	 *
+	 * <p>This is therefore a deliberate deviation from native NeoForge, not a merge repair: it gives every mod —
+	 * Fabric mods, which are written against vanilla's behaviour, and NeoForge mods alike — vanilla's routing of
+	 * printed output into the log.
 	 *
 	 * <p>What it costs while dead: every line a mod PRINTS instead of logging is gone. Not degraded, not
 	 * misfiled — absent. MouseTweaks writes its entire diagnostic output through {@code System.out}, so a
@@ -440,10 +446,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * "the mod said nothing" rather than "nobody was listening". Any mod printing a stack trace to stderr
 	 * disappears the same way.
 	 *
-	 * <p>Both halves are kept. The snapshot is NeoForge's and it stays exactly where NeoForge put it; the
-	 * wrap goes after it, at vanilla's position relative to {@code bootstrapDuration}. Restoring one
-	 * ecosystem's line must not cost the other's — that is the merge failure this repair is undoing, and
-	 * doing it in reverse would be no better.
+	 * <p>Both calls are kept. The snapshot is NeoForge's and it stays exactly where NeoForge put it; the wrap goes
+	 * after it, at vanilla's position relative to {@code bootstrapDuration}. Restoring vanilla's line must not cost
+	 * NeoForge's.
 	 */
 	private static boolean wrapTheStreamsVanillaWraps(ClassNode node) {
 		if (!BOOTSTRAP.equals(node.name) || node.methods == null) return false;
@@ -482,9 +487,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		bootStrap.maxStack = Math.max(bootStrap.maxStack, 2);
 
 		ForbricLog.warn("[Forbric/MergedBaseCompat] Bootstrap now wraps System.out/System.err into log4j again "
-				+ "— NeoForge's patch spends vanilla's wrapStreams() slot on GameData.vanillaSnapshot() and the "
-				+ "merge kept only that half, so every line a mod PRINTED rather than logged was absent from the "
-				+ "log entirely (a mod's own debug mode produced a log with nothing in it). Both calls now run");
+				+ "— NeoForge's patch replaces vanilla's wrapStreams() call with GameData.vanillaSnapshot(), so every "
+				+ "line a mod PRINTED rather than logged was absent from the log entirely (a mod's own debug mode "
+				+ "produced a log with nothing in it). Both calls now run, as vanilla and Fabric expect");
 		return true;
 	}
 
