@@ -100,8 +100,9 @@ public final class KernelNeoWorldgen {
 	}
 
 	/**
-	 * {@code MonsterRoomFeature.randomEntityId}'s body: NeoForge's data map when it has one, vanilla's set when
-	 * it does not.
+	 * {@code MonsterRoomFeature.randomEntityId}'s body: vanilla's draw while NeoForge's monster-room data map is its
+	 * shipped default (so a seed's dungeons get vanilla's mobs), NeoForge's weighted draw once a mod changed it, and
+	 * vanilla's draw again if the map is missing.
 	 *
 	 * <p>Never throws. This runs inside chunk generation, on a worker thread, once per dungeon — an exception
 	 * here is a failed chunk, and the mob it picks is cosmetic by comparison.

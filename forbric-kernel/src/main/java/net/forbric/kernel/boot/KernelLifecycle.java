@@ -2077,17 +2077,15 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Fires the Fabric {@code client} entrypoints. Injected into {@code Minecraft.<init>} (by
-	 * {@code ClientEntrypointHookInjector}) just before {@code Options} is created — after the {@code Minecraft}
-	 * singleton is set, so {@code Minecraft.getInstance()} is live but {@code getInstance().options} is still null.
-	 * That is the exact window Fabric uses and that keymapping registration (and other instance-touching client
-	 * setup) requires; running them earlier, in the pre-{@code Minecraft} registration window, NPE'd on a null
-	 * instance (Jade's keybinds). Best-effort — a failing entrypoint must not abort client startup.
-	 */
-
-	/**
 	 * Runs the Fabric client entrypoints with the registries REOPENED, because registering content from
 	 * {@code onInitializeClient} is ordinary Fabric practice and it has to keep working here.
+	 *
+	 * <p>Injected into {@code Minecraft.<init>} (by {@code ClientEntrypointHookInjector}) just before {@code Options} is
+	 * created — after the {@code Minecraft} singleton is set, so {@code Minecraft.getInstance()} is live but
+	 * {@code getInstance().options} is still null. That is the exact window Fabric uses and that keymapping registration
+	 * (and other instance-touching client setup) requires; running them earlier, in the pre-{@code Minecraft}
+	 * registration window, NPE'd on a null instance (Jade's keybinds). Best-effort — a failing entrypoint must not abort
+	 * client startup.
 	 *
 	 * <p>On Fabric both entrypoint phases run at the head of {@code Minecraft.<init>}, and the freeze does not
 	 * happen until after that: {@code fabric-registry-sync-v0}'s {@code BootstrapMixin} redirects the

@@ -860,9 +860,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		}
 		if (redirected == 0) return false;
 		ForbricLog.info("[Forbric/MergedBaseCompat] MonsterRoomFeature now picks its mob through the kernel "
-				+ "(%d call site(s)) — NeoForge's data map when it has one, vanilla's own set when it does not. "
-				+ "The alternative was the neutered place() this replaces, which meant no dungeon in any world",
-				redirected);
+				+ "(%d call site(s)) — vanilla's draw while NeoForge's monster-room data map is its shipped default, so a "
+				+ "seed's dungeons get vanilla's mobs; NeoForge's weighted draw once a mod changed the map; vanilla's draw if "
+				+ "the map is missing", redirected);
 		return true;
 	}
 
