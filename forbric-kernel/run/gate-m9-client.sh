@@ -59,6 +59,27 @@ else:
 PY_SEED
 # M9_KEY_MODIFIER_SEED_END
 
+# A SPRITE SMALLER THAN THE MIP LEVEL, every run. Vanilla's SpriteLoader lowers an atlas's mip level to fit its
+# smallest sprite, and so does NeoForge's (the same bytes). The merged base gated that on MinecraftForge's
+# allowMipmapLowering (default false), so such a sprite made the GPU refuse the upload and the client rendered a black
+# screen; this pack has none of its own (mipmapLevels:4, every sprite >= 16x16), so the mip checks below could not go red.
+# A 0-class Fabric mod with one 8x8 block texture gives them a subject; it is removed again when the gate exits.
+MIPPROBE="$RUNDIR/mods/forbric-mipprobe.jar"
+trap 'rc=$?; rm -f "$MIPPROBE"; _gate_exit "$rc"' EXIT
+python3 - "$MIPPROBE" <<'PY_MIPPROBE' || exit 3
+import struct, sys, zipfile, zlib
+def chunk(kind, data):
+    return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data) & 0xffffffff)
+rows = b''.join(b'\x00' + b'\x80\x40\xc0\xff' * 8 for _ in range(8))
+png = (b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', 8, 8, 8, 6, 0, 0, 0))
+       + chunk(b'IDAT', zlib.compress(rows)) + chunk(b'IEND', b''))
+with zipfile.ZipFile(sys.argv[1], 'w', zipfile.ZIP_DEFLATED) as jar:
+    jar.writestr('fabric.mod.json', '{"schemaVersion":1,"id":"forbricmipprobe","version":"1.0.0","name":"Forbric mip probe",'
+                 '"description":"One 8x8 block texture: a sprite smaller than the mip level (gate-m9).","environment":"*",'
+                 '"depends":{"fabricloader":"*"}}')
+    jar.writestr('assets/forbricmipprobe/textures/block/tiny.png', png)
+PY_MIPPROBE
+
 kernel_jar
 mkdir -p "$RUNDIR/quickPlay"
 rm -f "$RUNDIR/logs/latest.log"
@@ -157,13 +178,16 @@ check "left the world cleanly"        "ClientSmoke\] clean disconnect observed" 
 check "server side really ran"        "joined the game"                            "$LOG"
 check "datapacks fully loaded"        "Loaded [1-9][0-9]* advancements"                 "$LOG"
 
-step "the merge did not leave one ecosystem's opt-out binding the other two (client-fatal both times)"
+step "a sprite smaller than the mip level lowers the atlas's mip level, and a modded key binding loads (client-fatal both times)"
 # VANILLA lowers an atlas's mip level to fit its smallest sprite, and so does NeoForge's own SpriteLoader (the same
 # bytes, no setting gating it). The merged base gated it on MinecraftForge's allowMipmapLowering (default FALSE), so a
 # sprite smaller than the mip level (Logistics has an 8x8 one) made the GPU refuse the upload, the FIRST resource
 # reload died, Minecraft dropped every pack, reloaded into the same failure -- and the client rendered a BLACK SCREEN
-# for the rest of the run with no crash report and no further log line. These two absences say it does not happen.
-# They can only go red when the pack holds a sprite smaller than its mip level (mipmapLevels:4 here).
+# for the rest of the run with no crash report and no further log line. The mip probe written above is that sprite:
+# vanilla's own lowering line names it, and the two absences say the upload and the reload survived it. Measured on the
+# merged base with the old repair off and an 8x8 sprite aboard: both absences red, black screen (C3 evidence 2b').
+check "vanilla lowered the atlas's mip level for the probe's 8x8 sprite" \
+  'Texture forbricmipprobe:block/tiny with size 8x8 limits mip level from 4 to' "$LOG"
 check_absent "no resource reload was abandoned" 'Caught error loading resourcepacks' "$LOG"
 check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG"
 # MinecraftForge writes a modified binding as key.keyboard.o:CONTROL_OR_COMMAND and then hands that whole string
