@@ -99,29 +99,58 @@ class CarpetMixinAdapterTest {
 		assertEquals(1,c.methods.stream().filter(m->m.name.startsWith("onBlockBroken")).count(),"the authored handler itself, no wrapper");
 		verify(c);assertEquals(0,adapt(c));
 	}
+	/** NeoForge's liquid block as staged: placement asks vanilla's shouldSpreadLiquid, a neighbour change NeoForge's registry. */
+	static MethodNode neighborChanged(){return method(target(MixinFluidReactionAdapter.LIQUID),"neighborChanged");}
+	static void assertTheBaseSplitsPlacementFromANeighbourChange(){
+		MethodNode onPlace=method(target(MixinFluidReactionAdapter.LIQUID),"onPlace"),changed=neighborChanged();
+		String spread="L"+MixinFluidReactionAdapter.LIQUID+";"+MixinFluidReactionAdapter.SPREAD,ask="L"+MixinFluidReactionAdapter.REGISTRIES.get(0)+";canInteract"+MixinFluidReactionAdapter.INTERACT;
+		assertEquals(List.of(1,0),List.of(MixinPlayerWorldCallbackAdapter.count(onPlace,spread),MixinPlayerWorldCallbackAdapter.count(onPlace,ask)),"premise: placement asks vanilla's method");
+		assertEquals(List.of(0,1),List.of(MixinPlayerWorldCallbackAdapter.count(changed,spread),MixinPlayerWorldCallbackAdapter.count(changed,ask)),"premise: a neighbour change asks NeoForge's registry");
+	}
+	/** The handler keeps its injector, so it runs on placement as compiled; a copy runs from the neighbour change's wrap. */
+	static MethodNode assertKeptAndCopied(ClassNode c,String handler)throws Exception {
+		MethodNode kept=method(c,handler),copy=method(c,handler+"$forbricOriginal"),wrap=method(c,"forbric$neighbourFluidReaction");
+		assertNotNull(MixinFit.injectorOf(kept),"placement keeps the handler where vanilla's method binds it");
+		assertEquals(List.of(MixinFluidReactionAdapter.LIQUID),MixinFit.mixinTargets(c),"the rule stays on the liquid block");
+		assertNull(MixinFit.injectorOf(copy));assertEquals(0,copy.access&Opcodes.ACC_STATIC,"the copy keeps its shadows");
+		assertTrue(copy.visibleAnnotations.stream().anyMatch(a->a.desc.equals("Lorg/spongepowered/asm/mixin/Unique;")));
+		assertEquals(opcodes(kept),opcodes(copy),"the copy runs the released rule body");
+		AnnotationNode inject=MixinFit.injectorOf(wrap);
+		assertEquals(List.of(neighborChanged().name+neighborChanged().desc),MixinFit.value(inject,"method"));
+		assertEquals("L"+MixinFluidReactionAdapter.REGISTRIES.get(0)+";canInteract"+MixinFluidReactionAdapter.INTERACT,MixinFit.value(MixinFit.atNodes(inject).getFirst(),"target"));
+		assertEquals(1,MixinFit.value(inject,"require"));
+		return wrap;
+	}
+	static List<Integer> opcodes(MethodNode m){List<Integer> out=new java.util.ArrayList<>();for(var i:m.instructions)if(i.getOpcode()>=0)out.add(i.getOpcode());return out;}
+	static int at(MethodNode m,java.util.function.Predicate<MethodInsnNode> call){for(var i:m.instructions)if(i instanceof MethodInsnNode c&&call.test(c))return m.instructions.indexOf(i);return -1;}
 	@Test void blackstoneRunsOnlyAfterTheNativeRegistryDeclinesAnInteraction()throws Exception {
-		ClassNode c=mixin(NAMES.get(3));assertEquals(2,adapt(c));
-		for(String name:List.of("onPlace","neighborChanged")){
-			MethodNode m=method(c,"forbric$unhandledFluidReaction$"+name);int nativeCall=-1,callback=-1,guard=-1;
-			for(var i:m.instructions){int index=m.instructions.indexOf(i);if(i instanceof MethodInsnNode call){if(call.name.equals("call"))nativeCall=index;if(call.name.endsWith("$forbricOriginal"))callback=index;}if(i.getOpcode()==Opcodes.IFNE)guard=index;}
-			assertTrue(nativeCall<guard&&guard<callback);assertEquals(1,MixinFit.value(MixinFit.injectorOf(m),"require"));
-		}
+		assertTheBaseSplitsPlacementFromANeighbourChange();
+		ClassNode c=mixin(NAMES.get(3));assertEquals(1,adapt(c));
+		MethodNode m=assertKeptAndCopied(c,"receiveFluidToBlackstone");int nativeCall=-1,callback=-1,guard=-1;
+		for(var i:m.instructions){int index=m.instructions.indexOf(i);if(i instanceof MethodInsnNode call){if(call.name.equals("call"))nativeCall=index;if(call.name.endsWith("$forbricOriginal"))callback=index;}if(i.getOpcode()==Opcodes.IFNE)guard=index;}
+		assertTrue(nativeCall<guard&&guard<callback,"the registry first, the rule only where it declined");
 		verify(c);assertEquals(0,adapt(c));
 	}
 	@Test void deepslateUsesTheSelectedWaterInteractionAndPreservesTheOriginalRuleBody()throws Exception {
+		assertTheBaseSplitsPlacementFromANeighbourChange();
 		ClassNode c=mixin(NAMES.get(4));assertEquals(1,adapt(c));
-		assertEquals(new HashSet<>(MixinFluidReactionAdapter.REGISTRIES),new HashSet<>(MixinFit.mixinTargets(c)),"placement asks MinecraftForge's, a neighbour change NeoForge's");
-		MethodNode original=method(c,"receiveFluidToDeepslate$forbricOriginal"),outer=method(c,"forbric$flowingFluidReaction");
-		assertTrue((original.access&Opcodes.ACC_STATIC)!=0);assertNull(MixinFit.injectorOf(original));
-		assertEquals(5,MixinFit.value(outer.invisibleParameterAnnotations[3].getFirst(),"index"));
-		assertEquals(List.of("interact(L"+MixinPlayerWorldCallbackAdapter.LEVEL+";"+MixinPlayerWorldCallbackAdapter.POS+MixinPlayerWorldCallbackAdapter.POS+"L"+MixinFluidReactionAdapter.FLUID_STATE+";)V"),
-				MixinFit.atNodes(MixinFit.injectorOf(outer)).stream().map(a->MixinFit.value(a,"target")).toList(),"the one interact call in either registry");assertNotNull(method(c,"forbric$fluidReactionFizz").desc);
+		MethodNode m=assertKeptAndCopied(c,"receiveFluidToDeepslate");
+		int reaches=at(m,call->call.owner.equals(MixinFluidReactionAdapter.RUNTIME)&&call.name.equals("reachesWaterReaction")&&call.desc.equals(MixinFluidReactionAdapter.REACHES)),
+				rule=at(m,call->call.name.equals("receiveFluidToDeepslate$forbricOriginal")),cancelled=at(m,call->call.name.equals("isCancelled")),
+				registry=at(m,call->call.name.equals("call"));
+		assertTrue(0<=reaches&&reaches<rule&&rule<cancelled&&cancelled<registry,"vanilla's walk, the rule, its veto, then the registry: "+List.of(reaches,rule,cancelled,registry));
+		assertNotNull(method(c,"fizz"),"the shadow stays: the rule runs in the liquid block");
 		verify(c);assertEquals(0,adapt(c));
 	}
-	@Test void reshapedNativeFluidLocalRefusesTheWholeRetarget()throws Exception {
-		ClassNode c=mixin(NAMES.get(4));byte[] before=bytes(c);
-		assertEquals(0,MixinFluidReactionAdapter.adapt(c,name->{ClassNode t=target(name);if(MixinFluidReactionAdapter.REGISTRIES.contains(name))for(var m:t.methods)for(var i:m.instructions)if(i instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var==5)v.var=9;return t;}));
-		assertArrayEquals(before,bytes(c));
+	/**
+	 * The neighbour-change wrap asks the registry as a whole and never reads its body: a registry whose neighbour local
+	 * moved is served the same. (On the merged base this rule moved into the registries' interaction and refused such a
+	 * registry; that relocation needs MinecraftForge's registry, which NeoForge's base does not have.)
+	 */
+	@Test void theNeighbourChangeWrapDoesNotReadTheRegistrysBody()throws Exception {
+		ClassNode c=mixin(NAMES.get(4));
+		assertEquals(1,MixinFluidReactionAdapter.adapt(c,name->{ClassNode t=target(name);if(MixinFluidReactionAdapter.REGISTRIES.contains(name))for(var m:t.methods)for(var i:m.instructions)if(i instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var==5)v.var=9;return t;}));
+		verify(c);
 	}
 
 	/** The staged classes, with one merged method edited before the adapters read it. */
@@ -141,6 +170,7 @@ class CarpetMixinAdapterTest {
 	@Test void reshapedHostsRefuseTheWholeRetarget()throws Exception {
 		String level=MixinPlayerWorldCallbackAdapter.LEVEL,mode=MixinPlayerWorldCallbackAdapter.GAME_MODE,player="L"+MixinPlayerWorldCallbackAdapter.PLAYER+";";
 		String onPlace="onPlace("+MixinPlayerWorldCallbackAdapter.STATE+"L"+level+";"+MixinPlayerWorldCallbackAdapter.POS+MixinPlayerWorldCallbackAdapter.STATE+"Z)V";
+		String neighbor=neighborChanged().name+neighborChanged().desc;
 		String update="L"+level+";updateNeighborsAt("+MixinPlayerWorldCallbackAdapter.POS+"L"+MixinPlayerWorldCallbackAdapter.BLOCK+";)V";
 		record Case(int mixin,String why,Function<String,ClassNode> targets) { }
 		List<Case> cases=List.of(
@@ -158,9 +188,17 @@ class CarpetMixinAdapterTest {
 			new Case(2,"durability before the callback",reshaped(mode,BREAK_HOST,m->exchange(m,MixinPlayerWorldCallbackAdapter.MINE,player+"canUseGameMasterBlocks()Z"))),
 			new Case(2,"adjustedState's slot stored twice",reshaped(mode,BREAK_HOST,m->{for(var i:m.instructions)
 				if(i instanceof VarInsnNode v&&v.getOpcode()==Opcodes.ASTORE&&v.var==7)v.var=6;})),
-			new Case(3,"placement's answer no longer means handled",reshaped(MixinFluidReactionAdapter.LIQUID,onPlace,m->{
-				JumpInsnNode j=(JumpInsnNode)MixinPlayerWorldCallbackAdapter.next(MixinPlayerWorldCallbackAdapter.first(m,"L"+MixinFluidReactionAdapter.REGISTRIES.get(1)+";canInteract"+MixinFluidReactionAdapter.INTERACT));
-				j.setOpcode(Opcodes.IFEQ);})));
+			new Case(3,"a neighbour change's answer no longer means handled",reshaped(MixinFluidReactionAdapter.LIQUID,neighbor,m->{
+				JumpInsnNode j=(JumpInsnNode)MixinPlayerWorldCallbackAdapter.next(MixinPlayerWorldCallbackAdapter.first(m,"L"+MixinFluidReactionAdapter.REGISTRIES.get(0)+";canInteract"+MixinFluidReactionAdapter.INTERACT));
+				j.setOpcode(Opcodes.IFEQ);})),
+			new Case(4,"a neighbour change's answer no longer means handled",reshaped(MixinFluidReactionAdapter.LIQUID,neighbor,m->{
+				JumpInsnNode j=(JumpInsnNode)MixinPlayerWorldCallbackAdapter.next(MixinPlayerWorldCallbackAdapter.first(m,"L"+MixinFluidReactionAdapter.REGISTRIES.get(0)+";canInteract"+MixinFluidReactionAdapter.INTERACT));
+				j.setOpcode(Opcodes.IFEQ);})),
+			new Case(4,"placement asks vanilla's method twice",reshaped(MixinFluidReactionAdapter.LIQUID,onPlace,m->{
+				MethodInsnNode spread=MixinPlayerWorldCallbackAdapter.first(m,"L"+MixinFluidReactionAdapter.LIQUID+";"+MixinFluidReactionAdapter.SPREAD);
+				InsnList again=new InsnList();again.add(new VarInsnNode(Opcodes.ALOAD,0));again.add(new VarInsnNode(Opcodes.ALOAD,2));again.add(new VarInsnNode(Opcodes.ALOAD,3));
+				again.add(new VarInsnNode(Opcodes.ALOAD,1));again.add(new MethodInsnNode(spread.getOpcode(),spread.owner,spread.name,spread.desc,spread.itf));again.add(new InsnNode(Opcodes.POP));
+				m.instructions.insert(again);})));
 		for(Case k:cases){
 			assertTrue(adapt(mixin(NAMES.get(k.mixin())))>0,"premise, as staged: "+k.why());
 			ClassNode c=mixin(NAMES.get(k.mixin()));byte[] before=bytes(c);
@@ -208,5 +246,10 @@ class CarpetMixinAdapterTest {
 		for(String name:NAMES){ClassNode c=mixin(name);byte[] before=bytes(c);java.util.function.Function<String,ClassNode> resolver=n->{try{return n.startsWith("net/minecraft/")?from(Fixture.MC_LIBRARIES,vanilla,n):null;}catch(Exception e){throw new AssertionError(e);}};
 			assertEquals(0,MixinPlayerWorldCallbackAdapter.adapt(c,resolver)+MixinFluidReactionAdapter.adapt(c,resolver));assertArrayEquals(before,bytes(c));}
 		withAdapters("off",()->{for(String name:NAMES)try{assertEquals(0,adapt(mixin(name)));}catch(Exception e){throw new AssertionError(e);}});
+		// The neighbour-change wrap's own switch: the fluid rules stay as compiled (they run on placement alone), nothing else changes.
+		String old=System.setProperty(MixinFluidReactionAdapter.NEIGHBOUR_PROPERTY,"off");
+		try{for(String name:NAMES.subList(3,5)){ClassNode c=mixin(name);byte[] before=bytes(c);assertEquals(0,adapt(c),name);assertArrayEquals(before,bytes(c),name);}
+			assertEquals(2,adapt(mixin(NAMES.get(0))),"the fill hooks are another switch's");}
+		finally{if(old==null)System.clearProperty(MixinFluidReactionAdapter.NEIGHBOUR_PROPERTY);else System.setProperty(MixinFluidReactionAdapter.NEIGHBOUR_PROPERTY,old);}
 	}
 }

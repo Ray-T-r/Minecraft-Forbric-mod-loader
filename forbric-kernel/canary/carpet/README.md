@@ -1,6 +1,6 @@
 # Carpet behavior gate
 
-This probe tests the released `fabric-carpet-26.2+v260616.jar` against the staged Minecraft 26.2 merged game and both loader carriers. It uses disposable dedicated-server worlds, Carpet's real fake-player class, real Scarpet event functions, and NeoForge event listeners.
+This probe tests the released `fabric-carpet-26.2+v260616.jar` against the staged Minecraft 26.2 game (NeoForge's patched base) and its NeoForge carrier. It uses disposable dedicated-server worlds, Carpet's real fake-player class, real Scarpet event functions, and NeoForge event listeners.
 
 From the repository root, with the shared game artifacts already staged:
 
@@ -10,7 +10,7 @@ python3 forbric-kernel/run/compat/carpet-gate.py \
   --staged-root /path/to/forbric-loader/run
 ```
 
-The gate compiles this probe, runs the same 27 behavior checks with `forbric.playerWorldCallbacks=off`, then runs them with the repair enabled under **strict** compatibility policy. It requires the negative control to fail exactly the 15 behaviors only the adapter repairs (the direct `Level.setBlock` lamp check passes without it: the generic retarget carries that redirect) (and so to pass vanilla's own lava/water reactions, which no longer depend on the adapter; `summary.json` lists Carpet and base-fluid failures separately), the fixed run to pass every check, both servers to save and stop normally, and the fixed compatibility report to contain no confirmed Carpet losses. The fixed run must also leave none of the five adapted mixins suspected, confirmed or "applies only partially" in the report and console; the negative control must still show report rows for `Level_fillUpdatesMixin` and `ServerPlayerGameMode_scarpetEventsMixin`, which proves the check can fail. Logs, test worlds, reports and input hashes are kept under the printed output directory. `--output` can select a new directory explicitly.
+The gate compiles this probe, runs the same 27 behavior checks with `forbric.playerWorldCallbacks=off`, then runs them with the repair enabled under **strict** compatibility policy. It requires the negative control to fail exactly the 13 behaviors only the adapter repairs (the direct `Level.setBlock` lamp check passes without it: the generic retarget carries that redirect; so do the two fluid rules on placement, because NeoForge's `LiquidBlock.onPlace` calls vanilla's `shouldSpreadLiquid`), a third run with only `-Dforbric.fluidReactionNeighbourChange=off` to fail exactly the two neighbour-change fluid checks (and so to pass vanilla's own lava/water reactions, which no longer depend on the adapter; `summary.json` lists Carpet and base-fluid failures separately), the fixed run to pass every check, both servers to save and stop normally, and the fixed compatibility report to contain no confirmed Carpet losses. The fixed run must also leave none of the five adapted mixins suspected, confirmed or "applies only partially" in the report and console; the negative control must still show report rows for `Level_fillUpdatesMixin` and `ServerPlayerGameMode_scarpetEventsMixin`, which proves the check can fail. Logs, test worlds, reports and input hashes are kept under the printed output directory. `--output` can select a new directory explicitly.
 
 Coverage:
 

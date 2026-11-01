@@ -404,7 +404,7 @@ test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	deepslateUsesTheSelectedWat
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	fillHooksMoveTogetherToTheActualNotificationBody()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	handSwapRunsBeforeTheNativeEventReadsTheHands()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedHostsRefuseTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedNativeFluidLocalRefusesTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	theNeighbourChangeWrapDoesNotReadTheRegistrysBody()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	vanillaAndDisabledRepairLeaveAllReleasedHandlersUntouched()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	onTheNativeBodyNothingMoves()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.CarrierDecisionsStagedTest	theEffectInjectorsGoToTheCarriersApplicabilityQuestionAndItsCopy()	[fixture:staged] actual Fabric API fixture required
@@ -1014,10 +1014,10 @@ test	net.forbric.kernel.mixin.MixinFitStagedTest	theAttributeBuilderAccessorBind
 test	net.forbric.kernel.mixin.MixinFitStagedTest	theAttributeBuilderAccessorCannotBindOnTheRawBase()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinFitStagedTest	theSnippetWrapReadsPartialOnTheRawBaseNamingTheArity()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleAtAnotherCallIsNotTheReaction()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatNeverCallsFizzMovesWithoutACopy()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatReadsTheBlockStaysAsCompiled()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aTargetNamedByStringMovesWholeToTheRegistries()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	twoFizzCallsBothRunOnTheRelocatedCopy()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatNeverCallsFizzIsServedToo()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatReadsTheBlockIsServedInTheBlock()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aTargetNamedByStringIsServedOnANeighbourChange()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	twoFizzCallsBothRunInTheCopy()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.MixinLambdaThunkRetargetTest	actualUpstreamHudOperationHandlersReachTheirUniqueThunks()	[fixture:staged] configured Fabric API fixture required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinLocalsCaptureTest	actualCreativeCoreConfigurationRedirectIsSoftened()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinLocalsCaptureTest	architecturysServerPlayerGameModeCaptureIsSoftened()	[fixture:third-party] popular inputs absent

@@ -2,23 +2,24 @@
 package net.forbric.kernel.mixin;
 
 import static org.junit.jupiter.api.Assertions.*;
-
 import java.util.ArrayList;
-import java.util.HashSet;
 import java.util.List;
 import java.util.function.Function;
-
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.ResourceLock;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.*;
 
 /**
- * The lava-meets-water move on the staged merged classes, for the reaction written other ways than Carpet's deepslate
- * rule: the target named by string, the shadow fizz called twice, no fizz at all. Each is moved to the registries as a
- * whole, with the generated guard being vanilla's own test for reaching the point (lava beside water), not Carpet's
- * "flowing lava only". Look-alikes that read the block itself — a shadow field, a shadow whose body reads the block —
- * or anchor on another call are left byte-for-byte alone.
+ * The lava-meets-water rule on the staged NeoForge base, for the reaction written other ways than Carpet's deepslate rule:
+ * the target named by string, the shadow fizz called twice, no fizz at all, a rule that reads the block. NeoForge's
+ * placement asks vanilla's {@code shouldSpreadLiquid}, where each binds as compiled; its neighbour change asks NeoForge's
+ * registry, and each gets the same wrap there: vanilla's own walk to the point ({@code KernelFluidReactions}), a fresh
+ * callback, the handler's answer handed on, the registry otherwise. The rule stays in the liquid block, so what it reads of
+ * the block is its own to read. A hook at another call is not the reaction and is left byte-for-byte alone.
+ *
+ * <p>(On the merged base these shapes moved whole to both families' registries, because placement asked MinecraftForge's;
+ * that relocation needs MinecraftForge's registry and never runs on NeoForge's base.)
  */
 @ResourceLock("system-properties")
 class MixinFluidReactionShapesTest {
@@ -46,34 +47,41 @@ class MixinFluidReactionShapesTest {
 		return mixin.invisibleAnnotations.stream().filter(a -> a.desc.equals("Lorg/spongepowered/asm/mixin/Mixin;")).findFirst().orElseThrow();
 	}
 
-	/** The guard the move generates: vanilla's lava-and-water test, a fresh callback, the handler's answer handed on. */
-	private static void assertVanillasTest(ClassNode mixin) {
-		MethodNode outer = MixinPlayerWorldCallbackAdapter.named(mixin, "forbric$flowingFluidReaction");
-		List<String> fields = new ArrayList<>();
-		boolean fresh = false, answered = false;
-		for (var insn : outer.instructions) {
-			if (insn instanceof FieldInsnNode field) fields.add(field.owner + "." + field.name);
-			if (insn instanceof MethodInsnNode call && call.name.equals("<init>") && call.desc.equals("(Ljava/lang/String;Z)V")) fresh = true;
-			if (insn instanceof MethodInsnNode call && call.name.equals("getReturnValueZ")) answered = true;
-		}
-		assertEquals(List.of("net/minecraft/tags/FluidTags.LAVA", "net/minecraft/tags/FluidTags.WATER"), fields, "lava beside water, source or flowing");
-		assertTrue(fresh, "the handler gets a callback without a return value, as at any INVOKE point");
-		assertTrue(answered, "a cancelling handler's own answer is handed on");
+	/** The copy the wrap runs, the handler's body under the kernel's name. */
+	private static MethodNode copy(ClassNode mixin) {
+		return mixin.methods.stream().filter(m -> m.name.endsWith("$forbricOriginal")).findFirst().orElseThrow();
 	}
 
-	@Test void aTargetNamedByStringMovesWholeToTheRegistries() throws Exception {
+	/** The wrap: vanilla's walk to the reaction, a fresh callback, the handler's answer handed on, else the registry. */
+	private static void assertVanillasWalk(ClassNode mixin) {
+		MethodNode wrap = MixinPlayerWorldCallbackAdapter.named(mixin, "forbric$neighbourFluidReaction");
+		boolean walk = false, fresh = false, answered = false, registry = false;
+		for (var insn : wrap.instructions) {
+			if (!(insn instanceof MethodInsnNode call)) continue;
+			walk |= call.owner.equals(MixinFluidReactionAdapter.RUNTIME) && call.name.equals("reachesWaterReaction");
+			fresh |= call.name.equals("<init>") && call.desc.equals("(Ljava/lang/String;Z)V");
+			answered |= call.name.equals("getReturnValueZ");
+			registry |= call.name.equals("call");
+		}
+		assertTrue(walk, "vanilla's walk decides whether the point is reached");
+		assertTrue(fresh, "the handler gets a callback without a return value, as at any INVOKE point");
+		assertTrue(answered, "a cancelling handler's own answer is handed on");
+		assertTrue(registry, "otherwise the registry runs as written");
+		assertNotNull(MixinFit.injectorOf(handler(mixin)), "placement keeps the handler bound as compiled");
+	}
+
+	@Test void aTargetNamedByStringIsServedOnANeighbourChange() throws Exception {
 		ClassNode mixin = renamed();
 		AnnotationNode declaration = declaration(mixin);
 		declaration.values = new ArrayList<>(List.of("targets", List.of("net.minecraft.world.level.block.LiquidBlock")));
 		assertEquals(1, adapt(mixin));
-		assertNull(MixinFit.value(declaration, "targets"), "the string form is replaced too, not left beside the registries");
-		assertEquals(new HashSet<>(MixinFluidReactionAdapter.REGISTRIES), new HashSet<>(MixinFit.mixinTargets(mixin)));
-		assertVanillasTest(mixin);
+		assertEquals(List.of("targets", List.of("net.minecraft.world.level.block.LiquidBlock")), declaration.values, "the declaration is left as written");
+		assertVanillasWalk(mixin);
 		CarpetMixinAdapterTest.verify(mixin);
 		assertEquals(0, adapt(mixin), "idempotence");
 	}
 
-	@Test void twoFizzCallsBothRunOnTheRelocatedCopy() throws Exception {
+	@Test void twoFizzCallsBothRunInTheCopy() throws Exception {
 		ClassNode mixin = renamed();
 		MethodNode handler = handler(mixin);
 		MethodInsnNode fizz = fizzCall(handler);
@@ -86,17 +94,16 @@ class MixinFluidReactionShapesTest {
 		again.add(new MethodInsnNode(fizz.getOpcode(), fizz.owner, fizz.name, fizz.desc, fizz.itf));
 		handler.instructions.insertBefore(receiver, again);
 		assertEquals(1, adapt(mixin));
-		MethodNode moved = mixin.methods.stream().filter(m -> m.name.endsWith("$forbricOriginal")).findFirst().orElseThrow();
 		List<MethodInsnNode> calls = new ArrayList<>();
-		for (var insn : moved.instructions) if (insn instanceof MethodInsnNode call && call.name.equals("forbric$fluidReactionFizz")) calls.add(call);
+		for (var insn : copy(mixin).instructions) if (insn instanceof MethodInsnNode call && call.name.equals(FIZZ)) calls.add(call);
 		assertEquals(2, calls.size());
-		assertTrue(calls.stream().allMatch(c -> c.getOpcode() == Opcodes.INVOKESTATIC));
-		assertTrue((moved.access & Opcodes.ACC_STATIC) != 0);
-		assertVanillasTest(mixin);
+		assertTrue(calls.stream().allMatch(c -> c.getOpcode() == fizz.getOpcode()), "the shadow is called as written, in the block");
+		assertEquals(0, copy(mixin).access & Opcodes.ACC_STATIC);
+		assertVanillasWalk(mixin);
 		CarpetMixinAdapterTest.verify(mixin);
 	}
 
-	@Test void aRuleThatNeverCallsFizzMovesWithoutACopy() throws Exception {
+	@Test void aRuleThatNeverCallsFizzIsServedToo() throws Exception {
 		ClassNode mixin = renamed();
 		MethodNode handler = handler(mixin);
 		MethodInsnNode fizz = fizzCall(handler);
@@ -105,13 +112,12 @@ class MixinFluidReactionShapesTest {
 		for (AbstractInsnNode insn : List.of(self, a, b, fizz)) handler.instructions.remove(insn);
 		mixin.methods.removeIf(m -> m.name.equals(FIZZ));
 		assertEquals(1, adapt(mixin));
-		assertNull(MixinPlayerWorldCallbackAdapter.named(mixin, "forbric$fluidReactionFizz"), "nothing to relocate");
-		assertVanillasTest(mixin);
+		assertVanillasWalk(mixin);
 		CarpetMixinAdapterTest.verify(mixin);
 	}
 
-	@Test void aRuleThatReadsTheBlockStaysAsCompiled() throws Exception {
-		// A shadow field of the block, read by the handler: it cannot move to a registry that has no such field.
+	@Test void aRuleThatReadsTheBlockIsServedInTheBlock() throws Exception {
+		// A shadow field of the block, read by the handler: the copy stays in the block, where the field is.
 		ClassNode field = renamed();
 		FieldNode fluid = new FieldNode(Opcodes.ACC_PROTECTED, "fluid", "Lnet/minecraft/world/level/material/FlowingFluid;", null, null);
 		fluid.visibleAnnotations = new ArrayList<>(List.of(new AnnotationNode("Lorg/spongepowered/asm/mixin/Shadow;")));
@@ -122,21 +128,9 @@ class MixinFluidReactionShapesTest {
 		read.add(new FieldInsnNode(Opcodes.GETFIELD, field.name, "fluid", fluid.desc));
 		read.add(new InsnNode(Opcodes.POP));
 		handler.instructions.insert(read);
-		assertUntouched(field, CarpetMixinAdapterTest::target, "a shadow field");
-
-		// A shadow whose body in the merged block reads the block itself: it has no static copy.
-		Function<String, ClassNode> readsItself = name -> {
-			ClassNode target = CarpetMixinAdapterTest.target(name);
-			if (name.equals(MixinFluidReactionAdapter.LIQUID)) {
-				MethodNode fizz = target.methods.stream().filter(m -> m.name.equals(FIZZ)).findFirst().orElseThrow();
-				InsnList self = new InsnList();
-				self.add(new VarInsnNode(Opcodes.ALOAD, 0));
-				self.add(new InsnNode(Opcodes.POP));
-				fizz.instructions.insert(self);
-			}
-			return target;
-		};
-		assertUntouched(renamed(), readsItself, "a shadow whose body reads the block");
+		assertEquals(1, adapt(field), "a shadow field");
+		assertVanillasWalk(field);
+		CarpetMixinAdapterTest.verify(field);
 
 		// The handler hands `this` to something other than a shadow call.
 		ClassNode escapes = renamed();
@@ -145,7 +139,8 @@ class MixinFluidReactionShapesTest {
 		hand.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "java/util/Objects", "requireNonNull", "(Ljava/lang/Object;)Ljava/lang/Object;", false));
 		hand.add(new InsnNode(Opcodes.POP));
 		handler(escapes).instructions.insert(hand);
-		assertUntouched(escapes, CarpetMixinAdapterTest::target, "this handed elsewhere");
+		assertEquals(1, adapt(escapes), "this handed elsewhere");
+		CarpetMixinAdapterTest.verify(escapes);
 	}
 
 	@Test void aRuleAtAnotherCallIsNotTheReaction() throws Exception {
