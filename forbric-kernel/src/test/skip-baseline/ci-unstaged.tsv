@@ -1563,7 +1563,7 @@ test	net.forbric.kernel.transform.ClientSmokeTickInjectorTest	theRealMinecraftGa
 test	net.forbric.kernel.transform.ClientWindowOrderTest	onTheRealMinecraftTheWindowsOpenInTheDocumentedOrder()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.ClientWindowOrderTest	theOrderDoesNotDependOnWhichInjectorRunsFirst()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	everyHookSplicedIntoTheRealListenersResolves()	[fixture:staged] staged merged base absent — skipping real-bytecode check
-test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	theRealMergedListenerGetsExactlyTwoNewGuardsAndVerifies()	[fixture:staged] staged merged base absent — skipping real-bytecode check
+test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	neoForgeInitialisesEachClientConnectionOnceItself()	[fixture:staged] staged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.CompatibilityPromptTickInjectorTest	gameUiCallsExistOnTheActualMinecraft262Base()	[fixture:staged] staged game absent
 test	net.forbric.kernel.transform.CompostablesFallbackInjectorTest	aShapeItDoesNotKnowIsLeftAsMerged()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/ComposterBlock.class)
 test	net.forbric.kernel.transform.CompostablesFallbackInjectorTest	bclibsFourCompostableWrapsFindTheirCallsOnlyAfterTheRepair()	[fixture:third-party] sweep pack absent: build/compat-inputs/sweep90/mods/bclib-26.201.2.jar
