@@ -98,7 +98,7 @@ Mixin 的跳过、接口保留、调用重定位和局部变量选择来自实�
 
 mod 写给其他 mod 的声明可以跨生态读取（`CrossEcosystemDeclarations`）。Fabric mod 的 `custom` 值会出现在它的 `[modproperties]` 表里，类型与 FML 读 TOML 得到的一致。它在带命名空间的 entrypoint 键下声明的类名也会出现在同名键下，前提是某个读取方自己的字节码把这个键当 `String` 读，且没有读取方把它当成别的类型。Forge 家族 mod 带命名空间、值是它自己 jar 里定义的类名的属性，会成为同名键的 Fabric entrypoint；其他值只保留为属性。一个从 Forge 家族 `ModList` 读 `getModProperties()` 的类，在这个类里能看到有声明的 Fabric mod（`DeclarationReaderModListInjector`）；追加这些 Fabric mod 时如果出错，这个类拿到原生结果，并记一条点名它的 `SUSPECTED` finding；Mods 界面、握手、版本检查等其他 `ModList` 读取方仍然只看到原生列表。
 
-可选 SDK 通过 `META-INF/services/net.forbric.api.ProtocolExtension` 提供独立协议适配器，每个游戏类加载器拥有自己的注册表。新增协议可以提供缺失 API、注册转换、接收配置生命周期和提供配置界面。合并掉有状态父类时，产物会声明 `required-ancestor-compositions.tsv` 要求；`AncestorComposition` 必须证明最终定义保留了该状态协议，否则加载会明确失败。
+可选 SDK 通过 `META-INF/services/net.forbric.api.ProtocolExtension` 提供独立协议适配器，每个游戏类加载器拥有自己的注册表。新增协议可以提供缺失 API、注册转换、接收配置生命周期和提供配置界面。
 
 共享 API 提供 `VirtualProperties`，根据已定义的公开 getter 证明可写存储。它可以用于任意声明类，并保留虚调用分派；属性写入前必须先获得实际 getter/字段证据。协议提供者在构造时不能链接游戏类，应通过 `Context.gameLoader()` 解析游戏对象，具体约定见 `ProtocolExtension`。
 

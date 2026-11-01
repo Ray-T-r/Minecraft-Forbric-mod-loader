@@ -58,12 +58,6 @@ public final class ForbricClassLoader extends URLClassLoader {
 	private final ClassLoader parent;
 	private volatile ClassLoader fallbackClassLoader;
 	private final DefinedClassEvidence definitionEvidence = new DefinedClassEvidence();
-	private final RequiredAncestorCompositions ancestorCompositions = new RequiredAncestorCompositions();
-
-	/** Registers a source-protocol proof checked against the final bytes before defining a required class. */
-	public void registerAncestorComposition(net.forbric.api.AncestorComposition proof) {
-		ancestorCompositions.register(proof);
-	}
 
 	/** One {@link ProtectionDomain} per owned jar, keyed by the jar URL's spelling. See {@link #domainFor}. */
 	private final Map<String, ProtectionDomain> domains = new ConcurrentHashMap<>();
@@ -619,13 +613,6 @@ public final class ForbricClassLoader extends URLClassLoader {
 	 */
 	private Class<?> define(String name, byte[] bytes, ProtectionDomain domain) {
 		traceDefine(name);
-		ancestorCompositions.verify(name, bytes, path -> {
-			try (InputStream input = getGameResourceAsStream(path)) { return input == null ? null : input.readAllBytes(); }
-			catch (IOException unavailable) {
-				Caught.warn(unavailable, "[Forbric/Loader] could not read %s while verifying %s's ancestors", path, name);
-				return null;
-			}
-		});
 		try {
 			Class<?> defined = defineClass(name, bytes, 0, bytes.length, domain);
 			DefinedGetterFields.observe(this, name, bytes);
