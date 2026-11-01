@@ -113,6 +113,21 @@ fail). Every run must save and shut down normally. Reports, logs, test worlds an
 output directory; `--output` selects a new directory explicitly. See
 [the Carpet probe instructions](../../canary/carpet/README.md) for prerequisites and coverage.
 
+## Fluid HEAD handlers on a neighbour change
+
+`fluid-head-gate.py --fabric-api <fabric-api-0.161.0+26.2.jar> [--create <create-fly.jar>] [--staged-root <stage/run>]
+[--output DIR]` compiles the fluid HEAD-handler probe and runs its cases in two isolated dedicated servers (ports from
+`GATE_PORT`, else any free one). fabric-block-api's `FluidFlowEvents` veto (block-api 3.1.0, fabric-api 0.161.0 or later)
+and Create Fly's lava + honey reaction are cancellable HEAD injectors on vanilla's `LiquidBlock.shouldSpreadLiquid`,
+which NeoForge's `onPlace` asks but its `neighborChanged` does not (it asks NeoForge's fluid interaction registry), so
+`MixinFluidReactionAdapter` runs them from a wrap of that registry question. The run with
+`-Dforbric.fluidReactionNeighbourChange.head=off` must fail exactly the neighbour-change cases (`neighbor.veto`,
+`neighbor.veto.reaction`, and `create.neighbor.reaction` with Create) and announce no wrap; the placement and un-vetoed
+cases pass in both runs. The fixed run uses strict compatibility policy, must pass every case and must announce the
+wrap of each loaded mixin. `--off <switch>` replaces the negative run's switch and then only reports which cases fail
+(used once on the merged base with `-Dforbric.nativeEntryRelay=off`). Every run must save and shut down normally; reports
+stay under the output directory. See [the probe's instructions](../../canary/fluidhead/README.md).
+
 ## Fabric item and shears adaptations
 
 `regress-gate.py --fabric-api <fabric-api-0.155.2+26.2.jar> --bclib <bclib-26.201.2.jar> --mod <worldweaver> --mod
