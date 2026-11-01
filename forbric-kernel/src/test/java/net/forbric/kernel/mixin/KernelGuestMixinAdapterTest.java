@@ -752,22 +752,6 @@ class KernelGuestMixinAdapterTest {
 				config(PKG.replace('/', '.'), "ForeignMixin"), resolver(classes)).isEmpty());
 	}
 
-	@Test
-	void anOrphanPostMixinFixupsSeedsIsNotAHazard() {
-		// GuiRenderer.pictureInPictureRenderers IS orphaned in the merged base, but PostMixinFixups seeds it with an
-		// empty map, so the mixins that @Shadow it work. Suppressing them instead broke MaLiLib: its MixinGameRenderer
-		// read the same map through mod-owned state and NPE'd during Minecraft.<init>.
-		String gui = "net/minecraft/client/gui/render/GuiRenderer";
-		Map<String, byte[]> classes = new HashMap<>();
-		classes.put(gui + ".class", target(gui, "pictureInPictureRenderers", Opcodes.ACC_PRIVATE, false));
-		classes.put(PKG + "/GuiRendererMixin.class",
-				shadowingMixin("GuiRendererMixin", gui, "pictureInPictureRenderers"));
-
-		assertTrue(KernelGuestMixinAdapter.unfitMixins("example.mixins.json",
-				config(PKG.replace('/', '.'), "GuiRendererMixin"), resolver(classes)).isEmpty(),
-				"a field the repair pass seeds must not be reported as an orphan");
-	}
-
 	@ExpectCaught("could not parse mixin config x.json")
 	@Test
 	void returnsEmptyForNonMixinJsonOrMissingPackage() {

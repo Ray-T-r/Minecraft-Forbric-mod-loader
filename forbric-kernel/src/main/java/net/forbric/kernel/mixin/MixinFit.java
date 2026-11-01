@@ -848,12 +848,12 @@ public final class MixinFit {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	/**
-	 * {@code @Shadow}ed fields the merged target still DECLARES but never ASSIGNS — the archetype that made the old
-	 * owned-target rule exist. NeoForge won the byte-merge of {@code GuiRenderer.<init>}, re-typed its third
-	 * parameter and replaced vanilla's {@code pictureInPictureRenderers} with its own
-	 * {@code pictureInPictureRendererPools}; erasure hides the change from Mixin (both descriptors are just
-	 * {@code List}), so fabric-rendering-v1's mixin applies with no error and then reads a field with zero
-	 * {@code putfield} anywhere → NPE.
+	 * {@code @Shadow}ed fields the target still DECLARES but never ASSIGNS — the archetype that made the old
+	 * owned-target rule exist. On the merged base NeoForge's {@code GuiRenderer.<init>} re-typed its third parameter and
+	 * replaced vanilla's {@code pictureInPictureRenderers} with its own {@code pictureInPictureRendererPools} while the
+	 * merge kept the field; erasure hides the change from Mixin (both descriptors are just {@code List}), so
+	 * fabric-rendering-v1's mixin applied with no error and then read a field with zero {@code putfield} anywhere → NPE.
+	 * (On NeoForge's own base that field is the kernel's twin, which the PiP bridge assigns in the constructor.)
 	 *
 	 * <p>Only <b>private</b> fields are judged. That restriction is what makes a class-local scan SOUND: a private
 	 * field can only be written by its declaring class and its nestmates, both of which are scanned here. A public
@@ -884,9 +884,6 @@ public final class MixinFit {
 			// every @Shadow'd `static final int` — MAX_PAYLOAD_SIZE, FLAG_INSIDE_FACE, MAX_DESCRIPTION_WIDTH_PIXELS.
 			if (declared.value != null) continue;
 			if ((declared.access & Opcodes.ACC_PRIVATE) == 0) continue;
-			// PostMixinFixups seeds some orphans rather than letting them poison every reader; those are not
-			// hazards. This runs on pre-mixin (and therefore pre-repair) bytes, so it must be asked explicitly.
-			if (PostMixinFixups.isSeeded(target.name, f.name)) continue;
 			if (writesField(mixin, f.name, f.desc, mixin.name) || writesField(mixin, f.name, f.desc, declaring.name)) continue;
 			if (nestWritesField(declaring, f.name, f.desc, resolver)) continue;
 
