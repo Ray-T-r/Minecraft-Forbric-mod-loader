@@ -53,7 +53,13 @@ import net.forbric.kernel.util.Caught;
  * frame inside it re-declare the locals. Then the stretch already holds the local as the verifier and every frame see it;
  * only the debug table said otherwise, and no instruction changes. Vanilla's own classes, compiled with whole ranges, never
  * meet the condition. The trigger is the method's bytecode alone; {@code -Dforbric.localRanges=off} leaves every table as
- * merged.
+ * the chain before it left it.
+ *
+ * <p>On NeoForge's own base the base's bytes give it nothing: no method of the base or carrier, raw, after the vanilla
+ * twins or after the compat repairs, has such a range (Stage 4 C3 scan). The kernel's own chain does: it runs at the end
+ * of the COREMOD phase, after the kernel's Fabric adapters, and {@link net.forbric.kernel.mixin.NativeTagTrackerSourceInjector}'s
+ * rewrite of {@code EntityFluidInteraction} leaves one local whose range starts after its reads (a dedicated server with
+ * {@code -Dforbric.debug} logs the widening; with {@code -Dforbric.nativeTagTrackerSource=off} it is gone). So it stays.
  */
 public final class LocalRanges implements ClassTransformer {
 	public static final String PROPERTY = "forbric.localRanges";
