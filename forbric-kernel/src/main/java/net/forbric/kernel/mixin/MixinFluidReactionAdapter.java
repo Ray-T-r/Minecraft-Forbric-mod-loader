@@ -36,9 +36,8 @@ public final class MixinFluidReactionAdapter {
 	 * repair for shouldSpreadLiquid — without it, MixinFit would call the very callbacks they relocate dead.
 	 */
 	static final String SPREAD = String.join("", "shouldSpreadLiquid", "(L" + LEVEL + ";" + POS + STATE + ")Z");
-	static final List<String> REGISTRIES = List.of(
-			ForeignType.FLUID_INTERACTION_REGISTRY.internal(Ecosystem.NEOFORGE),
-			ForeignType.FLUID_INTERACTION_REGISTRY.internal(Ecosystem.FORGE));
+	/** NeoForge's fluid interaction registry, the one its liquid block's neighbour change asks. */
+	static final List<String> REGISTRIES = List.of(ForeignType.FLUID_INTERACTION_REGISTRY.internal(Ecosystem.NEOFORGE));
 	/**
 	 * Off: no wrap on a neighbour change for a base whose placement asks vanilla's {@code shouldSpreadLiquid} and whose
 	 * neighbour change asks a registry ({@link #neighbourChangeOnly}); the handler then runs on placement only.
