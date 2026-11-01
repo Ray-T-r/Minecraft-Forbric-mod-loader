@@ -57,7 +57,7 @@ Full suite at 3c88e7e1 on G: 5759 tests, 65 failed, names identical to the a3791
 0 gone. +1 over ab1bd684: `MixinFluidReactionRetainTest` (1) deleted, `MixinFluidReactionWeaveTest` 2 -> 3,
 `CarpetMixinAdapterTest.onlyAFabricMixinGetsTheNeighbourChangeWrap` new.
 
-## Open (not this lane's to fix)
+## Open at the lane's end (closed by the review fixes below)
 
 `NativeEntryRelay` re-asks `shouldSpreadLiquid` only where "nothing in the merged class calls it". On G `onPlace` calls it,
 so the relay plans nothing for `LiquidBlock`, and a Fabric HEAD handler on `shouldSpreadLiquid` (fabric-block-api's flow
@@ -66,3 +66,27 @@ woven `LiquidBlock` a G server exported with Create Fly loaded (lane c3b-useon-r
 shows it: `onPlace` calls `shouldSpreadLiquid` @4, `neighborChanged` calls only NeoForge's `canInteract` @2, and
 `handler$zcd000$create$shouldSpreadLiquid` is merged into `shouldSpreadLiquid` alone. Bytecode only; the behaviour was not
 measured in game. `FluidPairMixinAdaptersWeaveTest` still weaves the merged two-registry fixture.
+
+## Review fixes (63ea77dc, 8462a705, 98cdbd22, be89707e, b0016a15)
+
+The "Open" item above is closed. Reviews A and B (lane c3b-fluid-reaction) found it is a measured loss from the merged
+base, not only a vanilla-parity gap: on M, `NativeEntryRelay` logged `LiquidBlockMixin.shouldSpreadLiquid: ... is asked
+again by [onPlace, neighborChanged]` for fabric-api, and no G log has that line.
+
+- **HEAD arm (8462a705, MOVE).** `MixinFluidReactionAdapter.neighbourChangeOnly` now also serves a HEAD handler: its
+  `@Unique` copy runs from a `@WrapOperation` of `neighborChanged`'s `canInteract` on every neighbour change; a cancel
+  answers for the registry (false: no tick, no reaction). Own switch `-Dforbric.fluidReactionNeighbourChange.head`.
+  New gate `run/compat/fluid-head-gate.py` (`canary/fluidhead`, real fabric-api 0.161.0 + Create Fly on G): HEAD off
+  fails exactly `neighbor.veto`, `neighbor.veto.reaction`, `create.neighbor.reaction`; fixed 6/6 under STRICT.
+  `weave/fluidpair` was reshaped to NeoForge's liquid block (its MinecraftForge stand-in deleted) and
+  `FluidPairMixinAdaptersWeaveTest` now weaves the arm against the native oracle; new `MixinFluidReactionHeadTest` reads
+  the released mixins. Residual, pinned by a test: two mixins' wraps chain with the later-applied one outside, so on a
+  neighbour change two HEAD hooks run in the reverse of their native order.
+- **NativeEntryRelay deleted (98cdbd22).** Its own planner over every private boolean method of G + carrier +
+  forbricneolive with a vanilla counterpart: 0 plans (M: 1, `LiquidBlock.shouldSpreadLiquid`). Merged red: at cf0498eb the
+  fluid-head gate passes the neighbour cases with the relay on and fails them with `-Dforbric.nativeEntryRelay=off`. On G
+  the gate result is the same with and without the relay. The switch is retired (D29).
+- **Orphan `weave/createfluid/**` deleted (63ea77dc)**, no reader since 8d1b94f1.
+- **`REGISTRIES` is NeoForge's registry only (be89707e)**: 0 `net/minecraftforge/` classes in G, carrier, forbricneolive.
+- Not served, recorded for the owner: better-nether's `bn_shouldSpreadLiquid` (INVOKE `setBlockAndUpdate`, captured locals)
+  runs on placement only on G; the merged base did not serve it either.
