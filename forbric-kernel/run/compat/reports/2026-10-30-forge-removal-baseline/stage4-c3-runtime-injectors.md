@@ -1,6 +1,6 @@
 # Stage 4 C3, lane "runtime-injectors": how each runtime injector and boot-path fallback was checked
 
-Branch `s4-c3`, commits a9be1761..30a330cc on e99f3b66, then a355f50a (a test the suite asked for) and this file. The lane took the C3 repairs that had runtime helpers or sat on the
+Branch `s4-c3`, commits a9be1761..30a330cc on e99f3b66, then a355f50a (a test the suite asked for) and this file; review fixes in 336348c2..50236f2c (section "Review fixes"). The lane took the C3 repairs that had runtime helpers or sat on the
 boot path: the client part tracking, the creative search trees, the furnace tick calls, the merged-record Optional defaults,
 the flower pot repair's MinecraftForge half and table refill, the data-map fallback, the common-network injector's
 play-phase fall-through, the client resource preload and the once-per-process window guard (D16). Each deleting commit's
@@ -79,6 +79,50 @@ execution test (census 68/68). At a355f50a: 5723 tests, 91 failed; against 9a0e3
 11 rows gone. Every one of the 91 is a row of C1's failures-genuine.txt (the litematica one under the name the mixin-side
 lane gave it). Per-commit compile (`compileJava compileRuntimeJava compileTestJava`): all ten deleting commits rc=0;
 a355f50a compiled and ran its tests (InjectorExecutionCensusTest 4/4, FlowerPotRepairInjector{,Execution}Test 2/2 + 2/2).
+
+## Review fixes (runtime-injectors-review-A.md / -B.md, commits 336348c2..50236f2c and this section)
+
+Every finding was re-verified before fixing; all were confirmed, none refuted.
+
+- A F1: creativeSearchIfDue's javadoc sat orphaned above multipartIfDue (a9be1761 inserted the method between them); moved
+  back onto its method (336348c2).
+- B B3: FlowerPotRepairInjector's REQUIRED anchor named the deleted halves' cost; it now says a Fabric mod reading
+  `potted` / `POTTED_BY_CONTENT` finds no plant (8795d41d). Still REQUIRED.
+- B B4: KernelBoot's neuter comment and KernelNeoWorldgen's "Monster rooms" javadoc still described the data-map fallback;
+  reworded to NeoForge's own reload path and the vanilla-parity draw (javap of G `MonsterRoomFeature.randomEntityId`:
+  aload_1, invokestatic `MonsterRoomHooks.getRandomMonsterRoomMob`, areturn) (d88b1aa1).
+- B B2: the creative search had no check that could go red after its deletion (gate-m55 was green on M with the repair
+  off). `NeoForgeBaseCreativeSearchStagedTest` holds RiScan's criterion over the base and the NeoForge carrier (no method
+  joins, as a CompletableFuture, a value it took from `Map.getOrDefault` in the five instructions before), pins that
+  `SessionSearchTrees` has no `getSearchTree` and keeps NeoForge's keyed readers, and has a control. G 3/3; copied into
+  $RO (BASE_JAR = merged) and removed after: 2/3 red, naming `SessionSearchTrees.getSearchTree(Key)` (a6f9a621).
+- A F3 / B B6 (record): `NeoForgeBaseRecordOptionalsStagedTest` holds MergedRecordOptionalDefaults' criterion over the base
+  and carrier (no non-delegating record constructor leaves an Optional field unset or null) and builds G's ServerStatus
+  (initializer stripped) through each constructor, vanilla's five-argument one among them, reading every Optional field
+  back. G 3/3 (javap: 5-arg -> `this(..., false)`, 6-arg stores every component, no forgeData). On $RO: 2/3 red, static
+  "ServerStatus.<init>(...ZZ)V leaves forgeData" and at run time "forgeData after ServerStatus(Component, Optional,
+  Optional, Optional, boolean)" (50236f2c). It does not encode through ServerStatus.CODEC, which needs a bootstrapped game.
+- B B6 (flower pot): the MinecraftForge half's merged red, run as a throwaway on $RO: in `FlowerPotRepairInjector.transform`,
+  `boolean forgeEdits = forgeHalf && !"off".equalsIgnoreCase(System.getProperty("forbric.flowerPotForgeHalf", "on"))` gating
+  `lookUpAllFamilies` / `recordAddedPlant`, and `run/c3rifix-m42.sh` = gate-m42 phase 1 plus a phase `forge-half-off`
+  (`-Dforbric.flowerPotForgeHalf=off`, judged `True`, record only), port 46160. Positive 22/22 with "lookup over every
+  family's pots yes, addPlant recorded yes"; forge-half-off: **pot.forge.addPlant fails** ("planting an addPlant-declared
+  plant gave Use[...], block=minecraft:flower_pot") with "... NO, addPlant recorded NO". On G the counterpart,
+  pot.neoforge.addPlantOnly, passes natively (tip-m42, 21/21). $RO reverted to clean.
+- B B1: the ModifiableDataViews quartet (ModifiableDataViewsTransformer, NativeOwnedComponentInitializers,
+  WorldDataProtocolExtension, KernelModifiableDataViews), forced out by the C2 compile in 26f281f0 with its C3 checks owed,
+  had no row in any lane. Verdict DELETE confirmed. Check 1: tip-m42 on G passes biome.neoforge.temperature / water /
+  network, biome.fabric.keep, biome.late.keep and structure.neoforge.terrain; C1's m43 probe boot on the genuine stage
+  passes loot.json.neoFalse (NeoForge's conditions judged). Merged red moot: the views were MinecraftForge fields
+  (modifiable biome / structure info, the condition context) that G's Biome, Structure and ReloadableServerResources do
+  not have. Check 2: RiScan G + carrier, classes naming `net/minecraftforge/`: 0. Check 3:
+  MergedBaseNoUnwrittenDuplicateFieldTest passes on G (not among the suite's failures, below); NeoForge modifiers via m42.
+- A F2 (gate-m9 has no positive post-reload resource check) and B B5 (four more doc lines naming deleted code) are
+  handoff items for C5 and C6. B B7 needs no action.
+- Unit suite at 50236f2c on `.stage4`: 5729 tests (the six new staged cases), 91 failed; against a355f50a (5723 / 91) 0 new and 0 gone
+  (`runtime-injectors-fix/tip.names` vs `runtime-injectors/tip.names`); both new staged tests 3/3,
+  MergedBaseNoUnwrittenDuplicateFieldTest 1/1. Every review-fix commit compiles.
+
 
 ## RiScan (the lane's whole-jar scanner)
 
