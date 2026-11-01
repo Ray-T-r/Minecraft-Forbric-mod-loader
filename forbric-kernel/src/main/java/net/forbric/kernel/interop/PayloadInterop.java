@@ -840,62 +840,6 @@ public final class PayloadInterop {
 	}
 
 	/**
-	 * Whether NeoForge itself registered a handler for this PLAY-phase payload.
-	 *
-	 * <p>Called from the rewritten {@code ServerGamePacketListenerImpl.handleCustomPayload} (see
-	 * {@code CommonNetworkInteropInjector.letNeoForgePayloadsThrough}), which hands a payload the merged base's
-	 * MinecraftForge override did not take to NeoForge's {@code NetworkRegistry.handleModdedPayload}. Handing over
-	 * UNCONDITIONALLY would be wrong: NeoForge's dispatcher is strict about what it does not recognise and
-	 * disconnects on a channel it never registered, where vanilla's own play override simply drops a payload
-	 * nobody took.
-	 *
-	 * <p>So the fall-through is gated on the one question that makes it safe: is this a payload NeoForge knows?
-	 * If it is, NeoForge's dispatcher is exactly where it should go, and that is the population that was being
-	 * dropped. If it is not — a Fabric payload NeoForge was never told about, an unregistered id, anything at all
-	 * in doubt — the answer is false and the method returns as it did before. (A Fabric payload the kernel mirrored
-	 * into NeoForge's registry answers true and lands on the no-op handler the mirror installed with it, which is
-	 * the same drop.) Fail-CLOSED on purpose: the old behaviour silently dropped a NeoForge mod's packet, the
-	 * wrong failure mode disconnects the player, and those are not the same size.
-	 *
-	 * @param payload the {@code CustomPacketPayload} the packet carried
-	 */
-	public static boolean neoForgeWillHandle(Object payload) {
-		if (payload == null) return false;
-		try {
-			ClassLoader loader = loaderFor(payload);
-			Class<?> registryClass = load(loader, NEO_NETWORK_REGISTRY);
-			if (registryClass == null) return false;
-
-			Object id = invokeNoArg(invokeNoArg(payload, "type"), "id");
-			if (id == null) return false;
-
-			Field registrationsField = findField(registryClass, "PAYLOAD_REGISTRATIONS");
-			if (registrationsField == null) return false;
-			registrationsField.setAccessible(true);
-			Object raw = registrationsField.get(null);
-			if (!(raw instanceof Map<?, ?> byProtocol)) return false;
-
-			// Any protocol: the play listener only ever sees PLAY, but reading the protocol constant reflectively
-			// to compare would add a failure mode for no gain — an id registered under any protocol is an id
-			// NeoForge owns, which is the whole question here.
-			for (Object protocolMap : byProtocol.values()) {
-				if (protocolMap instanceof Map<?, ?> ids && ids.containsKey(id)) {
-					probe(() -> "  neo owns " + id + " — handing the play payload to its dispatcher");
-					return true;
-				}
-			}
-			probe(() -> "  neo does not own " + id + " — not handing it over (NeoForge's dispatcher would end the "
-					+ "connection with \"No Channel for " + id + "\")");
-			return false;
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric] could not ask NeoForge whether it owns payload %s; not falling through",
-					payloadId(payload));
-			probe(() -> "  could not ask NeoForge whether it owns this payload (" + t + ") — not falling through");
-			return false;
-		}
-	}
-
-	/**
 	 * Called from the head of NeoForge's {@code NetworkRegistry.checkPacket} (both overloads): a payload on a channel
 	 * another ecosystem negotiated is not NeoForge's to police ({@link #notNeoForgesToPolice}). Its check compares the
 	 * payload's channel with what NeoForge negotiated, and a channel Fabric or Polymer negotiated is not in that list by

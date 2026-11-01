@@ -60,11 +60,11 @@ import net.forbric.kernel.util.ForbricLog;
  * override nothing changes. A handler that serves more than one kind of addon, or one that is not a configuration addon,
  * is left as written: returning before it would silently drop the play payloads it serves, where leaving it shows as the
  * disconnect. {@code -Dforbric.playPayloadFallThrough=off} leaves the handler as written; it is the switch that on the
- * merged base turned off the same delivery ({@code CommonNetworkInteropInjector}'s play-phase hand-over), read here on its
- * own so either side can go without the other.
+ * merged base turned off the same delivery ({@code CommonNetworkInteropInjector}'s play-phase hand-over, which went in
+ * Stage 4), and this adapter is now its only reader.
  */
 public final class FabricCommonPayloadMixinAdapter {
-	/** The off switch (the same name as the merged base's play-phase hand-over in {@code CommonNetworkInteropInjector}). */
+	/** The off switch (the name the merged base's play-phase hand-over in {@code CommonNetworkInteropInjector} had). */
 	public static final String PROPERTY = "forbric.playPayloadFallThrough";
 	static final String COMMON_LISTENER = "net/minecraft/server/network/ServerCommonPacketListenerImpl";
 	static final String GAME_LISTENER = "net/minecraft/server/network/ServerGamePacketListenerImpl";

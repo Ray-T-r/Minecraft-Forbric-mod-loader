@@ -16,6 +16,7 @@
 
 package net.forbric.kernel.transform;
 
+import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -146,98 +147,58 @@ class CommonNetworkInteropInjectorTest {
 	}
 
 	/**
-	 * The play-phase server handler must reach NeoForge's dispatcher when MinecraftForge does not take the payload.
+	 * NeoForge's own play listener hands every payload to its super, and the injector leaves it alone.
 	 *
-	 * <p>The merged {@code ServerGamePacketListenerImpl.handleCustomPayload} is MinecraftForge's override and its
-	 * whole body is: ask {@code ForgeHooks.onCustomPayload}, {@code POP} the answer, {@code RETURN}. It never
-	 * reaches NeoForge's dispatch. So a NeoForge mod's play-phase packet to the server arrived, was offered to
-	 * MinecraftForge, declined and stopped — no exception, no log, the mod's server handler simply never ran. Carry
-	 * On's carry key is one such packet: with it dropped, nothing could ever be picked up.
+	 * <p>The merged base's {@code ServerGamePacketListenerImpl.handleCustomPayload} was MinecraftForge's override: ask
+	 * {@code ForgeHooks.onCustomPayload}, drop the answer, return, never reaching NeoForge's dispatcher, so a NeoForge mod's
+	 * play-phase packet to the server (Carry On's carry key) reached nobody. This injector rewrote it to fall through to
+	 * {@code NetworkRegistry.handleModdedPayload} until Stage 4. On NeoForge's base the override is
+	 * {@code super.handleCustomPayload(packet)}, whose body is NeoForge's dispatcher; fabric-api's handler waiting there is
+	 * {@code FabricCommonPayloadMixinAdapter}'s. If a NeoForge update ever made this override drop payloads again, this
+	 * goes red before Carry On does.
 	 */
 	@Test
-	void thePlayServerHandlerReachesNeoForgesDispatcher() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+	void theBasesPlayListenerHandsEveryPayloadToItsSuperAndIsLeftAlone() throws Exception {
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		String listener = "net/minecraft/server/network/ServerGamePacketListenerImpl";
-		ClassNode node = transformed(listener);
-		MethodNode handler = method(node, "handleCustomPayload",
+		byte[] in = readClass(listener + ".class");
+		assertSame(in, new CommonNetworkInteropInjector().transform(listener.replace('/', '.'), in, null),
+				"the play listener is not one of this injector's targets any more");
+		MethodNode handler = method(parse(in), "handleCustomPayload",
 				"(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V");
-
-		boolean popsTheAnswer = false;
-		boolean callsSuper = false;
-		boolean callsNeoForge = false;
-		boolean branches = false;
-		boolean gated = false;
+		List<String> calls = new java.util.ArrayList<>();
 		for (AbstractInsnNode insn : handler.instructions) {
-			if (insn.getOpcode() == Opcodes.POP) popsTheAnswer = true;
-			if (insn.getOpcode() == Opcodes.IFNE) branches = true;
-			if (!(insn instanceof MethodInsnNode call)) continue;
-			if ("handleCustomPayload".equals(call.name)
-					&& "net/minecraft/server/network/ServerCommonPacketListenerImpl".equals(call.owner)) {
-				callsSuper = true;
-			}
-			if (call.getOpcode() == Opcodes.INVOKESTATIC && "handleModdedPayload".equals(call.name)
-					&& "net/neoforged/neoforge/network/registration/NetworkRegistry".equals(call.owner)) {
-				callsNeoForge = true;
-			}
-			if (INTEROP.equals(call.owner) && "neoForgeWillHandle".equals(call.name)) gated = true;
+			if (insn instanceof MethodInsnNode call) calls.add(call.getOpcode() + " " + call.owner + "." + call.name + call.desc);
 		}
-
-		assertFalse(popsTheAnswer,
-				"the hook's answer must be branched on, not discarded — discarding it is the whole defect");
-		assertTrue(branches, "MinecraftForge taking the payload must skip the hand-over");
-		assertTrue(callsNeoForge,
-				"and not taking it must reach NeoForge's NetworkRegistry.handleModdedPayload, the call NeoForge's own "
-						+ "super body makes for a mod payload");
-		assertFalse(callsSuper,
-				"NOT through super: fabric-api's handler in ServerCommonPacketListenerImpl.handleCustomPayload serves "
-						+ "only the configuration listener and throws \"Unknown addon\" for this one — measured, it "
-						+ "disconnected the player the moment Carry On sent its key");
-		// GATED: NeoForge's dispatcher disconnects on a channel it never registered, where vanilla's empty play
-		// override drops a payload nobody took.
-		assertTrue(gated,
-				"the hand-over must be gated on NeoForge actually owning the payload — ungated, NeoForge disconnects "
-						+ "on any payload nobody else took");
-		// The frame authored at the branch target has to be right, or the class fails verification at link time
-		// and every play-phase packet on the server becomes a VerifyError instead.
-		new Analyzer<>(new BasicVerifier()).analyze(node.name, handler);
-	}
-
-	/** On unless switched off: a dropped packet is a mod that silently does not work. */
-	@Test
-	void thePlayHandOverIsOnByDefaultAndHasAnOffSwitch() {
-		String previous = System.getProperty("forbric.playPayloadFallThrough");
-		try {
-			System.clearProperty("forbric.playPayloadFallThrough");
-			assertTrue(CommonNetworkInteropInjector.playFallThroughEnabled(),
-					"on by default — off, every NeoForge mod's play-phase packet to the server is dropped");
-			System.setProperty("forbric.playPayloadFallThrough", "off");
-			assertFalse(CommonNetworkInteropInjector.playFallThroughEnabled(), "-Dforbric.playPayloadFallThrough=off");
-		} finally {
-			if (previous == null) System.clearProperty("forbric.playPayloadFallThrough");
-			else System.setProperty("forbric.playPayloadFallThrough", previous);
-		}
+		assertEquals(List.of(Opcodes.INVOKESPECIAL + " net/minecraft/server/network/ServerCommonPacketListenerImpl.handleCustomPayload"
+				+ "(Lnet/minecraft/network/protocol/common/ServerboundCustomPayloadPacket;)V"), calls,
+				"the override's one call is its super, NeoForge's dispatcher");
 	}
 
 	/**
-	 * Every hook this injector splices into the real merged listeners resolves to a real method.
+	 * Every hook this injector splices into the real listeners resolves to a real method, each listener judged on its own.
 	 *
 	 * <p>The tests above assert that a call was emitted, where it sits, and what it is handed — none of them
 	 * assert the call goes anywhere. Owner, name and descriptor are three independent strings here, so renaming
 	 * or re-signing the hook leaves all of them green and moves the failure to a {@code NoSuchMethodError} thrown
-	 * from inside the game's packet handling.
+	 * from inside the game's packet handling. Each listener is a separate assertion, so one that stops needing the
+	 * injection cannot hide whether the others' hooks resolve (it used to be one loop that stopped at its first failure).
 	 */
 	@Test
 	void everyHookSplicedIntoTheRealListenersResolves() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
+		List<org.junit.jupiter.api.function.Executable> perListener = new java.util.ArrayList<>();
 		for (String entry : List.of(
 				"net/minecraft/network/Connection",
-				"net/minecraft/server/network/ServerConfigurationPacketListenerImpl",
-				"net/minecraft/server/network/ServerGamePacketListenerImpl")) {
-			byte[] in = readClass(entry + ".class");
-			byte[] out = new CommonNetworkInteropInjector().transform(entry.replace('/', '.'), in, null);
-			assertTrue(out != in, entry + " must still need the injection");
-			InteropHookAssertions.assertEveryInteropCallResolves(out);
+				"net/minecraft/server/network/ServerConfigurationPacketListenerImpl")) {
+			perListener.add(() -> {
+				byte[] in = readClass(entry + ".class");
+				byte[] out = new CommonNetworkInteropInjector().transform(entry.replace('/', '.'), in, null);
+				assertTrue(out != in, entry + " must still need the injection");
+				InteropHookAssertions.assertEveryInteropCallResolves(out);
+			});
 		}
+		assertAll(perListener);
 	}
 
 	private static boolean storesFieldBefore(MethodNode m, String field, String hook) {

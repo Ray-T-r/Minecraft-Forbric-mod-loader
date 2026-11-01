@@ -1556,7 +1556,6 @@ test	net.forbric.kernel.transform.ClientSmokeTickInjectorTest	theRealMinecraftGa
 test	net.forbric.kernel.transform.ClientWindowOrderTest	onTheRealMinecraftTheWindowsOpenInTheDocumentedOrder()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.ClientWindowOrderTest	theOrderDoesNotDependOnWhichInjectorRunsFirst()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	everyHookSplicedIntoTheRealListenersResolves()	[fixture:staged] staged merged base absent — skipping real-bytecode check
-test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	thePlayServerHandlerReachesNeoForgesDispatcher()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	theRealMergedListenerGetsExactlyTwoNewGuardsAndVerifies()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.CompatibilityPromptTickInjectorTest	gameUiCallsExistOnTheActualMinecraft262Base()	[fixture:staged] staged game absent
 test	net.forbric.kernel.transform.CompostablesFallbackInjectorTest	aShapeItDoesNotKnowIsLeftAsMerged()	[fixture:staged] $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar absent (reading net/minecraft/world/level/block/ComposterBlock.class)
@@ -1904,3 +1903,4 @@ test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	theBa
 test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	aNeoForgeModsMultipartEntityIsTrackedByTheBaseItself()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
 test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	theDragonsPartsAreTrackedByItsOwnCase()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
 test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	controlANullPartArrayThrowsOutOfTheCallback()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
+test	net.forbric.kernel.transform.CommonNetworkInteropInjectorTest	theBasesPlayListenerHandsEveryPayloadToItsSuperAndIsLeftAlone()	[fixture:staged] staged base absent — skipping real-bytecode check
