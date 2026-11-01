@@ -121,8 +121,9 @@ check "and the library was then claimed twice, or tried to be" \
   "ForbricNestLib\] DUPLICATE registration|ForbricNestLib\] claimed by" "$NEOCONTROL" 2
 
 step "the Fabric side's sight of the NeoForge-owned library does NOT hang on ModPresence"
-# The opposite of the MinecraftForge pair's control 2, and measured, not assumed (2026-10-30): there the losing side
-# went dark without ModPresence because Decision.aliasesFor(Ecosystem.FORGE) has no consumer. Here the losing side is
+# The opposite of the old MinecraftForge pair's control 2, and measured, not assumed (2026-10-30): there the losing side
+# went dark without ModPresence because nothing consumed an alias into MinecraftForge (an ecosystem Forbric no longer
+# has, Stage 4). Here the losing side is
 # Fabric, and the arbiter's "aliased into [FABRIC]" DOES have one -- the Fabric loader registers the alias -- so with
 # ModPresence off both sides must still see the library. A Fabric side that went dark here would be a lost alias that
 # the presence rewrite had been hiding.

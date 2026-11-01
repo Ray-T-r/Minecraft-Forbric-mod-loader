@@ -1,5 +1,5 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
-package net.forbric.kernel;
+package net.forbric.kernel.mixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;

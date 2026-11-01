@@ -11,7 +11,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)
 class InsertedLambdaArgumentShimTest {
  private static final String OLD="(JLjava/lang/Object;Ljava/lang/Object;D)V",NEW="(JLjava/lang/Object;Ljava/lang/String;Ljava/lang/Object;D)V",CI="Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
  @AfterEach void reset(){System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}
@@ -39,7 +39,7 @@ class InsertedLambdaArgumentShimTest {
   ClassNode target=new ClassNode();target.name="probe/Target";target.superName="java/lang/Object";
   MethodNode lambda=new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"lambda$render$0",NEW,null,null);lambda.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,"probe/Anchor","call","()V",false));lambda.instructions.add(new InsnNode(Opcodes.RETURN));target.methods.add(lambda);
   MethodNode caller=new MethodNode(Opcodes.ACC_PUBLIC,"render","()V",null,null);caller.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC,target.name,lambda.name,lambda.desc,false));target.methods.add(caller);
-  net.forbric.kernel.VanillaLambdaReference.declare(target.name,lambda.name,OLD);return target;
+  net.forbric.kernel.mixin.VanillaLambdaReference.declare(target.name,lambda.name,OLD);return target;
  }
  @Test void repeatedArgumentsHaveOneOrderedMappingButAmbiguousOrReorderedSequencesAreRejected(){
   assertArrayEquals(new int[]{0,1,3,4},InsertedLambdaArgumentShim.uniqueEmbedding(Type.getArgumentTypes(OLD),Type.getArgumentTypes(NEW)));

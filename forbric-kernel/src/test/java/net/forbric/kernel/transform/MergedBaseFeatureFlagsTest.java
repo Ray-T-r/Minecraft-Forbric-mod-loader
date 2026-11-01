@@ -56,7 +56,7 @@ class MergedBaseFeatureFlagsTest {
 		}
 		assertEquals(1, calls(original, ForbricMergedBaseCompatTransformer.NEO_FEATURE_FLAG_LOADER), "premise: NeoForge's patch calls its loader once");
 
-		byte[] out = new ForbricMergedBaseCompatTransformer(n -> null).transform(
+		byte[] out = new ForbricMergedBaseCompatTransformer().transform(
 				ForbricMergedBaseCompatTransformer.FEATURE_FLAGS.replace('/', '.'), original, null);
 		assertNotSame(original, out);
 		assertEquals(0, calls(out, ForbricMergedBaseCompatTransformer.NEO_FEATURE_FLAG_LOADER));
@@ -64,7 +64,7 @@ class MergedBaseFeatureFlagsTest {
 		ClassNode node = new ClassNode();
 		new ClassReader(out).accept(node, 0);
 		for (MethodNode m : node.methods) new Analyzer<>(new BasicVerifier()).analyze(node.name, m);
-		assertSame(out, new ForbricMergedBaseCompatTransformer(n -> null).transform(
+		assertSame(out, new ForbricMergedBaseCompatTransformer().transform(
 				ForbricMergedBaseCompatTransformer.FEATURE_FLAGS.replace('/', '.'), out, null), "second pass");
 	}
 

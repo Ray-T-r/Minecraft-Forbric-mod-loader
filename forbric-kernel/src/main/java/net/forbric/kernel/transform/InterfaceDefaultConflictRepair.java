@@ -35,7 +35,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * Picks a winner when a mixin-added interface and one the merged base already supplies both default the same
+ * Picks a winner when a mixin-added interface and one the base already supplies both default the same
  * method, which the JVM refuses to do for itself.
  *
  * <p>Java's rule is that two UNRELATED superinterfaces each supplying a default for one signature is an error the
@@ -43,10 +43,10 @@ import org.objectweb.asm.tree.MethodNode;
  * and the {@code IncompatibleClassChangeError: Conflicting default methods} is thrown the first time that method is
  * CALLED, from whatever unrelated code happened to call it.
  *
- * <p>On one base nobody hits this, because only one of the two interfaces exists. Forbric's merged base carries all
- * three ecosystems at once AND lets a mod's mixin add interfaces on top, so the pairing is ordinary here:
+ * <p>On native Fabric or native NeoForge nobody hits this, because only one of the two interfaces exists. Forbric runs
+ * Fabric mods on NeoForge's base AND lets a mod's mixin add interfaces on top, so the pairing is ordinary here:
  * EntityCulling's {@code BlockEntityRendererMixin} adds {@code BlockEntityRenderFabricExtension} to
- * {@code BlockEntityRenderer}, which on the merged base already extends NeoForge's
+ * {@code BlockEntityRenderer}, which on NeoForge's base already extends NeoForge's
  * {@code IBlockEntityRendererExtension}, and both declare {@code default AABB getRenderBoundingBox(T)}. Neither
  * {@code CampfireRenderer} nor any other vanilla renderer overrides it, so the 97-jar client reached a lit campfire
  * and died — inside EntityCulling's own tick, on a method neither it nor NeoForge had done anything wrong with. The
@@ -57,7 +57,7 @@ import org.objectweb.asm.tree.MethodNode;
  * inherits both — for the case above that is the {@code BlockEntityRenderer} interface itself, so one method fixes
  * every renderer rather than one per implementor.
  *
- * <p><b>Which one wins:</b> the declarer that is not part of the merged base. A mod that adds an interface with a
+ * <p><b>Which one wins:</b> the declarer that is not part of the base. A mod that adds an interface with a
  * default added it to supply behaviour, and the base's extension interface is the one that was already there for
  * everybody. When both are the base's own (or both a mod's) the first in declaration order wins, and the choice is
  * logged either way — a silent pick is how a behavioural difference between two bodies would become invisible.
@@ -71,14 +71,14 @@ import org.objectweb.asm.tree.MethodNode;
  * {@code removeIf}, {@code forEach}, {@code stream} and friends from both {@code java.util.List} and
  * {@code FloatCollection}, and would have swapped fastutil's primitive-specialised bodies for the boxing ones.
  * Nothing wove fastutil; that conflict is its own and it is not a defect. Only a signature whose declarers were NOT
- * all reachable before weaving is one the merge and a mixin created together.
+ * all reachable before weaving is one the base's own extensions and a mixin created together.
  *
  * <p><b>"Before" means the jar's own bytes.</b> A class tweaker's {@code inject-interface} is the other way a mod puts a
  * second interface on a base class, and it runs in the kernel's pre-mixin chain — so the bytes Mixin is handed already
  * carry it, and judged against those, the conflict looked like the class's own. fabric-item-api-v1 injects
- * {@code FabricItem} into {@code Item}, whose merged hierarchy already has MinecraftForge's {@code IForgeItem}; both
- * default {@code getCraftingRemainder(ItemStack)}, so every crafting-table result, brew and furnace fuel threw
- * {@code IncompatibleClassChangeError} with fabric-api installed. The interfaces the class had in its jar are what the
+ * {@code FabricItem} into {@code Item}; on the merged base of Forbric 0.4 and earlier, {@code Item}'s hierarchy also had
+ * MinecraftForge's {@code IForgeItem}, both defaulting {@code getCraftingRemainder(ItemStack)}, and every crafting-table
+ * result, brew and furnace fuel threw {@code IncompatibleClassChangeError} with fabric-api installed. The interfaces the class had in its jar are what the
  * carrier shipped settled; anything added on top is the kernel's pipeline's to settle.
  *
  * <p>{@link #CHAINED} names the one signature where the override asks a third, wider hook instead of picking one of
@@ -91,7 +91,7 @@ public final class InterfaceDefaultConflictRepair {
 
 	/** Owners whose interfaces are part of the base rather than something a mod brought. */
 	private static final List<String> BASE_PACKAGES =
-			List.of("net/minecraft/", "net/neoforged/", "net/minecraftforge/", "com/mojang/");
+			List.of("net/minecraft/", "net/neoforged/", "com/mojang/");
 
 	/**
 	 * {@code owner#name+desc} → the overload of the same name the override calls instead of the default(s) weaving

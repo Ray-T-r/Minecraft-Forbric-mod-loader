@@ -189,7 +189,7 @@ class M9MechanismLinesContractTest {
 
 	private static TransformChain chain() {
 		TransformChain chain = new TransformChain();
-		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(name -> null));
+		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer());
 		return chain;
 	}
 

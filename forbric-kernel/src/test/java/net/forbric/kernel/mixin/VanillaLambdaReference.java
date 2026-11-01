@@ -1,5 +1,5 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
-package net.forbric.kernel;
+package net.forbric.kernel.mixin;
 
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -16,8 +16,6 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
-import net.forbric.kernel.mixin.LambdaShapeEvidence;
-import net.forbric.kernel.mixin.NativeGameReferences;
 
 /**
  * The FABRIC native reference a unit test hands {@link NativeGameReferences} (and so {@link LambdaShapeEvidence} and the

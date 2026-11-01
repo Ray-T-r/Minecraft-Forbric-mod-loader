@@ -115,7 +115,7 @@ class VanillaMemberTwinInjectorTest {
 	@Test void theRepairsThatWireTheseMembersLandOnTheGenuineBase() {
 		Function<String, byte[]> genuine = reader(GENUINE);
 		VanillaMemberTwinInjector twins = new VanillaMemberTwinInjector(vanilla());
-		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(genuine);
+		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 
 		String gui = VanillaMemberTwinInjector.GUI_RENDERER;
 		byte[] rawGui = genuine.apply(gui + ".class");
@@ -257,7 +257,7 @@ class VanillaMemberTwinInjectorTest {
 		Function<String, byte[]> genuine = reader(GENUINE);
 		Function<String, byte[]> neo = reader(NEO_RUNTIME);
 		VanillaMemberTwinInjector twins = new VanillaMemberTwinInjector(vanilla());
-		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(genuine);
+		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 		Map<String, byte[]> chained = new HashMap<>();
 		for (String owner : owners()) {
 			chained.put(owner, compat.transform(owner.replace('/', '.'), twins.transform(owner.replace('/', '.'), genuine.apply(owner + ".class"), null), null));

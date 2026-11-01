@@ -55,7 +55,7 @@ public final class PreMixinView {
 		if (known != null) return known == NONE ? raw : known;
 		String dotted = internalName.replace('/', '.');
 		byte[] twinned = new VanillaMemberTwinInjector(vanilla()).transform(dotted, raw, null);
-		byte[] repaired = new ForbricMergedBaseCompatTransformer(PreMixinView::raw).transform(dotted, twinned, null);
+		byte[] repaired = new ForbricMergedBaseCompatTransformer().transform(dotted, twinned, null);
 		VIEWED.put(internalName, repaired == raw ? NONE : repaired);
 		return repaired;
 	}

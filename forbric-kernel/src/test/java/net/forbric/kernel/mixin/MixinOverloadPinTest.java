@@ -51,7 +51,7 @@ import org.objectweb.asm.tree.MethodNode;
  * first, is pinned to the one overload its handler was written for — only when the first cannot take the handler, and
  * only when exactly one other can.
  */
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)
 class MixinOverloadPinTest {
 	private static final String TARGET = "net/minecraft/client/renderer/LevelRenderer";
 	private static final String SLICE = "Lcom/mojang/blaze3d/buffers/GpuBufferSlice;";
@@ -108,7 +108,7 @@ class MixinOverloadPinTest {
 	@Test
 	void aSelectorThatBindsIsNotExplainedEvenWhenTheReferenceAlsoHasItsShape() {
 		ClassNode target = neoForgeLambdaOnly();
-		net.forbric.kernel.VanillaLambdaReference.declare(
+		net.forbric.kernel.mixin.VanillaLambdaReference.declare(
 				TARGET, NAME, "(" + SKY + MATRIX + SLICE + ")V");
 
 		ClassNode mixin = mixinWith("(" + SKY + MATRIX + SLICE + CI + ")V", NAME);
@@ -394,7 +394,7 @@ class MixinOverloadPinTest {
 
 	/** NeoForge's class: its lambda only; vanilla's shape is in the FABRIC reference. */
 	private static ClassNode neoForgeLambdaOnly() {
-		net.forbric.kernel.VanillaLambdaReference.declare(TARGET, NAME, VANILLA_SHAPE);
+		net.forbric.kernel.mixin.VanillaLambdaReference.declare(TARGET, NAME, VANILLA_SHAPE);
 		ClassNode target = new ClassNode();
 		target.name = TARGET;
 		target.methods = new ArrayList<>(List.of(method(NAME, "(" + SKY + MATRIX + SLICE + ")V")));

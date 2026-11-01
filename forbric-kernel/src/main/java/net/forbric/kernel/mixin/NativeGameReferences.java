@@ -102,9 +102,10 @@ public final class NativeGameReferences {
 
 	/**
 	 * Test seam: {@code reference} answers {@link #reference} for the classes it knows (a unit test's stand-in for what the
-	 * vanilla-reference sidecar would answer); null takes it away.
+	 * vanilla-reference sidecar would answer); null takes it away. Package-private: only the test extension in this package
+	 * ({@code VanillaLambdaReference}, which puts it back after every test) sets it, and nothing outside the package can.
 	 */
-	public static void referenceForTest(java.util.function.BiFunction<Ecosystem, String, ClassNode> reference) {
+	static void referenceForTest(java.util.function.BiFunction<Ecosystem, String, ClassNode> reference) {
 		referenceForTest = reference;
 	}
 

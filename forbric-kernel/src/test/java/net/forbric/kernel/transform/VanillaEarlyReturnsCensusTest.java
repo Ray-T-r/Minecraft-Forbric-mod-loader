@@ -65,7 +65,7 @@ class VanillaEarlyReturnsCensusTest {
 		TreeSet<String> rows = new TreeSet<>();
 		int folded = 0;
 		try (ZipFile vanillaJar = new ZipFile(VANILLA.toFile()); ZipFile mergedJar = new ZipFile(TestFixtures.twinnedBase().toFile())) {
-			ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(name -> bytes(mergedJar, name));
+			ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 			TransformContext context = new TransformContext(EnvType.CLIENT, false, "intermediary");
 			for (ZipEntry entry : Collections.list(vanillaJar.entries())) {
 				if (!entry.getName().endsWith(".class")) continue;
@@ -141,7 +141,7 @@ class VanillaEarlyReturnsCensusTest {
 		int methods = 0, blocks = 0;
 		List<String> failures = new ArrayList<>();
 		try (ZipFile mergedJar = new ZipFile(TestFixtures.twinnedBase().toFile())) {
-			ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(name -> bytes(mergedJar, name));
+			ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 			TransformContext context = new TransformContext(EnvType.CLIENT, false, "intermediary");
 			for (Map.Entry<String, Map<String, Map<String, List<String>>>> owner : table.entrySet()) {
 				byte[] raw = bytes(mergedJar, owner.getKey().replace('/', '.'));

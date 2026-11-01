@@ -37,7 +37,7 @@ import org.junit.jupiter.api.Test;
  * thing spelled by hand. src/test/raw-assumption-allowlist.txt lists the files that still do it, and it only
  * shrinks: a file that stops offending must come off it, so a migrated file cannot quietly start again.
  */
-class NoRawAssumptionsTest {
+public class NoRawAssumptionsTest {
 	private static final Path PROJECT = Path.of(System.getProperty("user.dir"));
 	private static final List<String> ROOTS = List.of("src/test/java", "src/transferTest/java");
 	private static final String HELPER = "src/test/java/net/forbric/kernel/TestFixtures.java";
@@ -170,7 +170,7 @@ class NoRawAssumptionsTest {
 	}
 
 	/** {@code java} with comments, strings, text blocks and chars blanked; line breaks are kept. */
-	static String codeOnly(String java) {
+	public static String codeOnly(String java) {
 		StringBuilder out = new StringBuilder(java.length());
 		int n = java.length();
 		int i = 0;

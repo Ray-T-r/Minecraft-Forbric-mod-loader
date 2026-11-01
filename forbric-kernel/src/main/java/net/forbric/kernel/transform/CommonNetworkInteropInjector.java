@@ -268,8 +268,9 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 					bumpStack(m, 2);
 					changed = true;
 					ForbricLog.info("[Forbric/Net] %s.%s now leaves out a channel declaration (minecraft:register) that names only "
-							+ "channels this side already declared on the connection in this phase — three ecosystems each declare, "
-							+ "and a peer's Fabric listeners heard the same channels again for every repeat", className, CONNECTION_SEND);
+							+ "channels this side already declared on the connection in this phase — Fabric and NeoForge each declare, NeoForge's "
+							+ "client declares again for every declaration it hears, and a peer's Fabric listeners heard the same channels "
+							+ "again for every repeat", className, CONNECTION_SEND);
 				}
 			}
 			if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
@@ -504,10 +505,10 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	 * {@code Connection.sendPacket(Packet, ChannelFutureListener, boolean)}, the method every packet the connection puts on
 	 * the wire reaches, in the order it goes out.
 	 *
-	 * <p>Fabric, NeoForge and MinecraftForge each declare the channels they listen on ({@code minecraft:register}) at
-	 * their own point of the handshake, and NeoForge's client answers every declaration a server makes before its own
-	 * network is set up with its full list again; the peer's Fabric addon fired its channel-registration event for each,
-	 * the same channels three times over. A declaration naming only channels this side has already declared on the
+	 * <p>Fabric and NeoForge each declare the channels they listen on ({@code minecraft:register}) at their own point of
+	 * the handshake (on the merged base MinecraftForge did too), and NeoForge's client answers every declaration a server
+	 * makes before its own network is set up with its full list again; the peer's Fabric addon fired its
+	 * channel-registration event for each, the same channels over again. A declaration naming only channels this side has already declared on the
 	 * connection in the current phase tells no receiver anything (each keeps a set) and is left out; the first
 	 * declaration, any carrying a new channel, and every {@code unregister} still go out, in their order.
 	 */

@@ -80,7 +80,7 @@ class TransformerAnchorCensusTest {
 	 */
 	@Test
 	void theCompatTransformerCountsItsRepairsInsteadOfRestatingThem() {
-		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(name -> null);
+		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 		String why = compat.anchors().scanNote();
 		assertTrue(why != null && !why.isBlank(), "a scanned anchor set must say why");
 		assertTrue(why.startsWith(ForbricMergedBaseCompatTransformer.REPAIRS.size() + " "),
@@ -95,7 +95,7 @@ class TransformerAnchorCensusTest {
 	 */
 	@Test
 	void theTwoMultiRepairTransformersDeclareOneClaimPerRepair() throws Exception {
-		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer(name -> null);
+		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 		List<ClassTransformer.Claim> claims = compat.claims();
 		assertEquals(ForbricMergedBaseCompatTransformer.REPAIRS.size(), claims.size());
 		List<String> ids = new ArrayList<>();

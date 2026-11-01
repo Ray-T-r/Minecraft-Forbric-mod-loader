@@ -256,7 +256,7 @@ class GenuineNativeReferencesStagedTest {
 	private byte[] compatFluid(Path genuine) throws IOException {
 		if (compatFluidBytes == null) {
 			byte[] fluid = entry(genuine, FLUID_RENDERER + ".class");
-			compatFluidBytes = new ForbricMergedBaseCompatTransformer(resources(genuine))
+			compatFluidBytes = new ForbricMergedBaseCompatTransformer()
 					.transform(FLUID_RENDERER.replace('/', '.'), fluid, null);
 		}
 		return compatFluidBytes;

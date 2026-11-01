@@ -368,9 +368,12 @@ public final class KernelBoot {
 		if (gameJar != null) abiUniverse.add(gameJar);
 		AbiLinkAudit.scan(shadowCandidates, abiUniverse);
 
-		ForbricLog.info("[Forbric/Boot] sovereign kernel — %s %s, %d owned jar(s), %d Forge-family mod(s), "
-				+ "%d Fabric jar(s), %d MC library jar(s)", side.name().toLowerCase(), gameVersion, owned.size(),
-				modJars.size(), fabricJars.size(), libCount);
+		// The jars of mods/ that are Forge-family mods, and apart from them every jar the boot took out of another jar
+		// (of either ecosystem: fabric-api's modules are among them), which modJars also holds.
+		ForbricLog.info("[Forbric/Boot] sovereign kernel — %s %s, %d owned jar(s), %d Forge-family mod(s) in mods/, "
+				+ "%d nested jar(s), %d Fabric jar(s), %d MC library jar(s)", side.name().toLowerCase(), gameVersion,
+				owned.size(), topLevelForgeFamilyJars.size(), modJars.size() - topLevelForgeFamilyJars.size(),
+				fabricJars.size(), libCount);
 
 		ForbricClassLoader loader = new ForbricClassLoader(owned.toArray(new URL[0]),
 				KernelBoot.class.getClassLoader());
@@ -539,15 +542,7 @@ public final class KernelBoot {
 				}
 			}));
 		}
-		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer(path -> {
-			try (java.io.InputStream in = loader.getGameResourceAsStream(path)) {
-				return in == null ? null : in.readAllBytes();
-			} catch (java.io.IOException unreadable) {
-				Caught.warn(unreadable, "[Forbric/Boot] could not read game class %s for the merged-base compatibility;"
-						+ " it reads as absent", path);
-				return null;
-			}
-		}));
+		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer());
 		// Both sides: a game local whose variable-table range starts after reads of it starts at its declaring store again,
 		// so a mod's @Local / @ModifyVariable finds it where vanilla's compiler had it in scope. On NeoForge's base the one
 		// such local is left by the kernel's own NativeTagTrackerSourceInjector rewrite of EntityFluidInteraction. Just

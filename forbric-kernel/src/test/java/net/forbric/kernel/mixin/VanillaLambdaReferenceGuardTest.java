@@ -1,5 +1,5 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
-package net.forbric.kernel;
+package net.forbric.kernel.mixin;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -32,7 +32,7 @@ class VanillaLambdaReferenceGuardTest {
 	private static final Path PROJECT = Path.of(System.getProperty("user.dir"));
 	private static final List<String> ROOTS = List.of("src/test/java", "src/transferTest/java");
 	/** The extension itself restores; it is what the others carry. */
-	private static final String EXTENSION = "src/test/java/net/forbric/kernel/VanillaLambdaReference.java";
+	private static final String EXTENSION = "src/test/java/net/forbric/kernel/mixin/VanillaLambdaReference.java";
 
 	private static final Map<String, Pattern> FILLS = Map.of(
 			"a declaration seam", Pattern.compile("\\bVanillaLambdaReference\\s*\\.\\s*(?:declare|forget|restore)\\s*\\("),
@@ -49,7 +49,7 @@ class VanillaLambdaReferenceGuardTest {
 		});
 		assertTrue(unrestored.isEmpty(), "these test classes change the process-wide vanilla lambda reference and leave it "
 				+ "changed for the next class in the worker; annotate each with "
-				+ "@ExtendWith(net.forbric.kernel.VanillaLambdaReference.class):\n" + String.join("\n", unrestored));
+				+ "@ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class):\n" + String.join("\n", unrestored));
 	}
 
 	@Test
@@ -65,7 +65,7 @@ class VanillaLambdaReferenceGuardTest {
 	void everySpellingIsCaughtAndNothingElse() {
 		for (String fills : List.of(
 				"VanillaLambdaReference.declare(TARGET, NAME, DESC);",
-				"net.forbric.kernel.VanillaLambdaReference.forget();",
+				"net.forbric.kernel.mixin.VanillaLambdaReference.forget();",
 				"VanillaLambdaReference .restore (saved);",
 				"NativeGameReferences.referenceForTest((e, owner) -> null);")) {
 			assertTrue(!fills(fills).isEmpty(), "not caught: " + fills);
@@ -80,12 +80,12 @@ class VanillaLambdaReferenceGuardTest {
 		}
 		for (String restores : List.of(
 				"@ExtendWith(VanillaLambdaReference.class) class T {}",
-				"@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)",
+				"@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)",
 				"@ExtendWith({ Other.class, VanillaLambdaReference.class })")) {
-			assertTrue(RESTORES.matcher(NoRawAssumptionsTest.codeOnly(restores)).find(), "not seen as restoring: " + restores);
+			assertTrue(RESTORES.matcher(net.forbric.kernel.NoRawAssumptionsTest.codeOnly(restores)).find(), "not seen as restoring: " + restores);
 		}
 		for (String not : List.of("// @ExtendWith(VanillaLambdaReference.class)", "@ExtendWith(Other.class) VanillaLambdaReference x;")) {
-			assertTrue(!RESTORES.matcher(NoRawAssumptionsTest.codeOnly(not)).find(), "seen as restoring: " + not);
+			assertTrue(!RESTORES.matcher(net.forbric.kernel.NoRawAssumptionsTest.codeOnly(not)).find(), "seen as restoring: " + not);
 		}
 	}
 
@@ -99,7 +99,7 @@ class VanillaLambdaReferenceGuardTest {
 		for (Path source : sources()) {
 			String file = PROJECT.relativize(source).toString().replace('\\', '/');
 			if (file.equals(EXTENSION)) continue;
-			String code = NoRawAssumptionsTest.codeOnly(Files.readString(source, StandardCharsets.UTF_8));
+			String code = net.forbric.kernel.NoRawAssumptionsTest.codeOnly(Files.readString(source, StandardCharsets.UTF_8));
 			if (!TEST.matcher(code).find()) continue;
 			String what = fillsCode(code);
 			if (!what.isEmpty()) found.put(file, new Where(what, RESTORES.matcher(code).find()));
@@ -110,7 +110,7 @@ class VanillaLambdaReferenceGuardTest {
 
 	/** "line N: what" for the first change to the reference in {@code java}, or "" for none. */
 	static String fills(String java) {
-		return fillsCode(NoRawAssumptionsTest.codeOnly(java));
+		return fillsCode(net.forbric.kernel.NoRawAssumptionsTest.codeOnly(java));
 	}
 
 	private static String fillsCode(String code) {

@@ -64,7 +64,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 @ResourceLock("system-properties")
 @ResourceLock("native-game-references")
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)
 class MixinFitLivenessCensusStagedTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);

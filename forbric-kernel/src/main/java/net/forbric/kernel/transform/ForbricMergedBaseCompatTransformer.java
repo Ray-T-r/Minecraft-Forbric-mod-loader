@@ -51,16 +51,11 @@ import net.forbric.kernel.util.ForbricLog;
  * Repairs class-local bytecode invariants that can drift when two patched Minecraft bases are merged.
  */
 public final class ForbricMergedBaseCompatTransformer implements ClassTransformer {
-	public ForbricMergedBaseCompatTransformer() {
-		this(null);
-	}
-
 	/**
-	 * With the game's raw class lookup, as KernelBoot builds it. No repair reads another class any more: the three that
-	 * proved a merge delegate or a lost switch map from the superclass chain went with the merged base. The resolver is
-	 * still taken so every caller builds the transformer the way the boot chain does.
+	 * No repair reads another class: the three that proved a merge delegate or a lost switch map from the superclass chain
+	 * went with the merged base, and with them the game-class lookup this used to take.
 	 */
-	public ForbricMergedBaseCompatTransformer(java.util.function.Function<String, byte[]> classBytes) {
+	public ForbricMergedBaseCompatTransformer() {
 	}
 
 	@Override

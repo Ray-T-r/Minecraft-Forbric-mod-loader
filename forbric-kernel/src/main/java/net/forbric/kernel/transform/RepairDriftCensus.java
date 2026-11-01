@@ -78,7 +78,7 @@ public final class RepairDriftCensus {
 		}
 		TransformChain chain = new TransformChain();
 		ForbricMergedBaseCompatTransformer compat =
-				new ForbricMergedBaseCompatTransformer(name -> bytesOf(jars, name));
+				new ForbricMergedBaseCompatTransformer();
 		chain.register(TransformPhase.COREMOD, compat);
 
 		Map<String, byte[]> targets = new LinkedHashMap<>();

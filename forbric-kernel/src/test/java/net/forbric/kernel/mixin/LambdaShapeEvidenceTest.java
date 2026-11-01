@@ -16,7 +16,7 @@ import org.objectweb.asm.tree.MethodNode;
  * merely renumbered (that name is a different lambda now) or one whose captures were only reordered (the permutation
  * census's case, proven by local names).
  */
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)
 class LambdaShapeEvidenceTest {
 	private static final String SKY = "lambda$addSkyPass$0";
 	private static final String VANILLA_SKY = "(Lcom/mojang/blaze3d/buffers/GpuBufferSlice;Lnet/minecraft/client/renderer/state/level/SkyRenderState;)V";
@@ -77,7 +77,7 @@ class LambdaShapeEvidenceTest {
 		ClassNode target = node(method(SKY, NEO_SKY));
 		target.name = owner;
 		assertEquals(List.of(), LambdaShapeEvidence.vanished(target, SKY), "unbound references (no game): no evidence");
-		net.forbric.kernel.VanillaLambdaReference.declare(owner, SKY, VANILLA_SKY);
+		net.forbric.kernel.mixin.VanillaLambdaReference.declare(owner, SKY, VANILLA_SKY);
 		assertEquals(List.of(new LambdaShapeEvidence.Shape(VANILLA_SKY)), LambdaShapeEvidence.vanished(target, SKY));
 		String previous = System.getProperty(LambdaShapeEvidence.PROPERTY);
 		System.setProperty(LambdaShapeEvidence.PROPERTY, "off");

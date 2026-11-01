@@ -47,7 +47,7 @@ import org.objectweb.asm.tree.MethodNode;
  * test fails on a mapping that compiles and hands over the wrong object — which is the only failure mode of this
  * class that matters.
  */
-@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.VanillaLambdaReference.class)
+@org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)
 public class MixinHandlerShimTest {
 	private static final String TARGET = "net/example/Renderer";
 	private static final String MIXIN = "net/example/RendererMixin";
@@ -123,7 +123,7 @@ public class MixinHandlerShimTest {
 	 */
 	@Test
 	void aHandlerThatFitsTheSurvivorIsLeftAloneEvenWhenItsShapeWasAlsoDropped() {
-		net.forbric.kernel.VanillaLambdaReference.declare(
+		net.forbric.kernel.mixin.VanillaLambdaReference.declare(
 				TARGET, "lambda$sameShape$0", "(Ljava/lang/String;ILjava/lang/Object;)V");
 		ClassNode mixin = mixin("(Ljava/lang/String;ILjava/lang/Object;" + CI + ")V", true);
 		setSelector(mixin, "lambda$sameShape$0");
@@ -149,7 +149,7 @@ public class MixinHandlerShimTest {
 	@Test
 	void anAmbiguousParameterTypeIsRefused() {
 		String name = "lambda$ambiguous$0";
-		net.forbric.kernel.VanillaLambdaReference.declare(TARGET, name, "(Ljava/lang/String;Ljava/lang/Long;)V");
+		net.forbric.kernel.mixin.VanillaLambdaReference.declare(TARGET, name, "(Ljava/lang/String;Ljava/lang/Long;)V");
 
 		ClassNode once = new ClassNode();
 		once.name = TARGET;
@@ -369,7 +369,7 @@ public class MixinHandlerShimTest {
 
 	/** NeoForge's shape, with vanilla's in the FABRIC reference. */
 	private static ClassNode instanceTarget() {
-		net.forbric.kernel.VanillaLambdaReference.declare(
+		net.forbric.kernel.mixin.VanillaLambdaReference.declare(
 				TARGET, SELECTOR, "(Ljava/lang/Object;Ljava/lang/String;)V");
 		ClassNode target = new ClassNode();
 		target.name = TARGET;
