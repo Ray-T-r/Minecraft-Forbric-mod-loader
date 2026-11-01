@@ -270,6 +270,9 @@ public final class KernelRuntimeClasses {
 		// Whether vanilla's shouldSpreadLiquid reaches its lava-meets-water reaction for a cell; asked by the neighbour-change
 		// wrap MixinFluidReactionAdapter writes into a guest mixin of LiquidBlock.
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidReactions", new Entry(Origin.COMPILED, List.of()));
+		// The vanilla-shaped player and Operation a Fabric damage wrap is handed at NeoForge's LivingEntity overload of
+		// ItemStack.hurtAndBreak; called from the outer handler FabricItemDamageMixinAdapter writes into the guest mixin.
+		CLASSES.put("net.forbric.kernel.runtime.KernelItemDamage", new Entry(Origin.COMPILED, List.of()));
 		// Asked by the merged Fluid.getFluidType() (ForeignFluidTypeInjector) before NeoForge's throwing lookup, and by
 		// EntityFluidInteraction.getFluidTypeByTag before its throw (FabricFluidBehaviorInjector).
 		CLASSES.put("net.forbric.kernel.runtime.KernelFluidTypes", new Entry(Origin.COMPILED, List.of()));

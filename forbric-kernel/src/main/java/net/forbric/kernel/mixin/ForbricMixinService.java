@@ -484,6 +484,9 @@ public final class ForbricMixinService
 		// …and fabric-api's configuration-only payload handler on the common listener lets a play listener's payload go on to
 		// NeoForge's dispatcher in that method, which this base's play listener hands its leftovers to.
 		FabricCommonPayloadMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
+		// …and fabric-item-api's wrap of vanilla's hurtAndBreak(int, ServerLevel, ServerPlayer, Consumer) moves onto the
+		// LivingEntity overload the base's hurtAndBreak(int, LivingEntity, EquipmentSlot) calls instead.
+		FabricItemDamageMixinAdapter.adapt(node, this::mergedBaseNodeWithCode);
 		// …and a private method that would hide a default of the same name an interface of its target declares on this base
 		// (fabric-entity-events' self() against NeoForge's ILivingEntityExtension.self()) takes a name of its own.
 		MixinPrivateDefaultCollision.adapt(node, this::mergedBaseNode, this::mergedBaseNodeWithCode);
