@@ -1,15 +1,15 @@
-Latest nightly: [results/2026-11-01/summary.md](results/2026-11-01/summary.md)
+Latest nightly: [results/2026-11-02/summary.md](results/2026-11-02/summary.md)
 
-# Forbric nightly 2026-11-01: FAIL
+# Forbric nightly 2026-11-02: FAIL
 
 | | |
 | --- | --- |
 | commit | [`f7f4ff92f67f`](https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/commit/f7f4ff92f67fe8de1a5957efda5cceb4c55d5057) Say the title screen's Forbric line stays, and what its count counts |
 | tested | `origin/main` on the developer's Mac (commit status `nightly/dev-mac`) |
-| started | 2026-11-01 02:30 +0800 |
-| soak (`gate-m34-soak.sh`) | run: a `--release` run, nothing skipped |
+| started | 2026-11-02 02:30 +0800 |
+| soak (`gate-m34-soak.sh`) | skipped: it runs on Sundays |
 | integration | FAILED (exit 1) in 9 min |
-| gates | FAILED (exit 1) in 55 min: 52 GREEN, 6 RED |
+| gates | FAILED (exit 1) in 51 min: 52 GREEN, 5 RED, 1 SKIP |
 
 ## Integration: `python3 tools/dev.py integration`
 
@@ -73,13 +73,13 @@ Did not execute (no results): `transferTest`
 - `test` net.forbric.kernel.mixin.MixinTwinRebindTest.releasedLiquidBounceMovesItsFaceTestAndNothingElse() (org.opentest4j.AssertionFailedError)
 - `test` net.forbric.kernel.mixin.ReplacedCallRedirectsTest.releasedViaFabricPlusMovesItsThreeRedirects() (org.opentest4j.AssertionFailedError)
 
-## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --release`
+## Gates: `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh`
 
 - `gate-m0.sh` RED (exit=1)
 - `gate-m12-multiplayer.sh` RED (exit=1)
 - `gate-m21-forgesetup.sh` RED (exit=1)
 - `gate-m22-exitswap.sh` RED (exit=1)
-- `gate-m34-soak.sh` RED (exit=1)
+- `gate-m34-soak.sh` SKIP (explicit --skip)
 - `gate-m54-carry.sh` RED (exit=3)
 
 <details><summary>All 58 RESULT lines</summary>
@@ -121,7 +121,7 @@ RESULT gate-m30-attribution.sh GREEN (exit=0)
 RESULT gate-m31-vanilla-parity.sh GREEN (exit=0)
 RESULT gate-m32-savedrop.sh GREEN (exit=0)
 RESULT gate-m33-transfer.sh GREEN (exit=0)
-RESULT gate-m34-soak.sh RED (exit=1)
+RESULT gate-m34-soak.sh SKIP (explicit --skip)
 RESULT gate-m35-behavior.sh GREEN (exit=0)
 RESULT gate-m36-mixin-outcome.sh GREEN (exit=0)
 RESULT gate-m37-entity-callbacks.sh GREEN (exit=0)
