@@ -90,9 +90,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "tolerateEmptyCreativeTabStacks", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps");
-
-	private static final String NEO_EVENT_HOOKS_BINARY = "net.neoforged.neoforge.event.EventHooks";
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -151,8 +149,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("nameTheReloadListenersNeoForgeRefusesToName", ADD_CLIENT_RELOAD_LISTENERS,
 				"a Fabric mod's client reload listener kills the client — NeoForge refuses to name it"));
 		out.add(scanned("dropInterfaceDefaultShadowingOverrides", "native-absent delegates with one proved current interface default"));
-		out.add(fixed("tolerateEmptyCreativeTabStacks", NEO_EVENT_HOOKS_BINARY.replace('.', '/'),
-				"one empty stack from any mod aborts the whole creative menu"));
 		out.add(fixed("bridgeOrphanedPipRenderers", GUI_RENDERER,
 				"a picture-in-picture renderer registered the vanilla way never draws"));
 		out.add(fixed("dropTheWindowTitlesLoaderBrand", "net/minecraft/client/Minecraft",
@@ -237,7 +233,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
 			changed |= claim(reporter, "dropInterfaceDefaultShadowingOverrides", dropInterfaceDefaultShadowingOverrides(node));
-			changed |= claim(reporter, "tolerateEmptyCreativeTabStacks", tolerateEmptyCreativeTabStacks(node));
 			changed |= claim(reporter, "bridgeOrphanedPipRenderers", bridgeOrphanedPipRenderers(node));
 			changed |= claim(reporter, "dropTheWindowTitlesLoaderBrand", dropTheWindowTitlesLoaderBrand(node));
 			changed |= claim(reporter, "keepTheSaveOffTheTeardownsFailurePath", keepTheSaveOffTheTeardownsFailurePath(node));
@@ -1434,73 +1429,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return NativeMergeShapeRepair.production(node, classBytes).dropDefaultStubs(node);
 	}
 
-	private static final String STACK_COUNT_MESSAGE = "The stack count must be 1";
 
-	/**
-	 * Lets a creative tab SKIP an empty stack instead of aborting the whole creative menu.
-	 *
-	 * <p>{@code CreativeModeTab.Output.accept(ItemLike)} turns its argument into {@code new ItemStack(itemLike)},
-	 * which collapses to {@code ItemStack.EMPTY} (count 0) whenever the block has no item form. NeoForge's output
-	 * wrapper treats that as a programming error and throws {@code IllegalArgumentException: The stack count must
-	 * be 1}; MinecraftForge's path just drops the entry.
-	 *
-	 * <p>On the merged base NeoForge won {@code CreativeModeTab.buildContents}, so a MINECRAFTFORGE mod's tab is
-	 * validated by NEOFORGE's stricter contract — a cross-ecosystem split like the Forge/NeoForge {@code FluidType}
-	 * one. Macaw's Bridges feeds its blocks in with {@code accept(ItemLike)}, one of them has no item, and the throw
-	 * propagated out of {@code CreativeModeTabs.buildAllTabContents} into
-	 * {@code CreativeModeInventoryScreen.<init>} — so opening the creative menu at all crashed the client, and NO
-	 * tab (vanilla or modded) was reachable.
-	 *
-	 * <p>Rewriting the throw to a {@code return} makes the wrapper drop that one entry and keep building, which is
-	 * the MinecraftForge behaviour the mod was written against. Only the throw is replaced; the count==1 fast path
-	 * is untouched, so well-formed stacks still take the normal route.
-	 */
-	private static boolean tolerateEmptyCreativeTabStacks(ClassNode node) {
-		if (!"net/neoforged/neoforge/event/EventHooks".equals(node.name) || node.methods == null) return false;
-
-		boolean changed = false;
-		for (MethodNode method : node.methods) {
-			if (!method.name.startsWith("lambda$onCreativeModeTabBuildContents$")) continue;
-			changed |= replaceStackCountThrowWithReturn(method);
-		}
-		if (!changed) return false;
-
-		ForbricLog.warn("[Forbric/MergedBaseCompat] creative-tab output now SKIPS empty stacks instead of throwing "
-				+ "— NeoForge won CreativeModeTab.buildContents on the merged base and its stricter contract was "
-				+ "aborting the whole creative menu for MinecraftForge mods (Macaw's Bridges)");
-		return true;
-	}
-
-	/** Replaces {@code throw new IllegalArgumentException("The stack count must be 1")} with a plain {@code return}. */
-	private static boolean replaceStackCountThrowWithReturn(MethodNode method) {
-		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (!(insn instanceof LdcInsnNode ldc) || !STACK_COUNT_MESSAGE.equals(ldc.cst)) continue;
-
-			AbstractInsnNode start = insn;
-			while (start != null && !(start.getOpcode() == Opcodes.NEW && start instanceof TypeInsnNode type
-					&& "java/lang/IllegalArgumentException".equals(type.desc))) {
-				start = start.getPrevious();
-			}
-			AbstractInsnNode end = insn;
-			while (end != null && end.getOpcode() != Opcodes.ATHROW) {
-				end = end.getNext();
-			}
-			if (start == null || end == null) continue;
-
-			// The whole new/dup/ldc/<init>/athrow run pushes and consumes only its own operands, so swapping it for a
-			// RETURN leaves the stack exactly as the following frames already describe it.
-			method.instructions.insertBefore(start, new MethodInsnNode(Opcodes.INVOKESTATIC,
-					"net/forbric/kernel/boot/KernelLifecycle", "onCreativeTabEntrySkipped", "()V", false));
-			method.instructions.insertBefore(start, new InsnNode(Opcodes.RETURN));
-			for (AbstractInsnNode cur = start; cur != null;) {
-				AbstractInsnNode next = cur == end ? null : cur.getNext();
-				method.instructions.remove(cur);
-				cur = next;
-			}
-			return true;
-		}
-		return false;
-	}
 
 	private static boolean hasMethod(ClassNode node, String name, String desc) {
 		for (MethodNode method : node.methods) {

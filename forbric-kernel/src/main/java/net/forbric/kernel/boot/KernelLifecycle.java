@@ -2084,22 +2084,6 @@ public final class KernelLifecycle {
 	 * setup) requires; running them earlier, in the pre-{@code Minecraft} registration window, NPE'd on a null
 	 * instance (Jade's keybinds). Best-effort — a failing entrypoint must not abort client startup.
 	 */
-	private static final java.util.concurrent.atomic.AtomicInteger CREATIVE_SKIPS =
-			new java.util.concurrent.atomic.AtomicInteger();
-
-	/**
-	 * Called from the rewritten NeoForge creative-tab output when an entry collapses to an empty stack.
-	 *
-	 * <p>Diagnostic, not policy: a handful of skips is a mod feeding in a block with no item form, but skipping
-	 * EVERY entry means the tab builds empty and Minecraft then hides it — which looks identical to "the tab was
-	 * never registered". The count is what distinguishes those two.
-	 */
-	public static void onCreativeTabEntrySkipped() {
-		int n = CREATIVE_SKIPS.incrementAndGet();
-		if (n <= 3 || n % 50 == 0) {
-			ForbricLog.warn("[Forbric/Creative] skipped %d empty creative-tab stack(s) so far", n);
-		}
-	}
 
 	/**
 	 * Runs the Fabric client entrypoints with the registries REOPENED, because registering content from
