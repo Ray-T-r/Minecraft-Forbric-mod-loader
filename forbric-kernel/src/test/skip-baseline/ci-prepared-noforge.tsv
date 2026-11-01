@@ -219,7 +219,7 @@ test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	deepslateUsesTheSelectedWat
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	fillHooksMoveTogetherToTheActualNotificationBody()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	handSwapRunsBeforeTheNativeEventReadsTheHands()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedHostsRefuseTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	reshapedNativeFluidLocalRefusesTheWholeRetarget()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	theNeighbourChangeWrapDoesNotReadTheRegistrysBody()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarpetMixinAdapterTest	vanillaAndDisabledRepairLeaveAllReleasedHandlersUntouched()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	aConstantsModifierMovesOntoTheCallWhoseDefaultPushesIt()	[fixture:forge-carrier] the defaults a carrier chain walks to, through the base's hierarchy (the staged base links MinecraftForge's classes): $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtim
 test	net.forbric.kernel.mixin.CarrierDefaultChainsStagedTest	theBedRedirectBoundToTwoMethodsMovesOntoTheStatesSetterForBoth()	[fixture:forge-carrier] the defaults a carrier chain walks to, through the base's hierarchy (the staged base links MinecraftForge's classes): $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtim
@@ -638,10 +638,10 @@ test	net.forbric.kernel.mixin.MixinFitLivenessCensusStagedTest	theAnchorCensusSe
 test	net.forbric.kernel.mixin.MixinFitLivenessCensusStagedTest	theNewRawRowsNameActualNativePredicateAndAbiChangesWithoutInventingEquivalence()	[fixture:forge-carrier] the census reads MinecraftForge's carrier among its artifacts: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar
 test	net.forbric.kernel.mixin.MixinFitLivenessCensusStagedTest	vanillaAnchorsTheMergedBaseLostArePinned()	[fixture:forge-carrier] $ROOT/forbric-kernel/build/staged-noforge/run/merged-base/forge-runtime-interop.jar required
 test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleAtAnotherCallIsNotTheReaction()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatNeverCallsFizzMovesWithoutACopy()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatReadsTheBlockStaysAsCompiled()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aTargetNamedByStringMovesWholeToTheRegistries()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
-test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	twoFizzCallsBothRunOnTheRelocatedCopy()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatNeverCallsFizzIsServedToo()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatReadsTheBlockIsServedInTheBlock()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aTargetNamedByStringIsServedOnANeighbourChange()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	twoFizzCallsBothRunInTheCopy()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.MixinLocalsCaptureTest	actualCreativeCoreConfigurationRedirectIsSoftened()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinLocalsCaptureTest	architecturysServerPlayerGameModeCaptureIsSoftened()	[fixture:third-party] popular inputs absent
 test	net.forbric.kernel.mixin.MixinNativePredicateSeamSpellingTest	aSelectorBindingAnotherMethodIsLeftAlone()	[fixture:forge-carrier] hash-pinned native predicate base, runtimes and the actual Fabric API: $ROOT/forbric-kernel/build/staged-noforge/run/forge-runtime/forge-runtime.jar
@@ -699,7 +699,8 @@ test	net.forbric.kernel.mixin.MixinSharedPredicateSeamTest	onlyABoundPairRegiste
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapWhoseCallIsGoneMovesToTheCarrierCall()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	onlyAFabricModsReviewedShapeIsRelayed()	[fixture:third-party] sweep pack absent
-test	net.forbric.kernel.mixin.MixinShearsRelayTest	theMobWrapsAreLeftAsCompiled()	[fixture:third-party] sweep pack absent
+test	net.forbric.kernel.mixin.MixinShearsRelayTest	theMooshroomWrapIsLeftAsCompiled()	[fixture:third-party] sweep pack absent
+test	net.forbric.kernel.mixin.MixinShearsRelayTest	theSheepAndSnowGolemWrapsAnswerNeoForgesShearingEntry()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aShareGroupSpelledThreeWaysMovesWhole()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindSpellingTest	aSharerOnAnotherMethodOrUnreadableDecidesTheGroupByWhatItBinds()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	aByTypeLocalDecidedOnlyBesideTheCarriersAddedArgumentIsPinned()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
