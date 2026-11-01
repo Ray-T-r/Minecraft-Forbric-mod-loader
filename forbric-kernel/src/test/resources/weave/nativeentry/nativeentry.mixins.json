@@ -1,1 +1,0 @@
-{"required": true, "package": "com.otter.dam.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["SluiceMixin"], "injectors": {"defaultRequire": 1}}

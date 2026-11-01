@@ -119,7 +119,6 @@ public final class ForbricMixinService
 		int changed=NativeCallInlining.adapt(source,code,NativeGameReferences::reference,loader(),ForbricMixinService::registeredMixins,ForbricMixinService::registeredMixinApplies);
 		changed+=NativeLocalMaterialization.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
-		changed+=NativeEntryRelay.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=UncalledDecisionEntries.adapt(source,owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);},NativeGameReferences::reference);
 		changed+=NativeDecisionIsland.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=ReplacedDecisionValues.adapt(source,code,NativeGameReferences::reference);
@@ -349,9 +348,6 @@ public final class ForbricMixinService
 		// …and a @Local that names one local at the native point but several at the merged one reads the local its own loader
 		// hands it.
 		NativeLocalPins.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference);
-		// …and a native decision method an injector enters, whose calls the carrier replaced with its own decision, is asked
-		// again where it was, ahead of the carrier's.
-		NativeEntryRelay.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
 		// …and a HEAD injector on a static decision the merged game no longer calls wraps the carrier's own decision at every place
 		// the native game asked it, handed the native arguments, its cancel the answer there.
 		UncalledDecisionEntries.adapt(node, this::mergedBaseGameCode, NativeGameReferences::reference);

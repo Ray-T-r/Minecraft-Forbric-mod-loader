@@ -260,6 +260,7 @@ forbric.modifyRegistriesEvent
 forbric.multiLoaderEntrypoints
 forbric.multiLoaderPreference
 forbric.nativeConstructorFacades
+forbric.nativeEntryRelay
 forbric.nativePredicateSeams
 forbric.nativeTagSourceFacades
 forbric.nativeTagTrackerSource

@@ -62,15 +62,18 @@ public final class ForbricSwitches {
 			Map.entry("forbric.dragonParts", "the multipart entity hierarchy is now proved by the merged base when it is built, "
 					+ "so there is no runtime rewrite left to switch off"),
 			Map.entry("forbric.fluidInteractionCallbacks", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
-					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)"),
+					+ "registry calls; it runs on NeoForge's neighbour change from a wrap of the registry question, as vanilla asks it there "
+					+ "(-Dforbric.fluidReactionNeighbourChange.head)"),
 			Map.entry("forbric.createFluidMixins", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
-					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)"),
+					+ "registry calls; it runs on NeoForge's neighbour change from a wrap of the registry question, as vanilla asks it there "
+					+ "(-Dforbric.fluidReactionNeighbourChange.head)"),
 			Map.entry("forbric.hudBridge", "fabric-api's HUD elements are no longer redrawn from NeoForge's layers: fabric-rendering-v1's "
 					+ "own HudMixin dispatches every root, each wrap landing in the body the kernel gives the method reference"),
 			Map.entry("forbric.fabricPlayChannels", "the kernel no longer records a client's Fabric PLAY channels itself: Fabric's own "
 					+ "c:register receiver runs on the payload as Fabric reads it and records them (-Dforbric.commonNetworkInterop)"),
 			Map.entry("forbric.fabricFluidFlow", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
-					+ "registry calls; the decision method is asked again where vanilla asks it (-Dforbric.nativeEntryRelay)"),
+					+ "registry calls; it runs on NeoForge's neighbour change from a wrap of the registry question, as vanilla asks it there "
+					+ "(-Dforbric.fluidReactionNeighbourChange.head)"),
 			Map.entry("forbric.breathingCallbacks", "a mod's wrap of vanilla's breathing checks is no longer served by a kernel callback scope: "
 					+ "the native checks are asked again ahead of the carrier's breathing hook (-Dforbric.nativeDecisionIsland)"),
 			Map.entry("forbric.createBreathingMixin", "a mod's wrap of vanilla's breathing checks is no longer served by a kernel callback scope: "
@@ -212,6 +215,9 @@ public final class ForbricSwitches {
 					+ "no setting gating it, so there is no allocation left to bound"),
 			Map.entry("forbric.lootPoolFields", "NeoForge's own LootPool has one name field and one codec that reads only its own fields, "
 					+ "so there is no second family's field for a constructor to fill"),
+			Map.entry("forbric.nativeEntryRelay", "NeoForge's own base still asks a native decision method where vanilla does (LiquidBlock.onPlace "
+					+ "asks shouldSpreadLiquid), so nothing is asked again; a HEAD handler on shouldSpreadLiquid runs on a neighbour change "
+					+ "from MixinFluidReactionAdapter's wrap instead (-Dforbric.fluidReactionNeighbourChange.head)"),
 			Map.entry("forbric.builderStubRebind", "NeoForge's own base keeps vanilla's bodies where MinecraftForge left a builder stub "
 					+ "(UnbakedCuboidGeometry.bake), so an injector binds the body it was written for and nothing moves"),
 			Map.entry("forbric.mixinMergedTwins", "NeoForge's own base has one class per name, with no $forbricneo twin the "
