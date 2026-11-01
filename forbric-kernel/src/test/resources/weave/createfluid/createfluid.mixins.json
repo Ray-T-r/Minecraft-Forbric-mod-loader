@@ -1,1 +1,0 @@
-{"required": true, "package": "com.zurrtum.create.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["LiquidBlockMixin"], "injectors": {"defaultRequire": 1}}
