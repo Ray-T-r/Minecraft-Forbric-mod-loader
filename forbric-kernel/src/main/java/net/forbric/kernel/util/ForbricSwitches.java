@@ -216,7 +216,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.pruneDuplicateLambdas", "NeoForge's own base carries no lambda name twice, so there is no orphaned "
 					+ "body to drop before a mod's mixin selects a lambda by name"),
 			Map.entry("forbric.clientPartTracking", "NeoForge's own ClientLevel tracking callback reads NeoForge's getParts() "
-					+ "itself, so a NeoForge mod's multipart entity is tracked with no MinecraftForge body to repair"));
+					+ "itself, so a NeoForge mod's multipart entity is tracked with no MinecraftForge body to repair"),
+			Map.entry("forbric.creativeSearchTrees", "NeoForge's own SessionSearchTrees has no MinecraftForge getSearchTree "
+					+ "reader, so there is no hanging future to route to NeoForge's trees"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);
