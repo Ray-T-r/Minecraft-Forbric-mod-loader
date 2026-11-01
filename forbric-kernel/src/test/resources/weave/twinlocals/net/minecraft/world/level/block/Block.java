@@ -1,18 +1,18 @@
 package net.minecraft.world.level.block;
 
-import fixture.twinlocals.Trace;
 import net.minecraft.core.BlockPos;
-import net.minecraft.world.level.Level;
-import net.minecraft.world.level.LevelAccessor;
+import net.minecraft.core.Direction;
+import net.minecraft.world.level.BlockGetter;
 import net.minecraft.world.level.block.state.BlockState;
 
-/** Stand-in: a block's own reaction to being broken. */
+/** Stand-in: a face is drawn when its neighbour does not hide it. */
 public class Block {
-	public BlockState playerWillDestroy(Level level, BlockPos pos, BlockState state) {
-		return state;
+	public static boolean shouldRenderFace(BlockState state, BlockState neighborState, Direction direction) {
+		return !neighborState.solid();
 	}
 
-	public void destroy(LevelAccessor level, BlockPos pos, BlockState state) {
-		Trace.add("destroy " + state);
+	/** NeoForge's: the block's own position too, for its face-hiding hooks (which hide nothing here). */
+	public static boolean shouldRenderFace(BlockGetter level, BlockPos pos, BlockState state, BlockState neighborState, Direction direction) {
+		return !neighborState.solid();
 	}
 }

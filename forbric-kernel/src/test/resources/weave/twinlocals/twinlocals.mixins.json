@@ -1,1 +1,1 @@
-{"required": true, "package": "org.rockfall.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["GameModeMixin"], "injectors": {"defaultRequire": 1}}
+{"required": true, "package": "org.facet.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["RendererMixin"], "injectors": {"defaultRequire": 1}}

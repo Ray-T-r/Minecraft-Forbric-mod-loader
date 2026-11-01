@@ -1,14 +1,16 @@
 package fixture.twinlocals;
 
+import net.minecraft.client.renderer.block.ModelBlockRenderer;
 import net.minecraft.core.BlockPos;
-import net.minecraft.server.level.ServerPlayerGameMode;
+import net.minecraft.world.level.block.state.BlockState;
 
-/** Breaks a block in survival and one in creative, and prints what each break did. */
+/** Draws a block with face culling on and one with it off, and prints which faces each draw asked about and drew. */
 public class Probe {
 	public String probe() {
 		StringBuilder out = new StringBuilder();
-		record(out, "survival", () -> Trace.add("broke " + new ServerPlayerGameMode().destroyBlock(new BlockPos(1, false))));
-		record(out, "creative", () -> Trace.add("broke " + new ServerPlayerGameMode().destroyBlock(new BlockPos(2, true))));
+		World world = new World();
+		record(out, "culled", () -> new ModelBlockRenderer(true).tesselateFlat(world, new BlockPos(1), world.getBlockState(new BlockPos(1))));
+		record(out, "unculled", () -> new ModelBlockRenderer(false).tesselateFlat(world, new BlockPos(3), world.getBlockState(new BlockPos(3))));
 		return out.toString();
 	}
 
