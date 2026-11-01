@@ -630,11 +630,6 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.RecipeSyncFailSoftInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RecipeSyncFailSoftInjector());
 		}
-		// The merged ServerStatus keeps both families' constructors, and vanilla's (NeoForge's) left MinecraftForge's
-		// Optional forgeData null: a mod rebuilding the status with it (LPLM) stopped the server tick loop on encode.
-		if (net.forbric.kernel.transform.MergedRecordOptionalDefaults.enabled()) {
-			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.MergedRecordOptionalDefaults());
-		}
 		// Every merged caller builds custom-payload codecs with NeoForge's overload, so a mod hooking vanilla's
 		// CustomPacketPayload.codec was never called: Carpet's carpet:hello could not be encoded and a dedicated
 		// server running it disconnected every player at login. Builds go through vanilla's overload again.

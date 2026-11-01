@@ -220,7 +220,10 @@ public final class ForbricSwitches {
 			Map.entry("forbric.creativeSearchTrees", "NeoForge's own SessionSearchTrees has no MinecraftForge getSearchTree "
 					+ "reader, so there is no hanging future to route to NeoForge's trees"),
 			Map.entry("forbric.furnaceTickCalls", "NeoForge's own furnace tick calls its own static canBurn, consumeFuel and "
-					+ "burn, so there is no MinecraftForge instance method called as static to rebind"));
+					+ "burn, so there is no MinecraftForge instance method called as static to rebind"),
+			Map.entry("forbric.mergedRecordDefaults", "NeoForge's own ServerStatus has no MinecraftForge forgeData component, and "
+					+ "every constructor of every record on its base sets each Optional component, so there is nothing to "
+					+ "default"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);
