@@ -178,7 +178,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return new Claim(claimId(repair), AnchorSet.scanned(why));
 	}
 
-
 	/** Reports {@code id} as applied when {@code applied}; the repair's own answer is returned unchanged. */
 	private boolean claim(ClaimReporter reporter, String id, boolean applied) {
 		if (applied) reporter.hit(claimId(id));
@@ -401,8 +400,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-
-
 	private static boolean addBlockAppearanceResolver(ClassNode node) {
 		String desc = "(Lnet/minecraft/world/level/block/state/BlockState;"
 				+ "Lnet/minecraft/world/level/BlockAndLightGetter;Lnet/minecraft/core/BlockPos;"
@@ -525,7 +522,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return changed;
 	}
 
-
 	/**
 	 * Gives {@code ParticleResources}' vanilla-typed {@code providers} field a live view of the one that is written.
 	 *
@@ -550,12 +546,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * {@code registerProviders()} call, not before {@code RETURN}: fabric-api's {@code ParticleResourcesMixin}
 	 * injects at {@code registerProviders}'s RETURN, so a repair placed at the end of the constructor is still too
 	 * late and reproduces the crash while looking correct.
-	 *
-	 * <p>It also repoints {@code getProvider} at the live map. MinecraftForge added {@code providersByName} and
-	 * filled it from its own {@code register}, which the merge dropped — so the merged class initializes it, from
-	 * a synthetic default AFTER {@code registerProviders} has already run, and nothing ever puts anything in it.
-	 * The two maps held the same thing by construction (both keyed {@code getKey(type)}, same descriptor), so this
-	 * is a rename.
 	 */
 	private static boolean giveTheVanillaParticleMapAViewOfTheLiveOne(ClassNode node) {
 		if (!PARTICLE_RESOURCES.equals(node.name)) return false;
@@ -599,8 +589,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		view.add(new FieldInsnNode(Opcodes.PUTFIELD, node.name, "providers", ID_KEYED));
 		init.instructions.insert(anchor, view);
 		init.maxStack = Math.max(init.maxStack, 2);
-
-		routeGetProviderAtTheLiveMap(node);
 
 		ForbricLog.warn("[Forbric/MergedBaseCompat] ParticleResources had two `providers` fields and only one was "
 				+ "ever written — the vanilla-typed one, which fabric-api's particle registry reads directly, was "
@@ -1200,39 +1188,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-
-
-
-	/**
-	 * Points {@code getProvider} at the live map instead of the empty {@code providersByName}.
-	 *
-	 * <p>Only when nothing outside {@code <init>} writes {@code providersByName}: if a base ever keeps
-	 * MinecraftForge's {@code register}, the field is live again and must be left alone. The declaration stays
-	 * either way — removing it would break any access widener that named it, for no gain.
-	 */
-	private static void routeGetProviderAtTheLiveMap(ClassNode node) {
-		if (!hasField(node, "providersByName", NAME_KEYED)) return;
-		for (MethodNode method : node.methods) {
-			if ("<init>".equals(method.name)) continue;
-			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-				if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD
-						&& node.name.equals(field.owner) && "providersByName".equals(field.name)) {
-					return; // a live producer survived; nothing to reroute
-				}
-			}
-		}
-		MethodNode getProvider = findMethod(node, "getProvider",
-				"(Lnet/minecraft/core/particles/ParticleType;)Lnet/minecraft/client/particle/ParticleProvider;");
-		if (getProvider == null) return;
-		for (AbstractInsnNode insn = getProvider.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
-					&& node.name.equals(field.owner) && "providersByName".equals(field.name)
-					&& NAME_KEYED.equals(field.desc)) {
-				field.name = "providers";
-			}
-		}
-	}
-
 	/**
 	 * Gives {@code KeyMapping} vanilla's {@code MAP:Ljava/util/Map;} back, as a view of the mappings by key.
 	 *
@@ -1280,9 +1235,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return true;
 	}
 
-
-
-
 	private static boolean hasMethod(ClassNode node, String name, String desc) {
 		for (MethodNode method : node.methods) {
 			if (method.name.equals(name) && method.desc.equals(desc)) return true;
@@ -1328,7 +1280,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "registered and a mod asking for its own died in its static initialiser");
 		return true;
 	}
-
 
 	static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
 	/** {@code -Dforbric.keyModifierSuffix=off} hands the whole value back to vanilla's parse, which throws on it. */
@@ -1486,7 +1437,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "to mount content a mod's own config had turned off");
 		return true;
 	}
-
 
 	private static AbstractInsnNode nextReal(AbstractInsnNode cursor) {
 		AbstractInsnNode next = cursor == null ? null : cursor.getNext();

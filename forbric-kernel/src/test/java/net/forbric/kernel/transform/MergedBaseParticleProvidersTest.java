@@ -105,23 +105,6 @@ class MergedBaseParticleProvidersTest {
 		assertTrue(viewed, "the stored value must come from KernelParticleProviders.intKeyedView");
 	}
 
-	/**
-	 * MinecraftForge's {@code providersByName} lost its only producer in the merge, and the synthetic replacement
-	 * init runs AFTER {@code registerProviders} — so it is empty during the exact window that matters, and stays
-	 * empty afterwards.
-	 */
-	@Test
-	void getProviderReadsTheMapThatHasSomethingInIt() throws Exception {
-		MethodNode getProvider = method(repaired(), "getProvider",
-				"(Lnet/minecraft/core/particles/ParticleType;)Lnet/minecraft/client/particle/ParticleProvider;");
-		for (AbstractInsnNode insn : getProvider.instructions) {
-			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETFIELD) {
-				assertTrue(!"providersByName".equals(f.name),
-						"getProvider still reads providersByName, which nothing ever writes");
-			}
-		}
-	}
-
 	@Test
 	void aSecondPassLeavesTheRepairedClassAlone() throws Exception {
 		byte[] once = new ForbricMergedBaseCompatTransformer().transform(

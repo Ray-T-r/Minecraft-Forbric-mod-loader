@@ -1758,7 +1758,6 @@ test	net.forbric.kernel.transform.MergedBaseOverlayConditionsTest	bothOverlaySec
 test	net.forbric.kernel.transform.MergedBaseOverlayConditionsTest	theOverlayListCodecIsWrappedRightAfterNeoForgesConditionalDecoder()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.transform.MergedBaseParticleProvidersTest	aSecondPassLeavesTheRepairedClassAlone()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseParticleProvidersTest	anotherClassIsUntouched()	[fixture:staged] staged merged base absent
-test	net.forbric.kernel.transform.MergedBaseParticleProvidersTest	getProviderReadsTheMapThatHasSomethingInIt()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseParticleProvidersTest	theStoredValueIsAViewOfTheLiveMapNotAFreshOne()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseParticleProvidersTest	theVanillaTypedMapIsGivenAViewBeforeRegisterProvidersRuns()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBasePipBridgeTest	constructorSeparatesMixedInputsAndClosesPlainRenderersWithTheGui()	[fixture:staged] staged merged base absent — skipping real-bytecode check
