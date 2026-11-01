@@ -40,8 +40,10 @@ import net.forbric.api.Ecosystem;
 
 /**
  * The delegated-constructor replay moves a guest's narrow-constructor handler into the wide constructor only where the
- * mixin's own platform does not delegate that way itself: a vanilla delegation (CommandSourceStack's) and a NeoForge
- * mixin's (the base is NeoForge's class) are left as Mixin wove them.
+ * mixin's own platform does not delegate that way itself: a vanilla delegation into a private wide constructor
+ * (CommandSourceStack's) and a NeoForge mixin's (the base is NeoForge's class) are left as Mixin wove them. A public wide
+ * constructor is moved even when vanilla delegates the same way, since the carrier may route a vanilla caller of the
+ * narrow constructor onto it (MappedRegistry's, through NeoForge's RegistryBuilder).
  */
 class PostMixinFixupsDelegatedConstructorTest {
 	private static final String BOX = "org/harbor/shelf/Box";
@@ -61,9 +63,38 @@ class PostMixinFixupsDelegatedConstructorTest {
 
 	@Test
 	void aDelegationThePlatformHasItselfIsLeftAsMixinWoveIt() {
-		byte[] woven = woven();
-		assertSame(woven, replay(woven, Ecosystem.FABRIC, (e, owner) -> nativeBox(true)),
+		byte[] woven = woven(Opcodes.ACC_PRIVATE);
+		assertSame(woven, replay(woven, Ecosystem.FABRIC, (e, owner) -> nativeBox(true, Opcodes.ACC_PRIVATE)),
 				"natively the handler runs for callers of the narrow constructor only");
+	}
+
+	@Test
+	void aPublicWideConstructorIsMovedEvenWhenThePlatformDelegatesTheSameWay() {
+		byte[] woven = woven();
+		assertEquals(Map.of(NARROW, 0, WIDE, 1), handlerCalls(replay(woven, Ecosystem.FABRIC, (e, owner) -> nativeBox(true))),
+				"the carrier may have moved a native caller of the narrow constructor onto the public wide one");
+	}
+
+	@Test
+	void aWideConstructorTheCarrierOpenedIsMoved() {
+		byte[] woven = woven();
+		assertEquals(Map.of(NARROW, 0, WIDE, 1),
+				handlerCalls(replay(woven, Ecosystem.FABRIC, (e, owner) -> nativeBox(true, Opcodes.ACC_PRIVATE))),
+				"private natively, public in the carrier's class: callers outside the class can reach it");
+	}
+
+	@Test
+	void theNativeDelegationSwitchOffMovesAsBefore() {
+		byte[] woven = woven(Opcodes.ACC_PRIVATE);
+		String old = System.getProperty(PostMixinFixups.NATIVE_DELEGATION_PROPERTY);
+		System.setProperty(PostMixinFixups.NATIVE_DELEGATION_PROPERTY, "off");
+		try {
+			assertEquals(Map.of(NARROW, 0, WIDE, 1),
+					handlerCalls(replay(woven, Ecosystem.FABRIC, (e, owner) -> nativeBox(true, Opcodes.ACC_PRIVATE))));
+		} finally {
+			if (old == null) System.clearProperty(PostMixinFixups.NATIVE_DELEGATION_PROPERTY);
+			else System.setProperty(PostMixinFixups.NATIVE_DELEGATION_PROPERTY, old);
+		}
 	}
 
 	@Test
@@ -74,8 +105,9 @@ class PostMixinFixupsDelegatedConstructorTest {
 
 	@Test
 	void anUnknownPlatformOrNoNativeReferenceMovesAsBefore() {
-		byte[] woven = woven();
-		assertEquals(Map.of(NARROW, 0, WIDE, 1), handlerCalls(replay(woven, null, (e, owner) -> nativeBox(true))));
+		byte[] woven = woven(Opcodes.ACC_PRIVATE);
+		assertEquals(Map.of(NARROW, 0, WIDE, 1),
+				handlerCalls(replay(woven, null, (e, owner) -> nativeBox(true, Opcodes.ACC_PRIVATE))));
 		assertEquals(Map.of(NARROW, 0, WIDE, 1), handlerCalls(replay(woven, Ecosystem.FABRIC, (e, owner) -> null)));
 	}
 
@@ -109,9 +141,13 @@ class PostMixinFixupsDelegatedConstructorTest {
 
 	/** The class as Mixin wove it: the narrow constructor delegates to the wide one, then calls the guest's handler. */
 	private static byte[] woven() {
+		return woven(Opcodes.ACC_PUBLIC);
+	}
+
+	private static byte[] woven(int wideAccess) {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, BOX, null, "java/lang/Object", null);
-		wide(cw);
+		wide(cw, wideAccess);
 		MethodVisitor narrow = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", NARROW, null, null);
 		narrow.visitCode();
 		narrow.visitVarInsn(Opcodes.ALOAD, 0);
@@ -140,6 +176,10 @@ class PostMixinFixupsDelegatedConstructorTest {
 
 	/** The class as the mixin's platform compiled it: with the same delegation, or with the narrow constructor alone. */
 	private static ClassNode nativeBox(boolean delegates) {
+		return nativeBox(delegates, Opcodes.ACC_PUBLIC);
+	}
+
+	private static ClassNode nativeBox(boolean delegates, int wideAccess) {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
 		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, BOX, null, "java/lang/Object", null);
 		MethodVisitor narrow = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", NARROW, null, null);
@@ -155,15 +195,15 @@ class PostMixinFixupsDelegatedConstructorTest {
 		narrow.visitInsn(Opcodes.RETURN);
 		narrow.visitMaxs(0, 0);
 		narrow.visitEnd();
-		if (delegates) wide(cw);
+		if (delegates) wide(cw, wideAccess);
 		cw.visitEnd();
 		ClassNode node = new ClassNode();
 		new ClassReader(cw.toByteArray()).accept(node, 0);
 		return node;
 	}
 
-	private static void wide(ClassWriter cw) {
-		MethodVisitor wide = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", WIDE, null, null);
+	private static void wide(ClassWriter cw, int access) {
+		MethodVisitor wide = cw.visitMethod(access, "<init>", WIDE, null, null);
 		wide.visitCode();
 		wide.visitVarInsn(Opcodes.ALOAD, 0);
 		wide.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);

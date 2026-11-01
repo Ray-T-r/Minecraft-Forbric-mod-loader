@@ -57,6 +57,12 @@ public final class PostMixinFixups {
 
 	/** {@code -Dforbric.postMixinFixups=off} disables these repairs. */
 	static final String PROPERTY = "forbric.postMixinFixups";
+	/**
+	 * {@code -Dforbric.postMixinFixups.nativeDelegation=off} stops the delegated-constructor replay from leaving a
+	 * handler where the mixin's own platform delegates the same way into a private constructor, so it moves every such
+	 * handler as it did before NeoForge's own base.
+	 */
+	static final String NATIVE_DELEGATION_PROPERTY = "forbric.postMixinFixups.nativeDelegation";
 
 	public static boolean enabled() {
 		return !"off".equalsIgnoreCase(System.getProperty(PROPERTY, "on"));
@@ -196,10 +202,16 @@ public final class PostMixinFixups {
 	 * NeoForge's and not vanilla's.
 	 *
 	 * <p>Only where the mixin's own platform does not delegate that way itself: when the class as the mixin's ecosystem
-	 * compiled it (its native reference) has the narrow constructor delegating to the same wide one — vanilla's own
-	 * {@code CommandSourceStack} does, into its private wide constructor — the handler natively runs for callers of the
-	 * narrow one only, and moving it would run it where it never runs natively. A NeoForge mixin's native class is the
-	 * base itself, so it is never moved. A mixin whose ecosystem or native class is unknown is moved as before.
+	 * compiled it (its native reference) has the narrow constructor delegating to the same wide one, and that wide
+	 * constructor is private there and in the carrier's class — vanilla's own {@code CommandSourceStack} does both — then
+	 * only the class itself reaches the wide constructor, the handler natively runs for callers of the narrow one only,
+	 * and moving it would run it where it never runs natively. A wide constructor that is not private is moved even when
+	 * the platform delegates the same way: the carrier may have moved a native caller of the narrow constructor onto it
+	 * (NeoForge's {@code RegistryBuilder.create} builds every datapack registry through {@code MappedRegistry}'s wide
+	 * constructor, where vanilla's {@code RegistryLoadTask} called the narrow one), and only the move keeps the handler
+	 * running for that caller. A NeoForge mixin's native class is the base itself, so it is never moved. A mixin whose
+	 * ecosystem or native class is unknown — no vanilla reference staged — is moved as before, and so is every handler
+	 * with {@code -Dforbric.postMixinFixups.nativeDelegation=off}.
 	 *
 	 * <p><b>The move is only performed when it is provably equivalent</b>, which is what keeps this general rather
 	 * than a hand-patch. It requires that, in the delegating constructor, the handler call sits immediately after the
@@ -240,8 +252,10 @@ public final class PostMixinFixups {
 			if (!parametersArePrefix(replay.call.desc, wide.desc)) continue;
 			// If the mixin already injected into the wide constructor too, adding a second call would double-run it.
 			if (callsHandler(wide, replay.call)) continue;
-			// Natively the narrow constructor delegates the same way, so the handler natively skips the wide one's callers.
-			if (nativeDelegatesTheSameWay(node, narrow.desc, delegation.desc, replay.call, natives, ecosystemOf)) continue;
+			// Natively the narrow constructor delegates the same way into a private wide one, so the handler natively
+			// skips the wide one's callers.
+			if (nativeDelegationEnabled()
+					&& nativeDelegatesTheSameWay(node, narrow.desc, delegation.desc, replay.call, natives, ecosystemOf)) continue;
 
 			for (AbstractInsnNode insn = wide.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 				if (insn.getOpcode() != Opcodes.RETURN) continue;
@@ -264,10 +278,16 @@ public final class PostMixinFixups {
 		return writer.toByteArray();
 	}
 
+	static boolean nativeDelegationEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(NATIVE_DELEGATION_PROPERTY, "on"));
+	}
+
 	/**
 	 * Whether the class as the handler's mixin's ecosystem compiled it has constructor {@code narrowDesc} delegating
-	 * {@code this(...)} to {@code wideDesc}: then natively, too, only the narrow constructor's callers run the handler.
-	 * A NeoForge mixin's native class is the base itself. Unknown ecosystem or no native reference: false.
+	 * {@code this(...)} to {@code wideDesc}, and that wide constructor is private both there and in {@code node}: then
+	 * natively, too, only the narrow constructor's callers run the handler, and no caller outside the class can have
+	 * been moved onto the wide one. A NeoForge mixin's native class is the base itself. Unknown ecosystem, no native
+	 * reference, or a wide constructor that is not private on either side: false.
 	 */
 	static boolean nativeDelegatesTheSameWay(ClassNode node, String narrowDesc, String wideDesc, MethodInsnNode handler,
 			BiFunction<Ecosystem, String, ClassNode> natives, Function<String, Ecosystem> ecosystemOf) {
@@ -275,8 +295,12 @@ public final class PostMixinFixups {
 		Ecosystem ecosystem = ecosystemOf.apply(mixinOf(node, handler));
 		if (ecosystem == Ecosystem.NEOFORGE) return true;
 		if (ecosystem == null || natives == null) return false;
+		MethodNode carrierWide = findOwn(node, "<init>", wideDesc);
+		if (carrierWide == null || (carrierWide.access & Opcodes.ACC_PRIVATE) == 0) return false;
 		ClassNode original = natives.apply(ecosystem, node.name);
 		if (original == null) return false;
+		MethodNode nativeWide = findOwn(original, "<init>", wideDesc);
+		if (nativeWide == null || (nativeWide.access & Opcodes.ACC_PRIVATE) == 0) return false;
 		MethodNode narrow = findOwn(original, "<init>", narrowDesc);
 		if (narrow == null) return false;
 		MethodInsnNode delegation = thisDelegation(original, narrow);
