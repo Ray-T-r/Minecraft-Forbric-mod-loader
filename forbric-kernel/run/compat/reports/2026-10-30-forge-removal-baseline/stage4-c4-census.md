@@ -31,15 +31,15 @@ one (carrier-stubs' `neo=` column records what NeoForge's own class has).
 
 ## Tables before and after
 
-| table | merged base | genuine | FORGE rows (before → after) |
+| table | merged base | genuine | rows naming FORGE (before → after; recounted by the review-fix round, see below) |
 |---|---:|---:|---|
-| carrier-renames | 389 | 335 | 310 → 0 (FABRIC,FORGE and FORGE) |
-| carrier-helpers | 37 | 35 | 24 → 0 |
+| carrier-renames | 389 | 335 | 275 → 0 (FABRIC,FORGE and FORGE) |
+| carrier-helpers | 37 | 35 | 23 → 0 |
 | carrier-stubs | 79 | 74 | 79 `forge=` columns → 0 |
-| carrier-twins | 7 | 5 | 6 → 0 |
+| carrier-twins | 7 | 5 | 5 → 0 |
 | lambda-permutations | 7 | 7 | — |
-| native-only-methods | 1001 | 659 | 395 forge rows + `platform forge` → 0; base digest `080a89b5…` (merged) → `d033f1ac…` (raw genuine); neoforge 0 rows, 0 merged-only |
-| uncalled-methods | 262 | 86 | 243 → 0; no `!` (silenced) site any more |
+| native-only-methods | 1001 | 659 | 393 forge rows + `platform forge` → 0; base digest `080a89b5…` (merged) → `d033f1ac…` (raw genuine); neoforge 0 rows, 0 merged-only |
+| uncalled-methods | 262 | 86 | 232 → 0; no `!` (silenced) site any more |
 | vanilla-early-returns | 3271 | 3276 | — |
 
 ## New FABRIC rows, by kind (each reviewed)
@@ -137,8 +137,9 @@ Bootstrap.bootStrap, PackDetector.detectPackResources, Spider.canBeAffected).
    on `.stage4` (reads the merged base, C5). gate-m29's refusal phases PASS (both changed checks), its control phases
    fail on retired capability-composition lines (C5). gate-m26 not run (its rundirs are the shared client-forge
    fixtures).
-6. CI profiles: not run here; every census test ran (none skipped) under `-Pforbric.requireFixtures=all`. The
-   skip-baseline rows of the census tests are C5/C6's to regenerate.
+6. CI profiles: not run by the lane; every census test ran (none skipped) under `-Pforbric.requireFixtures=all`.
+   The review-fix round ran the census classes under CI's prepared profile (`staged,game-side,mc-libraries,java-25`):
+   32 tests, 0 skipped. The skip-baseline rows of the census tests are C5/C6's to regenerate.
 7. Raw vs post-twin diffed for every table (D31 table above).
 
 ## Suite
@@ -151,7 +152,15 @@ unsetRemoved → revive`). For the 42 rows kept, the failure message prefix equa
 `stage4-c4-census-open-failures.txt`. Python tools 52, run/compat
 145, run/compat/mac 94: OK.
 
-## Not done by this lane
+The gates above ran on the uncommitted tree that became 3d8364b4 (`summary.txt` records "HEAD daa94207 dirty=117"; the
+last main-source edit precedes the first gate run).
+
+Corrections from the review-fix round: the "FORGE rows" column first counted every row containing the letters FORGE,
+NEOFORGE rows included (renames 310, helpers 24, twins 6, uncalled 243, native-only 395; 1,057 in all); counted by
+ecosystem token on daa94207's tables the rows naming FORGE are 275 + 23 + 79 + 5 + 232 + 393 = **1,007**, plus
+native-only's `platform forge` line.
+
+## Not done by this lane (all closed or handed on by the review-fix round; README "C4, lane census-forge review fixes")
 
 - D31's "every-chain-transformer anchor census as a test" (the Stage 2.0 `ChainAnchorCensus` tool) is not landed.
 - The other C4 hand-offs: merged-base wording in log and report strings (critic-c3b's 392 hits), the false SUSPECTED

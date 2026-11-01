@@ -187,15 +187,16 @@ sweep has gate-m0 RED for the R3 corpus only and gate-m14 RED once because its p
 HTTPS handshake while downloading (`SSLHandshakeException: Remote host terminated the handshake`, before the game
 started); rerun alone under zh it is GREEN. Every other gate GREEN.
 
-## Stage 4: the flip to NeoForge's own patched game, C2 + C1 + C3 (tips 00a5e585, 73a4314c, s4-c3); C4-C6 not done yet
+## Stage 4: the flip to NeoForge's own patched game, C2 + C1 + C3 + C4's census lane (tips 00a5e585, 73a4314c, s4-c3, s4-c4); C4's wording follow-up, C5 and C6 not done yet
 
 Stage 4 is one stack of branches: `s4-c2` (C2: delete MinecraftForge's code, on the merged base) → `s4-c1` (C1: build,
 test and launch on NeoForge's patched 26.2 jar, "G", with the NeoForge 26.2.0.93 carrier and the vanilla-reference
 sidecar) → `s4-c3` (C3: delete the repairs that existed only because the base merged Forge and NeoForge patches, each
 after three checks). Every lane was reviewed adversarially twice (A, B) and followed by a review-fix round; each phase
-ended with a completeness critic. Decisions D1-D39 bound every lane. **C4 (census tables regenerated with
-`Ecosystem.FORGE`'s removal), C5 (rebaseline: tests, gates, C5b world upgrade, C5c Forge → NeoForge build swap) and C6
-(CI, release, installer clean-up) have not started**; this section records the state they start from.
+ended with a completeness critic. Decisions D1-D41 bound every lane. C4's census lane (census tables regenerated with
+`Ecosystem.FORGE`'s removal, then its review fixes: the anchor census test, the furnace rows, the stand-ins) is recorded at
+the end of this section; **C4's wording follow-up, C5 (rebaseline: tests, gates, C5b world upgrade, C5c Forge → NeoForge
+build swap) and C6 (CI, release, installer clean-up) have not started**.
 
 | phase | commits | tip | diff | details |
 |---|---|---|---|---|
@@ -426,10 +427,9 @@ consumeClick key (#6); whether `LocalRanges`' one site could be written correctl
 
 ### Not done yet
 
-- **C4**: regenerate the census tables and remove `Ecosystem.FORGE` in one commit (about 22 main/runtime sites at a3791619, one of
-  them since removed by be89707e; 167 test references); report and log wording that still names the merged base on G (e.g. "on the merged game", "the forwarding stub
-  the merged base keeps"); the false SUSPECTED furnace-remainder report row on every install with fabric-api;
-  `ForeignType`'s FORGE column; the MinecraftForge test stand-ins.
+- **C4**: done by the census lane and its review fixes (sections below), except the wording follow-up: 151 string
+  literals and 546 javadoc/comment lines that still say "merged"/"the merge" on NeoForge's base
+  (`stage4-c4-census-wording-left.txt`), each to move with its pins.
 - **C5**: every gate line classified above, the 34 + 6 + 1 re-pins, the C1 gate list, gate-m49's retired switches, the
   four-native-call-sites pin, weave scenarios for the new adapters, wiring regress-gate.py and fluid-head-gate.py into the
   gate list, C5b (world upgrade) and C5c (Forge → NeoForge build swap).
@@ -447,7 +447,7 @@ raw-vs-post-twin choice per table (D31) and the review of every new FABRIC row b
 | carrier-renames / -helpers / -stubs / -twins rows | 389 / 37 / 79 / 7 | 335 / 35 / 74 / 5 |
 | native-only-methods rows (base digest) | 1001 (`080a89b5…`) | 659 (`d033f1ac…`, raw) |
 | uncalled-methods / vanilla-early-returns rows | 262 / 3271 | 86 / 3276 |
-| rows naming FORGE | 1,057 | 0 |
+| rows naming FORGE | 1,007 (+ native-only's `platform forge` line; corrected, see the review fixes) | 0 |
 | new FABRIC rows | | renames 10 (EntityType.trackDeltas), twins 2, uncalled 8 |
 | unit suite (`.stage4`) | 5,760 / 65 failed (C3 tip) | **5,755 / 45 failed**: 23 C4 rows fixed, 3 new (TwinCapturedLocalsWeaveTest, its fixture models the merged base's FORGE-only twin row; C5) |
 | gates | | m1 GREEN, m46 GREEN, m9 165/21 (same 21 C5 lines as at 5efabdc5), m29 refusal phases PASS (control phases: C5) |
@@ -457,4 +457,41 @@ but counted under no ecosystem ("N refused") and no longer makes NeoForge's own 
 no longer print a MinecraftForge count. Still open after this lane: the every-chain-transformer anchor census test
 (D31), the merged-base wording in log and report strings, the false SUSPECTED furnace-remainder row, and the
 remaining MinecraftForge test stand-ins (C4); TwinCapturedLocalsWeaveTest's fixture and MergedBaseCalleeSwapTest's
-second admitted swap (C5).
+second admitted swap (C5). All but the wording follow-up and MergedBaseCalleeSwapTest were closed by the review fixes
+below. The gates in the table ran on the uncommitted tree that became 3d8364b4 (`HEAD daa94207 dirty=117`).
+
+### C4, lane census-forge review fixes (08655e9c..38bed6fb): the anchor census, the furnace rows, the stand-ins
+
+Two adversarial reviews (A: correctness, B: completeness) of the census lane; every finding was checked before it was
+acted on. Per finding, with evidence: `s4/c4/checks.md` "census-forge review fixes"; the stand-in verdicts for every test
+that still names `net.minecraftforge` are there too.
+
+| finding | outcome | commit |
+|---|---|---|
+| D31's every-chain-transformer anchor census was not landed (A-F1, B-1) | `ChainAnchorCensusStagedTest`: the 90 registration sites recovered from `KernelBoot.launch`'s bytecode, built at default switches (vanilla twins from the sidecar), every class of base and carrier through the chain on both sides; 0 REQUIRED declined, 0 idle hedges (client: 69 REQUIRED + 1 FATAL + 9 HEDGE anchors and 25 claim anchors HIT; the one ABSENT is fabric-api's `FabricBlockStateModel`); red: one transformer silenced is named, and only it | 15138373 |
+| TwinCapturedLocalsWeaveTest red, fixture on the removed FORGE `removeBlock` row (A-F2, B-4) | fixture re-shaped onto the genuine FABRIC row `ModelBlockRenderer#shouldRenderFace … \| 0,2,3,4`; green; no genuine row captures a local beyond the arguments | 08655e9c |
+| twinned-base cache key ignored the injector (A-F3) | keyed on a digest of the jars, `ROWS` and the injector's class bytes | 7374012f |
+| m26/m29 mixin-configs check was presence-only (A-F4, B-8) | `check_forge_family_configs_are_neoforge` compares the two counts; red on a mutated log | 36dfef28 |
+| false SUSPECTED furnace-remainder rows on every install with fabric-api (B-2) | SupersededMixins' first `native-` entry: claim = fabric-item-api's HEAD copy + redirect, witness = the defined `consumeFuel` asking the unshrunk stack before `shrink`; the loader observes a witness before the final-class check, so no injection warning; regress-gate asserts the rows absent, and its new `superseded-off` phase shows them again | d3ab1755 |
+| merged-base wording in the census consumers (B-3) | MergedBaseUncalledMethods, NativeAbsentTargets, VanillaEarlyReturns, MixinTwinRebind, MixinFitReport/MixinOverlapLint, NativeReferenceSources and KernelGuestMixinAdapter's report lines reworded with every pin (gate-m12, gate-m30, 9 tests). **Not done**: 151 literals + 546 prose lines (`stage4-c4-census-wording-left.txt`), a C4 wording follow-up | 2bf4eb3d, 38bed6fb |
+| MinecraftForge test stand-ins (B-5) | removed or re-shaped in the 11 named files (absorbeddamage ForgeHooks, KeyActionExits' twin, ForeignFluidType and CNI execution fixtures, dialog rows, transfer codes, mods-button scans, an unread loot stand-in); the other 41 test files that name `net.minecraftforge` keep it as refusal input, ABI-audit input or negative control, except six where production still names MinecraftForge (handed on) | 770d8cc7 |
+| small hand-offs (B-6) | `NativeGameReferences.referenceForTest` package-private (its extension moved to the mixin package); `ForbricMergedBaseCompatTransformer(Function)` gone; `net/minecraftforge/` out of `InterfaceDefaultConflictRepair.BASE_PACKAGES`; the boot line counts `N Forge-family mod(s) in mods/, N nested jar(s)` (was every nested jar under the Forge-family label; gate-m17's pin follows); CNI's prose; gate-m19's comment. Refuted: the Seed line's "Forge-family" count is NeoForge mods only | 766c0380 |
+| record counts (A-F6) and contradictions (B-7) | rows naming FORGE before the regeneration: **1,007** data rows (renames 275, helpers 23, stubs 79, twins 5, uncalled 232, native-only 393) plus native-only's `platform forge` line; the lane's 1,057 and review A's 1,056 both counted NEOFORGE substrings. Heading, intro and "Not done yet" brought up to date | this record |
+| census tests under CI's prepared profile (B-9) | 11 census classes, 32 tests, 0 skipped, 0 failed under `staged,game-side,mc-libraries,java-25`; ci-unstaged.tsv gets the 7 rows of the two new staged tests | 15138373 |
+| A-F5 (ModListRows change missing from 3d8364b4's body) | history not rewritten; the change is a release-note item handed to C6 | — |
+| critic C4 item: CustomPayloadInteropSeam HEDGE → REQUIRED | done; the census measures it landing on both sides | b68f1ddf |
+
+Suite at 38bed6fb (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test`): **5,762 tests, 42 failed** (lane:
+5,755 / 45). Name for name against the lane's list: 0 new, 3 gone (TwinCapturedLocalsWeaveTest), the 42 kept with the
+same message prefix; against the C3 tip's 65: 0 new, 23 gone. +7 tests: ChainAnchorCensusStagedTest 4,
+SupersededFurnaceRemainderStagedTest 3. The full run at b68f1ddf found one missed pin (OptionalPartnerInjectorWeaveTest,
+fixed in 38bed6fb). Every open failure with cause and owner: `stage4-c4-census-review-fixes-open-failures.txt` (C5 35,
+C5 tool 1, P1 6).
+
+Gates at 38bed6fb (`.stage4`, ports 46412-46416; the tree was dirty only by this record's files for m52 and m9): m1 GREEN
+(boot line `0 Forge-family mod(s) in mods/, 0 nested jar(s)`, anchor line 65/99 landed), m46 GREEN, m52 GREEN (the hopper
+mixin still "is superseded" with the witness observed first), m29 refusal phases PASS en and zh including the new
+Forge-family = NeoForge check (1 = 1), its control phases fail on the retired capability lines exactly as for the lane
+(C5), m9 165 PASS / 21 FAIL, the same 21 lines as the lane's and verify-c3b's (C5), with both furnace rows RESOLVED in the
+98-mod client's report and no furnace injection warning. regress-gate (four phases, on the tree of d3ab1755, ports
+46400-46411): 4/4. gate-m26 not run (shared client-forge fixtures, no clone variable), gate-m17 not run (installer, C6).

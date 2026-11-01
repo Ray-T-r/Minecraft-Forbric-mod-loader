@@ -1,0 +1,156 @@
+# Stage 4 C4, lane census-forge review fixes: string literals in src/main/java and src/runtime/java that still say
+# "merged"/"the merge" after this round (generated 2026-11-02 on s4-c4; MixinMerged annotation names left out).
+# Most are log or report lines printed on NeoForge's base. Handed to a C4 wording follow-up (owner: orchestrator), each line
+# to be reworded together with every test, gate and tool that pins it (D34). Javadoc/comment lines with the same words: 546 in 181 files.
+# <file>:<line>\t<literal>
+m/kernel/access/ClassTweakerTransformer.java:118	[Forbric/Access] merged %d class tweaker(s) in namespace '%s' over %d target class(es)
+m/kernel/boot/FabricApiModuleLossAudit.java:232	[Forbric/FabricApi] %d mod jar(s) use %s's %s, which is switched off on the merged base — %s%s. 
+m/kernel/boot/FieldDriftAudit.java:132	[Forbric/FieldDrift] scanned %d jar(s): %d reference a vanilla field the merge re-typed
+m/kernel/boot/FieldDriftAudit.java:141	 with vanilla's descriptor, which the merged base no longer declares — NoSuchFieldError at that access
+m/kernel/boot/KernelBoot.java:687	[Forbric/Registries] -D%s=off — every registry reads the merged (NeoForge) directory, 
+m/kernel/boot/KernelRegistryDirectories.java:109	merged one (%s)
+m/kernel/boot/KernelRegistryDirectories.java:154	merged (NeoForge) data directory, which is not where a mod that returns the body's answer 
+m/kernel/boot/LootTableEventDispatch.java:189	bind on the merged base (NeoForge swapped the lambda's parameters and split its one map into two), so 
+m/kernel/boot/MergeReport.java:120	[Forbric/DupeId] could not write the merge report
+m/kernel/boot/MergeReport.java:212	[Forbric/DupeId] could not list %s; the merge report names no jar from it
+m/kernel/boot/MergeReport.java:245	[Forbric/DupeId] could not read %s for the merge report; it does not appear in it
+m/kernel/boot/MergeReport.java:261	[Forbric/DupeId] could not read %s for the merge report; it does not appear in it
+m/kernel/interop/PayloadInterop.java:88	[Forbric] could not bootstrap merged custom-payload mirrors
+m/kernel/interop/PayloadInterop.java:554	 merged + 
+m/kernel/interop/PayloadInterop.java:558	 merged/Fabric custom payload registration(s) into NeoForge's decode registry
+m/kernel/interop/PayloadInterop.java:580	[Forbric] could not inspect merged packet codec %s::%s
+m/kernel/mapping/ForbricMappings.java:61	merged mappings are missing the intermediary namespace
+m/kernel/mixin/CarrierGuardedPoints.java:121	%s: native %s, merged %s
+m/kernel/mixin/CarrierHelperResults.java:229	 made it — the injector runs on that answer, at its %d call(s), with %d local(s) read where the merged method keeps them
+m/kernel/mixin/CarrierMethodReferences.java:226	the merged class has no 
+m/kernel/mixin/CarrierMethodReferences.java:232	the merged 
+m/kernel/mixin/CarrierMethodReferences.java:236	the merged 
+m/kernel/mixin/CarrierMethodReferences.java:236	the merged method reference is handed to another consumer
+m/kernel/mixin/CarrierMethodReferences.java:246	the merged reference is not to another class's instance method
+m/kernel/mixin/CarrierMethodReferences.java:251	, merged 
+m/kernel/mixin/CarrierMethodReferences.java:260	the merged 
+m/kernel/mixin/CarrierMethodReferences.java:263	 boolean locals of the merged 
+m/kernel/mixin/FinalMixinApplications.java:203	Attached only inside a forwarding stub the merged base keeps for the old signature; it runs only when something still calls that signature
+m/kernel/mixin/FinalMixinApplications.java:206	final defined class contains a reference to the exact merged handler
+m/kernel/mixin/FinalMixinApplications.java:213	merged handler not identified (
+m/kernel/mixin/FinalMixinApplications.java:224	attachment could not be verified (merged handler candidates=
+m/kernel/mixin/ForbricMixinService.java:584	[Forbric/Mixin] could not read the merged base's %s; taken as absent
+m/kernel/mixin/ForbricMixinService.java:599	[Forbric/Mixin] could not read the merged base's %s; taken as absent
+m/kernel/mixin/ForbricMixinService.java:622	[Forbric/Mixin] could not read the merged base's %s; taken as absent
+m/kernel/mixin/ForbricMixinService.java:735	[Forbric/Mixin] relaxed %s for merged-base compatibility
+m/kernel/mixin/MixinAbsorbedCallbackTransport.java:50	, whose call it follows the merged game moved into 
+m/kernel/mixin/MixinAtWidenedCall.java:179	vanilla-form decorator the merged base keeps builds the same buffer typed OTHER, which is 
+m/kernel/mixin/MixinCameraRollAdapter.java:116	[Forbric/Mixin] %s.%s: the %s%s call its point picks in %s.%s is made on the merged body as %s%s (ordinal %d), 
+m/kernel/mixin/MixinCameraRollAdapter.java:328	[Forbric/Mixin] The camera roll callback now wraps the merged alignWithEntity's setRotation(FFF) calls; 
+m/kernel/mixin/MixinCapturedLocals.java:91	[Forbric/Mixin] %s: %s's locals capture in %s.%s%s now reads each captured local where the merged body 
+m/kernel/mixin/MixinConfigPolicy.java:78	the built-in merged-base incompatibility list — expect the recorded breakage
+m/kernel/mixin/MixinHandlerShim.java:154	[Forbric/Mixin] %s.%s was written for a differently shaped %s — vanilla's %s; the merged 
+m/kernel/mixin/MixinKeyActionAdapter.java:115	the merged final return
+m/kernel/mixin/MixinKeyActionAdapter.java:124	the merged 
+m/kernel/mixin/MixinLocalsCapture.java:105	[Forbric/Mixin] %s.%s: require %s → 0 — if the merged game no longer has what it injects into, 
+m/kernel/mixin/MixinLocalsCapture.java:134	[Forbric/Mixin] %s: @Inject.locals CAPTURE_FAILHARD → CAPTURE_FAILSOFT — if the merged 
+m/kernel/mixin/MixinOperationSeamTransport.java:53	, whose call it wraps the merged game moved into 
+m/kernel/mixin/MixinOperationSeamTransport.java:261	, which no other mixin merged
+m/kernel/mixin/MixinOverloadPin.java:206	[Forbric/Mixin] %s.%s selects %s by name, and the merged class declares more than one 
+m/kernel/mixin/MixinOverloadPin.java:314	[Forbric/Mixin] %s.%s cannot bind to %s.%s: the merged class declares %d methods of that 
+m/kernel/mixin/MixinOverloadPin.java:319	 methods the merged class declares with that name, 
+m/kernel/mixin/MixinPrivateDefaultCollision.java:111	for its target, and a private method merged under that name hides it from every subclass at run time 
+m/kernel/mixin/MixinRenamedBodyEdges.java:100	[Forbric/Mixin] %s: %s's edge of %s.%s%s is not met when the merged game runs that body through %s — a carrier 
+m/kernel/mixin/MixinRenamedBodyEdges.java:106	[Forbric/Mixin] %s: %s's edge of %s.%s%s is not met when the merged game runs %s%s through %s, which do more than 
+m/kernel/mixin/MixinRetarget.java:309	callee the merge swapped: 
+m/kernel/mixin/MixinRetarget.java:1117	[Forbric/Mixin] %s does not link on the merged base (%s) — skipped wherever it runs, as it was 
+m/kernel/mixin/MixinRetarget.java:1118	before its injection point was moved to the call the merge substituted, instead of failing the method 
+m/kernel/mixin/MixinReturnOrdinals.java:88	is proved to be one of the merged body's %d, so they stay as compiled
+m/kernel/mixin/MixinReturnOrdinals.java:99	are the merged body's %s of %d
+m/kernel/mixin/MixinShiftedPoints.java:98	[Forbric/Mixin] %s: %s's point %s shifted by %d lands on %s in the native %s.%s and on %s in the merged one; 
+m/kernel/mixin/MixinShiftedPoints.java:99	the native instruction's counterpart in the merged body is not proved, so the point stays as compiled
+m/kernel/mixin/MixinShiftedPoints.java:108	[Forbric/Mixin] %s: %s's point %s shifted by %d lands on %s natively; the merged %s.%s has it, but no call or 
+m/kernel/mixin/MixinShiftedPoints.java:118	[Forbric/Mixin] %s: %s's point %s lands natively on %s in %s.%s%s; the merged body keeps that instruction behind 
+m/kernel/mixin/MixinSplitBodyEdges.java:112	merged game runs one by one and never through the method%s
+m/kernel/mixin/MixinStubRebind.java:534	[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, 
+m/kernel/mixin/MixinStubRebind.java:822	, a stub the merged base 
+m/kernel/mixin/MixinSubtypeOwnerRetarget.java:148	[Forbric/Mixin] %s: %s — the merged body makes the same call through another owner, which 
+m/kernel/mixin/NativeAbsentTargets.java:186	merged-only 
+m/kernel/mixin/NativeCallInlining.java:251	[Forbric/Mixin] %s.%s: %s is made in %s.%s again — the merged game makes it inside %s, now 
+m/kernel/mixin/NativeCallInlining.java:261	[Forbric/Mixin] %s.%s: the merged %s.%s makes fewer calls of %s than %s does, and none is 
+m/kernel/mixin/NativeCallInlining.java:758	the merged method makes no call of its own a known body could stand in for
+m/kernel/mixin/NativeCallInlining.java:759	no inline of the merged method's own calls makes the native number of calls
+m/kernel/mixin/NativeCallInlining.java:1417	[Forbric/Mixin] could not write %s with its native calls put back; it stays as merged
+m/kernel/mixin/NativeConsumerStores.java:95	[Forbric/Mixin] %s.%s: its local's one native store is stored again on the merged %s.%s's own paths — the 
+m/kernel/mixin/NativeDecisionIsland.java:256	[Forbric/Mixin] %s.%s: the merged %s.%s makes fewer calls of %s than %s does, and no native decision island 
+m/kernel/mixin/NativeDecisionIsland.java:265	[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the merged game decides that stretch in %s, so 
+m/kernel/mixin/NativeDecisionIsland.java:327	[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the merged game decides that stretch in %s; the native decisions 
+m/kernel/mixin/NativeDecisionIsland.java:457	the native and merged bodies do not differ in one stretch
+m/kernel/mixin/NativeDecisionIsland.java:468	, merged 
+m/kernel/mixin/NativeDecisionIsland.java:469	, merged end 
+m/kernel/mixin/NativeDecisionIsland.java:501	the merged stretch is inside an exception handler's range
+m/kernel/mixin/NativeDecisionIsland.java:505	the merged body jumps back before the stretch
+m/kernel/mixin/NativeDecisionIsland.java:508	the merged stretch returns or throws
+m/kernel/mixin/NativeDecisionIsland.java:510	the merged stretch jumps out of itself
+m/kernel/mixin/NativeDecisionIsland.java:512	the merged stretch runs to the end of the method
+m/kernel/mixin/NativeDecisionIsland.java:517	code outside the merged stretch jumps into it
+m/kernel/mixin/NativeDecisionIsland.java:537	the native decisions read a local the merged method does not hold there
+m/kernel/mixin/NativeDecisionIsland.java:682	[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in; the method stays as merged
+m/kernel/mixin/NativeDecisionIsland.java:709	[Forbric/Mixin] could not write %s with its native decisions put back; it stays as merged
+m/kernel/mixin/NativeLocalMaterialization.java:135	[Forbric/Mixin] %s.%s: the merged %s.%s hands %s's operand %d over without the local %s %s %s keeps it 
+m/kernel/mixin/NativeLocalPins.java:74	[Forbric/Mixin] %s.%s: the local its ordinal %s names at its point is another local in the merged %s; pinned to slot %d,
+m/kernel/mixin/NativeLocalPins.java:87	[Forbric/Mixin] %s.%s: the merged %s.%s holds more locals of a type the handler asks for at its point; 
+m/kernel/mixin/NativeOccurrencePoint.java:158	[Forbric/Mixin] %s: %s point in %s.%s: native %d, merged %d — as written
+m/kernel/mixin/NativeOccurrencePoint.java:229	[Forbric/Mixin] %s: %s point in %s.%s selects %d of the merged body's %d occurrence(s), the native body's %d
+m/kernel/mixin/NativeOccurrencePoint.java:349	 merged selected 
+m/kernel/mixin/NativeOccurrencePoint.java:351	# merged\n
+m/kernel/mixin/NativeSliceOccurrences.java:76	[Forbric/Mixin] %s.%s: the call its slice picked in %s.%s is no longer inside that slice; the merged method makes 
+m/kernel/mixin/NativeValueStores.java:101	[Forbric/Mixin] %s.%s: the merged %s.%s stores another value first in the local its STORE picks; the native 
+m/kernel/mixin/ReplacedCallRedirects.java:411	[Forbric/Mixin] %s: %s redirects %s in %s.%s where the merged body calls it instead of %s — %s
+m/kernel/mixin/ReplacedDecisionValues.java:90	[Forbric/Mixin] %s.%s: %s is no longer called in %s; the call the merged method makes in its place, deciding 
+m/kernel/mixin/UncalledDecisionEntries.java:239	the native and merged 
+m/kernel/mixin/UncalledDecisionEntries.java:251	the merged 
+m/kernel/mixin/UncalledDecisionEntries.java:278	 in the merged 
+m/kernel/mixin/UncalledDecisionEntries.java:281	the merged 
+m/kernel/mixin/UncalledDecisionEntries.java:285	the merged 
+m/kernel/mixin/UncalledValueRelay.java:192	[Forbric/Mixin] %s never runs in the merged game, and the hooks woven into it are not relayed to where the carrier 
+m/kernel/mixin/UncalledValueRelay.java:221	[Forbric/Mixin] %s never runs in the merged game; the %d hook(s) woven into it (%s) run in %s%s, on the value the carrier 
+m/kernel/transform/CompostablesFallbackInjector.java:87	vanilla's compostables map left unread by the merged composter with -D
+m/kernel/transform/CompostablesFallbackInjector.java:260	[Forbric/Composter] left %s as merged: %s — a Fabric mod's compostables cannot go in a composter
+m/kernel/transform/CreativePagerBridgeInjector.java:167	 screen is left as merged
+m/kernel/transform/CustomPayloadInteropSeam.java:111	on a base that was never merged, a custom payload is encoded with the codec registered for its id rather 
+m/kernel/transform/CustomPayloadInteropSeam.java:129	class across every ecosystem — the lookup the merged base was built with
+m/kernel/transform/EmptyFluidTypeTrackerInjector.java:98	[Forbric/Fluid] left EntityFluidInteraction's tracker lookup as merged: %s — a fluid typed as NeoForge's empty type 
+m/kernel/transform/FabricFluidBehaviorInjector.java:103	[Forbric/Fluid] left EntityFluidInteraction.getFluidTypeByTag as merged: %s — a Fabric mod's fluid 
+m/kernel/transform/FabricFuelValuesInjector.java:106	values the merged server uses, or runs twice per native build on a client
+m/kernel/transform/FabricFuelValuesInjector.java:129	builds — the merged game builds its fuels there and never reached Fabric's hook in vanillaBurnTimes
+m/kernel/transform/FabricFuelValuesInjector.java:134	fuels, torrential's Angling Table) now reaches the fuels the merged server uses
+m/kernel/transform/FabricFuelValuesInjector.java:252	run on the table the merged server uses
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:96	every block model's geometry key and conflict resolver are gone — the merged BlockStateModel lacks the methods both families call
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:112	every noise octave's origin is off — the merged nextDouble() rounds through float, so no 
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:119	every angle the game computes from a vector is off in the eighth digit — the merged base divides by 
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:139	fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:646	type it does not own — the merged base runs that evaluator over EVERY datapack element from 
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:817	mixins for this cannot apply on the merged base
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:954	merged body rounded through float, which displaces every noise octave's origin and lets 
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:1017	(%d site(s)) — the merged body divided by pi at run time, which is a different number in the 
+m/kernel/transform/ForbricMergedBaseCompatTransformer.java:1575	[Forbric/MergedBaseCompat] took \"%s\" out of the window title — the merged base carries 
+m/kernel/transform/HopperFabricStorageInjector.java:55	hoppers left as merged with -D
+m/kernel/transform/HopperFabricStorageInjector.java:68	[Forbric/Hopper] left HopperBlockEntity as merged: %s — hoppers ignore Fabric storages 
+m/kernel/transform/LifecycleHookInjector.java:241	[Forbric/Lifecycle] %s.%s contained NO known genuine-loader trigger — the merged 
+m/kernel/transform/LocalRanges.java:94	every merged game class whose variable table starts a local after its uses
+m/kernel/transform/LocalRanges.java:114	[Forbric/LocalRanges] could not widen the local ranges of %s; it is left as merged
+m/kernel/transform/LootTableEventBridgeInjector.java:145	ReloadableServerRegistries through the kernel — fabric-loot-api-v3's mixin cannot fit the merged 
+m/kernel/transform/ModsButtonRedirector.java:304	[Forbric/ModsButton] %s.%s added %d mods buttons — the merge kept each family's, and 
+m/kernel/transform/PackOverlayMutabilityInjector.java:125	carrying both fabric:overlays and neoforge:overlays survives the merged base
+m/kernel/transform/RegistryDirectoryOwnerInjector.java:132	[Forbric/Registries] %s.%s now answers as each registry's owner's loader does — the merged 
+m/kernel/transform/RepairDriftCensus.java:125	usage: RepairDriftCensus <candidate-merged-base.jar> [<carrier.jar> ...]
+m/kernel/transform/UnboundHolderDataInjector.java:218	[Forbric/DataMaps] left Holder.Reference as merged: %s — a data-map lookup on a value not registered 
+m/kernel/transform/WidenedFieldTwinInjector.java:211	[Forbric/WidenedFields] %s: vanilla-descriptor twin %s:%s beside the merged %s (%d write(s), %d 
+m/kernel/transform/WidenedFieldTwinInjector.java:212	drain(s)) — the merge re-typed the field, and a JVM field is its name AND its descriptor
+m/kernel/util/ForbricSwitches.java:62	the multipart entity hierarchy is now proved by the merged base when it is built, 
+m/kernel/util/ForbricSwitches.java:208	no merged MinecraftForge body to add them to
+r/kernel/runtime/KernelCompostables.java:148	NeoForge's compostables data map still lists them and the merged composter follows the data map
+r/kernel/runtime/KernelFabricConditions.java:309	job: it produced %s where the merged reader expects Optional, because the merge left two 
+r/kernel/runtime/KernelFabricFuel.java:253	vanillaBurnTimes returned without reaching the merge-added body the kernel short-circuits 
+r/kernel/runtime/KernelFabricFuel.java:259	FuelValues.vanillaBurnTimes' own build() and went through its return hooks — the merged server never 
+r/kernel/runtime/KernelModelFormats.java:171	the loader object, which MinecraftForge's half of the merged cuboid deserializer would read as a 
+r/kernel/runtime/KernelModelFormats.java:231	fabric-model-loading — the two injectors that did this on Fabric cannot fit the merged base
+r/kernel/runtime/KernelModelFormats.java:326	[Forbric/ModelFormats] the code parsing %s does not link on the merged base (%s) — each 
+r/kernel/runtime/KernelModelFormats.java:330	 does not link on the merged base: 
+r/kernel/runtime/KernelNeoConditions.java:319	NeoForge's evaluator — which the merged base runs over EVERY datapack element from every pack — 
