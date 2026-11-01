@@ -29,10 +29,10 @@ import net.forbric.kernel.mixin.MixinFieldInitialiserPlacement;
 /**
  * {@code MixinFieldInitialiserPlacement} through the real weave, on classes that share no name with any game or mod.
  *
- * <p>{@code org.harbor.shelf.Crate}, as merged, builds a copy of each child crate with {@code new Crate(...)} after
- * {@code super()}; as the guest's loader has it, it builds none. The guest ({@code com.tallyman.mark}) adds a tag field
+ * <p>{@code org.harbor.shelf.Crate}, as the carrier has it, builds a copy of each child crate with {@code new Crate(...)}
+ * after {@code super()}; as the guest's loader has it, it builds none. The guest ({@code com.tallyman.mark}) adds a tag field
  * with an initialiser. Mixin puts the initialiser after the last construction of a {@code Crate} in the constructor:
- * natively that is {@code super()}, merged it is the copy inside the child loop, so a crate without children — and every
+ * natively that is {@code super()}, on the carrier's class it is the copy inside the child loop, so a crate without children — and every
  * copy, which has none — keeps a null tag. Repaired, the initialiser runs right after {@code super()} for every crate, and
  * every tag is the native run's. Switched off, the lone crate and the copies have no tag.
  */
@@ -43,7 +43,7 @@ class MixinFieldInitialiserPlacementWeaveTest {
 	private static final String CRATE = "org/harbor/shelf/Crate";
 	private static final String TAGGED = WeaveHarnessMain.DONE + " lone=untagged stack=untagged a=untagged b=untagged";
 	private static final String MISPLACED = WeaveHarnessMain.DONE + " lone=null stack=untagged a=null b=null";
-	private static final String LOGGED = "[Forbric/Mixin] post-mixin repair: org.harbor.shelf.Crate's merged constructor builds "
+	private static final String LOGGED = "[Forbric/Mixin] post-mixin repair: org.harbor.shelf.Crate's constructor builds "
 			+ "instances of itself after super(), so Mixin put the initialiser of tallyman$tag (com/tallyman/mark/mixin/CrateMixin)";
 
 	@TempDir static Path work;

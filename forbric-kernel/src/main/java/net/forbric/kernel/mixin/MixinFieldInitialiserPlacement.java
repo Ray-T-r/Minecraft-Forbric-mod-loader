@@ -41,15 +41,15 @@ import net.forbric.kernel.util.Caught;
 
 /**
  * Puts a mixin's field initialiser back right after the constructor's {@code super()} call, where the mixin's own loader
- * puts it, when the merged constructor made Mixin put it somewhere else.
+ * puts it, when the carrier's constructor made Mixin put it somewhere else.
  *
  * <p>Mixin (default initialiser mode) injects a mixin's field initialisers after the LAST {@code invokespecial <init>} in a
  * {@code super()}-calling constructor whose owner is the target class or its superclass. On a native class that is the
- * {@code super()} call itself. A merged constructor that builds other instances of its own class after {@code super()}
- * — NeoForge's {@code Pack} builds its children with {@code new Pack(...)} in a loop — moves the initialiser after the last
- * of those constructions: inside the loop, so an instance with no children never runs it. fabric-api's pack mixin added a
- * predicate defaulting to "not hidden" that way, and on the merged base every top-level pack (the vanilla data pack among
- * them) read as hidden and was never selected.
+ * {@code super()} call itself. A carrier constructor that builds other instances of its own class after {@code super()}
+ * — NeoForge's {@code Pack} builds its children with {@code new Pack(...)} in a loop, where vanilla's builds none — moves
+ * the initialiser after the last of those constructions: inside the loop, so an instance with no children never runs it.
+ * fabric-api's pack mixin (fabric-resource-loader's {@code PackMixin}) adds a predicate defaulting to "not hidden" that
+ * way, and without this every top-level pack (the vanilla data pack among them) read as hidden and was never selected.
  *
  * <p>Recognised by what the woven class shows, never by whose field it is: a field Mixin merged
  * ({@code @MixinMerged}), its initialiser — a self-contained {@code this.field = <expression of this and constants>} —
@@ -99,7 +99,7 @@ public final class MixinFieldInitialiserPlacement {
 			}
 		}
 		if (moved.isEmpty()) return bytes;
-		ForbricLog.info("[Forbric/Mixin] post-mixin repair: %s's merged constructor builds instances of itself after super(), so "
+		ForbricLog.info("[Forbric/Mixin] post-mixin repair: %s's constructor builds instances of itself after super(), so "
 				+ "Mixin put the initialiser of %s after the last of those constructions; it runs right after super() again, "
 				+ "as on the mixin's own loader", node.name.replace('/', '.'), String.join(", ", moved));
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);

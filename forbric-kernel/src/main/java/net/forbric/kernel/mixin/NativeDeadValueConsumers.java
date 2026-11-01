@@ -42,13 +42,13 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Hands a value a guest changed to the carrier's consumer of that value, where the carrier replaced the consumer the value
- * has natively and the merged method now computes it for nothing.
+ * has natively and the carrier's method now computes it for nothing.
  *
  * <p>Vanilla's {@code TitleScreen.extractRenderState} builds its version string — {@code "Minecraft " + version}, a demo
  * suffix, the modded suffix — and draws it bottom-left with {@code GuiGraphicsExtractor.text}. NeoForge keeps the string
  * and draws its {@code BrandingControl} lines instead, through a lambda that calls the same {@code text}; its first line is
- * the same {@code "Minecraft " + version}, computed on its own. Mod Menu changes the modded suffix to "(67 Mods)": on the
- * merged screen its handler ran every frame and the string it built was stored and never read. The title screen kept
+ * the same {@code "Minecraft " + version}, computed on its own. Mod Menu changes the modded suffix to "(67 Mods)": on
+ * NeoForge's screen its handler ran every frame and the string it built was stored and never read. The title screen kept
  * saying "Minecraft 26.2".
  *
  * <p>Post-Mixin, by the woven class's shape and the method the guest's platform has; nothing here knows a mod, a class or
@@ -61,7 +61,7 @@ import net.forbric.kernel.util.ForbricLog;
  *       draws it;</li>
  *   <li>the same method of the class the guest's platform has (its native reference) stores a local whose first value is the
  *       same expression, and reads its final value exactly once, as an argument of a call — the native consumer;</li>
- *   <li>after the last store, the merged method creates lambdas of its own class that make that same call with that
+ *   <li>after the last store, the carrier's method creates lambdas of its own class that make that same call with that
  *       argument taken from the lambda's own parameters (what the carrier hands it, item by item), and hands each lambda to a
  *       call outside the class — the carrier's replacement of the consumer.</li>
  * </ul>
@@ -211,7 +211,7 @@ public final class NativeDeadValueConsumers {
 	}
 
 	/**
-	 * The lambdas the merged method creates after {@code lastStore} that make {@code consumer}'s call with its argument taken
+	 * The lambdas the carrier's method creates after {@code lastStore} that make {@code consumer}'s call with its argument taken
 	 * from their own (not captured) parameters, each handed to a call outside the class.
 	 */
 	private static List<Twin> twins(ClassNode node, MethodNode method, Frame<SourceValue>[] frames, VarInsnNode lastStore, MethodInsnNode consumer,

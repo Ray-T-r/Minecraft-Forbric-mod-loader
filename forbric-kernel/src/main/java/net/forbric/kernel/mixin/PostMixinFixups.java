@@ -41,13 +41,14 @@ import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.ForbricSwitches;
 
 /**
- * Repairs the few classes a guest mixin wove <em>incorrectly</em> because the Forge/NeoForge byte-merge restructured
- * the target — the cases the pre-mixin adapter ({@link KernelGuestMixinAdapter}) cannot pre-empt because the damage
- * is done by Mixin's own weaving. Runs on the post-Mixin bytes, so it can see mixin-added members.
+ * Repairs the few classes a guest mixin wove into a shape its own platform never gives it, because the carrier's class
+ * differs from the one the mixin was written against — the cases the pre-mixin adapter ({@link KernelGuestMixinAdapter})
+ * cannot pre-empt because the damage is done by Mixin's own weaving. Runs on the post-Mixin bytes, so it can see
+ * mixin-added members.
  *
- * <p>A mixin's field initialiser that Mixin put after a merged constructor's own constructions of its class, instead of
- * after {@code super()}, is moved back there by {@link MixinFieldInitialiserPlacement} — recognised by the woven class's
- * shape and the mixin's native class, whichever mod's field it is.
+ * <p>A mixin's field initialiser that Mixin put after the carrier's own constructions of its class inside the constructor,
+ * instead of after {@code super()}, is moved back there by {@link MixinFieldInitialiserPlacement} — recognised by the woven
+ * class's shape and the mixin's native class, whichever mod's field it is.
  */
 public final class PostMixinFixups {
 	/** Mixin names every injected callback {@code handler$<id>$<method>}. */

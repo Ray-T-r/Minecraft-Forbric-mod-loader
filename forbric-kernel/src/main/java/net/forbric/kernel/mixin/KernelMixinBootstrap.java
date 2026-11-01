@@ -82,7 +82,7 @@ public final class KernelMixinBootstrap {
 		ForbricMixinService.bind(loader, side);
 
 		// Every config here came from a discovered guest mod (the kernel authors no mixins), so relax them all:
-		// guest mixins are written against vanilla bytecode and the base is byte-merged, so any of them can meet a
+		// guest mixins are written against vanilla bytecode and the base is NeoForge's patched game, so any of them can meet a
 		// moved anchor. Without this, only `fabric-*` was relaxed and one unpatchable injector in any other real mod
 		// (e.g. collective's collective_fabric.mixins.json) aborted the launch instead of soft-skipping.
 		ForbricMixinService.setGuestConfigs(configs);
@@ -133,7 +133,7 @@ public final class KernelMixinBootstrap {
 		}
 		// Mixin is handed pre-mixin bytes, and null for a class in no owned jar — which is its class-GENERATION
 		// request (org.spongepowered.asm.synthetic.*). transformClassBytes handles both. PostMixinFixups then repairs
-		// the handful of classes a guest mixin wove wrong because the byte-merge restructured the target (e.g.
+		// the handful of classes a guest mixin wove wrong because the carrier restructured the target (e.g.
 		// PackMixin's field initializer mis-woven into NeoForge's recursive Pack ctor).
 		// Two unrelated interfaces each supplying the same default is an error the IMPLEMENTOR must settle, and
 		// only after weaving is the second interface on the class at all — so this is the one point where it can
