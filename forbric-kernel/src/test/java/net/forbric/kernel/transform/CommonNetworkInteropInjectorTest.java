@@ -46,7 +46,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * hooks it splices resolving, and NeoForge's own once-per-connection initialisation guard, which replaced the kernel's.
  */
 class CommonNetworkInteropInjectorTest {
-	private static final Path MERGED_BASE = TestFixtures.stagedBase();
+	private static final Path STAGED_BASE = TestFixtures.stagedBase();
 	private static final String LISTENER = "net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl";
 	private static final String CLIENT_REGISTRY = "net/neoforged/neoforge/client/network/registration/ClientNetworkRegistry";
 
@@ -62,12 +62,16 @@ class CommonNetworkInteropInjectorTest {
 	 * once the {@code CONNECTION_INITIALIZED} channel attribute is set; the splice matched nothing from then on and went in
 	 * Stage 4. This pins NeoForge's guard on the staged pair: every listener call site reaches one of the two
 	 * initialisers, both go through {@code runConnectionInitialization}, it consults {@code isConnectionInitialized}, and
-	 * {@code configureOtherConnection} (the work that must not repeat) is reached only from a lambda, the one handed to it.
-	 * A carrier that drops any of that goes red here before a player's configs are rebuilt twice per join.
+	 * {@code configureOtherConnection} and {@code configureNeoForgeConnection} (the work that must not repeat) are reached
+	 * only from the runnables an initialiser hands {@code runConnectionInitialization}, read from the bootstrap handle of
+	 * the {@code invokedynamic} that builds the runnable passed to it. Another lambda of the same initialiser does not
+	 * count: {@code initializeOtherConnection}'s event-loop hop is also a {@code lambda$initializeOtherConnection$...}, and
+	 * a configure call there would run outside the guard. A carrier that drops any of that goes red here before a
+	 * player's configs are rebuilt twice per join.
 	 */
 	@Test
 	void neoForgeInitialisesEachClientConnectionOnceItself() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, STAGED_BASE, "staged base absent — skipping real-bytecode check");
 		Path carrier = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged NeoForge carrier absent — skipping real-bytecode check");
 
@@ -99,18 +103,54 @@ class CommonNetworkInteropInjectorTest {
 		assertTrue(calls(registry, "runConnectionInitialization", "isConnectionInitialized"),
 				"runConnectionInitialization no longer consults isConnectionInitialized (the CONNECTION_INITIALIZED "
 						+ "channel attribute): NeoForge stopped guarding re-initialisation");
-		List<String> configureCallers = new java.util.ArrayList<>();
-		for (MethodNode m : registry.methods) {
-			for (AbstractInsnNode insn : m.instructions) {
-				if (insn instanceof MethodInsnNode call && "configureOtherConnection".equals(call.name)) configureCallers.add(m.name);
+		java.util.Set<String> guarded = guardedRunnables(registry);
+		for (String site : sites) {
+			String initialiser = site.substring(site.indexOf("-> ") + 3);
+			assertTrue(guarded.stream().anyMatch(r -> r.startsWith(initialiser + " => ")),
+					site + ": " + initialiser + " hands runConnectionInitialization no runnable of this class built by an "
+							+ "invokedynamic just before the call; re-derive what NeoForge's guard runs: " + guarded);
+		}
+		java.util.Set<String> guardedNames = new java.util.TreeSet<>();
+		for (String r : guarded) guardedNames.add(r.substring(r.indexOf(" => ") + 4));
+		for (String work : List.of("configureOtherConnection", "configureNeoForgeConnection")) {
+			List<String> callers = new java.util.ArrayList<>();
+			for (MethodNode m : registry.methods) {
+				for (AbstractInsnNode insn : m.instructions) {
+					if (insn instanceof MethodInsnNode call && CLIENT_REGISTRY.equals(call.owner) && work.equals(call.name)) {
+						callers.add(m.name);
+					}
+				}
+			}
+			assertFalse(callers.isEmpty(), work + " is gone; re-derive NeoForge's connection setup");
+			for (String caller : callers) {
+				assertTrue(guardedNames.contains(caller),
+						work + " is reached from " + caller + ", which is not a runnable an initialiser hands "
+								+ "runConnectionInitialization " + guardedNames + ", so it runs outside NeoForge's "
+								+ "once-per-connection guard: " + callers);
 			}
 		}
-		assertFalse(configureCallers.isEmpty(), "configureOtherConnection is gone; re-derive NeoForge's other-connection setup");
-		for (String caller : configureCallers) {
-			assertTrue(caller.startsWith("lambda$initializeOtherConnection$"),
-					"configureOtherConnection is reached from " + caller + ", outside the runnable "
-							+ "initializeOtherConnection hands its guard: " + configureCallers);
+	}
+
+	/**
+	 * Every runnable an {@code initialize*} method of {@code registry} hands {@code runConnectionInitialization}, as
+	 * {@code "initializer => lambdaName"}: the implementation handle of the {@code invokedynamic} immediately before each
+	 * such call, kept only when it names a method of the registry itself.
+	 */
+	private static java.util.Set<String> guardedRunnables(ClassNode registry) {
+		java.util.Set<String> out = new java.util.TreeSet<>();
+		for (MethodNode m : registry.methods) {
+			if (!m.name.startsWith("initialize") || m.instructions == null) continue;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (!(insn instanceof MethodInsnNode call) || !"runConnectionInitialization".equals(call.name)) continue;
+				AbstractInsnNode prev = insn.getPrevious();
+				while (prev != null && prev.getOpcode() < 0) prev = prev.getPrevious();
+				if (prev instanceof org.objectweb.asm.tree.InvokeDynamicInsnNode indy && indy.bsmArgs.length > 1
+						&& indy.bsmArgs[1] instanceof org.objectweb.asm.Handle impl && registry.name.equals(impl.getOwner())) {
+					out.add(m.name + " => " + impl.getName());
+				}
+			}
 		}
+		return out;
 	}
 
 	/** Whether {@code owner.method} (any overload) calls a method named {@code callee}. */
@@ -137,7 +177,7 @@ class CommonNetworkInteropInjectorTest {
 	 */
 	@Test
 	void theBasesPlayListenerHandsEveryPayloadToItsSuperAndIsLeftAlone() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, STAGED_BASE, "staged base absent — skipping real-bytecode check");
 		String listener = "net/minecraft/server/network/ServerGamePacketListenerImpl";
 		byte[] in = readClass(listener + ".class");
 		assertSame(in, new CommonNetworkInteropInjector().transform(listener.replace('/', '.'), in, null),
@@ -164,7 +204,7 @@ class CommonNetworkInteropInjectorTest {
 	 */
 	@Test
 	void everyHookSplicedIntoTheRealListenersResolves() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, STAGED_BASE, "staged base absent — skipping real-bytecode check");
 		List<org.junit.jupiter.api.function.Executable> perListener = new java.util.ArrayList<>();
 		for (String entry : List.of(
 				"net/minecraft/network/Connection",
@@ -211,7 +251,7 @@ class CommonNetworkInteropInjectorTest {
 	}
 
 	private static byte[] readClass(String entry) throws Exception {
-		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
+		try (ZipFile zip = new ZipFile(STAGED_BASE.toFile())) {
 			ZipEntry found = zip.getEntry(entry);
 			assertNotNull(found, entry + " missing from the staged merged base");
 			try (InputStream in = zip.getInputStream(found)) {
