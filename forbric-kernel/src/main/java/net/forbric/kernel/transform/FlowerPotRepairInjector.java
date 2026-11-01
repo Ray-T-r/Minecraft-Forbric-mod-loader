@@ -48,7 +48,8 @@ public final class FlowerPotRepairInjector implements ClassTransformer {
 	@Override public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("flower pot repair explicitly disabled with -D" + NativeCoremodParity.FLOWER_POT + "=off");
 		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
-				"flower pots throw on pick-block, planting and taking a plant out, and accept no plant"));
+				"a Fabric mod reading FlowerPotBlock.potted or POTTED_BY_CONTENT finds no plant: NeoForge's constructor stores "
+				+ "null and registers nothing there"));
 	}
 
 	@Override public byte[] transform(String className, byte[] bytes, TransformContext context) {
