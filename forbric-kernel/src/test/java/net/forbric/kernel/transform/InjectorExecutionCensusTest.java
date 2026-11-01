@@ -66,7 +66,9 @@ class InjectorExecutionCensusTest {
 
 	@Test void everyInjectorIsExecutedOrListedWithAReason() throws Exception {
 		Map<String, String> injectors = injectors(classesBeside(ClassTransformer.class));
-		assertTrue(injectors.size() >= 70, "the census could not read the injectors beside ClassTransformer: " + injectors.keySet());
+		// A floor that only catches a reader that sees (almost) nothing: Stage 4 deleted the merged base's repairs, and 68
+		// injectors are left after its C3 runtime-injectors lane.
+		assertTrue(injectors.size() >= 60, "the census could not read the injectors beside ClassTransformer: " + injectors.keySet());
 		assertEquals(Type.getInternalName(ExitHookInjector.class), injectors.get("ExitHookInjector"),
 				"a known injector is missing from the census");
 
