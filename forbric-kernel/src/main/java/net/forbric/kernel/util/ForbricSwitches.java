@@ -218,7 +218,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.clientPartTracking", "NeoForge's own ClientLevel tracking callback reads NeoForge's getParts() "
 					+ "itself, so a NeoForge mod's multipart entity is tracked with no MinecraftForge body to repair"),
 			Map.entry("forbric.creativeSearchTrees", "NeoForge's own SessionSearchTrees has no MinecraftForge getSearchTree "
-					+ "reader, so there is no hanging future to route to NeoForge's trees"));
+					+ "reader, so there is no hanging future to route to NeoForge's trees"),
+			Map.entry("forbric.furnaceTickCalls", "NeoForge's own furnace tick calls its own static canBurn, consumeFuel and "
+					+ "burn, so there is no MinecraftForge instance method called as static to rebind"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

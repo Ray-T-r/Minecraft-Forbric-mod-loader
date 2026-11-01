@@ -8,8 +8,9 @@
 #     FabricItem's default — a call that never reaches a NeoForge item's override of getCraftingRemainder(ItemInstance),
 #     so the repair also gives Item a body that asks NeoForge's overload (its CHAINED row). The probe mod's jug overrides
 #     NeoForge's overload; its remainder is asked directly and through a crafting grid.
-#   smelting — NeoForge's furnace tick calls MinecraftForge's instance canBurn/consumeFuel/burn as static: every furnace
-#     threw on its first smelt (FurnaceTickCallsInjector calls them on the ticked furnace).
+#   smelting — on the merged base NeoForge's furnace tick called MinecraftForge's instance canBurn/consumeFuel/burn as
+#     static, and every furnace threw on its first smelt (FurnaceTickCallsInjector, deleted in Stage 4: NeoForge's own
+#     tick calls its own static methods, so the lit furnace smelting raw iron is now the plain game's).
 #   the Ender Dragon — its parts were MinecraftForge PartEntitys while every consumer is NeoForge-typed; NeoForge's
 #     getParts() answered null, so adding a dragon threw and a server holding one could not stop. No runtime rewrite
 #     repairs this any more: the merged-base builder proves MinecraftForge's PartEntity and NeoForge's immutable
@@ -38,7 +39,7 @@
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings, no exception on stop; each runtime
 #      repair logs its line, and the loader reports the PartEntity ancestor bridge in effect.
-#   2. off — -Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.foreignFluidTypes=off
+#   2. off — -Dforbric.defaultConflictRepair=off -Dforbric.foreignFluidTypes=off
 #      -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off: exactly the runtime-repaired cases fail and the controls
 #      hold. The dragon is now a control here: its fix is the merged base's bridge, which has no runtime switch, so the
 #      three dragon cases must PASS with every runtime repair off and the bridge line must still appear. forgePartTracking
@@ -121,13 +122,12 @@ else echo "[kernel] FAIL positive: STRICT report missing or has confirmed requir
 check "positive: ItemStack's remainder conflict was settled" 'ItemStack inherits getCraftingRemainder\(\).*gave it one that delegates to net\.fabricmc\.fabric\.api\.item\.v1\.FabricItemStack' "$RESULTS/positive.log"
 check "positive: Item's Fabric remainder asks NeoForge's overload" 'Item inherits getCraftingRemainder.*gave it one that asks getCraftingRemainder\(Lnet/minecraft/world/item/ItemInstance' "$RESULTS/positive.log"
 check "positive: Fluid.entityInside asks a fluid its own NeoForge type" 'Forbric/Fluid\] net\.minecraft\.world\.level\.material\.Fluid: 1 method' "$RESULTS/positive.log"
-check "positive: the furnace tick was bridged" 'tick calls canBurn, consumeFuel, burn on the furnace it ticks' "$RESULTS/positive.log"
 check "positive: the dragon's parts are both platforms' PartEntity (the merged base's ancestor bridge is in effect)" "$PART_BRIDGE" "$RESULTS/positive.log"
 check "positive: foreign fluids get a NeoForge type" 'Forbric/Fluid\] .*gets the one its fluid tags imply' "$RESULTS/positive.log"
 check "positive: Fabric's fuel events run on NeoForge's fuel builder" 'Forbric/Fuel\] DataMapHooks.populateFuelValues runs fabric-content-registries' "$RESULTS/positive.log"
 
 step "2. off: the same server with the runtime repairs switched off"
-run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.furnaceTickCalls=off -Dforbric.foreignFluidTypes=off -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off"
+run_server off continue "-Dforbric.defaultConflictRepair=off -Dforbric.foreignFluidTypes=off -Dforbric.fabricFuel=off -Dforbric.forgePartTracking=off"
 judge off "failed == $REPAIRED" "exactly the runtime-repaired cases fail; the controls and the dragon hold"
 check "off: the PartEntity bridge has no runtime switch and is still in effect" "$PART_BRIDGE" "$RESULTS/off.log"
 check_absent "off: the foreign-fluid repair really was switched off" 'Forbric/Fluid\] .*gets the one its fluid tags imply' "$RESULTS/off.log"
