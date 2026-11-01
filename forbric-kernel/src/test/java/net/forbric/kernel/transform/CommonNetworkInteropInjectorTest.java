@@ -20,12 +20,10 @@ import static org.junit.jupiter.api.Assertions.assertAll;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.InputStream;
-import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.zip.ZipEntry;
@@ -33,117 +31,97 @@ import java.util.zip.ZipFile;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
-import org.objectweb.asm.ClassWriter;
-import org.objectweb.asm.Label;
-import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
-import org.objectweb.asm.tree.analysis.Analyzer;
-import org.objectweb.asm.tree.analysis.BasicVerifier;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The once-per-configuration-phase guard on NeoForge's {@code initializeOtherConnection} call sites in the client
- * configuration listener: an unguarded site gets {@code initializedConnection} checked in front of its
- * {@code isOther} test, a site NeoForge already guards is left alone, and the real merged class still verifies.
+ * {@link CommonNetworkInteropInjector} against the staged base and carrier: the play listener it no longer edits, the
+ * hooks it splices resolving, and NeoForge's own once-per-connection initialisation guard, which replaced the kernel's.
  */
 class CommonNetworkInteropInjectorTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final String LISTENER = "net/minecraft/client/multiplayer/ClientConfigurationPacketListenerImpl";
-	private static final String LISTENER_NAME = LISTENER.replace('/', '.');
-	private static final String CONNECTION_TYPE = "net/neoforged/neoforge/network/connection/ConnectionType";
 	private static final String CLIENT_REGISTRY = "net/neoforged/neoforge/client/network/registration/ClientNetworkRegistry";
-	private static final String INITIALIZE_DESC = "(L" + LISTENER + ";)V";
-	private static final String INTEROP = "net/forbric/kernel/interop/PayloadInterop";
 
+	/**
+	 * NeoForge initialises a client's connection to a non-NeoForge (or NeoForge) server once per connection itself, so
+	 * the kernel no longer splices a guard into the client configuration listener.
+	 *
+	 * <p>The 26.2.0.38 beta listener ran {@code ClientNetworkRegistry.initializeOtherConnection} from three call sites per
+	 * join and checked its own {@code initializedConnection} flag at one of them; the other two rebuilt every mod's default
+	 * server config ("Overwriting non-null config ... with default server config"), re-injected the payload filters and
+	 * re-sent the register payload, and the kernel spliced the flag check in front of them. From 26.2.0.88 the flag is
+	 * gone and every site goes through {@code runConnectionInitialization}, which takes a per-connection lock and returns
+	 * once the {@code CONNECTION_INITIALIZED} channel attribute is set; the splice matched nothing from then on and went in
+	 * Stage 4. This pins NeoForge's guard on the staged pair: every listener call site reaches one of the two
+	 * initialisers, both go through {@code runConnectionInitialization}, it consults {@code isConnectionInitialized}, and
+	 * {@code configureOtherConnection} (the work that must not repeat) is reached only from a lambda, the one handed to it.
+	 * A carrier that drops any of that goes red here before a player's configs are rebuilt twice per join.
+	 */
 	@Test
-	void theUnguardedSiteGetsTheFlagCheckAndTheGuardedOneIsLeftAlone() throws Exception {
-		byte[] in = listener();
-		byte[] out = new CommonNetworkInteropInjector().transform(LISTENER_NAME, in, null);
-		assertTrue(out != in);
-		ClassNode node = parse(out);
+	void neoForgeInitialisesEachClientConnectionOnceItself() throws Exception {
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
+		Path carrier = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
+		TestFixtures.requireFile(Fixture.STAGED, carrier, "staged NeoForge carrier absent — skipping real-bytecode check");
 
-		MethodNode unguarded = method(node, "handleEnabledFeatures");
-		assertEquals(1, flagChecks(unguarded), "the flag is now checked once");
-		JumpInsnNode ifne = flagJump(unguarded);
-		assertEquals(Opcodes.IFNE, ifne.getOpcode());
-		// It jumps where NeoForge's own isOther guard jumps: past the initialisation.
-		AbstractInsnNode isOtherJump = null;
-		for (AbstractInsnNode insn : unguarded.instructions) {
-			if (insn.getOpcode() == Opcodes.IFEQ) isOtherJump = insn;
+		ClassNode listener = parse(readClass(LISTENER + ".class"));
+		List<String> sites = new java.util.ArrayList<>();
+		for (MethodNode m : listener.methods) {
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof MethodInsnNode call && CLIENT_REGISTRY.equals(call.owner)
+						&& call.name.startsWith("initialize")) sites.add(m.name + " -> " + call.name);
+			}
 		}
-		assertNotNull(isOtherJump);
-		assertEquals(((JumpInsnNode) isOtherJump).label, ifne.label);
-		new Analyzer<>(new BasicVerifier()).analyze(node.name, unguarded);
+		assertFalse(sites.isEmpty(), "the client configuration listener no longer calls NeoForge's initialisers at all; "
+				+ "re-derive where NeoForge initialises a client connection");
 
-		MethodNode guarded = method(node, "handleConfigurationFinished");
-		assertEquals(1, flagChecks(guarded), "NeoForge's own check stays the only one");
-		new Analyzer<>(new BasicVerifier()).analyze(node.name, guarded);
-	}
-
-	@Test
-	void theRealMergedListenerGetsExactlyTwoNewGuardsAndVerifies() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
-		byte[] in = readClass(LISTENER + ".class");
-		ClassNode before = parse(in);
-		byte[] out = new CommonNetworkInteropInjector().transform(LISTENER_NAME, in, null);
-		ClassNode after = parse(out);
-		int added = 0;
-		for (MethodNode m : after.methods) {
-			MethodNode was = method(before, m.name, m.desc);
-			int delta = flagChecks(m) - flagChecks(was);
-			assertTrue(delta >= 0 && delta <= 1, m.name + " gained " + delta + " flag check(s)");
-			added += delta;
-			if (delta > 0) new Analyzer<>(new BasicVerifier()).analyze(after.name, m);
-		}
-		if (listenerCarriesTheFlag(before)) {
-			assertEquals(2, added,
-					"the brand-payload site and the enabled-features site — the third was already guarded");
-		} else {
-			assertEquals(0, added, "no flag to read means nothing to splice");
-			assertTrue(neoForgeGuardsInitialisationItself(),
-					"the carrier dropped ClientConfigurationPacketListenerImpl.initializedConnection, so the kernel "
-							+ "splices no guard — and NeoForge must then be guarding re-initialisation itself. It "
-							+ "does so from 26.2.0.88 via runConnectionInitialization + the CONNECTION_INITIALIZED "
-							+ "channel attribute. If neither guard exists, every join re-runs the whole "
-							+ "initialisation: every mod's server config rebuilt, filters re-injected, register "
-							+ "payload re-sent");
-		}
-	}
-
-	private static boolean listenerCarriesTheFlag(ClassNode listener) {
-		return listener.fields.stream().anyMatch(f -> "initializedConnection".equals(f.name) && "Z".equals(f.desc));
-	}
-
-	/** NeoForge's own guard: {@code runConnectionInitialization} consults {@code isConnectionInitialized}. */
-	private static boolean neoForgeGuardsInitialisationItself() throws Exception {
-		java.nio.file.Path carrier = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
-		if (!Files.isRegularFile(carrier)) return true; // nothing staged to contradict it
-		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(carrier.toFile())) {
-			java.util.zip.ZipEntry e = zip.getEntry(
-					"net/neoforged/neoforge/client/network/registration/ClientNetworkRegistry.class");
-			if (e == null) return false;
-			ClassNode node;
+		ClassNode registry;
+		try (ZipFile zip = new ZipFile(carrier.toFile())) {
+			ZipEntry e = zip.getEntry(CLIENT_REGISTRY + ".class");
+			assertNotNull(e, CLIENT_REGISTRY + " missing from the staged carrier");
 			try (InputStream in = zip.getInputStream(e)) {
-				node = parse(in.readAllBytes());
+				registry = parse(in.readAllBytes());
 			}
-			for (MethodNode m : node.methods) {
-				if (!"runConnectionInitialization".equals(m.name) || m.instructions == null) continue;
-				for (AbstractInsnNode insn : m.instructions) {
-					if (insn instanceof MethodInsnNode call && "isConnectionInitialized".equals(call.name)) {
-						return true;
-					}
-				}
-			}
-			return false;
 		}
+		for (String site : sites) {
+			String initialiser = site.substring(site.indexOf("-> ") + 3);
+			assertTrue(calls(registry, initialiser, "runConnectionInitialization"),
+					site + ": NeoForge's " + initialiser + " no longer goes through runConnectionInitialization, its "
+							+ "once-per-connection guard; every join may now re-run the whole initialisation");
+		}
+		assertTrue(calls(registry, "runConnectionInitialization", "isConnectionInitialized"),
+				"runConnectionInitialization no longer consults isConnectionInitialized (the CONNECTION_INITIALIZED "
+						+ "channel attribute): NeoForge stopped guarding re-initialisation");
+		List<String> configureCallers = new java.util.ArrayList<>();
+		for (MethodNode m : registry.methods) {
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof MethodInsnNode call && "configureOtherConnection".equals(call.name)) configureCallers.add(m.name);
+			}
+		}
+		assertFalse(configureCallers.isEmpty(), "configureOtherConnection is gone; re-derive NeoForge's other-connection setup");
+		for (String caller : configureCallers) {
+			assertTrue(caller.startsWith("lambda$initializeOtherConnection$"),
+					"configureOtherConnection is reached from " + caller + ", outside the runnable "
+							+ "initializeOtherConnection hands its guard: " + configureCallers);
+		}
+	}
+
+	/** Whether {@code owner.method} (any overload) calls a method named {@code callee}. */
+	private static boolean calls(ClassNode owner, String method, String callee) {
+		for (MethodNode m : owner.methods) {
+			if (!m.name.equals(method) || m.instructions == null) continue;
+			for (AbstractInsnNode insn : m.instructions) {
+				if (insn instanceof MethodInsnNode call && callee.equals(call.name)) return true;
+			}
+		}
+		return false;
 	}
 
 	/**
@@ -219,72 +197,10 @@ class CommonNetworkInteropInjectorTest {
 
 	// --- helpers -------------------------------------------------------------------------------------------------
 
-	/** A stand-in listener: one site guarded the NeoForge way, one not, both otherwise shaped like the real ones. */
-	private static byte[] listener() {
-		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_FRAMES | ClassWriter.COMPUTE_MAXS);
-		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, LISTENER, null, "java/lang/Object", null);
-		cw.visitField(Opcodes.ACC_PRIVATE, "connectionType", "L" + CONNECTION_TYPE + ";", null, null).visitEnd();
-		cw.visitField(Opcodes.ACC_PRIVATE, "initializedConnection", "Z", null, null).visitEnd();
-		site(cw, "handleEnabledFeatures", false);
-		site(cw, "handleConfigurationFinished", true);
-		cw.visitEnd();
-		return cw.toByteArray();
-	}
-
-	private static void site(ClassWriter cw, String name, boolean alreadyGuarded) {
-		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, name, "()V", null, null);
-		mv.visitCode();
-		Label skip = new Label();
-		if (alreadyGuarded) {
-			mv.visitVarInsn(Opcodes.ALOAD, 0);
-			mv.visitFieldInsn(Opcodes.GETFIELD, LISTENER, "initializedConnection", "Z");
-			mv.visitJumpInsn(Opcodes.IFNE, skip);
-		}
-		mv.visitVarInsn(Opcodes.ALOAD, 0);
-		mv.visitFieldInsn(Opcodes.GETFIELD, LISTENER, "connectionType", "L" + CONNECTION_TYPE + ";");
-		mv.visitMethodInsn(Opcodes.INVOKEVIRTUAL, CONNECTION_TYPE, "isOther", "()Z", false);
-		mv.visitJumpInsn(Opcodes.IFEQ, skip);
-		mv.visitVarInsn(Opcodes.ALOAD, 0);
-		mv.visitInsn(Opcodes.ICONST_1);
-		mv.visitFieldInsn(Opcodes.PUTFIELD, LISTENER, "initializedConnection", "Z");
-		mv.visitVarInsn(Opcodes.ALOAD, 0);
-		mv.visitMethodInsn(Opcodes.INVOKESTATIC, CLIENT_REGISTRY, "initializeOtherConnection", INITIALIZE_DESC, false);
-		mv.visitLabel(skip);
-		mv.visitInsn(Opcodes.RETURN);
-		mv.visitMaxs(0, 0);
-		mv.visitEnd();
-	}
-
-	private static int flagChecks(MethodNode m) {
-		int n = 0;
-		for (AbstractInsnNode insn : m.instructions) {
-			if (insn.getOpcode() == Opcodes.GETFIELD && "initializedConnection".equals(((FieldInsnNode) insn).name)) n++;
-		}
-		return n;
-	}
-
-	private static JumpInsnNode flagJump(MethodNode m) {
-		for (AbstractInsnNode insn : m.instructions) {
-			if (insn.getOpcode() == Opcodes.GETFIELD && "initializedConnection".equals(((FieldInsnNode) insn).name)) {
-				AbstractInsnNode next = insn.getNext();
-				while (next != null && next.getOpcode() < 0) next = next.getNext();
-				return (JumpInsnNode) next;
-			}
-		}
-		throw new AssertionError("no flag check in " + m.name);
-	}
-
 	private static ClassNode parse(byte[] bytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES);
 		return node;
-	}
-
-	private static MethodNode method(ClassNode node, String name) {
-		for (MethodNode m : node.methods) {
-			if (m.name.equals(name)) return m;
-		}
-		throw new AssertionError("no method " + name);
 	}
 
 	private static MethodNode method(ClassNode node, String name, String desc) {

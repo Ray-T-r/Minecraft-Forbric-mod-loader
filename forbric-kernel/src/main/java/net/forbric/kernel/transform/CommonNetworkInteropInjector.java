@@ -128,28 +128,15 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	private static final String NEO_PACKAGE = "net/neoforged/";
 	private static final String NEO_SEND_INITIAL_CHANNELS = "sendInitialListeningChannels";
 
-	/**
-	 * NeoForge's client-side initialisation of a connection to a NON-NeoForge server, {@code ClientNetworkRegistry
-	 * .initializeOtherConnection}. Three call sites in {@code ClientConfigurationPacketListenerImpl} fire per join
-	 * (the brand payload on the Netty thread, the enabled-features packet, and the brand payload again on the render
-	 * thread after vanilla's re-dispatch) and only {@code handleConfigurationFinished} checks the listener's own
-	 * {@code initializedConnection} flag first; the other two run the whole thing again — every NeoForge mod's
-	 * default server config rebuilt ("Overwriting non-null config ..." twice per join), the payload filters
-	 * re-injected, the register payload re-sent. The two unguarded sites get the same flag check the third has,
-	 * so the flag keeps its NeoForge meaning: once per configuration phase, a reconfiguration starts afresh.
-	 *
-	 * <p><b>NeoForge 26.2.0.88 fixed this upstream and the splice now does nothing, by design.</b> The
-	 * {@code initializedConnection} field is gone; {@code initializeOtherConnection} hops to the connection's event
-	 * loop and goes through {@code runConnectionInitialization}, which takes a per-connection lock and returns
-	 * early when the {@code CONNECTION_INITIALIZED} channel attribute is already set. That is a strictly better
-	 * guard than a per-listener boolean, so {@link #guardOtherConnectionInitialisation} finds no field and installs
-	 * nothing. The code stays because the carrier is a pin that moves, and re-deriving this from scratch cost a
-	 * session once already; {@code CommonNetworkInteropInjectorTest} asserts that on a carrier without the field
-	 * NeoForge's own guard is present, so a carrier that drops BOTH goes red instead of quietly regressing.
+	/*
+	 * NeoForge's client-side initialisation of a connection to a non-NeoForge server (ClientNetworkRegistry
+	 * .initializeOtherConnection) used to be spliced here: the 26.2.0.38 beta listener ran it from three call sites per
+	 * join and only one checked its own initializedConnection flag. NeoForge fixed that upstream in 26.2.0.88 (every
+	 * site goes through runConnectionInitialization, which takes a per-connection lock and returns once the
+	 * CONNECTION_INITIALIZED channel attribute is set), the splice matched nothing from then on, on the merged base and
+	 * on NeoForge's own base alike, and it went in Stage 4. CommonNetworkInteropInjectorTest keeps NeoForge's own guard
+	 * pinned on the staged carrier, so a carrier that drops it goes red.
 	 */
-	private static final String INITIALIZE_OTHER = "initializeOtherConnection";
-	private static final String INITIALIZED_FLAG = "initializedConnection";
-	private static final String IS_OTHER = "isOther";
 
 	private static final String CONNECTION = "net.minecraft.network.Connection";
 	/**
@@ -182,10 +169,11 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	@Override
 	public AnchorSet anchors() {
 		// Four fixed target classes plus every Fabric receiver, and as many independent repairs behind one `changed`
-		// flag, at least one of them deliberately inert on the current carrier. So a matched class that comes back
-		// unedited is not yet evidence of anything; these need per-repair claims.
-		return AnchorSet.scanned("several independent repairs across four classes and every Fabric receiver, one of them "
-				+ "(the client connection-initialisation guard) intentionally inert since NeoForge 26.2.0.88");
+		// flag, some of them unclaimed and allowed to find their target already shaped right (the register sharing
+		// says so in its own log line). So a matched class that comes back unedited is not yet evidence of anything;
+		// these need per-repair claims.
+		return AnchorSet.scanned("several independent repairs across four classes and every Fabric receiver, some of "
+				+ "which leave a target alone when the carrier already ships the shape they need");
 	}
 
 	/**
@@ -195,13 +183,13 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 	static final String CLAIM_FABRIC_ADDON = "forbric-common-network-interop#fabricAddonHandle";
 	static final String CLAIM_FINISH_TASK = "forbric-common-network-interop#finishCurrentTask";
 	static final String CLAIM_CHECK_PACKET = "forbric-common-network-interop#neoCheckPacket";
-	static final String CLAIM_GUARD_INITIALISATION = "forbric-common-network-interop#guardOtherConnectionInitialisation";
 
 	/**
 	 * One claim per branch. (The merged base's play-phase fall-through, a REQUIRED claim on MinecraftForge's
 	 * {@code ServerGamePacketListenerImpl.handleCustomPayload} override, went in Stage 4: NeoForge's own play listener
 	 * hands every payload to its super, where {@code FabricCommonPayloadMixinAdapter} keeps fabric-api's handler from
-	 * throwing on it.)
+	 * throwing on it. So did the HEDGE claim on the client listener's connection-initialisation guard, which had matched
+	 * nothing since NeoForge 26.2.0.88 guarded that itself.)
 	 */
 	@Override
 	public List<Claim> claims() {
@@ -212,11 +200,7 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 						"Fabric and NeoForge common-networking configuration tasks are not treated as equivalent — one family's configuration never finishes"))),
 				new Claim(CLAIM_CHECK_PACKET, AnchorSet.of(required(NEO_NETWORK_REGISTRY,
 						"NeoForge's channel check refuses to send on a channel another ecosystem negotiated — a Polymer or Carpet "
-								+ "player is disconnected with \"Payload … may not be sent\""))),
-				// HEDGE: the merged listener on the current carrier already initialises once, so the guard finds
-				// nothing to do (never applied in any gate log); it is kept for a carrier where it does not.
-				new Claim(CLAIM_GUARD_INITIALISATION, AnchorSet.of(new AnchorSet.Anchor(CLIENT_CONFIG_LISTENER, AnchorSet.Severity.HEDGE,
-						"a non-NeoForge connection is initialised more than once per configuration"))));
+								+ "player is disconnected with \"Payload … may not be sent\""))));
 	}
 
 	private static AnchorSet.Anchor required(String binaryName, String cost) {
@@ -286,16 +270,6 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 					ForbricLog.info("[Forbric/Net] %s.%s now leaves out a channel declaration (minecraft:register) that names only "
 							+ "channels this side already declared on the connection in this phase — three ecosystems each declare, "
 							+ "and a peer's Fabric listeners heard the same channels again for every repeat", className, CONNECTION_SEND);
-				}
-			}
-			if (clientConfig) {
-				int guarded = guardOtherConnectionInitialisation(node, m);
-				if (guarded > 0) {
-					changed = true;
-					reporter.hit(CLAIM_GUARD_INITIALISATION);
-					ForbricLog.info("[Forbric/Net] %s.%s now initialises a non-NeoForge connection once per configuration "
-							+ "phase — NeoForge re-entered ClientNetworkRegistry.initializeOtherConnection from here and "
-							+ "rebuilt every mod's default server config each time", className, m.name);
 				}
 			}
 			if (clientConfig && m.name.equals(HANDLE_PAYLOAD) && m.desc.equals(HANDLE_PAYLOAD_DESC)) {
@@ -401,65 +375,6 @@ public final class CommonNetworkInteropInjector implements ClassTransformer {
 			if (reader.getSuperName() != null) pending.add(reader.getSuperName());
 		}
 		return false;
-	}
-
-	/**
-	 * For every call to NeoForge's {@code initializeOtherConnection} in {@code m} that sits behind the shape
-	 * <pre>  ALOAD 0; GETFIELD connectionType; INVOKEVIRTUAL isOther; IFEQ L; ... INVOKESTATIC initializeOtherConnection</pre>
-	 * and is not already preceded by a check of {@code initializedConnection}, splice
-	 * <pre>  ALOAD 0; GETFIELD initializedConnection; IFNE L</pre>
-	 * in front of that guard. {@code L} is an existing branch target (it carries its own frame after EXPAND_FRAMES),
-	 * so no frame is authored. Returns how many sites were guarded.
-	 */
-	private static int guardOtherConnectionInitialisation(ClassNode node, MethodNode m) {
-		boolean hasFlag = false;
-		for (org.objectweb.asm.tree.FieldNode f : node.fields) {
-			if (INITIALIZED_FLAG.equals(f.name) && "Z".equals(f.desc)) hasFlag = true;
-		}
-		if (!hasFlag) return 0;
-		int guarded = 0;
-		for (AbstractInsnNode insn = m.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn.getOpcode() != Opcodes.INVOKESTATIC) continue;
-			MethodInsnNode call = (MethodInsnNode) insn;
-			if (!INITIALIZE_OTHER.equals(call.name) || !call.owner.startsWith(NEO_PACKAGE)) continue;
-			// Walk back to the nearest `isOther` guard: INVOKEVIRTUAL isOther followed by IFEQ.
-			JumpInsnNode ifeq = null;
-			for (AbstractInsnNode back = call.getPrevious(); back != null; back = back.getPrevious()) {
-				if (back.getOpcode() == Opcodes.IFEQ) {
-					AbstractInsnNode test = previousOpcode(back);
-					if (test instanceof MethodInsnNode t && IS_OTHER.equals(t.name)) {
-						ifeq = (JumpInsnNode) back;
-						break;
-					}
-				}
-			}
-			if (ifeq == null) continue;
-			AbstractInsnNode isOther = previousOpcode(ifeq);
-			AbstractInsnNode getType = previousOpcode(isOther);
-			AbstractInsnNode loadThis = previousOpcode(getType);
-			if (getType == null || getType.getOpcode() != Opcodes.GETFIELD || loadThis == null
-					|| loadThis.getOpcode() != Opcodes.ALOAD || ((VarInsnNode) loadThis).var != 0) continue;
-			// Already guarded (NeoForge's own third site checks the flag right before): leave it.
-			AbstractInsnNode before = previousOpcode(loadThis);
-			AbstractInsnNode beforeThat = before == null ? null : previousOpcode(before);
-			if (beforeThat instanceof org.objectweb.asm.tree.FieldInsnNode f && INITIALIZED_FLAG.equals(f.name)) continue;
-			InsnList guard = new InsnList();
-			guard.add(new VarInsnNode(Opcodes.ALOAD, 0));
-			guard.add(new org.objectweb.asm.tree.FieldInsnNode(Opcodes.GETFIELD, node.name, INITIALIZED_FLAG, "Z"));
-			guard.add(new JumpInsnNode(Opcodes.IFNE, ifeq.label));
-			m.instructions.insertBefore(loadThis, guard);
-			bumpStack(m, 1);
-			guarded++;
-		}
-		return guarded;
-	}
-
-	private static AbstractInsnNode previousOpcode(AbstractInsnNode from) {
-		if (from == null) return null;
-		for (AbstractInsnNode insn = from.getPrevious(); insn != null; insn = insn.getPrevious()) {
-			if (insn.getOpcode() >= 0) return insn;
-		}
-		return null;
 	}
 
 	/**
