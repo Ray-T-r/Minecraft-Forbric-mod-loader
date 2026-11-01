@@ -21,7 +21,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.kernel.transform.ItemUseOnInjector;
 
-/** fabric-api's ItemEvents.USE_ON wrap, as shipped, against the merged ItemStack with and without the kernel's relay. */
+/** fabric-api's ItemEvents.USE_ON wrap, as shipped, against the staged (NeoForge) ItemStack with and without the kernel's relay. */
 @ResourceLock("system-properties")
 class MixinRelocatedCallTest {
 	private static final String STACK_MIXIN = "net/fabricmc/fabric/mixin/event/interaction/ItemStackMixin";
@@ -40,8 +40,9 @@ class MixinRelocatedCallTest {
 	}
 
 	/**
-	 * The genuine NeoForge base: its useOn posts ITEM_AFTER_BLOCK itself and makes the call in the same two places
-	 * MinecraftForge's does, so fabric-api's wrap had nothing to bind until ItemUseOnInjector routed NeoForge's body too.
+	 * The genuine NeoForge base: its useOn posts ITEM_AFTER_BLOCK itself and makes the call in CommonHooks.onPlaceItemIntoWorld
+	 * (server) and a lambda (client), never in useOn, so fabric-api's wrap has nothing to bind until ItemUseOnInjector routes
+	 * both through the relay.
 	 */
 	@Test void onTheGenuineBaseFabricsUseOnWrapSelectsTheRelay() throws Exception {
 		byte[] raw = net.forbric.kernel.transform.ChainReferences.read(net.forbric.kernel.transform.ChainReferences.genuineJars(),
@@ -62,22 +63,22 @@ class MixinRelocatedCallTest {
 	}
 
 	@Test void nothingMovesWithoutTheRelay() throws Exception {
-		ClassNode mixin = fabric(), merged = merged(false);
-		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> merged), "the transformer did not run: no proof");
+		ClassNode mixin = fabric(), base = staged(false);
+		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> base), "the transformer did not run: no proof");
 		assertEquals(List.of("useOn"), selectors(mixin, "handleUseOnEvent"));
 		ClassNode vanilla = game(TestFixtures.vanillaJar());
 		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> vanilla), "vanilla's useOn makes the call itself");
 	}
 
 	/**
-	 * A merged useOn ItemUseOnInjector declines — its client lambda does one thing more than {@code getItem().useOn(context)}
+	 * A NeoForge useOn ItemUseOnInjector declines — its client lambda does one thing more than {@code getItem().useOn(context)}
 	 * — keeps fabric-api's wrap where it was compiled: the class gains only a bridge that calls Item.useOn itself and no
 	 * relay. useOn still makes no Item.useOn call, which is the half of the proof a declined body always meets, so the
 	 * relay is the whole of what stops the move. Measured before: the relay went in ahead of the decline, and the wrap
 	 * moved onto a method only the server's call reached.
 	 */
 	@Test void aDeclinedBodyGivesTheWrapNoRelayToMoveTo() throws Exception {
-		ClassNode declined = merged(true, true), routed = relayed();
+		ClassNode declined = staged(true, true), routed = relayed();
 		assertTrue(declined.methods.stream().anyMatch(m -> m.name.equals("forbric$useOnItemFor")), "premise: the bridge went in");
 		ClassNode mixin = fabric();
 		assertEquals(0, MixinRelocatedCall.adapt(mixin, name -> declined));
@@ -126,15 +127,15 @@ class MixinRelocatedCallTest {
 	}
 
 	private static ClassNode relayed() throws Exception {
-		return merged(true);
+		return staged(true);
 	}
 
-	private static ClassNode merged(boolean relayed) throws Exception {
-		return merged(relayed, false);
+	private static ClassNode staged(boolean relayed) throws Exception {
+		return staged(relayed, false);
 	}
 
 	/** {@code declined}: the client lambda gets a {@code dup; pop} after {@code getItem()}, which is not the reviewed shape. */
-	private static ClassNode merged(boolean relayed, boolean declined) throws Exception {
+	private static ClassNode staged(boolean relayed, boolean declined) throws Exception {
 		Path jar = TestFixtures.stagedBase();
 		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");
 		try (ZipFile zip = new ZipFile(jar.toFile())) {

@@ -19,19 +19,23 @@ import net.forbric.kernel.transform.ItemUseOnInjector;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Points an injector at the one-call relay the kernel gave a call the surviving carrier moved out of its method.
+ * Points an injector at the one-call relay the kernel gave a call the base moved out of the method the mod was written for.
  *
- * <p>MinecraftForge's {@code ItemStack.useOn} makes its {@code Item.useOn} call in {@code ForgeHooks} (server) and in a
- * lambda (client), not in {@code useOn}; {@link ItemUseOnInjector} routes both through
- * {@code ItemStack.forbric$useOnItem(Item, UseOnContext)}, whose whole body is that call. An injector written for the
- * call inside {@code useOn} — fabric-api's {@code ItemEvents.USE_ON} is one — then selects the relay instead.
+ * <p>Vanilla's {@code ItemStack.useOn} calls {@code Item.useOn} itself. NeoForge's {@code useOn} does not: after posting
+ * {@code UseItemOnBlockEvent} it returns {@code CommonHooks.onPlaceItemIntoWorld(context)} on a server, which makes the
+ * call, and on a client {@code onItemUse(context, c -> getItem().useOn(context))}, whose lambda makes it.
+ * {@link ItemUseOnInjector} routes both through {@code ItemStack.forbric$useOnItem(Item, UseOnContext)}, whose whole body
+ * is that call. An injector written for the call inside vanilla's {@code useOn} — fabric-api's {@code ItemEvents.USE_ON}
+ * {@code @WrapOperation} is one — then selects the relay instead; without this it finds nothing in NeoForge's
+ * {@code useOn}, goes unattached, and the event never fires.
  *
  * <p>Only injectors whose handler describes the CALL and nothing about {@code useOn} move, because the relay has the
  * call and nothing else of {@code useOn}: {@code @WrapOperation} taking exactly (receiver, arguments, Operation),
  * {@code @Redirect} taking exactly (receiver, arguments), {@code @ModifyExpressionValue} taking exactly the result,
  * {@code @ModifyArg} with one parameter and {@code @ModifyArgs} with its {@code Args}. No sugar parameter, no slice, no
  * {@code @Group}, and every {@code @At} of the injector must be that call. An {@code @Inject} (it takes {@code useOn}'s
- * own parameters and callback) or a handler that captures {@code useOn}'s locals is left as compiled. The injector is
+ * own parameters and callback) or a handler that captures {@code useOn}'s locals is left as compiled here
+ * ({@code MixinPlacementTransactionAdapter} handles an {@code @Inject} at the call). The injector is
  * recognised as Mixin reads it, never by spelling: its selectors by the method they bind in the target, its points by the
  * member they name — whitespace and a dotted owner are the same target, and one without its owner or descriptor names
  * the call where the method it was written for, in the class the mod was compiled against, decides it
@@ -39,15 +43,18 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>The proof is the relay itself: the target's pre-mixin bytes must declare it with exactly
  * {@code aload_1; aload_2; <the call>; areturn}, and {@code useOn} must no longer make the call. Without both — the
- * transformer declined, or a carrier restored the call — nothing moves. {@code -Dforbric.mixinRelocatedCall=off}
+ * transformer declined, or the base's {@code useOn} makes the call itself — nothing moves. {@code -Dforbric.mixinRelocatedCall=off}
  * leaves every selector as compiled.
  */
 public final class MixinRelocatedCall {
 	public static final String PROPERTY = "forbric.mixinRelocatedCall";
 
-	/** A call the kernel relocated: which method it left, the call, and the relay that now makes it. */
+	/**
+	 * A call the kernel relocated: which method it left, the call, the relay that now makes it, and where the base makes
+	 * the call instead (for the log).
+	 */
 	record Relocation(String owner, String method, String methodDesc, String callOwner, String callName, String callDesc,
-			String relay, String relayDesc) {
+			String relay, String relayDesc, String elsewhere) {
 		String callTarget() {
 			return "L" + callOwner + ";" + callName + callDesc;
 		}
@@ -58,7 +65,8 @@ public final class MixinRelocatedCall {
 					"(Lnet/minecraft/world/item/context/UseOnContext;)Lnet/minecraft/world/InteractionResult;",
 					"net/minecraft/world/item/Item", "useOn",
 					"(Lnet/minecraft/world/item/context/UseOnContext;)Lnet/minecraft/world/InteractionResult;",
-					ItemUseOnInjector.RELAY, ItemUseOnInjector.RELAY_DESC));
+					ItemUseOnInjector.RELAY, ItemUseOnInjector.RELAY_DESC,
+					"NeoForge's CommonHooks.onPlaceItemIntoWorld on a server and a lambda on a client"));
 
 	private static final String WRAP_OPERATION = "Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;";
 	private static final String REDIRECT = "Lorg/spongepowered/asm/mixin/injection/Redirect;";
@@ -97,10 +105,11 @@ public final class MixinRelocatedCall {
 				for (MethodNode handler : mixin.methods) {
 					if (move(handler, target, source, relocation)) {
 						moved++;
-						ForbricLog.info("[Forbric/Mixin] %s: %s now wraps %s.%s in %s — MinecraftForge's %s makes that call "
-								+ "outside its own body, and the kernel routes it through that one method",
+						ForbricLog.info("[Forbric/Mixin] %s: %s now wraps %s.%s in %s — the base's %s.%s makes that call outside "
+								+ "its own body (in %s), and the kernel routes it through that one method",
 								mixin.name.replace('/', '.'), handler.name, relocation.callOwner().substring(relocation.callOwner().lastIndexOf('/') + 1),
-								relocation.callName(), relocation.relay(), relocation.method());
+								relocation.callName(), relocation.relay(), relocation.owner().substring(relocation.owner().lastIndexOf('/') + 1),
+								relocation.method(), relocation.elsewhere());
 					}
 				}
 			}

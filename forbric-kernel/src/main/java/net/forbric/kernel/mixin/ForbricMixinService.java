@@ -405,8 +405,8 @@ public final class ForbricMixinService
 		// …and an injection point naming a call the surviving carrier gave extra parameters is pointed at the
 		// longer call, for the injectors whose handler does not describe that call's arguments.
 		MixinAtWidenedCall.widen(node, this::mergedBaseNodeWithCode);
-		// …and an injection point on a call the kernel relocated out of its method (MinecraftForge's ItemStack.useOn)
-		// selects the one-call relay that now makes it.
+		// …and an injection point on a call the base makes outside the method it was written for (NeoForge's
+		// ItemStack.useOn: CommonHooks.onPlaceItemIntoWorld and a client lambda) selects the one-call relay that now makes it.
 		MixinRelocatedCall.adapt(node, this::mergedBaseNodeWithCode);
 		// …and any structurally proven @WrapOperation whose call the carrier reordered or widened is wrapped, so it binds
 		// to the merged call and its handler still receives the arguments it was written for (never a @Redirect: it
