@@ -189,7 +189,7 @@ public final class UncalledValueRelay {
 		if (text(method).equals(text(original))) return null;
 		String why = declined(contract, node, before, method, original);
 		if (why != null) {
-			ForbricLog.warn("[Forbric/Mixin] %s never runs in the merged game, and the hooks woven into it are not relayed to where the carrier "
+			ForbricLog.warn("[Forbric/Mixin] %s never runs in the game, and the hooks woven into it are not relayed to where the carrier "
 					+ "computes its value — %s; they stay where nothing calls them", contract.display(), why);
 			return null;
 		}
@@ -218,7 +218,7 @@ public final class UncalledValueRelay {
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		List<String> hooks = hooks(node, before, method);
-		ForbricLog.info("[Forbric/Mixin] %s never runs in the merged game; the %d hook(s) woven into it (%s) run in %s%s, on the value the carrier "
+		ForbricLog.info("[Forbric/Mixin] %s never runs in the game; the %d hook(s) woven into it (%s) run in %s%s, on the value the carrier "
 				+ "computes in its place", contract.display(), hooks.size(), String.join(", ", hooks), contract.name(), SUFFIX);
 		return writer.toByteArray();
 	}

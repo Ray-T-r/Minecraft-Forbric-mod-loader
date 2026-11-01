@@ -109,7 +109,7 @@ public final class MixinSplitBodyEdges {
 			MixinPlayerWorldCallbackAdapter.set(injector, "method", new ArrayList<>(List.of(piece.name + piece.desc)));
 			moved++;
 			ForbricLog.info("[Forbric/Mixin] %s: %s's %s of %s.%s%s moves to the %s of %s%s — a carrier split that body into %s, which the "
-					+ "merged game runs one by one and never through the method%s", mixin.name.replace('/', '.'), written,
+					+ "game runs one by one and never through the method%s", mixin.name.replace('/', '.'), written,
 					move.head() ? "start" : "end", target.name.replace('/', '.'), move.named().name, move.named().desc,
 					move.head() ? "start" : "end", piece.name, piece.desc, move.pieces().stream().map(p -> p.name).toList(),
 					cancels ? "; a cancel there skips the later pieces of that run" : "");

@@ -62,7 +62,7 @@ class NativeLocalMaterializationWeaveTest {
 
 	@Test void theGuestReadsTheBundleTheCallIsHanded() throws Exception {
 		assertTrue(kept.printedLine(KEPT), kept.describe());
-		assertTrue(kept.printed("[Forbric/Mixin] com.lantern.keep.mixin.CrateMixin.keep$seen: the merged org.quarry.yard.Crate.each"), kept.describe());
+		assertTrue(kept.printed("[Forbric/Mixin] com.lantern.keep.mixin.CrateMixin.keep$seen: the current org.quarry.yard.Crate.each"), kept.describe());
 		assertEquals(List.of(), kept.findings().stream().filter(f -> f.modId().equals(MOD) && !f.confidence().equals("RESOLVED")).toList(),
 				kept.describe());
 		assertTrue(callsGuest(kept), kept.describe());

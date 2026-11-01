@@ -151,7 +151,7 @@ public final class MixinHandlerShim {
 						+ "takes %s (a carrier patch changed its captures). Its handler is wrapped so it still receives the "
 						+ "values it asked for, in the order it asked for them", mixin.name, outer.name, selector, plan.live().desc);
 			} else {
-				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — vanilla's %s; the merged "
+				ForbricLog.warn("[Forbric/Mixin] %s.%s was written for a differently shaped %s — vanilla's %s; the "
 						+ "base keeps the same parameters in another order, %s (a carrier patch uses a capture earlier). Its "
 						+ "handler is wrapped so it still receives the values it asked for, in the order it asked for them",
 						mixin.name, outer.name, selector, plan.row().vanillaDesc(), plan.live().desc);

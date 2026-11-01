@@ -39,7 +39,7 @@ class MixinShiftedPointsWeaveTest {
 	private static final String CONFIG = "shifted.mixins.json";
 	private static final String OVERRIDDEN = "[Shifted] fov=30.0";
 	private static final String LOST = "[Shifted] fov=70.0";
-	private static final String MOVED = "the merged body keeps that instruction behind a carrier's code";
+	private static final String MOVED = "the current body keeps that instruction behind a carrier's code";
 
 	@TempDir static Path work;
 	private static WeaveHarness.Result on, off, unchanged;

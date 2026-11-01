@@ -176,7 +176,7 @@ public final class MixinAtWidenedCall {
 			new Redirectable("Lnet/minecraft/network/RegistryFriendlyByteBuf;decorator(Lnet/minecraft/core/RegistryAccess;"
 					+ "Lnet/neoforged/neoforge/network/connection/ConnectionType;)Ljava/util/function/Function;",
 					"the appended ConnectionType only becomes the type recorded on each buffer the function builds; the "
-							+ "vanilla-form decorator the merged base keeps builds the same buffer typed OTHER, which is "
+							+ "vanilla-form decorator the base keeps builds the same buffer typed OTHER, which is "
 							+ "what a buffer a mod builds through vanilla's constructor carries, what every vanilla client's "
 							+ "connection carries, and what the play buffers creativecore's own PlayerListMixin wrap builds "
 							+ "already carry on this base. The cost: NeoForge's connection-aware codecs read that type off "

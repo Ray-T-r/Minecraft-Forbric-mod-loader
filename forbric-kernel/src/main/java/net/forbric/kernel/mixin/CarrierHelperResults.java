@@ -226,7 +226,7 @@ public final class CarrierHelperResults {
 		mixin.methods.add(wrapper);
 		CurrentBodyOrdinals.mark(wrapper);
 		ForbricLog.info("[Forbric/Mixin] %s.%s: %s is no longer called in %s.%s; the carrier makes it in %s, which answers true exactly when it"
-				+ " made it — the injector runs on that answer, at its %d call(s), with %d local(s) read where the merged method keeps them",
+				+ " made it — the injector runs on that answer, at its %d call(s), with %d local(s) read where the current method keeps them",
 				mixin.name.replace('/', '.'), name, call.owner.replace('/', '.') + "." + call.name, merged.name.replace('/', '.'), selected.name,
 				merged.name.replace('/', '.') + "." + helper.name, sites.size(), locals.size());
 		return wrapper;

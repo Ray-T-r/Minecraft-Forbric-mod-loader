@@ -177,7 +177,7 @@ class NativeOccurrencePointWeaveTest {
 
 	@Test void eachInjectorRunsAsOftenAsNatively() throws Exception {
 		assertTrue(on.printed(WeaveHarnessMain.DONE + " " + NATIVE), on.describe());
-		assertTrue(on.printed("[Forbric/Mixin]") && on.printed("of the merged body's"), on.describe());
+		assertTrue(on.printed("[Forbric/Mixin]") && on.printed("of the current body's"), on.describe());
 		// A, B and C drop the carrier's occurrences on the native path; B2 stands on the first store it binds; D and E log
 		// nothing of the kind (D keeps both branches, E selects its counterpart).
 		assertTrue(on.printed("the carrier added on the native path never run it"), on.describe());
@@ -191,7 +191,7 @@ class NativeOccurrencePointWeaveTest {
 	/** Switched off, Mixin counts over the merged body: the carrier's occurrences run the handlers too, and E names the wrong call. */
 	@Test void switchedOffTheCarriersOccurrencesRunTheHandlers() {
 		assertTrue(off.printed(WeaveHarnessMain.DONE + " " + MERGED_COUNTS), off.describe());
-		assertFalse(off.printed("of the merged body's"), off.describe());
+		assertFalse(off.printed("of the current body's"), off.describe());
 	}
 
 	/** With the older pass left on as in production, the results are the native ones too. */

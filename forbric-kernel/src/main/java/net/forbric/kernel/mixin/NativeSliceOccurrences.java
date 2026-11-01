@@ -73,7 +73,7 @@ public final class NativeSliceOccurrences {
 				remove(at, "slice");
 				remove(injector, "slice");
 				moved++;
-				ForbricLog.info("[Forbric/Mixin] %s.%s: the call its slice picked in %s.%s is no longer inside that slice; the merged method makes "
+				ForbricLog.info("[Forbric/Mixin] %s.%s: the call its slice picked in %s.%s is no longer inside that slice; the current method makes "
 						+ "it as call %d of %s.%s, with the same operands under the same conditions, and the point now names that one",
 						mixin.name.replace('/', '.'), handler.name, target.replace('/', '.'), found.host().name, found.ordinal(),
 						found.call().owner.replace('/', '.'), found.call().name);

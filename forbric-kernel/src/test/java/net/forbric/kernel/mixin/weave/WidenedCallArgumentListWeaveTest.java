@@ -50,7 +50,7 @@ class WidenedCallArgumentListWeaveTest {
 	private static final String STAYED = WeaveHarnessMain.DONE
 			+ " ordinary=yaw:30.0,roll:5.0,hook:0 sleeping=yaw:135.0,roll:0.0,hook:1 minecart=yaw:30.0,roll:0.0,hook:0";
 	private static final String MOVED_LOG = "ViewMixin.lantern$turn: the setRotation(FF)V call its point picks in net.minecraft.client.Camera"
-			+ ".alignWithEntity is made on the merged body as setRotation(FFF)V (ordinal 0)";
+			+ ".alignWithEntity is made on the current body as setRotation(FFF)V (ordinal 0)";
 
 	@TempDir static Path work;
 	private static Path merged;

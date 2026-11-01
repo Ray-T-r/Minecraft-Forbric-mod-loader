@@ -250,13 +250,13 @@ public final class KernelFabricFuel {
 			// The call the native Fabric and MinecraftForge servers make, so a hook on either outer overload runs too.
 			FuelValues hooked = FuelValues.vanillaBurnTimes(registries, features);
 			if (!pending.taken) {
-				warnHooksOnce("vanillaBurnTimes returned without reaching the merge-added body the kernel short-circuits "
+				warnHooksOnce("vanillaBurnTimes returned without reaching the carrier-added body the kernel short-circuits "
 						+ "(a HEAD cancel, or a carrier whose overload no longer forwards)");
 				return built;
 			}
 			if (HOOKS_PROVED.compareAndSet(false, true)) {
 				ForbricLog.info("[Forbric/Fuel] the fuel builder NeoForge's populateFuelValues filled was built at "
-						+ "FuelValues.vanillaBurnTimes' own build() and went through its return hooks — the merged server never "
+						+ "FuelValues.vanillaBurnTimes' own build() and went through its return hooks — the server never "
 						+ "calls that method, so a mod's mixin there (a wrap that adds its fuels, torrential's Angling Table) "
 						+ "never reached the fuels a furnace uses");
 			}

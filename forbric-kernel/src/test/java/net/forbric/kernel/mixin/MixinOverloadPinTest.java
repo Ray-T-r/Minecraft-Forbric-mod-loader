@@ -325,7 +325,7 @@ class MixinOverloadPinTest {
 		MethodNode handler = mixin.methods.get(0);
 		assertTrue(MixinOverloadPin.explain(mixin, handler, CLICK, List.of(SERVER), targets(server)));
 		assertEquals("its onClick selects handleCustomClickAction by name, which binds the first of 2 methods the "
-				+ "merged class declares with that name, " + CARRIER_CLICK + "; the handler was written for " + VANILLA_CLICK,
+				+ "current class declares with that name, " + CARRIER_CLICK + "; the handler was written for " + VANILLA_CLICK,
 				MixinOverloadPin.reasonFor(mixin.name));
 
 		MixinOverloadPin.clearReasons();

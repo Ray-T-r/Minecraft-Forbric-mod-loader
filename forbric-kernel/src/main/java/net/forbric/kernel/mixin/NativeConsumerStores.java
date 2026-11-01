@@ -92,7 +92,7 @@ public final class NativeConsumerStores {
 			set(at, "ordinal", ordinal);
 			CurrentBodyOrdinals.mark(handler);
 			moved++;
-			ForbricLog.info("[Forbric/Mixin] %s.%s: its local's one native store is stored again on the merged %s.%s's own paths — the "
+			ForbricLog.info("[Forbric/Mixin] %s.%s: its local's one native store is stored again on the current %s.%s's own paths — the "
 					+ "modifier moves to the read the native code makes right after that store (read %d), so it runs once per call, on the "
 					+ "value that read sees", mixin.name.replace('/', '.'), handler.name, current.name.replace('/', '.'), host.name, ordinal);
 		}

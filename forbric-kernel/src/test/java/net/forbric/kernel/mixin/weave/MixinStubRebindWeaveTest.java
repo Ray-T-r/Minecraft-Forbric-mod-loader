@@ -52,7 +52,7 @@ class MixinStubRebindWeaveTest {
 	private static final String STAYED = "body[body;land;] stub[head(4.0,5.0,6.0,false);body;land;]";
 	/** MixinStubRebind's own line per moved handler; the capturing one is moved through a shim, hence its tail. */
 	private static final String ANCHOR_MOVED = "stubrebind$beforeLand now targets net.minecraft.world.entity.LivingEntity.randomTeleport" + BODY;
-	private static final String HEAD_MOVED = "randomTeleport" + BODY + " — Mixin bound its selector to the merge-added stub " + STUB
+	private static final String HEAD_MOVED = "randomTeleport" + BODY + " — Mixin bound its selector to the carrier-added stub " + STUB
 			+ ", which only forwards to it; the handler still receives the stub's arguments";
 
 	@TempDir static Path work;

@@ -122,7 +122,7 @@ public final class RepairDriftCensus {
 	/** {@code RepairDriftCensus <candidate-merged-base.jar> [<carrier.jar> ...]} */
 	public static void main(String[] args) throws IOException {
 		if (args.length < 1) {
-			System.err.println("usage: RepairDriftCensus <candidate-merged-base.jar> [<carrier.jar> ...]");
+			System.err.println("usage: RepairDriftCensus <candidate-base.jar> [<carrier.jar> ...]");
 			System.exit(2);
 		}
 		List<Path> jars = new ArrayList<>();

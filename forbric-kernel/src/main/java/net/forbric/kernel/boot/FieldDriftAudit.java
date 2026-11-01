@@ -129,7 +129,7 @@ public final class FieldDriftAudit {
 			for (var e : HITS.entrySet()) hits.put(e.getKey(), Set.copyOf(e.getValue()));
 			scanned = scannedJars;
 		}
-		ForbricLog.info("[Forbric/FieldDrift] scanned %d jar(s): %d reference a vanilla field the merge re-typed", scanned,
+		ForbricLog.info("[Forbric/FieldDrift] scanned %d jar(s): %d reference a vanilla field the base re-typed", scanned,
 				hits.size());
 		if (hits.isEmpty()) return;
 		List<ModCatalog.Entry> catalog = ModCatalog.everything();
@@ -138,7 +138,7 @@ public final class FieldDriftAudit {
 			for (ModCatalog.Entry entry : catalog) {
 				if (entry.jar() == null || !entry.jar().equals(e.getKey())) continue;
 				ModCatalog.mark(entry.modId(), ModCatalog.Status.DEGRADED, "reads " + String.join(", ", simple(e.getValue()))
-						+ " with vanilla's descriptor, which the merged base no longer declares — NoSuchFieldError at that access");
+						+ " with vanilla's descriptor, which the base no longer declares — NoSuchFieldError at that access");
 				named.add(entry.modId());
 			}
 			for (String key : e.getValue()) {

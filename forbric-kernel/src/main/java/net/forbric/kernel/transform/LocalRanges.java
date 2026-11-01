@@ -91,7 +91,7 @@ public final class LocalRanges implements ClassTransformer {
 
 	@Override
 	public AnchorSet anchors() {
-		return AnchorSet.scanned(enabled() ? "every merged game class whose variable table starts a local after its uses"
+		return AnchorSet.scanned(enabled() ? "every game class whose variable table starts a local after its uses"
 				: "switched off by -D" + PROPERTY);
 	}
 
@@ -111,7 +111,7 @@ public final class LocalRanges implements ClassTransformer {
 			ForbricLog.debug("[Forbric/LocalRanges] %s: %d local range(s) now start at the local's declaring store", className, widened);
 			return writer.toByteArray();
 		} catch (RuntimeException unreadable) {
-			Caught.warn(unreadable, "[Forbric/LocalRanges] could not widen the local ranges of %s; it is left as merged", className);
+			Caught.warn(unreadable, "[Forbric/LocalRanges] could not widen the local ranges of %s; it is left as the base has it", className);
 			return classBytes;
 		}
 	}

@@ -88,7 +88,7 @@ public final class MixinCapturedLocals {
 			if (locals == null) continue;
 			apply(handler, injector, locals);
 			converted++;
-			ForbricLog.info("[Forbric/Mixin] %s: %s's locals capture in %s.%s%s now reads each captured local where the merged body "
+			ForbricLog.info("[Forbric/Mixin] %s: %s's locals capture in %s.%s%s now reads each captured local where the current body "
 					+ "keeps it (handler parameter → slot %s): the carrier declares other locals there, and the capture's list no longer "
 					+ "matched", mixin.name.replace('/', '.'), handler.name, current.name.replace('/', '.'), after.name, after.desc, locals);
 		}

@@ -50,7 +50,7 @@ public final class MixinOperationSeamTransport implements Opcodes {
         /** OperationSeams' once-per-site report: the operation is skipped there, the carrier gateway runs as written. */
         void declined(ClassLoader loader,String ignoredKey,String reason){
             String broken=broken(loader),cause=broken==null?reason:broken;
-            SeamDeclines.report(source,injectorName,injectorDesc,site(),"source operation skipped at "+site()+", whose call it wraps the merged game moved into "
+            SeamDeclines.report(source,injectorName,injectorDesc,site(),"source operation skipped at "+site()+", whose call it wraps the game moved into "
                 +helperName()+": "+cause+"; the carrier's gateway runs as written",List.of("transport=operation seam","host="+site(),"helper="+helperName(),"declined="+reason,"cause="+cause));
         }
     }

@@ -62,7 +62,7 @@ class NativeLocalPinsWeaveTest {
 
 	@Test void theGuestReadsTheCargoItsLoaderHandsIt() throws Exception {
 		assertTrue(kept.printedLine(KEPT), kept.describe());
-		assertTrue(kept.printed("[Forbric/Mixin] com.tallyman.count.mixin.PierMixin.tally$count: the merged org.harbor.dock.Pier.unload"), kept.describe());
+		assertTrue(kept.printed("[Forbric/Mixin] com.tallyman.count.mixin.PierMixin.tally$count: the current org.harbor.dock.Pier.unload"), kept.describe());
 		assertEquals(List.of(), kept.findings().stream().filter(f -> f.modId().equals(MOD) && !f.confidence().equals("RESOLVED")).toList(),
 				kept.describe());
 		assertTrue(callsGuest(kept), kept.describe());

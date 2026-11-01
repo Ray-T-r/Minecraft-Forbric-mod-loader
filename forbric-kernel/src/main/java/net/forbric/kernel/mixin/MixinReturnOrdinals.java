@@ -85,7 +85,7 @@ public final class MixinReturnOrdinals {
 			if (!proved) {
 				if (currentReturns != map.length) {
 					ForbricLog.warn("[Forbric/Mixin] %s: %s's RETURN ordinal(s) %s on %s.%s count the native body's %d returns; not every one "
-							+ "is proved to be one of the merged body's %d, so they stay as compiled", mixin.name.replace('/', '.'), handler.name,
+							+ "is proved to be one of the current body's %d, so they stay as compiled", mixin.name.replace('/', '.'), handler.name,
 							ordinals(points), current.name.replace('/', '.'), after.name, map.length, currentReturns);
 				}
 				continue;
@@ -96,7 +96,7 @@ public final class MixinReturnOrdinals {
 			CurrentBodyOrdinals.mark(handler);
 			moved++;
 			ForbricLog.info("[Forbric/Mixin] %s: %s's RETURN ordinal(s) %s on %s.%s count the native body's %d returns; the same ways out "
-					+ "are the merged body's %s of %d", mixin.name.replace('/', '.'), handler.name, was, current.name.replace('/', '.'),
+					+ "are the current body's %s of %d", mixin.name.replace('/', '.'), handler.name, was, current.name.replace('/', '.'),
 					after.name, map.length, ordinals(points), currentReturns);
 		}
 		return moved;

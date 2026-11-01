@@ -112,7 +112,7 @@ public final class MixinKeyActionAdapter {
 				MixinPlayerWorldCallbackAdapter.set(at, "value", "TAIL");
 				MixinPlayerWorldCallbackAdapter.remove(at, "ordinal");
 			}
-			placed = "the merged final return";
+			placed = "the current final return";
 		} else {
 			guard = exits.joined(ordinal);
 			// Before the hook, a cancelled callback would also cancel the carrier's event, which the native return never had.
@@ -121,7 +121,7 @@ public final class MixinKeyActionAdapter {
 			MixinPlayerWorldCallbackAdapter.set(at, "value", "INVOKE");
 			MixinPlayerWorldCallbackAdapter.set(at, "target", exits.entry());
 			MixinPlayerWorldCallbackAdapter.set(at, "ordinal", exits.entryOrdinal());
-			placed = "the merged " + exits.entry() + " call that begins the join";
+			placed = "the current " + exits.entry() + " call that begins the join";
 			if (guard.all()) guard = null;
 		}
 		List<String> shares = new ArrayList<>();

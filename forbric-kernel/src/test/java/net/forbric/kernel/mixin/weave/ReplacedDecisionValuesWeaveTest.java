@@ -58,7 +58,7 @@ class ReplacedDecisionValuesWeaveTest {
 			+ " | dive plain shallow: currents:shallow, hold plain, dived false | dive plain deep: currents:deep, dived true"
 			+ " | dive gilled shallow: currents:shallow, hold gilled, dived false | dive gilled deep: currents:deep, dived true";
 	private static final String LOGGED = "[Forbric/Mixin] com.kestrel.gill.mixin.DiverMixin.%s: org.harbor.deck.Diver.isUnder is no longer called in org.harbor.deck.Diver.%s;"
-			+ " the call the merged method makes in its place, deciding the same branch, is org.harbor.carrier.Currents.covers";
+			+ " the call the current method makes in its place, deciding the same branch, is org.harbor.carrier.Currents.covers";
 
 	@TempDir static Path work;
 	private static Path fixture;

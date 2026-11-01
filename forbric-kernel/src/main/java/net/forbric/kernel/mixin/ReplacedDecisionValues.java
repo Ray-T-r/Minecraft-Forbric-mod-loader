@@ -87,7 +87,7 @@ public final class ReplacedDecisionValues {
 				set(at, "target", "L" + replacement.owner + ";" + replacement.name + replacement.desc);
 				set(at, "ordinal", occurrence(host, replacement));
 				moved++;
-				ForbricLog.info("[Forbric/Mixin] %s.%s: %s is no longer called in %s; the call the merged method makes in its place, deciding "
+				ForbricLog.info("[Forbric/Mixin] %s.%s: %s is no longer called in %s; the call the current method makes in its place, deciding "
 						+ "the same branch, is %s.%s — the value it changes is that call's", mixin.name.replace('/', '.'), handler.name, readable(was),
 						target.replace('/', '.') + "." + host.name, replacement.owner.replace('/', '.'), replacement.name);
 			}

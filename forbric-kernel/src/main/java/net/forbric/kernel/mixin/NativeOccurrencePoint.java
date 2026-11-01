@@ -155,7 +155,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		// Mixin's own count over the merged body is the native one.
 		// A numbered point is checked even where the numbers agree: the carrier may have put its own occurrence in front.
 		if (native_.isEmpty() || native_.size() == merged.size() && ordinal < 0) {
-			ForbricLog.debug("[Forbric/Mixin] %s: %s point in %s.%s: native %d, merged %d — as written", owner(), point,
+			ForbricLog.debug("[Forbric/Mixin] %s: %s point in %s.%s: native %d, current %d — as written", owner(), point,
 					target.classNode.name, target.method.name, native_.size(), merged.size());
 			return written;
 		}
@@ -226,7 +226,7 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 		String key = owner() + "|" + target.classNode.name + "." + target.method.name + target.method.desc + "|" + point + "|" + ordinal;
 		if (LOGGED.putIfAbsent(key, Boolean.TRUE) == null) {
 			dump(nativeClass.name, nativeMethod, target.classNode.name, target.method, aligned, wanted, merged, chosen);
-			ForbricLog.info("[Forbric/Mixin] %s: %s point in %s.%s selects %d of the merged body's %d occurrence(s), the native body's %d"
+			ForbricLog.info("[Forbric/Mixin] %s: %s point in %s.%s selects %d of the current body's %d occurrence(s), the native body's %d"
 					+ "%s%s%s%s", owner(), point, target.classNode.name.replace('/', '.'), target.method.name, chosen.size(), merged.size(),
 					native_.size(), ordinal >= 0 ? " (ordinal " + ordinal + " counted natively)" : "",
 					dropped > 0 ? "; " + dropped + " the carrier added on the native path never run it" : "",
@@ -346,9 +346,9 @@ public final class NativeOccurrencePoint extends InjectionPoint {
 						.append("  ").append(CodeAlignment.token(x)).append(left == null ? "" : left.get(x)).append('\n');
 			}
 			out.append("# native selected ").append(wanted.stream().map(nativeMethod.instructions::indexOf).toList())
-					.append(" merged selected ").append(merged.stream().map(method.instructions::indexOf).toList())
+					.append(" current selected ").append(merged.stream().map(method.instructions::indexOf).toList())
 					.append(" chosen ").append(chosen.stream().map(method.instructions::indexOf).toList()).append('\n');
-			out.append("# merged\n");
+			out.append("# current\n");
 			for (AbstractInsnNode y : CodeAlignment.real(method)) {
 				out.append(method.instructions.indexOf(y)).append("  ").append(CodeAlignment.token(y)).append(right == null ? "" : right.get(y)).append('\n');
 			}

@@ -106,7 +106,7 @@ public final class KernelRegistryDirectories {
 			return path;
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Registries] could not decide the data directory of registry %s:%s; it keeps the "
-					+ "merged one (%s)", namespace, path, merged);
+					+ "NeoForge one (%s)", namespace, path, merged);
 			return merged;
 		}
 	}
@@ -151,7 +151,7 @@ public final class KernelRegistryDirectories {
 				if (!present) {
 					ForbricLog.warn("[Forbric/Registries] nothing in Registries puts a Fabric registry's namespace back after "
 							+ "the body (fabric-registry-sync's modifier is not applied), so every registry keeps the "
-							+ "merged (NeoForge) data directory, which is not where a mod that returns the body's answer "
+							+ "NeoForge data directory, which is not where a mod that returns the body's answer "
 							+ "early (WorldWeaver's world presets and biome data) ships its data; -D%s=force hands Fabric "
 							+ "registries vanilla's directory anyway", OWNER_PROPERTY);
 				}

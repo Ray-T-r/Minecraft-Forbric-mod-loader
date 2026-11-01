@@ -118,7 +118,7 @@ public final class CarrierGuardedPoints {
 				if (merged == null) merged = code.apply(target);
 				if (merged == null) break;
 				MethodNode was = MixinTargetSelectors.one(handler, original), selected = MixinTargetSelectors.one(handler, merged);
-				debug("%s: native %s, merged %s", handler.name, was == null ? null : was.name + was.desc, selected == null ? null : selected.name + selected.desc);
+				debug("%s: native %s, current %s", handler.name, was == null ? null : was.name + was.desc, selected == null ? null : selected.name + selected.desc);
 				if (was == null || selected == null || !was.name.equals(selected.name) || !was.desc.equals(selected.desc)) continue;
 				MethodNode host = selected, body = overloadBody(merged, selected);
 				debug("%s: forwards to %s", handler.name, body == null ? null : body.name + body.desc);

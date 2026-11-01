@@ -61,7 +61,7 @@ class NativeValueStoresWeaveTest {
 	@Test void theGlazeRunsOnTheStoreOfTheBakedPotAfterTheRemembering() throws Exception {
 		assertEquals("red: fired red into baked-red, glaze baked-red from red, shelf glazed-baked-red | white: fired white into baked-white,"
 				+ " glaze baked-white from white, shelf glazed-baked-white", probe(moved), moved.describe());
-		assertTrue(moved.printed("[Forbric/Mixin] io.glazer.mixin.KilnMixin.glazer$glaze: the merged org.pottery.kiln.Kiln.fire stores another"
+		assertTrue(moved.printed("[Forbric/Mixin] io.glazer.mixin.KilnMixin.glazer$glaze: the current org.pottery.kiln.Kiln.fire stores another"
 				+ " value first in the local its STORE picks; the native value is stored in local 2"), moved.describe());
 		assertTrue(losses(moved).isEmpty(), moved.findings().toString());
 		WeaveHarness.assertWovenAndVerified(moved, TARGET, fixture);

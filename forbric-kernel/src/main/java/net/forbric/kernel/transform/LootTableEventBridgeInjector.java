@@ -142,7 +142,7 @@ public final class LootTableEventBridgeInjector implements ClassTransformer {
 		tags.get(0).owner = BRIDGE;
 		routed += 2;
 		ForbricLog.info("[Forbric/LootBridge] routed %d loot-table load site(s) and %d tag-load site(s) in "
-				+ "ReloadableServerRegistries through the kernel — fabric-loot-api-v3's mixin cannot fit the merged "
+				+ "ReloadableServerRegistries through the kernel — fabric-loot-api-v3's mixin cannot fit NeoForge's "
 				+ "base, so LootTableEvents fire from NeoForge's own LootTableLoadEvent seam", 1, 1);
 
 		// Owner swaps only: no instruction, frame or stack change.

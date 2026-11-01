@@ -113,7 +113,7 @@ public final class MixinCameraRollAdapter {
             MixinPlayerWorldCallbackAdapter.remove(inject,"slice");
             CurrentBodyOrdinals.mark(handler);
             moved++;
-            ForbricLog.info("[Forbric/Mixin] %s.%s: the %s%s call its point picks in %s.%s is made on the merged body as %s%s (ordinal %d), "
+            ForbricLog.info("[Forbric/Mixin] %s.%s: the %s%s call its point picks in %s.%s is made on the current body as %s%s (ordinal %d), "
                     +"the carrier's widened overload, with the same operands under the same conditions; the %s%s it named there plays "
                     +"another role, so the point now names the widened call, and the handler touches only the arguments the old one had",
                     mixin.name.replace('/','.'),handler.name,wanted.name(),wanted.desc(),owner.name.replace('/','.'),align.name,
@@ -325,7 +325,7 @@ public final class MixinCameraRollAdapter {
                         &&call.name.equals("rotationYXZ")&&call.desc.equals("(FFF)Lorg/joml/Quaternionf;"))).toList();
             if(candidates.size()==1){set(MixinFit.injectorOf(roll),"method",new ArrayList<>(List.of(candidates.getFirst().name+candidates.getFirst().desc)));changed++;}
         }
-        ForbricLog.info("[Forbric/Mixin] The camera roll callback now wraps the merged alignWithEntity's setRotation(FFF) calls; "
+        ForbricLog.info("[Forbric/Mixin] The camera roll callback now wraps the current alignWithEntity's setRotation(FFF) calls; "
                 +"native/current operand origins and control-flow conditions determine every occurrence");
         return changed;
     }

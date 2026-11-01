@@ -531,7 +531,7 @@ public final class MixinStubRebind {
 					+ "would come first", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'), delegate.name, delegate.desc,
 					plan.variableIndex());
 		}
-		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the merge-added stub %s, "
+		ForbricLog.info("[Forbric/Mixin] %s: %s now targets %s.%s%s — Mixin bound its selector to the carrier-added stub %s, "
 				+ "which only forwards to it%s%s", mixin.name.replace('/', '.'), handler.name, target.name.replace('/', '.'),
 				delegate.name, delegate.desc, stub.desc, captures ? "; the handler still receives the stub's arguments" : "",
 				ecosystem == Ecosystem.FABRIC ? "" : "; a " + ecosystem.displayName() + " mod, and " + ecosystem.displayName()
@@ -819,7 +819,7 @@ public final class MixinStubRebind {
 		String config = CONFIGS.get(mixin.name);
 		String dotted = mixin.name.replace('/', '.');
 		String owner = target.name.replace('/', '.');
-		String detail = handler.name + " stays on " + owner + "." + stub.name + stub.desc + ", a stub the merged base "
+		String detail = handler.name + " stays on " + owner + "." + stub.name + stub.desc + ", a stub the base "
 				+ "added that only forwards to " + delegate.name + delegate.desc + ": the handler captures stub "
 				+ "arguments the body is not handed, so it cannot move. It runs only where the game calls the stub; "
 				+ "code that calls the body directly skips it (a side that never calls the stub never runs it)";

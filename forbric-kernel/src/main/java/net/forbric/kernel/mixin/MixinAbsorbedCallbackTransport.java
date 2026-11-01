@@ -47,7 +47,7 @@ public final class MixinAbsorbedCallbackTransport implements Opcodes {
         /** CallbackSeams' once-per-site report: the callback is skipped there, the carrier helper runs as written. */
         void declined(ClassLoader loader,String ignoredKey,String reason) {
             String broken=broken(loader),cause=broken==null?reason:broken;
-            SeamDeclines.report(source,injectorName,injectorDesc,site(),"source callback skipped at "+site()+", whose call it follows the merged game moved into "
+            SeamDeclines.report(source,injectorName,injectorDesc,site(),"source callback skipped at "+site()+", whose call it follows the game moved into "
                 +helperName()+": "+cause+"; the carrier's helper runs as written",List.of("transport=extracted callback","host="+site(),"helper="+helperName(),"declined="+reason,"cause="+cause));
         }
     }

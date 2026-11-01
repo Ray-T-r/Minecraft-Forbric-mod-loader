@@ -102,7 +102,7 @@ public final class MixinLocalsCapture {
 			}
 			if (!changed) continue;
 			softened++;
-			ForbricLog.info("[Forbric/Mixin] %s.%s: require %s → 0 — if the merged game no longer has what it injects into, "
+			ForbricLog.info("[Forbric/Mixin] %s.%s: require %s → 0 — if the game no longer has what it injects into, "
 					+ "this one injector goes unattached and its mod is reported, instead of Mixin abandoning the target "
 					+ "class for every mod", mixinName.replace('/', '.'), handler, before == null ? "(allow dropped)" : before);
 		}
@@ -131,7 +131,7 @@ public final class MixinLocalsCapture {
 						&& LOCAL_CAPTURE_DESC.equals(enumValue[0]) && "CAPTURE_FAILHARD".equals(enumValue[1])) {
 					injector.values.set(i + 1, new String[] { LOCAL_CAPTURE_DESC, "CAPTURE_FAILSOFT" });
 					softened++;
-					ForbricLog.info("[Forbric/Mixin] %s: @Inject.locals CAPTURE_FAILHARD → CAPTURE_FAILSOFT — if the merged "
+					ForbricLog.info("[Forbric/Mixin] %s: @Inject.locals CAPTURE_FAILHARD → CAPTURE_FAILSOFT — if the current "
 							+ "method's locals differ from the ones this mixin was written against, that one injection is "
 							+ "skipped with Mixin's own warning instead of killing the game", mixinName.replace('/', '.'));
 				}

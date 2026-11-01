@@ -71,7 +71,7 @@ public final class NativeLocalPins {
 						MixinPlayerWorldCallbackAdapter.set(injector, "index", slot);
 						remove(injector, "ordinal");
 						pinned++;
-						ForbricLog.info("[Forbric/Mixin] %s.%s: the local its ordinal %s names at its point is another local in the merged %s; pinned to slot %d,"
+						ForbricLog.info("[Forbric/Mixin] %s.%s: the local its ordinal %s names at its point is another local in the current %s; pinned to slot %d,"
 								+ " the local of the same name and type", mixin.name.replace('/', '.'), handler.name, ordinal, target.replace('/', '.'), slot);
 					}
 					continue;
@@ -84,7 +84,7 @@ public final class NativeLocalPins {
 				int count = MixinCallbackProofs.pinLocals(handler, pin.host(), pin.point(), pin.slots());
 				if (count > 0) {
 					pinned += count;
-					ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s holds more locals of a type the handler asks for at its point; "
+					ForbricLog.info("[Forbric/Mixin] %s.%s: the current %s.%s holds more locals of a type the handler asks for at its point; "
 							+ "pinned %s to the locals %s hands it", mixin.name.replace('/', '.'), handler.name, target.replace('/', '.'),
 							pin.host().name, describe(handler, pin.slots()), ecosystem);
 				}

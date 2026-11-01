@@ -93,7 +93,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	public List<Claim> claims() {
 		List<Claim> out = new ArrayList<>();
 		out.add(fixed("addBlockStateModelConflictResolvers", "net/minecraft/client/renderer/block/dispatch/BlockStateModel",
-				"every block model's geometry key and conflict resolver are gone — the merged BlockStateModel lacks the methods both families call"));
+				"every block model's geometry key and conflict resolver are gone — the base's BlockStateModel lacks the methods both families call"));
 		out.add(scanned("addBlockStateAppearanceResolver",
 				"net.minecraft.world.level.block.Block and ...block.state.BlockState, which each inherit "
 						+ "getAppearance as a default from BOTH NeoForge and fabric-api and declare neither, so the "
@@ -109,14 +109,14 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(randomSourcePrecisionEnabled()
 				? new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
 						new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-								"every noise octave's origin is off — the merged nextDouble() rounds through float, so no "
+								"every noise octave's origin is off — the base's nextDouble() rounds through float, so no "
 										+ "world generates the way the same seed does in vanilla"),
 						new AnchorSet.Anchor(BIT_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 								"WorldgenRandom's nextDouble() rounds through float and can return exactly 1.0 — out of "
 										+ "the [0,1) range every caller assumes")))
 				: scanned("restoreDoublePrecisionToTheRandomSources", "-D" + RANDOM_PRECISION_PROPERTY + "=off"));
 		out.add(fixed("convertRadiansWithVanillasFoldedConstant", "net/minecraft/world/entity/Entity",
-				"every angle the game computes from a vector is off in the eighth digit — the merged base divides by "
+				"every angle the game computes from a vector is off in the eighth digit — the base divides by "
 						+ "pi at run time where vanilla multiplies by a constant it folded in float"));
 		out.add(vanillaWriteByteEnabled()
 				? fixed("callVanillasWriteByteAgain", PLAYER_ABILITIES_PACKET,
@@ -136,7 +136,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letFabricResourceConditionsDecide", CONDITIONAL_OPS,
 				"fabric:load_conditions has no evaluator — a Fabric mod's conditional data files all load"));
 		out.add(fixed("translateAGuestsPrivateSkipMarker", JSON_RELOAD_LISTENER,
-				"fabric-api's skip marker reaches the merged reader's cast — the datapack load dies (\"can't proceed with server load\")"));
+				"fabric-api's skip marker reaches the base reader's cast — the datapack load dies (\"can't proceed with server load\")"));
 		out.add(fixed("nameTheReloadListenersNeoForgeRefusesToName", ADD_CLIENT_RELOAD_LISTENERS,
 				"a Fabric mod's client reload listener kills the client — NeoForge refuses to name it"));
 		out.add(fixed("bridgeOrphanedPipRenderers", GUI_RENDERER,
@@ -643,7 +643,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		clinit.instructions.insertBefore(target, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_NEO_CONDITIONS,
 				"lenient", "(" + CODEC_DESC + ")" + CODEC_DESC, false));
 		ForbricLog.info("[Forbric/MergedBaseCompat] NeoForge's resource-condition codec now tolerates a condition "
-				+ "type it does not own — the merged base runs that evaluator over EVERY datapack element from "
+				+ "type it does not own — NeoForge's base runs that evaluator over EVERY datapack element from "
 				+ "every pack, so a Fabric mod's own condition used to fail the whole registry load and the world "
 				+ "with it");
 		return true;
@@ -814,7 +814,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] fabric:load_conditions has an evaluator again: ConditionalOps' "
 				+ "one codec factory is wrapped and %d other public entry point(s) funnel through it — datapack "
 				+ "registries, recipes, loot tables and advancements all decode through it. fabric-api's own two "
-				+ "mixins for this cannot apply on the merged base", funnelled);
+				+ "mixins for this cannot apply on NeoForge's base", funnelled);
 		return true;
 	}
 
@@ -951,7 +951,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		}
 		if (repaired == 0) return false;
 		ForbricLog.info("[Forbric/MergedBaseCompat] %s scales its random bits in double again (%d site(s): %s) — the "
-				+ "merged body rounded through float, which displaces every noise octave's origin and lets "
+				+ "base's body rounded through float, which displaces every noise octave's origin and lets "
 				+ "nextDouble() return exactly 1.0",
 				node.name.replace('/', '.'), repaired, String.join(", ", methods));
 		return true;
@@ -1014,7 +1014,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		}
 		if (folded == 0) return false;
 		ForbricLog.info("[Forbric/MergedBaseCompat] %s turns radians into degrees by vanilla's folded constant again "
-				+ "(%d site(s)) — the merged body divided by pi at run time, which is a different number in the "
+				+ "(%d site(s)) — the base's body divided by pi at run time, which is a different number in the "
 				+ "eighth digit and moves every angle computed from a vector",
 				node.name.replace('/', '.'), folded);
 		return true;
@@ -1572,8 +1572,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			for (AbstractInsnNode dead : new AbstractInsnNode[] {space, appendSpace, insn, appendBrand}) {
 				createTitle.instructions.remove(dead);
 			}
-			ForbricLog.info("[Forbric/MergedBaseCompat] took \"%s\" out of the window title — the merged base carries "
-					+ "one loader's title patch, and this instance runs all three ecosystems", brand.cst);
+			ForbricLog.info("[Forbric/MergedBaseCompat] took \"%s\" out of the window title — the base carries "
+					+ "NeoForge's title patch, and this instance runs Fabric mods too", brand.cst);
 			return true;
 		}
 		return false;

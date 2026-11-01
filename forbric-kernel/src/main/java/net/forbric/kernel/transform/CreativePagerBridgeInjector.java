@@ -164,7 +164,7 @@ public final class CreativePagerBridgeInjector implements ClassTransformer {
 			needed = MixinFit.implementerSupplies(MixinFit.parse(api));
 		} catch (RuntimeException unreadable) { // the chain does not catch: a throw here would fail the screen's load
 			Caught.warn(unreadable, "[Forbric/CreativePager] FabricCreativeModeInventoryScreen is unreadable — the creative"
-					+ " screen is left as merged");
+					+ " screen is left as the base has it");
 			return bytes;
 		}
 		ClassNode node = new ClassNode();

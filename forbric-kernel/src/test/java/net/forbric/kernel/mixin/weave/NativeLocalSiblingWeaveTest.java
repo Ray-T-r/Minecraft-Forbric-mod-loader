@@ -34,7 +34,7 @@ class NativeLocalSiblingWeaveTest {
 	private static final String TARGET = "org/lantern/view/Glass";
 	private static final String NATIVE = WeaveHarnessMain.DONE + " [veil:water, draw:sprite-of-water, tail, veil:stone, tail, tail]";
 	private static final String UNBOUND = WeaveHarnessMain.DONE + " [draw:sprite-of-water, tail, draw:sprite-of-stone, tail, tail]";
-	private static final String KEPT_LOG = "[Forbric/Mixin] com.ember.veil.mixin.GlassMixin.veil$skip: the merged org.lantern.view.Glass.submit";
+	private static final String KEPT_LOG = "[Forbric/Mixin] com.ember.veil.mixin.GlassMixin.veil$skip: the current org.lantern.view.Glass.submit";
 
 	@TempDir static Path work;
 	private static Path fixture;

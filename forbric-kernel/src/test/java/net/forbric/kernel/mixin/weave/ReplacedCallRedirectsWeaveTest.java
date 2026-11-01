@@ -43,7 +43,7 @@ class ReplacedCallRedirectsWeaveTest {
 	private static final String FORWARDED = WeaveHarnessMain.DONE + " neoforge:used->held,update";
 	private static final String OLD = WeaveHarnessMain.DONE + " old:held/used,stop";
 	private static final String MOVED_LOG = "[Forbric/Mixin] com.example.oldserver.mixin.ItemUseMixin: sameStack redirects "
-			+ "canContinueUsing in net.minecraft.world.entity.LivingEntity.updatingUsingItem where the merged body calls it "
+			+ "canContinueUsing in net.minecraft.world.entity.LivingEntity.updatingUsingItem where the current body calls it "
 			+ "instead of isSameItem";
 
 	@TempDir static Path work;

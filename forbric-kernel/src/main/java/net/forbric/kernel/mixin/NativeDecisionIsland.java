@@ -253,7 +253,7 @@ public final class NativeDecisionIsland {
 						outcome = new Outcome(null, "it may change what the call answers, and no carrier method asks the call again to hear it");
 					if (outcome.island() == null) {
 						if (outcome.declined() != null && DEBUG)
-							ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s makes fewer calls of %s than %s does, and no native decision island "
+							ForbricLog.info("[Forbric/Mixin] %s.%s: the current %s.%s makes fewer calls of %s than %s does, and no native decision island "
 									+ "puts them back: %s", mixin.name.replace('/', '.'), handler.name, target.replace('/', '.'), host.name,
 									NativeCallInlining.readable(member), ecosystem, outcome.declined());
 						continue;
@@ -262,7 +262,7 @@ public final class NativeDecisionIsland {
 						planned++;
 						merged = null;
 						if (outcome.island().relayable().get(member) == null) answerNotice(mixin, handler, injector, member, target, host);
-						ForbricLog.info("[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the merged game decides that stretch in %s, so "
+						ForbricLog.info("[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the game decides that stretch in %s, so "
 								+ "the native decisions run first, under %s's conditions%s", mixin.name.replace('/', '.'), handler.name,
 								NativeCallInlining.readable(member), target.replace('/', '.'), host.name, carrierOf(host, outcome.island()), ecosystem,
 								relayed(outcome.island(), member));
@@ -324,7 +324,7 @@ public final class NativeDecisionIsland {
 		if (outcome.island() == null || outcome.island().relayable().get(member) == null && outcome.island().carried().contains(member)
 				|| !plainOperands(was, wanted.getFirst(), code)) return false;
 		if (!register(loader, registry, plan, outcome.island(), hear)) return false;
-		ForbricLog.info("[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the merged game decides that stretch in %s; the native decisions "
+		ForbricLog.info("[Forbric/Mixin] %s.%s: %s is asked in %s.%s again — the game decides that stretch in %s; the native decisions "
 				+ "run first, under %s's conditions, and what the call answered there is what the predicate the carrier decides with reads",
 				mixin.name.replace('/', '.'), handler.name, NativeCallInlining.readable(member), target.replace('/', '.'), host.name,
 				carrierOf(host, outcome.island()), ecosystem);
@@ -454,7 +454,7 @@ public final class NativeDecisionIsland {
 		while (q < n.size() - p && q < m.size() - p && sameModuloSlots(n.get(n.size() - 1 - q), m.get(m.size() - 1 - q))) q++;
 		for (int bad; q > 0 && (bad = renamed(n, m, q)) >= 0; ) q = q - bad - 1;
 		int nEnd = n.size() - q, mEnd = m.size() - q;
-		if (p >= nEnd || p >= mEnd) return new Outcome(null, "the native and merged bodies do not differ in one stretch");
+		if (p >= nEnd || p >= mEnd) return new Outcome(null, "the native and current bodies do not differ in one stretch");
 		// Jumps in the shared parts land at corresponding instructions, and none lands inside the differing stretch.
 		for (int i = 0; i < n.size(); i++) {
 			if (i >= p && i < nEnd) continue;
@@ -465,8 +465,8 @@ public final class NativeDecisionIsland {
 				int a = to.get(k), b = toMerged.get(k);
 				boolean ok = a < p ? a == b : a >= nEnd && b >= mEnd && a - nEnd == b - mEnd;
 				if (!ok) return new Outcome(null, "a shared jump lands inside the stretch the carrier replaced"
-						+ (DEBUG ? " (native " + i + "->" + a + ", merged " + j + "->" + b + "; shared start " + p + ", native end " + nEnd + "/" + n.size()
-								+ ", merged end " + mEnd + "/" + m.size() + ")" : ""));
+						+ (DEBUG ? " (native " + i + "->" + a + ", current " + j + "->" + b + "; shared start " + p + ", native end " + nEnd + "/" + n.size()
+								+ ", current end " + mEnd + "/" + m.size() + ")" : ""));
 			}
 		}
 		List<Integer> asked = new ArrayList<>();
@@ -498,23 +498,23 @@ public final class NativeDecisionIsland {
 		}
 		for (TryCatchBlockNode block : host.tryCatchBlocks) {
 			int from = index(ml, block.start), to = index(ml, block.end);
-			if (from <= mEnd && to > s) return new Outcome(null, "the merged stretch is inside an exception handler's range");
+			if (from <= mEnd && to > s) return new Outcome(null, "the current stretch is inside an exception handler's range");
 		}
 		// Nothing comes back before the island, in either body; the merged stretch leaves only into the shared end, which only it reaches.
 		for (int i = s; i < n.size(); i++) for (int t : targets(n.get(i), nl)) if (t <= s) return new Outcome(null, "the native body jumps back before the stretch");
-		for (int i = s; i < m.size(); i++) for (int t : targets(m.get(i), ml)) if (t <= s) return new Outcome(null, "the merged body jumps back before the stretch");
+		for (int i = s; i < m.size(); i++) for (int t : targets(m.get(i), ml)) if (t <= s) return new Outcome(null, "the current body jumps back before the stretch");
 		for (int i = p; i < mEnd; i++) {
 			int op = m.get(i).getOpcode();
-			if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN || op == Opcodes.ATHROW) return new Outcome(null, "the merged stretch returns or throws");
+			if (op >= Opcodes.IRETURN && op <= Opcodes.RETURN || op == Opcodes.ATHROW) return new Outcome(null, "the current stretch returns or throws");
 			for (int t : targets(m.get(i), ml)) if (t < p || t > mEnd || t == mEnd && !(m.get(i) instanceof JumpInsnNode))
-				return new Outcome(null, "the merged stretch jumps out of itself");
+				return new Outcome(null, "the current stretch jumps out of itself");
 		}
-		if (mEnd >= m.size()) return new Outcome(null, "the merged stretch runs to the end of the method");
+		if (mEnd >= m.size()) return new Outcome(null, "the current stretch runs to the end of the method");
 		// Only the island's own start lets control in: nothing outside jumps past it into the stretch (a jump over the whole
 		// stretch, onto its end, never opened the frame and never closes it).
 		for (int i = 0; i < m.size(); i++) {
 			if (i >= s && i < mEnd) continue;
-			for (int t : targets(m.get(i), ml)) if (t > s && t < mEnd) return new Outcome(null, "code outside the merged stretch jumps into it");
+			for (int t : targets(m.get(i), ml)) if (t > s && t < mEnd) return new Outcome(null, "code outside the current stretch jumps into it");
 		}
 		// Locals the decisions read must hold the native values at the island (the shared start guarantees it); those they store get fresh slots.
 		Map<Integer, Integer> slots = new HashMap<>();
@@ -534,7 +534,7 @@ public final class NativeDecisionIsland {
 				BasicValue a = nf[was.instructions.indexOf(n.get(s))].getLocal(variable.var);
 				BasicValue b = variable.var < mf[host.instructions.indexOf(m.get(s))].getLocals() ? mf[host.instructions.indexOf(m.get(s))].getLocal(variable.var) : null;
 				if (a == null || b == null || a == BasicValue.UNINITIALIZED_VALUE || !a.equals(b))
-					return new Outcome(null, "the native decisions read a local the merged method does not hold there");
+					return new Outcome(null, "the native decisions read a local the current method does not hold there");
 				slots.put(variable.var, variable.var);
 			}
 		}
@@ -679,7 +679,7 @@ public final class NativeDecisionIsland {
 				apply(work, was, new Island(island.start(), island.end(), island.resume(), island.slots(), island.fresh(), kept, island.members(),
 						island.relayable(), island.carried()), heardAt);
 			} catch (RuntimeException unappliable) {
-				Caught.warn(unappliable, "[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in; the method stays as merged",
+				Caught.warn(unappliable, "[Forbric/Mixin] %s.%s: the native decision island for %s.%s could not be put in; the method stays as the base has it",
 						first.source().replace('/', '.'), first.handler(), binary, host.name);
 				continue;
 			}
@@ -706,7 +706,7 @@ public final class NativeDecisionIsland {
 			node.accept(writer);
 			return writer.toByteArray();
 		} catch (RuntimeException unwritable) {
-			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native decisions put back; it stays as merged", binary);
+			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native decisions put back; it stays as the base has it", binary);
 			return bytes;
 		}
 	}

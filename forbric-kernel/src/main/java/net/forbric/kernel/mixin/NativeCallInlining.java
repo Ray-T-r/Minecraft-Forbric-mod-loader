@@ -248,7 +248,7 @@ public final class NativeCallInlining {
 						if (register(loader, registry, outcome.plan())) {
 							planned++;
 							merged = null;  // read again: the plan just changed what the class's methods hold
-							ForbricLog.info("[Forbric/Mixin] %s.%s: %s is made in %s.%s again — the merged game makes it inside %s, now "
+							ForbricLog.info("[Forbric/Mixin] %s.%s: %s is made in %s.%s again — the game makes it inside %s, now "
 									+ "inlined at its call there, so the injector binds where %s binds it", mixin.name.replace('/', '.'),
 									handler.name, readable(outcome.plan().anchor()), target.replace('/', '.'),
 									outcome.plan().method().substring(0, outcome.plan().method().indexOf('(')), chain(outcome.plan()), ecosystem);
@@ -258,7 +258,7 @@ public final class NativeCallInlining {
 						}
 					} else if (outcome.declined() != null) {
 						MethodNode host = MixinTargetSelectors.one(handler, merged);
-						ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s makes fewer calls of %s than %s does, and none is "
+						ForbricLog.info("[Forbric/Mixin] %s.%s: the current %s.%s makes fewer calls of %s than %s does, and none is "
 								+ "put back: %s", mixin.name.replace('/', '.'), handler.name, target.replace('/', '.'),
 								host == null ? "?" : host.name, readable(MixinFit.asString(MixinFit.value(at, "target"))), ecosystem,
 								outcome.declined());
@@ -755,8 +755,8 @@ public final class NativeCallInlining {
 		}
 
 		String reason() {
-			if (tried == 0) return "the merged method makes no call of its own a known body could stand in for";
-			return refusals.isEmpty() ? "no inline of the merged method's own calls makes the native number of calls"
+			if (tried == 0) return "the current method makes no call of its own a known body could stand in for";
+			return refusals.isEmpty() ? "no inline of the current method's own calls makes the native number of calls"
 					: String.join("; ", refusals);
 		}
 
@@ -1414,7 +1414,7 @@ public final class NativeCallInlining {
 			node.accept(writer);
 			return writer.toByteArray();
 		} catch (RuntimeException unwritable) {
-			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native calls put back; it stays as merged", binary);
+			Caught.warn(unwritable, "[Forbric/Mixin] could not write %s with its native calls put back; it stays as the base has it", binary);
 			return bytes;
 		}
 	}

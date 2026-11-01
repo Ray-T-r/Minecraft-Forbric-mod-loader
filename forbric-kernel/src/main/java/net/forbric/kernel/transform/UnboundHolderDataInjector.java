@@ -215,7 +215,7 @@ public final class UnboundHolderDataInjector implements ClassTransformer {
 	}
 
 	private static int declined(String reason) {
-		ForbricLog.warn("[Forbric/DataMaps] left Holder.Reference as merged: %s — a data-map lookup on a value not registered "
+		ForbricLog.warn("[Forbric/DataMaps] left Holder.Reference as the base has it: %s — a data-map lookup on a value not registered "
 				+ "yet still throws \"Trying to access unbound value\" where vanilla's map answers", reason);
 		return -1;
 	}

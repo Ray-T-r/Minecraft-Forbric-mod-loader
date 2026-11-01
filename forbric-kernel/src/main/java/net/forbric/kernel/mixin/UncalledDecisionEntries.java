@@ -236,7 +236,7 @@ public final class UncalledDecisionEntries {
 	 */
 	private static Entry entry(String target, MethodNode decision, MethodNode nativeHost, MethodNode mergedHost, Function<String, ClassNode> nativeCode,
 			Function<String, ClassNode> code, StringBuilder why) {
-		if (((nativeHost.access ^ mergedHost.access) & Opcodes.ACC_STATIC) != 0) return declined(why, "the native and merged " + mergedHost.name + " differ in staticness");
+		if (((nativeHost.access ^ mergedHost.access) & Opcodes.ACC_STATIC) != 0) return declined(why, "the native and current " + mergedHost.name + " differ in staticness");
 		Type answer = Type.getReturnType(decision.desc);
 		Type[] arguments = Type.getArgumentTypes(decision.desc);
 		Set<String> nativeMembers = new HashSet<>();
@@ -248,7 +248,7 @@ public final class UncalledDecisionEntries {
 			if (call.owner.equals(target) && call.name.equals(decision.name) && call.desc.equals(decision.desc)) continue;
 			candidates.putIfAbsent(member(call), call);
 		}
-		if (candidates.isEmpty()) return declined(why, "the merged " + mergedHost.name + " makes no call of its own answering " + answer.getClassName());
+		if (candidates.isEmpty()) return declined(why, "the current " + mergedHost.name + " makes no call of its own answering " + answer.getClassName());
 		List<Symbolic.Val> inputs = inputs(target, mergedHost);
 		Symbolic.Tree nativeTree = new Symbolic(nativeCode, false, null, (call, values) -> {
 			if (call.getOpcode() != Opcodes.INVOKESTATIC || !call.owner.equals(target) || !call.name.equals(decision.name) || !call.desc.equals(decision.desc)) return null;
@@ -275,14 +275,14 @@ public final class UncalledDecisionEntries {
 					AbstractInsnNode next = call.getNext();
 					while (next != null && next.getOpcode() < 0) next = next.getNext();
 					if (!reached.contains(call) || next == null || next.getOpcode() == Opcodes.POP) return declined(why, "a call of "
-							+ carrier.name + " in the merged " + mergedHost.name + " stands for no native call of the decision");
+							+ carrier.name + " in the current " + mergedHost.name + " stands for no native call of the decision");
 					places++;
 				}
-				if (found != null) return declined(why, "the merged " + mergedHost.name + " reads as the native one under more than one carrier call or assignment");
+				if (found != null) return declined(why, "the current " + mergedHost.name + " reads as the native one under more than one carrier call or assignment");
 				found = new Entry(mergedHost, carrier, assignment, places);
 			}
 		}
-		if (found == null) return declined(why, "the merged " + mergedHost.name + " does not read as the native one with the decision replaced by any call of its own");
+		if (found == null) return declined(why, "the current " + mergedHost.name + " does not read as the native one with the decision replaced by any call of its own");
 		return found;
 	}
 

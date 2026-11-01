@@ -95,7 +95,7 @@ public final class EmptyFluidTypeTrackerInjector implements ClassTransformer {
 	}
 
 	private static int declined(String reason) {
-		ForbricLog.warn("[Forbric/Fluid] left EntityFluidInteraction's tracker lookup as merged: %s — a fluid typed as NeoForge's empty type "
+		ForbricLog.warn("[Forbric/Fluid] left EntityFluidInteraction's tracker lookup as the base has it: %s — a fluid typed as NeoForge's empty type "
 				+ "still counts as a fluid to NeoForge's entity code", reason);
 		return -1;
 	}

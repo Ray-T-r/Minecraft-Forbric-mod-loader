@@ -122,7 +122,7 @@ public final class PackOverlayMutabilityInjector implements ClassTransformer {
 					+ "re-check PackOverlayMutabilityInjector's structural match", repaired, TARGET, METHOD);
 		} else {
 			ForbricLog.info("[Forbric/PackRepair] %s.%s now merges overlays without mutating in place — a pack "
-					+ "carrying both fabric:overlays and neoforge:overlays survives the merged base", TARGET, METHOD);
+					+ "carrying both fabric:overlays and neoforge:overlays survives NeoForge's base", TARGET, METHOD);
 		}
 
 		ClassWriter writer = new ClassWriter(0);

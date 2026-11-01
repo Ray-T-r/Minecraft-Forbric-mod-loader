@@ -208,8 +208,8 @@ public final class WidenedFieldTwinInjector implements ClassTransformer {
 		for (Runnable edit : edits) edit.run();
 		node.fields.add(new FieldNode(Opcodes.ACC_PUBLIC, row.name(), row.vanillaDesc(), null, null));
 		twins++;
-		ForbricLog.info("[Forbric/WidenedFields] %s: vanilla-descriptor twin %s:%s beside the merged %s (%d write(s), %d "
-				+ "drain(s)) — the merge re-typed the field, and a JVM field is its name AND its descriptor", className,
+		ForbricLog.info("[Forbric/WidenedFields] %s: vanilla-descriptor twin %s:%s beside the base's %s (%d write(s), %d "
+				+ "drain(s)) — the base re-typed the field, and a JVM field is its name AND its descriptor", className,
 				row.name(), row.vanillaDesc(), row.mergedDesc(), writes, drains);
 
 		ClassWriter writer = new ClassWriter(0);

@@ -238,7 +238,7 @@ public final class LifecycleHookInjector implements ClassTransformer {
 		if (fabricHooks) captureServerInstance(node);
 
 		if (redirected == 0) {
-			ForbricLog.error("[Forbric/Lifecycle] %s.%s contained NO known genuine-loader trigger — the merged "
+			ForbricLog.error("[Forbric/Lifecycle] %s.%s contained NO known genuine-loader trigger — the "
 					+ "base's entry shape changed; refusing to boot on an un-hooked lifecycle", transformClass,
 					transformMethod);
 			return classBytes;

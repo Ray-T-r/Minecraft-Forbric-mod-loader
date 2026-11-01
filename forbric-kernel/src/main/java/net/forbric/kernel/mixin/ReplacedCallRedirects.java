@@ -408,7 +408,7 @@ public final class ReplacedCallRedirects {
 		CurrentBodyOrdinals.mark(handler);
 		remove(redirect, "slice");
 		if (log) {
-			ForbricLog.info("[Forbric/Mixin] %s: %s redirects %s in %s.%s where the merged body calls it instead of %s — %s",
+			ForbricLog.info("[Forbric/Mixin] %s: %s redirects %s in %s.%s where the current body calls it instead of %s — %s",
 					mixin.name.replace('/', '.'), handler.name, merged.name(), site.owner().replace('/', '.'), name,
 					vanilla.name(), site.because());
 		}

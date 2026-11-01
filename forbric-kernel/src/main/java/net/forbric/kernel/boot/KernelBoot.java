@@ -684,7 +684,7 @@ public final class KernelBoot {
 		if (net.forbric.kernel.transform.RegistryDirectoryOwnerInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.RegistryDirectoryOwnerInjector());
 		} else {
-			ForbricLog.warn("[Forbric/Registries] -D%s=off — every registry reads the merged (NeoForge) directory, "
+			ForbricLog.warn("[Forbric/Registries] -D%s=off — every registry reads NeoForge's directory, "
 					+ "and WorldWeaver's world presets and biome data load empty",
 					net.forbric.kernel.transform.RegistryDirectoryOwnerInjector.PROPERTY);
 		}

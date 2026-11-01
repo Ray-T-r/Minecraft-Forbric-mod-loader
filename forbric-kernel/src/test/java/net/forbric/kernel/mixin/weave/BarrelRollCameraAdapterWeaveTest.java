@@ -42,10 +42,10 @@ class BarrelRollCameraAdapterWeaveTest {
 			+ " ordinary=25.0[ordinary] mirrored=-25.0[mirrored] sleeping=0.0[bed] minecart=0.0[]";
 	private static final String UNROLLED = WeaveHarnessMain.DONE
 			+ " ordinary=5.0[] mirrored=-5.0[] sleeping=20.0[ordinary] minecart=0.0[]";
-	private static final String ADAPTED_LOG = "[Forbric/Mixin] The camera roll callback now wraps the merged "
+	private static final String ADAPTED_LOG = "[Forbric/Mixin] The camera roll callback now wraps the current "
 			+ "alignWithEntity's setRotation(FFF) calls";
 	private static final String STUB_REBIND_LOG = "CameraMixin: doABarrelRoll$setRoll now targets net.minecraft.client.Camera"
-			+ ".setRotation(FFF)V — Mixin bound its selector to the merge-added stub (FF)V";
+			+ ".setRotation(FFF)V — Mixin bound its selector to the carrier-added stub (FF)V";
 
 	@TempDir static Path work;
 	private static Path fixture;

@@ -73,7 +73,7 @@ class CarrierHelperResultsWeaveTest {
 		assertEquals("chipped false", steps.get("chip stuck"), "the yard refused: no shatter, and no injector");
 		assertTrue(moved.printed("[Forbric/Mixin] io.lark.chisel.mixin.MasonMixin.chisel$chip: org.quarry.stone.Slab.shatter is no longer called in org.quarry.stone.Mason.chip;"
 				+ " the carrier makes it in org.quarry.stone.Mason.crumble, which answers true exactly when it made it — the injector runs on that answer, at its 2 call(s),"
-				+ " with 2 local(s) read where the merged method keeps them"), moved.describe());
+				+ " with 2 local(s) read where the current method keeps them"), moved.describe());
 		assertTrue(losses(moved).stream().noneMatch(f -> f.id().contains("chisel$chip")), moved.findings().toString());
 		WeaveHarness.assertWovenAndVerified(moved, TARGET, fixture);
 	}

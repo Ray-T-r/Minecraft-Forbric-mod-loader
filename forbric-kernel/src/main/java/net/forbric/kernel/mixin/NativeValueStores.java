@@ -98,7 +98,7 @@ public final class NativeValueStores {
 			values.add(slot);
 			injector.values = values;
 			moved++;
-			ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s stores another value first in the local its STORE picks; the native "
+			ForbricLog.info("[Forbric/Mixin] %s.%s: the current %s.%s stores another value first in the local its STORE picks; the native "
 					+ "value is stored in local %d — the modifier moves there, so it runs on the native value's store, after every injector "
 					+ "at the call that makes it", mixin.name.replace('/', '.'), handler.name, current.name.replace('/', '.'), host.name, slot);
 		}

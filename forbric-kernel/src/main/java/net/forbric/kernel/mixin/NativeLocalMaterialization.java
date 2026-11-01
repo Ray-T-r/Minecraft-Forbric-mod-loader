@@ -132,7 +132,7 @@ public final class NativeLocalMaterialization {
 					if (register(loader, plan)) {
 						planned++;
 						merged = null;
-						ForbricLog.info("[Forbric/Mixin] %s.%s: the merged %s.%s hands %s's operand %d over without the local %s %s %s keeps it "
+						ForbricLog.info("[Forbric/Mixin] %s.%s: the current %s.%s hands %s's operand %d over without the local %s %s %s keeps it "
 								+ "in; it now keeps it there too, so the @Local reads it", mixin.name.replace('/', '.'), handler.name,
 								target.replace('/', '.'), plan.method(), plan.member(), plan.operand(), Type.getType(plan.desc()).getClassName(),
 								plan.name(), ecosystem);

@@ -59,7 +59,7 @@ class NativeVariablePinsWeaveTest {
 		// The handler is handed sweetness each time (false, then true); as natively, the pour's argument was already read.
 		assertEquals("apple: sip false, pour juice-apple sweet=false, got juice-apple | raspberry: sip true, pour juice-raspberry sweet=true, got juice-raspberry!",
 				done(pinned), pinned.describe());
-		assertTrue(pinned.printed("[Forbric/Mixin] net.bramble.sip.mixin.MillMixin.sip$sweeten: the local its ordinal 1 names at its point is another local in the merged"
+		assertTrue(pinned.printed("[Forbric/Mixin] net.bramble.sip.mixin.MillMixin.sip$sweeten: the local its ordinal 1 names at its point is another local in the current"
 				+ " org.orchard.press.Mill; pinned to slot"), pinned.describe());
 		assertTrue(pinned.findings().stream().noneMatch(f -> f.modId().equals(MOD) && f.id().startsWith("mixin-injector:") && f.required()), pinned.findings().toString());
 		WeaveHarness.assertWovenAndVerified(pinned, TARGET, fixture);

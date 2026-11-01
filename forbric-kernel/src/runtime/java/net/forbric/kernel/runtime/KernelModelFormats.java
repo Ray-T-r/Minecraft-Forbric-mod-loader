@@ -154,8 +154,8 @@ public final class KernelModelFormats {
 			// An id that does not parse is left to NeoForge, whose Identifier.parse reports it as it always has.
 			if (id == null || neoForgeOwns(id)) return null;
 			announce(LOADER_KEY, id, "\"loader\": \"%s\" is not a NeoForge loader — handed to the vanilla cuboid "
-					+ "deserializer, where MinecraftForge's geometry loaders and guest hooks on it (fusion) read the "
-					+ "key as they do on MinecraftForge; an id none of them claims still fails the model");
+					+ "deserializer, where guest hooks on it (fusion) read the key; an id none of them claims still "
+					+ "fails the model");
 			return asCuboid(json, context, "\"loader\": \"" + id + "\"");
 		}
 		if (loader.isJsonObject()) {
@@ -168,8 +168,7 @@ public final class KernelModelFormats {
 			JsonObject plain = json.deepCopy();
 			plain.remove(LOADER_KEY);
 			announce("optional " + LOADER_KEY, id, "optional loader %s is absent — parsed as a plain model without "
-					+ "the loader object, which MinecraftForge's half of the merged cuboid deserializer would read as a "
-					+ "string and reject");
+					+ "the loader object");
 			return asCuboid(plain, context, "a plain model (optional loader " + id + " absent)");
 		}
 		return null;
@@ -228,7 +227,7 @@ public final class KernelModelFormats {
 			throw new JsonParseException("Cannot deserialize custom unbaked model of unknown type '" + id + "'");
 		}
 		announce(FABRIC_KEY, id, FABRIC_KEY + " %s parsed by the deserializer its mod registered with "
-				+ "fabric-model-loading — the two injectors that did this on Fabric cannot fit the merged base");
+				+ "fabric-model-loading — the two injectors that did this on Fabric cannot fit NeoForge's base");
 		try {
 			return (UnbakedModel) fabricDeserialize.invoke(deserializer, json, context);
 		} catch (Throwable t) {
@@ -323,11 +322,11 @@ public final class KernelModelFormats {
 	 */
 	private static JsonParseException doesNotLink(String format, LinkageError error) {
 		if (ANNOUNCED.add("linkage " + format)) {
-			ForbricLog.warn("[Forbric/ModelFormats] the code parsing %s does not link on the merged base (%s) — each "
+			ForbricLog.warn("[Forbric/ModelFormats] the code parsing %s does not link on this base (%s) — each "
 					+ "model in that format fails on its own instead of failing the resource reload, which would drop "
 					+ "every resource pack", format, String.valueOf(error));
 		}
-		return new JsonParseException(format + " does not link on the merged base: " + error, error);
+		return new JsonParseException(format + " does not link on this base: " + error, error);
 	}
 
 	static boolean enabled() {

@@ -301,7 +301,7 @@ public final class ModsButtonRedirector implements ClassTransformer {
 			dropped += spans.size();
 			int left = sites.size() - 1 - spans.size();
 			if (!spans.isEmpty()) {
-				ForbricLog.info("[Forbric/ModsButton] %s.%s added %d mods buttons — the merge kept each family's, and "
+				ForbricLog.info("[Forbric/ModsButton] %s.%s added %d mods buttons — more than one family added its own, and "
 						+ "every one opens the same unified list — kept the first and dropped %d, so the menu shows it "
 						+ "once", node.name, method.name, sites.size(), spans.size());
 			}

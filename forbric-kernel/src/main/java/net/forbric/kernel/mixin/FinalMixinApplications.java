@@ -200,7 +200,7 @@ public final class FinalMixinApplications {
       required,"The missing injector is replaced by a verified implementation",List.of("target="+binary,replacement)));
     else if(stub!=null)CompatibilityFindings.record(new CompatibilityFinding(id,mod,
       "Mixin injection "+injector.name(),"mixin-application:"+plan.config().name(),CompatibilityFinding.Confidence.SUSPECTED,
-      required,"Attached only inside a forwarding stub the merged base keeps for the old signature; it runs only when something still calls that signature",
+      required,"Attached only inside a forwarding stub the base keeps for the old signature; it runs only when something still calls that signature",
       List.of("target="+binary,"mixin="+mixin,"handler="+injector.symbol(),"stub="+stub,"final handler references="+references)));
     else if(state==Outcome.ATTACHED||state==Outcome.OPTIONAL)CompatibilityFindings.resolve(id,mod,
       state==Outcome.ATTACHED?"final defined class contains a reference to the exact merged handler":"original injector explicitly permits zero attachments");

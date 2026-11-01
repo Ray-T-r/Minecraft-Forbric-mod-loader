@@ -203,7 +203,7 @@ public final class MixinOverloadPin {
 				selectors.set(j, explicit);
 				changed = true;
 				pinned++;
-				ForbricLog.warn("[Forbric/Mixin] %s.%s selects %s by name, and the merged class declares more than one "
+				ForbricLog.warn("[Forbric/Mixin] %s.%s selects %s by name, and the current class declares more than one "
 						+ "method of that name: Mixin would bind the first, which does not take this handler's arguments, "
 						+ "and fail the whole mixin. Pinned to %s, the one overload the handler was written for",
 						mixin.name, handler.name, name, explicit);
@@ -311,12 +311,12 @@ public final class MixinOverloadPin {
 				for (MethodNode method : named.subList(1, named.size())) if (takes(handler, method)) written.add(method.desc);
 				if (written.isEmpty()) continue;
 				String wanted = String.join(" or ", written);
-				ForbricLog.warn("[Forbric/Mixin] %s.%s cannot bind to %s.%s: the merged class declares %d methods of that "
+				ForbricLog.warn("[Forbric/Mixin] %s.%s cannot bind to %s.%s: the current class declares %d methods of that "
 						+ "name, a bare name binds the first, %s, and the handler was written for %s%s",
 						mixin.name, handler.name, targetName, selector, named.size(), named.get(0).desc, wanted,
 						written.size() > 1 ? " — more than one, so the kernel will not choose" : "");
 				REASONS.put(mixin.name, "its " + handler.name + " selects " + selector + " by name, which binds the first of "
-						+ named.size() + " methods the merged class declares with that name, " + named.get(0).desc
+						+ named.size() + " methods the current class declares with that name, " + named.get(0).desc
 						+ "; the handler was written for " + wanted);
 				return true;
 			}

@@ -581,7 +581,7 @@ public final class ForbricMixinService
 			new ClassReader(bytes).accept(target, flags);
 			return target;
 		} catch (Throwable absent) {
-			Caught.warn(absent, "[Forbric/Mixin] could not read the merged base's %s; taken as absent", internalName);
+			Caught.warn(absent, "[Forbric/Mixin] could not read the base's %s; taken as absent", internalName);
 			return null;
 		}
 	}
@@ -596,7 +596,7 @@ public final class ForbricMixinService
 		try {
 			return codeView(loader().getPreMixinClassBytes(internalName.replace('/', '.')));
 		} catch (Throwable absent) {
-			Caught.warn(absent, "[Forbric/Mixin] could not read the merged base's %s; taken as absent", internalName);
+			Caught.warn(absent, "[Forbric/Mixin] could not read the base's %s; taken as absent", internalName);
 			return null;
 		}
 	}
@@ -619,7 +619,7 @@ public final class ForbricMixinService
 		try {
 			return loader().getPreMixinClassBytes(binary) != null;
 		} catch (Throwable absent) {
-			Caught.warn(absent, "[Forbric/Mixin] could not read the merged base's %s; taken as absent", binary);
+			Caught.warn(absent, "[Forbric/Mixin] could not read the base's %s; taken as absent", binary);
 			return false;
 		}
 	}
@@ -732,7 +732,7 @@ public final class ForbricMixinService
 				}
 
 				json = json.replaceAll("(\"required\"\\s*:\\s*)true", "$1false");
-				ForbricLog.debug("[Forbric/Mixin] relaxed %s for merged-base compatibility", name);
+				ForbricLog.debug("[Forbric/Mixin] relaxed %s for base compatibility", name);
 			}
 
 			for (String mixin : drop) {

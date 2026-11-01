@@ -145,7 +145,7 @@ public final class KernelCompostables {
 		}
 		if (!removed.isEmpty()) {
 			ForbricLog.warn("[Forbric/Composter] a mod removed %d vanilla compostable(s) from ComposterBlock.COMPOSTABLES (%s); "
-					+ "NeoForge's compostables data map still lists them and the merged composter follows the data map",
+					+ "NeoForge's compostables data map still lists them and NeoForge's composter follows the data map",
 					removed.size(), sample(removed));
 		}
 		if (!changed.isEmpty()) {

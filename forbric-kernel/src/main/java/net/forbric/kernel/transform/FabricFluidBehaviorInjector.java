@@ -100,7 +100,7 @@ public final class FabricFluidBehaviorInjector implements ClassTransformer {
 	}
 
 	private static int declined(String reason) {
-		ForbricLog.warn("[Forbric/Fluid] left EntityFluidInteraction.getFluidTypeByTag as merged: %s — a Fabric mod's fluid "
+		ForbricLog.warn("[Forbric/Fluid] left EntityFluidInteraction.getFluidTypeByTag as the base has it: %s — a Fabric mod's fluid "
 				+ "behaviour throws on the first entity tick", reason);
 		return -1;
 	}

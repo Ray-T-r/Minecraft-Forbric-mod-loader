@@ -89,7 +89,7 @@ class UncalledValueRelayWeaveTest {
 
 	@Test void theHooksRunOnTheCarriersValueWhereTheNativeGameAskedVent() throws Exception {
 		assertEquals(cases(natively), cases(relayed), "every break, as natively — " + relayed.describe());
-		assertTrue(relayed.printed("Kiln.vent never runs in the merged game; the 2 hook(s) woven into it"), relayed.describe());
+		assertTrue(relayed.printed("Kiln.vent never runs in the game; the 2 hook(s) woven into it"), relayed.describe());
 		assertTrue(relayed.findings().stream().noneMatch(f -> f.modId().equals("tally") && f.required()), relayed.findings().toString());
 		WeaveHarness.assertWovenAndVerified(relayed, TARGET, fixture);
 	}

@@ -316,7 +316,7 @@ public final class KernelNeoConditions {
 	private static void report(String type) {
 		if (!REPORTED.add(type)) return;
 		ForbricLog.warn("[Forbric/Conditions] resource condition '%s' is not in NeoForge's condition registry, so "
-				+ "NeoForge's evaluator — which the merged base runs over EVERY datapack element from every pack — "
+				+ "NeoForge's evaluator — which NeoForge's base runs over EVERY datapack element from every pack — "
 				+ "could not judge it and used to fail the whole registry load with it. It is being ignored here "
 				+ "instead; the ecosystem that owns that id decides. %d distinct condition(s) so far",
 				type, REPORTED.size());

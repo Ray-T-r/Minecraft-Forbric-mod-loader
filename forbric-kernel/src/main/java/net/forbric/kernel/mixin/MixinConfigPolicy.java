@@ -75,7 +75,7 @@ public final class MixinConfigPolicy {
 		for (String raw : csv.split(",")) {
 			if (config.equals(raw.trim())) {
 				ForbricLog.warn("[Forbric/Mixin] mixin config %s FORCE-ENABLED by -Dforbric.enableMixinConfigs over "
-						+ "the built-in merged-base incompatibility list — expect the recorded breakage", config);
+						+ "the built-in incompatibility list — expect the recorded breakage", config);
 				return true;
 			}
 		}

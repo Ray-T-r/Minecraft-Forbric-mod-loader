@@ -306,9 +306,8 @@ public final class KernelFabricConditions {
 	private static void reportSkipMarker(Class<?> type) {
 		if (!MARKERS.add(type.getName())) return;
 		ForbricLog.warn("[Forbric/Conditions] a data file was skipped by a guest mixin that could not finish the "
-				+ "job: it produced %s where the merged reader expects Optional, because the merge left two "
-				+ "methods named lambda$scanDirectory$0 and the half that mod patches is not the half that runs. "
-				+ "Treated as 'conditions not met', which is what its other half would have done — without this "
+				+ "job: it produced %s where NeoForge's reader (lambda$scanDirectory$0) expects an Optional. "
+				+ "Treated as 'conditions not met', which is what that reader does with an empty Optional — without this "
 				+ "the datapack load dies and the server does not start", type.getName());
 	}
 }

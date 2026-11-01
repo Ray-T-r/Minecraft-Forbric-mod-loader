@@ -95,8 +95,8 @@ public final class MixinShiftedPoints {
 			AbstractInsnNode counterpart = counterpart(before, nativeTarget, after);
 			if (counterpart == null) {
 				if (liveTarget == null || !token(liveTarget).equals(token(nativeTarget))) {
-					ForbricLog.warn("[Forbric/Mixin] %s: %s's point %s shifted by %d lands on %s in the native %s.%s and on %s in the merged one; "
-							+ "the native instruction's counterpart in the merged body is not proved, so the point stays as compiled",
+					ForbricLog.warn("[Forbric/Mixin] %s: %s's point %s shifted by %d lands on %s in the native %s.%s and on %s in the current one; "
+							+ "the native instruction's counterpart in the current body is not proved, so the point stays as compiled",
 							mixin.name.replace('/', '.'), handler.name, MixinFit.asString(MixinFit.value(at, "value")), by, token(nativeTarget),
 							current.name.replace('/', '.'), after.name, liveTarget == null ? "nothing" : token(liveTarget));
 				}
@@ -105,7 +105,7 @@ public final class MixinShiftedPoints {
 			if (counterpart == liveTarget) continue;
 			Respelled respelled = respell(current.name, after, counterpart);
 			if (respelled == null) {
-				ForbricLog.warn("[Forbric/Mixin] %s: %s's point %s shifted by %d lands on %s natively; the merged %s.%s has it, but no call or "
+				ForbricLog.warn("[Forbric/Mixin] %s: %s's point %s shifted by %d lands on %s natively; the current %s.%s has it, but no call or "
 						+ "return after it to name it by, so the point stays as compiled", mixin.name.replace('/', '.'), handler.name,
 						MixinFit.asString(MixinFit.value(at, "value")), by, token(nativeTarget), current.name.replace('/', '.'), after.name);
 				continue;
@@ -115,7 +115,7 @@ public final class MixinShiftedPoints {
 			// Counted over the merged body now: the ordinal rules after this one must not translate it again.
 			CurrentBodyOrdinals.mark(handler);
 			moved++;
-			ForbricLog.info("[Forbric/Mixin] %s: %s's point %s lands natively on %s in %s.%s%s; the merged body keeps that instruction behind "
+			ForbricLog.info("[Forbric/Mixin] %s: %s's point %s lands natively on %s in %s.%s%s; the current body keeps that instruction behind "
 					+ "a carrier's code, so the point now names it as %s", mixin.name.replace('/', '.'), handler.name, was, token(nativeTarget),
 					current.name.replace('/', '.'), after.name, after.desc, describe(at));
 		}

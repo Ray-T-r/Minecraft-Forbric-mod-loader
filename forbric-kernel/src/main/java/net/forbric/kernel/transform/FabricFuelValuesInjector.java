@@ -103,7 +103,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		if (returnHooksEnabled() || carryEnabled()) {
 			anchors.add(new AnchorSet.Anchor(FUEL_VALUES_CLASS, AnchorSet.Severity.REQUIRED,
 					"a mod's mixin on vanillaBurnTimes' return (torrential's Angling Table fuel) never reaches the fuel "
-							+ "values the merged server uses, or runs twice per native build on a client"));
+							+ "values the server uses, or runs twice per native build on a client"));
 		}
 		if (carryEnabled()) {
 			anchors.add(new AnchorSet.Anchor(BUILDER_CLASS, AnchorSet.Severity.REQUIRED,
@@ -126,12 +126,12 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		node.accept(writer);
 		if ((inserted & APPLIED) != 0) {
 			ForbricLog.info("[Forbric/Fuel] DataMapHooks.populateFuelValues runs fabric-content-registries' fuel events before it "
-					+ "builds — the merged game builds its fuels there and never reached Fabric's hook in vanillaBurnTimes");
+					+ "builds — the game builds its fuels there and never reached Fabric's hook in vanillaBurnTimes");
 		}
 		if ((inserted & RETURN_HOOKED) != 0) {
 			ForbricLog.info("[Forbric/Fuel] DataMapHooks.populateFuelValues hands its builder to FuelValues.vanillaBurnTimes' "
 					+ "own build() and the table through its return — a mod's mixin at either (a wrap of the build that adds its "
-					+ "fuels, torrential's Angling Table) now reaches the fuels the merged server uses");
+					+ "fuels, torrential's Angling Table) now reaches the fuels the server uses");
 		}
 		return writer.toByteArray();
 	}
@@ -249,7 +249,7 @@ public final class FabricFuelValuesInjector implements ClassTransformer {
 		node.accept(writer);
 		ForbricLog.info("[Forbric/Fuel] FuelValues.%s%s builds the fuel builder populateFuelValues hands it at its own "
 				+ "build() instead of vanilla's, so what a mod puts at that build and the return hooks of both vanillaBurnTimes "
-				+ "run on the table the merged server uses", body.name, body.desc);
+				+ "run on the table the server uses", body.name, body.desc);
 		return writer.toByteArray();
 	}
 

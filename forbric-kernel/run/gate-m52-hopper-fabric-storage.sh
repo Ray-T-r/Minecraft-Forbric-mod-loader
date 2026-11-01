@@ -119,7 +119,7 @@ check "fallback: a block-only store went through Fabric's lookup" "Hopper\] a ho
 check_absent "fallback: the slotted store went through the bridge, not the fallback" "Hopper\] a hopper .* Fabric storage forbric.hopper.Stores\\\$EntityStore through" "$RESULTS/fallback.log"
 check_absent "fallback: no verifier error" 'VerifyError|Exception stopping' "$RESULTS/fallback.log"
 
-step "3. off: the same server with the hopper left as merged and fabric-transfer's callbacks unattached"
+step "3. off: the same server with the hopper left as the base has it and fabric-transfer's callbacks unattached"
 run_server off continue "-Dforbric.hopperFabricStorage=off -Dforbric.mixinNullableCompositeCallbacks=off"
 judge off "failed == $LOST" "exactly the unslotted and block-only cases fail; slotted, refused faces, locked hoppers and chests hold"
 check_absent "off: nothing asks Fabric's lookup" 'Hopper\] HopperBlockEntity.ejectItems and suckInItems ask Fabric' "$RESULTS/off.log"

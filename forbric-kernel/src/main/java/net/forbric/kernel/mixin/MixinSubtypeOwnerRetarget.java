@@ -145,7 +145,7 @@ public final class MixinSubtypeOwnerRetarget {
 		}
 		mixin.methods.addAll(guards);
 		if (moved > 0) {
-			ForbricLog.info("[Forbric/Mixin] %s: %s — the merged body makes the same call through another owner, which "
+			ForbricLog.info("[Forbric/Mixin] %s: %s — the current body makes the same call through another owner, which "
 					+ "Mixin's owner match did not see", mixin.name.replace('/', '.'), String.join(", ", described));
 		}
 		return moved;

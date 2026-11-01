@@ -84,7 +84,7 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 	@Override public String name() { return "forbric-composter-bridge"; }
 
 	@Override public AnchorSet anchors() {
-		if (!enabled()) return AnchorSet.scanned("vanilla's compostables map left unread by the merged composter with -D" + PROPERTY + "=off");
+		if (!enabled()) return AnchorSet.scanned("vanilla's compostables map left unread by the base's composter with -D" + PROPERTY + "=off");
 		return AnchorSet.of(
 				new AnchorSet.Anchor(COMPOSTER, AnchorSet.Severity.REQUIRED,
 						"a Fabric mod's compostables (CompostableRegistry, BCLib traits) cannot go in a composter by hand"),
@@ -257,7 +257,7 @@ public final class CompostablesFallbackInjector implements ClassTransformer {
 	}
 
 	private static int declined(String className, String reason) {
-		ForbricLog.warn("[Forbric/Composter] left %s as merged: %s — a Fabric mod's compostables cannot go in a composter", className, reason);
+		ForbricLog.warn("[Forbric/Composter] left %s as the base has it: %s — a Fabric mod's compostables cannot go in a composter", className, reason);
 		return -1;
 	}
 }

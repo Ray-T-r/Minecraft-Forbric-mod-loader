@@ -229,7 +229,7 @@ public final class FabricApiModuleLossAudit {
 				thirdParty.add(entry.jar());
 			}
 			if (thirdParty.isEmpty()) continue;
-			ForbricLog.warn("[Forbric/FabricApi] %d mod jar(s) use %s's %s, which is switched off on the merged base — %s%s. "
+			ForbricLog.warn("[Forbric/FabricApi] %d mod jar(s) use %s's %s, which is switched off on this boot — %s%s. "
 					+ "Marked DEGRADED: %s (jars: %s)", thirdParty.size(), loss.module(), simple(loss.needle()),
 					loss.cost(), implementing.isEmpty() ? "" : "; for " + implementing + ", " + loss.implementerCost(),
 					named, thirdParty);

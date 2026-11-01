@@ -59,7 +59,7 @@ public final class ForbricSwitches {
 
 	/** Retired name → why setting it changes nothing. */
 	static final Map<String, String> RETIRED = Map.ofEntries(
-			Map.entry("forbric.dragonParts", "the multipart entity hierarchy is now proved by the merged base when it is built, "
+			Map.entry("forbric.dragonParts", "the multipart entity hierarchy is the base's own (NeoForge's PartEntity), "
 					+ "so there is no runtime rewrite left to switch off"),
 			Map.entry("forbric.fluidInteractionCallbacks", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "
 					+ "registry calls; it runs on NeoForge's neighbour change from a wrap of the registry question, as vanilla asks it there "
@@ -204,8 +204,8 @@ public final class ForbricSwitches {
 			Map.entry("forbric.forgeHandshake", "Forbric loads no MinecraftForge mod, so there is no MinecraftForge login handshake, channel list "
 					+ "or config sync to restore; NeoForge's own configuration tasks run as on NeoForge"),
 			// Stage 4: repairs of NeoForge hooks the merged base had lost; NeoForge's own base calls them itself.
-			Map.entry("forbric.neoScreenEvents", "NeoForge's own Gui.setScreen posts ScreenEvent.Opening and Closing itself, so there is "
-					+ "no merged MinecraftForge body to add them to"),
+			Map.entry("forbric.neoScreenEvents", "NeoForge's own Gui.setScreen posts ScreenEvent.Opening and Closing itself, so the kernel "
+					+ "has nothing to add"),
 			Map.entry("forbric.neoConversionPost", "NeoForge's own conversion lambdas post LivingConversionEvent.Post themselves, so there "
 					+ "is no MinecraftForge lambda to send through the kernel"),
 			Map.entry("forbric.itemTooltipBridge", "NeoForge's own ItemStack.getTooltipLines posts ItemTooltipEvent itself, so the kernel "
@@ -220,8 +220,8 @@ public final class ForbricSwitches {
 					+ "from MixinFluidReactionAdapter's wrap instead (-Dforbric.fluidReactionNeighbourChange.head)"),
 			Map.entry("forbric.builderStubRebind", "NeoForge's own base keeps vanilla's bodies where MinecraftForge left a builder stub "
 					+ "(UnbakedCuboidGeometry.bake), so an injector binds the body it was written for and nothing moves"),
-			Map.entry("forbric.mixinMergedTwins", "NeoForge's own base has one class per name, with no $forbricneo twin the "
-					+ "merge renamed, so a mixin applies to the class it names and gets no second target"),
+			Map.entry("forbric.mixinMergedTwins", "NeoForge's own base has one class per name, with no renamed $forbricneo twin "
+					+ "beside it, so a mixin applies to the class it names and gets no second target"),
 			Map.entry("forbric.pruneDuplicateLambdas", "NeoForge's own base carries no lambda name twice, so there is no orphaned "
 					+ "body to drop before a mod's mixin selects a lambda by name"),
 			Map.entry("forbric.clientPartTracking", "NeoForge's own ClientLevel tracking callback reads NeoForge's getParts() "

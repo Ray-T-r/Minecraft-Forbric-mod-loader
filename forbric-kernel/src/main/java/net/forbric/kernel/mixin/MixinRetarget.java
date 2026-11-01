@@ -274,7 +274,7 @@ public final class MixinRetarget {
 		if (!moved) return null;
 		if (!handlerFits(handler, injector, owner, stub, delegate)) return null;
 
-		return new Rewrite(handler.name, Element.SELECTOR, selector, name + delegate.desc, "merge-added delegating stub");
+		return new Rewrite(handler.name, Element.SELECTOR, selector, name + delegate.desc, "carrier-added delegating stub");
 	}
 
 	/**
@@ -306,7 +306,7 @@ public final class MixinRetarget {
 				if (swap == null) continue;
 				if (!MixinFit.containsMember(hit, swap.mergedMember())) continue;
 				out.add(new Rewrite(handler.name, Element.AT_TARGET, atTarget, swap.mergedMember(),
-						"callee the merge swapped: " + swap.vanillaName() + " → " + swap.mergedName()));
+						"callee the base swapped: " + swap.vanillaName() + " → " + swap.mergedName()));
 				break;
 			}
 		}
@@ -1114,8 +1114,8 @@ public final class MixinRetarget {
 	 */
 	public static void hookDidNotLink(LinkageError error, String hook) {
 		if (!SKIPPED.add(hook)) return;
-		ForbricLog.warn("[Forbric/Mixin] %s does not link on the merged base (%s) — skipped wherever it runs, as it was "
-				+ "before its injection point was moved to the call the merge substituted, instead of failing the method "
+		ForbricLog.warn("[Forbric/Mixin] %s does not link on this base (%s) — skipped wherever it runs, as it was "
+				+ "before its injection point was moved to the call the base substituted, instead of failing the method "
 				+ "around it (for a block-model hook, the whole resource reload, which drops every resource pack)",
 				hook, String.valueOf(error));
 	}

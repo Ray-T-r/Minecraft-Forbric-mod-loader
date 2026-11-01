@@ -85,7 +85,7 @@ public final class PayloadInterop {
 		try {
 			mirrorMergedPayloadRegistries(loader);
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric] could not bootstrap merged custom-payload mirrors");
+			Caught.warn(t, "[Forbric] could not bootstrap custom-payload mirrors");
 		} finally {
 			// Published even when the mirroring threw: the map already says "done for this loader", so the fast
 			// path and the slow path must agree, or every later packet pays the monitor for a retry that the map
@@ -551,11 +551,11 @@ public final class PayloadInterop {
 			if (mirrorPayloadIntoNeo(loader, registration)) mirrored++;
 		}
 		int mirroredCount = mirrored;
-		probe(() -> "mirror pass on " + loader + ": " + local.size() + " merged + " + fabric.size()
+		probe(() -> "mirror pass on " + loader + ": " + local.size() + " game + " + fabric.size()
 				+ " Fabric registration(s) seen, " + mirroredCount + " mirrored into NeoForge");
 		if (mirrored > 0) {
 			ForbricLog.info("[Forbric] mirrored " + mirrored
-					+ " merged/Fabric custom payload registration(s) into NeoForge's decode registry");
+					+ " game/Fabric custom payload registration(s) into NeoForge's decode registry");
 		}
 	}
 
@@ -577,7 +577,7 @@ public final class PayloadInterop {
 			streamCodec.setAccessible(true);
 			collectCodecRegistrations(streamCodec.get(null), "local/" + packetClass.getSimpleName() + "." + fieldName, out);
 		} catch (ReflectiveOperationException | RuntimeException e) {
-			Caught.warn(e, "[Forbric] could not inspect merged packet codec %s::%s", packetClassName, fieldName);
+			Caught.warn(e, "[Forbric] could not inspect the game's packet codec %s::%s", packetClassName, fieldName);
 		}
 	}
 

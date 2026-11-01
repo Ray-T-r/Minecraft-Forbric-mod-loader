@@ -108,7 +108,7 @@ public final class CustomPayloadInteropSeam implements ClassTransformer {
 	public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY);
 		return AnchorSet.of(new AnchorSet.Anchor(GENUINE_CODEC.replace('/', '.'), AnchorSet.Severity.REQUIRED,
-				"on a base that was never merged, a custom payload is encoded with the codec registered for its id rather "
+				"on NeoForge's base, a custom payload is encoded with the codec registered for its id rather "
 						+ "than its class (Fabric's minecraft:register fails to cast), and fabric-networking's codec wrap has "
 						+ "no seam to be arbitrated against"));
 	}
@@ -126,7 +126,7 @@ public final class CustomPayloadInteropSeam implements ClassTransformer {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		ForbricLog.info("[Forbric/Network] %s.findCodec asks PayloadInterop, which chooses a custom payload's codec by its "
-				+ "class across every ecosystem — the lookup the merged base was built with", className);
+				+ "class across every ecosystem", className);
 		return writer.toByteArray();
 	}
 

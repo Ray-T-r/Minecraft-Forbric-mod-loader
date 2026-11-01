@@ -129,7 +129,7 @@ public final class RegistryDirectoryOwnerInjector implements ClassTransformer {
 			body.instructions.insertBefore(ret, owned);
 		}
 
-		ForbricLog.info("[Forbric/Registries] %s.%s now answers as each registry's owner's loader does — the merged "
+		ForbricLog.info("[Forbric/Registries] %s.%s now answers as each registry's owner's loader does — the base's "
 				+ "body is NeoForge's, and a Fabric mod's registry gets vanilla's directory for fabric-registry-sync "
 				+ "to prefix, or for WorldWeaver's own mixin to keep as it is", className, METHOD);
 
