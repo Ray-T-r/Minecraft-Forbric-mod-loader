@@ -38,8 +38,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
  */
 class RepairDriftCensusStagedTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
-	private static final String KEY_MAPPING = "net.minecraft.client.KeyMapping";
-	private static final String LOOKUP_CLAIM = "forbric-merged-base-compat#routeKeyMappingClickToPopulatedLookup";
+	private static final String BOOTSTRAP = "net.minecraft.server.Bootstrap";
+	private static final String STREAMS_CLAIM = "forbric-merged-base-compat#wrapTheStreamsVanillaWraps";
 
 	@TempDir Path temporary;
 
@@ -63,56 +63,60 @@ class RepairDriftCensusStagedTest {
 	void aCandidateThatMovesOneAnchorIsNamedBeforeItIsAdopted() throws Exception {
 		List<Path> jars = stagedJars();
 		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", jars.toArray(Path[]::new));
-		byte[] real = RepairDriftCensus.bytesOf(jars, KEY_MAPPING);
-		assertNotNull(real, "the staged base carries KeyMapping");
+		byte[] real = RepairDriftCensus.bytesOf(jars, BOOTSTRAP);
+		assertNotNull(real, "the staged base carries Bootstrap");
 
-		// The candidate: one class whose click already reads the populated key lookup, so the repair that routes it
-		// there has nothing left to do. This is the shape of an upstream bump that fixes
-		// something the kernel was compensating for — which is a decline just as much as a break is.
+		// The candidate: one class that already calls what a repair puts back (vanilla's wrapStreams() in bootStrap()), so
+		// that repair has nothing left to do. This is the shape of an upstream bump that fixes something the kernel was
+		// compensating for — which is a decline just as much as a break is.
 		Path candidate = temporary.resolve("candidate.jar");
 		try (OutputStream os = Files.newOutputStream(candidate); ZipOutputStream zos = new ZipOutputStream(os)) {
-			zos.putNextEntry(new ZipEntry("net/minecraft/client/KeyMapping.class"));
-			zos.write(withClickReadingTheLiveLookup(real));
+			zos.putNextEntry(new ZipEntry("net/minecraft/server/Bootstrap.class"));
+			zos.write(withVanillasStreamWrap(real));
 			zos.closeEntry();
 		}
 
 		List<Path> withCandidate = new ArrayList<>();
 		withCandidate.add(candidate);
 		withCandidate.addAll(jars);
+		// Measured against the staged build's own declines, so the candidate's one class is all that differs.
+		List<String> before = RepairDriftCensus.replay(jars).declined();
 		RepairDriftCensus.Drift drift = RepairDriftCensus.replay(withCandidate);
 		System.out.println(drift.summary());
-		assertEquals(1, drift.declined().size(), "exactly the one repair that no longer applies: " + drift.declined());
-		assertTrue(drift.declined().get(0).contains(LOOKUP_CLAIM),
-				"the decline must name the claim, not just count one: " + drift.declined().get(0));
+		List<String> added = new ArrayList<>(drift.declined());
+		added.removeAll(before);
+		assertEquals(1, added.size(), "exactly the one repair that no longer applies: " + added);
+		assertTrue(added.get(0).contains(STREAMS_CLAIM), "the decline must name the claim, not just count one: " + added.get(0));
+		assertTrue(drift.declined().containsAll(before), "and nothing the staged build declined is hidden by it");
 	}
 
 	/**
-	 * {@code KeyMapping} as an upstream that fixed the merge's {@code click} would ship it: every read of the Forge-side
-	 * {@code MAP} outside the initialisers already goes to NeoForge's lookup, which is the edit
-	 * routeKeyMappingClickToPopulatedLookup makes, so that repair has nothing left to do.
+	 * {@code Bootstrap} as an upstream that kept vanilla's line would ship it: {@code bootStrap()} calls its own
+	 * {@code wrapStreams()} right before it records {@code bootstrapDuration}, which is the call
+	 * wrapTheStreamsVanillaWraps puts back on NeoForge's base, so that repair has nothing left to do.
 	 */
-	private static byte[] withClickReadingTheLiveLookup(byte[] classBytes) {
-		String forgeLookup = "Lnet/minecraftforge/client/settings/KeyMappingLookup;";
-		String neoLookup = "Lnet/neoforged/neoforge/client/settings/KeyMappingLookup;";
+	private static byte[] withVanillasStreamWrap(byte[] classBytes) {
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
-		int edited = 0;
-		for (MethodNode m : node.methods) {
-			if (m.name.equals("<init>") || m.name.equals("<clinit>")) continue;
-			for (org.objectweb.asm.tree.AbstractInsnNode insn : m.instructions) {
-				if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && f.name.equals("MAP") && f.desc.equals(forgeLookup)) {
-					f.desc = neoLookup;
-					edited++;
-				} else if (insn instanceof org.objectweb.asm.tree.MethodInsnNode c && c.name.equals("getAll")
-						&& c.owner.equals(forgeLookup.substring(1, forgeLookup.length() - 1))) {
-					c.owner = neoLookup.substring(1, neoLookup.length() - 1);
-					edited++;
-				}
+		MethodNode bootStrap = node.methods.stream().filter(m -> m.name.equals("bootStrap") && m.desc.equals("()V"))
+				.findFirst().orElseThrow();
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : bootStrap.instructions) {
+			assertTrue(!(insn instanceof org.objectweb.asm.tree.MethodInsnNode c && c.name.equals("wrapStreams")),
+					"premise: the staged Bootstrap.bootStrap() does not call wrapStreams() (NeoForge's patch replaced that call)");
+		}
+		FieldInsnNode duration = null;
+		for (org.objectweb.asm.tree.AbstractInsnNode insn : bootStrap.instructions) {
+			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && f.name.equals("bootstrapDuration")) {
+				duration = f;
+				break;
 			}
 		}
-		assertTrue(edited > 0, "premise: the staged KeyMapping still reads the Forge-side MAP outside its initialisers");
+		assertNotNull(duration, "premise: bootStrap() records bootstrapDuration");
+		bootStrap.instructions.insertBefore(duration, new org.objectweb.asm.tree.MethodInsnNode(Opcodes.INVOKESTATIC,
+				"net/minecraft/server/Bootstrap", "wrapStreams", "()V", false));
 		ClassWriter writer = new ClassWriter(0);
 		node.accept(writer);
 		return writer.toByteArray();
 	}
+
 }

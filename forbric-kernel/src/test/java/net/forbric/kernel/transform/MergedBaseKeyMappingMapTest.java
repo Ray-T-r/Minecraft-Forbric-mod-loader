@@ -23,6 +23,8 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.zip.ZipFile;
 
 import org.junit.jupiter.api.Test;
@@ -76,6 +78,38 @@ class MergedBaseKeyMappingMapTest {
 		int nextPut = -1;
 		for (int i = all + 1; i < body.length; i++) if (body[i] instanceof FieldInsnNode f && f.getOpcode() == Opcodes.PUTSTATIC) { nextPut = i; break; }
 		assertEquals(put, nextPut, "nothing else is assigned in between");
+	}
+
+	/**
+	 * The merged base declared two static {@code MAP} fields, NeoForge's and MinecraftForge's {@code KeyMappingLookup},
+	 * and {@code KeyMapping.click} read MinecraftForge's, which nothing wrote: every {@code consumeClick} key (inventory,
+	 * chat, command, drop) was dead until the compat transformer's routeKeyMappingClickToPopulatedLookup moved those
+	 * reads. NeoForge's own base declares one lookup, and every access to {@code MAP} in the class — {@code click}'s, through
+	 * both {@code forAllKeyMappings} overloads, included — is of it.
+	 */
+	@Test
+	void theBaseHasOneKeyLookupAndEveryAccessToItIsNeoForges() throws Exception {
+		String neoLookup = "Lnet/neoforged/neoforge/client/settings/KeyMappingLookup;";
+		ClassNode node = new ClassNode();
+		new ClassReader(original()).accept(node, 0);
+		List<String> maps = node.fields.stream().filter(f -> f.name.equals("MAP") && (f.access & Opcodes.ACC_STATIC) != 0)
+				.map(f -> f.desc).toList();
+		assertEquals(List.of(neoLookup), maps, "exactly one static MAP, and it is NeoForge's key lookup");
+		List<String> foreign = new ArrayList<>();
+		int accesses = 0;
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode insn : method.instructions) {
+				if (!(insn instanceof FieldInsnNode f) || !f.owner.equals(KEY_MAPPING) || !f.name.equals("MAP")) continue;
+				accesses++;
+				if (!f.desc.equals(neoLookup)) foreign.add(method.name + method.desc + " " + f.desc);
+			}
+		}
+		assertTrue(accesses > 0, "content drift: KeyMapping no longer touches MAP at all");
+		assertEquals(List.of(), foreign, "every access to KeyMapping.MAP is of NeoForge's lookup");
+		MethodNode click = node.methods.stream().filter(m -> m.name.equals("click")).findFirst().orElseThrow();
+		assertTrue(java.util.Arrays.stream(click.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode m
+				&& m.owner.equals(KEY_MAPPING) && m.name.equals("forAllKeyMappings")),
+				"content drift: click no longer looks its mappings up through forAllKeyMappings");
 	}
 
 	@Test

@@ -90,7 +90,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "routeKeyMappingClickToPopulatedLookup", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "dropInterfaceDefaultShadowingOverrides", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "dropStubsThatBypassARealSuperclassMethod", "inlineTheSwitchMapTheMergeLost", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "letTheAtlasLowerItsMipLevelLikeVanilla", "wrapTheStreamsVanillaWraps");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -107,8 +107,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 						+ "getAppearance as a default from BOTH NeoForge and fabric-api and declare neither, so the "
 						+ "first mod to ask a neighbour what it looks like — any connected-texture mod — dies on "
 						+ "IncompatibleClassChangeError mid-frame"));
-		out.add(fixed("routeKeyMappingClickToPopulatedLookup", KEY_MAPPING,
-				"key presses are looked up in the lookup registration never populated — MinecraftForge mods' keys never fire"));
 		out.add(fixed("giveKeyMappingItsVanillaMap", KEY_MAPPING,
 				"KeyMapping has no vanilla-typed MAP — a mod reading it as a Map dies on NoSuchFieldError (LiquidBounce, on a key press)"));
 		out.add(fixed("giveTheVanillaParticleMapAViewOfTheLiveOne", PARTICLE_RESOURCES,
@@ -219,7 +217,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			boolean changed = false;
 			changed |= claim(reporter, "addBlockStateModelConflictResolvers", addBlockStateModelConflictResolvers(node));
 			changed |= claim(reporter, "addBlockStateAppearanceResolver", addBlockStateAppearanceResolver(node));
-			changed |= claim(reporter, "routeKeyMappingClickToPopulatedLookup", routeKeyMappingClickToPopulatedLookup(node));
 			changed |= claim(reporter, "giveKeyMappingItsVanillaMap", giveKeyMappingItsVanillaMap(node));
 			changed |= claim(reporter, "giveTheVanillaParticleMapAViewOfTheLiveOne", giveTheVanillaParticleMapAViewOfTheLiveOne(node));
 			changed |= claim(reporter, "letDungeonsGenerateWithoutTheDataMap", letDungeonsGenerateWithoutTheDataMap(node));
@@ -612,64 +609,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		return changed;
 	}
 
-	/**
-	 * Points {@code KeyMapping.click} at the key lookup that registration actually populates.
-	 *
-	 * <p>The byte-merge left {@code KeyMapping} with TWO static fields both named {@code MAP} — NeoForge's
-	 * {@code KeyMappingLookup} and MinecraftForge's (same name, different descriptor: legal in bytecode, unwritable
-	 * in Java source). Every WRITE goes to the NeoForge one ({@code registerMapping}, the constructors,
-	 * {@code setKeyModifierAndCode}, {@code resetMapping}), and {@code <clinit>} only ever assigned that one. The
-	 * merge also kept BOTH {@code forAllKeyMappings} overloads, and they READ different maps: the 3-arg one — used
-	 * by {@code KeyMapping.set}, which drives {@code isDown} — reads NeoForge's, while the 2-arg one, whose single
-	 * caller is {@code KeyMapping.click} (it drives {@code clickCount}), reads MinecraftForge's.
-	 *
-	 * <p>So the Forge lookup is permanently EMPTY and {@code click} matches nothing: {@code clickCount} never
-	 * increments and {@code consumeClick()} is forever false. That kills every {@code consumeClick}-driven key for
-	 * vanilla AND every mod — inventory (E), chat (T), command ({@code /}), drop (Q) — while {@code isDown} keys
-	 * (WASD, sneak, attack) keep working, because {@code set} reads the populated map. ESC still opens the pause
-	 * menu, because that is a direct key-code check in {@code KeyboardHandler}, not a {@code KeyMapping} — which is
-	 * exactly the "ESC pauses but E does nothing" shape this presents as.
-	 *
-	 * <p>Both {@code getAll(InputConstants$Key)} overloads return {@code List<KeyMapping>}, so redirecting the field
-	 * read and the call is descriptor-identical. (The Forge lookup's own initializer was added by a MinecraftForge repair
-	 * that went with MinecraftForge.)
-	 */
-	private static boolean routeKeyMappingClickToPopulatedLookup(ClassNode node) {
-		if (!"net/minecraft/client/KeyMapping".equals(node.name)) return false;
-
-		String forgeLookup = "Lnet/minecraftforge/client/settings/KeyMappingLookup;";
-		String neoLookup = "Lnet/neoforged/neoforge/client/settings/KeyMappingLookup;";
-		// Only meaningful when the merge actually produced BOTH lookups; a single-ecosystem base is already coherent.
-		if (!hasField(node, "MAP", forgeLookup) || !hasField(node, "MAP", neoLookup)) return false;
-
-		boolean changed = false;
-		for (MethodNode lookup : node.methods) {
-			if ("<init>".equals(lookup.name) || "<clinit>".equals(lookup.name)) continue;
-		for (AbstractInsnNode insn = lookup.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn.getOpcode() == Opcodes.GETSTATIC && insn instanceof FieldInsnNode field
-					&& "MAP".equals(field.name) && forgeLookup.equals(field.desc)) {
-				field.desc = neoLookup;
-				changed = true;
-			} else if (insn instanceof MethodInsnNode call
-					&& ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.FORGE).equals(call.owner)
-					&& "getAll".equals(call.name)) {
-				call.owner = ForeignType.KEY_MAPPING_LOOKUP.internal(Ecosystem.NEOFORGE);
-				changed = true;
-			}
-		}
-		}
-		if (!changed) return false;
-
-		ForbricLog.warn("[Forbric/MergedBaseCompat] routed KeyMapping.click to the populated (NeoForge) key lookup "
-				+ "— the merge left it reading the Forge-side MAP, which is never written, so every consumeClick key "
-				+ "(inventory/chat/command/drop) was dead");
-		return true;
-	}
 
 	/**
 	 * Gives {@code ParticleResources}' vanilla-typed {@code providers} field a live view of the one that is written.
 	 *
-	 * <p>The same failure class as {@link #routeKeyMappingClickToPopulatedLookup}, at field level. Vanilla declares
+	 * <p>The same failure class as the merged {@code KeyMapping}'s two {@code MAP} lookups, at field level. Vanilla declares
 	 * {@code providers} as {@code Int2ObjectMap} keyed by particle id; NeoForge 26.2.0.88 RE-TYPES that field to
 	 * {@code Map<Identifier, ?>}. Same name, different descriptor is legal, so the merge keeps both and the
 	 * surviving {@code <init>} writes only NeoForge's. The vanilla-typed one is null for the life of the process.
@@ -1380,8 +1324,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/**
 	 * Gives {@code KeyMapping} vanilla's {@code MAP:Ljava/util/Map;} back, as a view of the mappings by key.
 	 *
-	 * <p>Both ecosystems re-type vanilla's {@code MAP} to their own {@code KeyMappingLookup}; the merged class keeps
-	 * those two ({@link #routeKeyMappingClickToPopulatedLookup}) and not vanilla's, so a mod compiled against vanilla
+	 * <p>NeoForge re-types vanilla's {@code MAP} to its own {@code KeyMappingLookup} (the merged class kept MinecraftForge's
+	 * re-typed one beside it) and not vanilla's, so a mod compiled against vanilla
 	 * that reads {@code KeyMapping.MAP} as a {@code Map} gets {@code NoSuchFieldError}. LiquidBounce reads it on every
 	 * key press while a screen is open (its inventory movement), so the client died the first time a key was pressed
 	 * in a world. Nothing in the merged game reads vanilla's descriptor, so the field is added rather than moved, and
