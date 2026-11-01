@@ -116,7 +116,7 @@ public final class ForbricMixinService
 		// The native shape first, as getClassNode does: a call put back into its method, a value kept in its local, a @Local
 		// pinned — so the transports below see a call that is there again and leave it to the mod's own injector.
 		java.util.function.Function<String,ClassNode> code=owner->{byte[] current=resource.apply(owner+".class");return current==null?null:MixinFit.parse(current);};
-		int changed=NativeCallInlining.adapt(source,code,NativeGameReferences::reference,loader());
+		int changed=NativeCallInlining.adapt(source,code,NativeGameReferences::reference,loader(),ForbricMixinService::registeredMixins);
 		changed+=NativeLocalMaterialization.adapt(source,code,NativeGameReferences::reference,loader());
 		changed+=NativeLocalPins.adapt(source,code,NativeGameReferences::reference);
 		changed+=NativeEntryRelay.adapt(source,code,NativeGameReferences::reference,loader());
@@ -341,7 +341,7 @@ public final class ForbricMixinService
 		MixinAtShape.normalise(node);
 		// …and a call an injector anchors on, which the surviving carrier now makes inside a helper of its own, is made in the
 		// method again: the helper is inlined there before any adapter below, or Mixin, reads the target.
-		NativeCallInlining.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
+		NativeCallInlining.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader(), ForbricMixinService::registeredMixins);
 		// …and a value a @Local asks for at a call, which the merged method hands that call straight from the stack, is also
 		// kept in the local the native method keeps it in.
 		NativeLocalMaterialization.adapt(node, this::mergedBaseNodeWithCode, NativeGameReferences::reference, loader());
@@ -812,6 +812,11 @@ public final class ForbricMixinService
 	private record AdapterClass(ForbricClassLoader loader,ForbricClassLoader.BytecodeGeneration generation,byte[] bytes){}
 	private static final java.util.Map<String, AdapterClass> ADAPTER_CLASS_CACHE = new java.util.concurrent.ConcurrentHashMap<>();
 	private static final byte[] NOT_FOUND = new byte[0];
+
+	/** Every mixin a config registered this run applies on this side, as its jar has it (NativeCallInlining's conflicts). */
+	private static java.util.List<ClassNode> registeredMixins() {
+		return ForeignMixinTargets.registeredMixins(ForbricMixinService::readAdapterClass);
+	}
 
 	/**
 	 * The class bytes {@link KernelGuestMixinAdapter} resolves mixin anchors against.

@@ -78,21 +78,39 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
             @Mixin(Gateway.class)public class Changed{@Inject(method="once",at=@At("HEAD"))private static void altered(Widget widget,Context context,int value,CallbackInfo ci){audit.OperationProbe.log.add("observer:"+widget.name);}}
             """);files.add(observer);Path changedConfig=work.resolve("changed.mixins.json");Files.writeString(changedConfig,"{\"required\":true,\"compatibilityLevel\":\"JAVA_25\",\"package\":\"observer\",\"mixins\":[\"Changed\"]}");
         Path changed=WeaveHarness.fixture(work,"changed-helper",files,Map.of("operation.mixins.json",config,"changed.mixins.json",changedConfig),List.of("-g"));changed=NativeWeaveReferences.with(work,changed,Map.of("unknown/Dispatch",source()));
-        var mutated=WeaveHarness.run(work,"changed-helper",changed,List.of(configs.getFirst(),new WeaveHarness.Config("changed.mixins.json","changed-operation",Ecosystem.FABRIC)),List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
-        // Another mod's mixin into the carrier helper coexists natively: the host still draws, the gateway and helper
-        // run as written (with that mixin), and only the transported operation is skipped -- reported once, naming it.
+        var configsChanged=List.of(configs.getFirst(),new WeaveHarness.Config("changed.mixins.json","changed-operation",Ecosystem.FABRIC));
+        var added=WeaveHarness.run(work,"changed-helper",changed,configsChanged,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
+        // Another mod's HEAD callback into the carrier helper only adds code around what Forbric instrumented there: both
+        // run, as each one's own loader runs it -- the observer on every call of the helper, the transported operation at
+        // the proved top draw only -- and the addition is named once.
+        assertTrue(added.printed("[Operation] 1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, before:top:1, draw:replacement:11, after:top, post:top]"),added.describe());
+        assertTrue(added.printed("[Operation] 3 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, before:top:3, draw:replacement:13, draw:replacement:23, after:top, post:top]"),added.describe());
+        assertTrue(added.printed("[Operation] -1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, cancel:top]"),added.describe());
+        assertTrue(added.printed("[Operation] direct [observer:top, pre:top, draw:top:7, post:top]"),added.describe());
+        assertEquals(1,added.output().lines().filter(line->line.contains("unknown.Gateway.once(")&&line.contains("and mixin observer.Changed only added code around them; the operation seam still holds")).count(),added.describe());
+        assertFalse(added.printed("skipped at"),added.describe());assertTrue(added.findings().stream().noneMatch(f->f.id().startsWith("mixin-seam:")),added.findings().toString());
+        // With additions off -- and for a change that is more than an addition, below -- the gateway and helper run as
+        // written (with that mixin), and only the transported operation is skipped: reported once, naming it.
+        var mutated=WeaveHarness.run(work,"changed-helper-off",changed,configsChanged,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off",MixinOperationSeamTransport.ADDITIONS_PROPERTY,"off"));
         assertTrue(mutated.printed("[Operation] 1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, draw:top:1, post:top]"),mutated.describe());
         assertTrue(mutated.printed("[Operation] 3 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, draw:top:3, post:top]"),mutated.describe());
         assertTrue(mutated.printed("[Operation] -1 [observer:layer, pre:layer, draw:layer:99, post:layer, observer:top, pre:top, cancel:top]"),mutated.describe());
         assertTrue(mutated.printed("[Operation] direct [observer:top, pre:top, draw:top:7, post:top]"),mutated.describe());
-        assertFalse(mutated.printed("before:top"),mutated.describe());
-        List<String> warnings=mutated.output().lines().filter(line->line.contains("source operation skipped at")).toList();
-        assertEquals(1,warnings.size(),mutated.describe());
-        assertTrue(warnings.getFirst().contains("mixin=unrelated.Subscriber")&&warnings.getFirst().contains("unknown.Gateway.once")&&warnings.getFirst().contains("observer.Changed"),mutated.describe());
-        List<WeaveHarness.Finding> findings=mutated.findings().stream().filter(f->f.id().startsWith("mixin-seam:operation.mixins.json:unrelated.Subscriber#arbitrary(")).toList();
-        assertEquals(1,findings.size(),mutated.findings()+"\n"+mutated.describe());
-        assertEquals("unknown-operation",findings.getFirst().modId());assertEquals("CONFIRMED",findings.getFirst().confidence());assertFalse(findings.getFirst().required());
-        assertFalse(mutated.printed("final body witness"),mutated.describe());
+        assertFalse(mutated.printed("before:top"),mutated.describe());assertFalse(mutated.printed("only added code"),mutated.describe());
+        assertDeclinedOnce(mutated,"observer.Changed");
+        // A mixin that reassigns a local the instrumented helper reads is more than an addition: declined by default.
+        Path observerSource=observer;String addition=Files.readString(observerSource);
+        Files.writeString(observerSource,"""
+            package observer;import unknown.*;import org.spongepowered.asm.mixin.*;import org.spongepowered.asm.mixin.injection.*;
+            @Mixin(Gateway.class)public class Changed{@ModifyVariable(method="once",at=@At("HEAD"),argsOnly=true)private static int altered(int value){audit.OperationProbe.log.add("reassigned:"+value);return value;}}
+            """);
+        Path reassigning=WeaveHarness.fixture(work,"reassigned-helper",files,Map.of("operation.mixins.json",config,"changed.mixins.json",changedConfig),List.of("-g"));reassigning=NativeWeaveReferences.with(work,reassigning,Map.of("unknown/Dispatch",source()));
+        var reassigned=WeaveHarness.run(work,"reassigned-helper",reassigning,configsChanged,List.of(),EnvType.SERVER,"audit.OperationProbe","run",Map.of(NativeCallInlining.PROPERTY,"off"));
+        assertTrue(reassigned.printed("[Operation] 1 [reassigned:99, pre:layer, draw:layer:99, post:layer, reassigned:1, pre:top, draw:top:1, post:top]"),reassigned.describe());
+        assertFalse(reassigned.printed("before:top"),reassigned.describe());assertFalse(reassigned.printed("only added code"),reassigned.describe());
+        assertTrue(reassigned.printed("which the instrumented body uses"),reassigned.describe());
+        assertDeclinedOnce(reassigned,"observer.Changed");
+        Files.writeString(observerSource,addition);
         files.remove(observer);
         // A look-alike into another method of the same gateway/helper class leaves the proved bodies alone.
         Path neighbour=work.resolve("src/observer/Neighbour.java");Files.writeString(neighbour,"""
@@ -104,6 +122,16 @@ class MixinOperationSeamTransportWeaveTest implements Opcodes {
         assertTrue(alikeRun.printed("[Operation] 1 [pre:layer, draw:layer:99, post:layer, pre:top, before:top:1, draw:replacement:11, after:top, post:top]"),alikeRun.describe());
         assertTrue(alikeRun.printed("[Operation] direct [neighbour, pre:top, draw:top:7, post:top]"),alikeRun.describe());
         assertFalse(alikeRun.printed("skipped at"),alikeRun.describe());assertTrue(alikeRun.findings().stream().noneMatch(f->f.id().startsWith("mixin-seam:")),alikeRun.findings().toString());
+    }
+    /** One "source operation skipped" warning at Gateway.once, naming the changing mixin, and one CONFIRMED seam finding. */
+    private static void assertDeclinedOnce(WeaveHarness.Result run,String changer){
+        List<String> warnings=run.output().lines().filter(line->line.contains("source operation skipped at")).toList();
+        assertEquals(1,warnings.size(),run.describe());
+        assertTrue(warnings.getFirst().contains("mixin=unrelated.Subscriber")&&warnings.getFirst().contains("unknown.Gateway.once")&&warnings.getFirst().contains(changer),run.describe());
+        List<WeaveHarness.Finding> findings=run.findings().stream().filter(f->f.id().startsWith("mixin-seam:operation.mixins.json:unrelated.Subscriber#arbitrary(")).toList();
+        assertEquals(1,findings.size(),run.findings()+"\n"+run.describe());
+        assertEquals("unknown-operation",findings.getFirst().modId());assertEquals("CONFIRMED",findings.getFirst().confidence());assertFalse(findings.getFirst().required());
+        assertFalse(run.printed("final body witness"),run.describe());
     }
     /**
      * A callback after the moved draw that reads the source's locals through MixinExtras' {@code @Local} receives, at

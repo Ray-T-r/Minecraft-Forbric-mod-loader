@@ -76,7 +76,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinDefaultCallbackTransport", Switch.own("forbric.mixinDefaultCallbacks")), // MixinDefaultCallbackTransportWeaveTest
 			Map.entry("MixinNativePredicateSeam", Switch.own("forbric.nativePredicateSeams")), // MixinNativePredicateSeamWeaveTest
 			Map.entry("MixinAbsorbedCallbackTransport", new Switch(List.of("forbric.mixinAbsorbedCall"), "net.forbric.kernel.mixin.MergedBaseAbsorbedCalls")), // MixinAbsorbedCallbackTransportWeaveTest
-			Map.entry("MixinOperationSeamTransport", Switch.own("forbric.operationSeams", "forbric.operationSeams.locals")), // MixinOperationSeamTransportWeaveTest
+			Map.entry("MixinOperationSeamTransport", Switch.own("forbric.operationSeams", "forbric.operationSeams.locals", "forbric.operationSeams.additions")), // MixinOperationSeamTransportWeaveTest, NativeCallInliningRegisteredMixinsWeaveTest
 			Map.entry("MixinSharedPredicateSeam", Switch.own("forbric.sharedPredicateSeams")), // MixinSharedPredicateSeamWeaveTest
 			Map.entry("MixinCrossHostPredicateIsland", Switch.own("forbric.crossHostPredicateIslands")), // MixinCrossHostPredicateIslandWeaveTest
 			Map.entry("MixinPredicateDelegateAdapter", Switch.own("forbric.mixinPredicateDelegates")), // MixinPredicateDelegateWeaveTest
@@ -107,7 +107,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinSplitBodyEdges", Switch.own("forbric.splitBodyEdges")), // MixinSplitBodyEdgesWeaveTest
 			Map.entry("MixinReturnOrdinals", Switch.own("forbric.returnOrdinals")), // MixinReturnOrdinalsWeaveTest
 			Map.entry("MixinShiftedPoints", Switch.own("forbric.shiftedPoints")), // MixinShiftedPointsWeaveTest
-			Map.entry("NativeCallInlining", Switch.own("forbric.nativeCallInlining")), // NativeCallInliningWeaveTest
+			Map.entry("NativeCallInlining", Switch.own("forbric.nativeCallInlining", "forbric.nativeCallInlining.registeredMixins")), // NativeCallInliningWeaveTest, NativeCallInliningRegisteredMixinsWeaveTest
 			Map.entry("NativeLocalMaterialization", Switch.own("forbric.nativeLocalMaterialization")), // NativeLocalMaterializationWeaveTest
 			Map.entry("NativeLocalPins", Switch.own("forbric.nativeLocalPins")), // NativeLocalPinsWeaveTest
 			Map.entry("NativeEntryRelay", Switch.own("forbric.nativeEntryRelay")), // NativeEntryRelayWeaveTest, FluidPairMixinAdaptersWeaveTest

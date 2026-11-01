@@ -16,6 +16,11 @@ public final class MixinOperationSeamTransport implements Opcodes {
     public static final String PROPERTY="forbric.operationSeams";
     /** Off keeps a callback with {@code @Local} parameters where it was written, as before they were carried. */
     public static final String LOCALS_PROPERTY="forbric.operationSeams.locals";
+    /**
+     * Off declines a site whenever another mixin changed an instrumented gateway or helper body at all, as before
+     * additions were told apart from changes (see {@link #additions}).
+     */
+    public static final String ADDITIONS_PROPERTY="forbric.operationSeams.additions";
     private static final String API="net/forbric/api/OperationSeams",NATIVE=API+"$NativeOperation",INVOCATION=API+"$Invocation";
     private static final String OP="com/llamalad7/mixinextras/injector/wrapoperation/Operation",CI="org/spongepowered/asm/mixin/injection/callback/CallbackInfo";
     private static final Handle META=new Handle(H_INVOKESTATIC,"java/lang/invoke/LambdaMetafactory","metafactory","(Ljava/lang/invoke/MethodHandles$Lookup;Ljava/lang/String;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodType;Ljava/lang/invoke/MethodHandle;Ljava/lang/invoke/MethodType;)Ljava/lang/invoke/CallSite;",false);
@@ -25,8 +30,12 @@ public final class MixinOperationSeamTransport implements Opcodes {
         volatile List<MethodContract> emitted=List.of(),host=List.of();
         /** What the final definitions say broke the witness, named when each class is defined. */
         volatile String hostDrift;final Map<MethodContract,String> drift=new java.util.concurrent.ConcurrentHashMap<>();
+        /** Each instrumented body as Forbric emitted it, and the final contract of one another mixin only added code to. */
+        final Map<MethodContract,MethodNode> bodies=new java.util.concurrent.ConcurrentHashMap<>();final Map<MethodContract,MethodContract> added=new java.util.concurrent.ConcurrentHashMap<>();
+        /** The body the witness asks for: the one Forbric emitted, or its final form where another mixin only added code. */
+        MethodContract expected(MethodContract value){return added.getOrDefault(value,value);}
         Installed(String source,String key,String injectorName,String injectorDesc,OperationCallGraph.Plan graph,MethodNode retained,MethodNode bridge,MethodNode wrapper,Function<String,ClassNode> current){this.source=source;this.key=key;this.injectorName=injectorName;this.injectorDesc=injectorDesc;this.graph=graph;this.retained=copy(retained);this.bridge=copy(bridge);this.wrapper=copy(wrapper);this.parentOriginal=copy(NativeCallChanges.method(current.apply(graph.firstOwner()),graph.firstMethod()));this.helperOriginal=copy(NativeCallChanges.method(current.apply(graph.helper()),graph.helperMethod()));}
-        boolean witnessed(ClassLoader loader){return host.size()==3&&!emitted.isEmpty()&&host.stream().allMatch(value->DefinedMethodContracts.observed(loader,value))&&emitted.stream().allMatch(value->DefinedMethodContracts.observed(loader,value))&&graph.getters().stream().allMatch(value->DefinedMethodContracts.observed(loader,value));}
+        boolean witnessed(ClassLoader loader){return host.size()==3&&!emitted.isEmpty()&&host.stream().allMatch(value->DefinedMethodContracts.observed(loader,value))&&emitted.stream().allMatch(value->DefinedMethodContracts.observed(loader,expected(value)))&&graph.getters().stream().allMatch(value->DefinedMethodContracts.observed(loader,value));}
         String site(){return graph.host().replace('/','.')+"."+graph.hostMethod();}
         String helperName(){return graph.helper().replace('/','.')+"."+graph.helperMethod();}
         /** The first failing conjunct of {@link #witnessed}, in its order; null when it holds. */
@@ -34,7 +43,7 @@ public final class MixinOperationSeamTransport implements Opcodes {
             if(host.size()!=3)return hostDrift!=null?hostDrift:"the transported handler, bridge or wrapper of "+source.replace('/','.')+" has not reached "+site()+" unchanged";
             if(emitted.isEmpty())return "the gateway "+graph.firstOwner().replace('/','.')+"."+graph.firstMethod()+" and helper "+helperName()+" were not instrumented before their definition";
             for(MethodContract value:host)if(!DefinedMethodContracts.observed(loader,value))return "the transported "+value.owner()+"."+value.name()+value.descriptor()+" was redefined";
-            for(MethodContract value:emitted)if(!DefinedMethodContracts.observed(loader,value))return drift.getOrDefault(value,"the final body of "+value.owner()+"."+value.name()+value.descriptor()+" is not the body Forbric instrumented");
+            for(MethodContract value:emitted)if(!DefinedMethodContracts.observed(loader,expected(value)))return drift.getOrDefault(value,"the final body of "+value.owner()+"."+value.name()+value.descriptor()+" is not the body Forbric instrumented");
             for(MethodContract value:graph.getters())if(!DefinedMethodContracts.observed(loader,value))return "the proved getter "+value.owner()+"."+value.name()+value.descriptor()+" changed";
             return null;
         }
@@ -166,17 +175,17 @@ public final class MixinOperationSeamTransport implements Opcodes {
         List<Installed> installed=plans(loader).stream().filter(plan->plan.graph.firstOwner().equals(binary.replace('.','/'))||plan.graph.helper().equals(binary.replace('.','/'))).toList();if(installed.isEmpty())return bytes;
         ClassNode owner=new ClassNode();new ClassReader(bytes).accept(owner,ClassReader.EXPAND_FRAMES);Map<String,List<Installed>> graphs=new LinkedHashMap<>();for(Installed plan:installed)graphs.computeIfAbsent(plan.graph.graph(),ignored->new ArrayList<>()).add(plan);
         boolean changed=false;
-        for(var group:graphs.entrySet()){Installed first=group.getValue().getFirst();OperationCallGraph.Plan graph=first.graph;String tag=digest(graph.graph());List<MethodContract> emitted=new ArrayList<>();
+        for(var group:graphs.entrySet()){Installed first=group.getValue().getFirst();OperationCallGraph.Plan graph=first.graph;String tag=digest(graph.graph());List<MethodContract> emitted=new ArrayList<>();Map<MethodContract,MethodNode> bodies=new LinkedHashMap<>();
             if(owner.name.equals(graph.firstOwner())) {
                 MethodNode parent=NativeCallChanges.method(owner,graph.firstMethod());if(parent==null)throw new IllegalStateException("Operation gateway disappeared: "+graph.graph());
                 if(!MixinInstructionFingerprint.hash(parent).equals(graph.parentHash())){if(first.emitted.stream().anyMatch(value->value.owner().replace('.','/').equals(owner.name)&&value.name().equals(parent.name)&&value.descriptor().equals(parent.desc)&&value.fingerprint().equals(MixinInstructionFingerprint.hash(parent))))continue;throw new IllegalStateException("Operation gateway changed: "+graph.graph());}
-                List<MethodInsnNode> calls=anchors(parent,graph.forwarded());if(graph.forwardOrdinal()>=calls.size())throw new IllegalStateException("Operation forwarder disappeared");MethodInsnNode call=calls.get(graph.forwardOrdinal());String name="forbric$selected$"+tag;MethodNode direct=nativeBridge(owner.name,name+"$native",call),selected=callWrapper(owner.name,name,call,direct,graph,"selected");owner.methods.add(direct);owner.methods.add(selected);parent.instructions.set(call,new MethodInsnNode(INVOKESTATIC,owner.name,name,selected.desc,false));emitted.add(contract(owner.name,parent));emitted.add(contract(owner.name,direct));emitted.add(contract(owner.name,selected));changed=true;
+                List<MethodInsnNode> calls=anchors(parent,graph.forwarded());if(graph.forwardOrdinal()>=calls.size())throw new IllegalStateException("Operation forwarder disappeared");MethodInsnNode call=calls.get(graph.forwardOrdinal());String name="forbric$selected$"+tag;MethodNode direct=nativeBridge(owner.name,name+"$native",call),selected=callWrapper(owner.name,name,call,direct,graph,"selected");owner.methods.add(direct);owner.methods.add(selected);parent.instructions.set(call,new MethodInsnNode(INVOKESTATIC,owner.name,name,selected.desc,false));emitted.add(contract(owner.name,parent));bodies.put(emitted.getLast(),copy(parent));emitted.add(contract(owner.name,direct));emitted.add(contract(owner.name,selected));changed=true;
             }
             if(owner.name.equals(graph.helper())) {
                 MethodNode helper=NativeCallChanges.method(owner,graph.helperMethod());if(helper==null||!MixinInstructionFingerprint.hash(helper).equals(graph.helperHash()))throw new IllegalStateException("Operation helper changed: "+graph.graph());
-                List<MethodInsnNode> calls=anchors(helper,graph.member());if(calls.size()!=1)throw new IllegalStateException("Operation occurrence became ambiguous");MethodInsnNode call=calls.getFirst();String name="forbric$operation$"+tag;MethodNode direct=nativeBridge(owner.name,name+"$native",call),apply=callWrapper(owner.name,name,call,direct,graph,"apply");owner.methods.add(direct);owner.methods.add(apply);helper.instructions.set(call,new MethodInsnNode(INVOKESTATIC,owner.name,name,apply.desc,false));emitted.add(contract(owner.name,helper));emitted.add(contract(owner.name,direct));emitted.add(contract(owner.name,apply));changed=true;
+                List<MethodInsnNode> calls=anchors(helper,graph.member());if(calls.size()!=1)throw new IllegalStateException("Operation occurrence became ambiguous");MethodInsnNode call=calls.getFirst();String name="forbric$operation$"+tag;MethodNode direct=nativeBridge(owner.name,name+"$native",call),apply=callWrapper(owner.name,name,call,direct,graph,"apply");owner.methods.add(direct);owner.methods.add(apply);helper.instructions.set(call,new MethodInsnNode(INVOKESTATIC,owner.name,name,apply.desc,false));emitted.add(contract(owner.name,helper));bodies.put(emitted.getLast(),copy(helper));emitted.add(contract(owner.name,direct));emitted.add(contract(owner.name,apply));changed=true;
             }
-            for(Installed plan:group.getValue()){List<MethodContract> all=new ArrayList<>(plan.emitted);all.removeIf(value->value.owner().replace('.','/').equals(owner.name));all.addAll(emitted);plan.emitted=List.copyOf(all);}
+            for(Installed plan:group.getValue()){List<MethodContract> all=new ArrayList<>(plan.emitted);all.removeIf(value->value.owner().replace('.','/').equals(owner.name));all.addAll(emitted);plan.bodies.putAll(bodies);plan.emitted=List.copyOf(all);}
         }
         if(!changed)return bytes;ClassWriter out=new ClassWriter(ClassWriter.COMPUTE_MAXS);owner.accept(out);return out.toByteArray();
     }
@@ -195,11 +204,69 @@ public final class MixinOperationSeamTransport implements Opcodes {
         String owner=binary.replace('/','.');ClassNode node=null;
         for(Installed plan:plans(loader))for(MethodContract value:plan.emitted){
             if(!value.owner().equals(owner))continue;
-            if(DefinedMethodContracts.observed(loader,value)){plan.drift.remove(value);continue;}
+            if(DefinedMethodContracts.observed(loader,value)){plan.drift.remove(value);plan.added.remove(value);continue;}
             if(node==null)node=MixinFit.parse(bytes);MethodNode actual=NativeCallChanges.method(node,value.name()+value.descriptor());String name=owner+"."+value.name()+value.descriptor();
+            List<String> contributors=actual==null?List.of():SeamDeclines.contributors(node,actual,Set.of(plan.source.replace('/','.')));
+            String refused=actual==null?"missing":additions(plan.bodies.get(value),actual,contributors);
+            if(refused==null){
+                MethodContract accepted=contract(value.owner().replace('.','/'),actual);
+                if(!accepted.equals(plan.added.put(value,accepted)))net.forbric.kernel.util.ForbricLog.info("[Forbric/Mixin] %s: the final body of %s keeps every instruction Forbric instrumented for it, in order, "
+                        +"and mixin %s only added code around them; the operation seam still holds",plan.source.replace('/','.')+"."+plan.injectorName,name,String.join(", ",contributors));
+                plan.drift.remove(value);continue;
+            }
+            plan.added.remove(value);
             plan.drift.put(value,actual==null?"the instrumented "+name+" is missing from its defined class"
-                :"the final body of "+name+" is not the body Forbric instrumented"+SeamDeclines.changedBy(SeamDeclines.contributors(node,actual,Set.of())));
+                :"the final body of "+name+" is not the body Forbric instrumented"+SeamDeclines.changedBy(SeamDeclines.contributors(node,actual,Set.of()))+(refused.isEmpty()?"":": "+refused));
         }
+    }
+    /**
+     * Why the final {@code actual} body of an instrumented gateway or helper is more than another mixin's additions to the
+     * {@code instrumented} one (null when it is only that): every instruction Forbric emitted is still there, in order,
+     * the instrumented calls are made as often as Forbric made them, no local the instrumented body or its parameters use
+     * is written by the added code, no handler is gone, and what was added is another mixin's (a HEAD {@code @Inject} of
+     * a NeoForge mod into {@code ClientHooks.extractScreen}, JourneyMap's). Such a body still makes the proved call with
+     * the values the carrier computes, as the mixin's own loader would run both. Anything else — a call or constant
+     * replaced, a local reassigned, a transformer's change no mixin owns — declines as before, and so does every
+     * change with {@code -Dforbric.operationSeams.additions=off}. Empty: off, or no instrumented body to compare.
+     */
+    static String additions(MethodNode instrumented,MethodNode actual,List<String> contributors){
+        if("off".equalsIgnoreCase(System.getProperty(ADDITIONS_PROPERTY,"on"))||instrumented==null)return "";
+        if(contributors.isEmpty())return "no other mixin's handler is in what was added";
+        if((instrumented.access&ACC_STATIC)!=(actual.access&ACC_STATIC)||!instrumented.desc.equals(actual.desc))return "its shape changed";
+        if(actual.tryCatchBlocks.size()<instrumented.tryCatchBlocks.size())return "a handler of the instrumented body is gone";
+        List<AbstractInsnNode> before=executable(instrumented),after=executable(actual);
+        Set<Integer> used=new HashSet<>();int slot=(instrumented.access&ACC_STATIC)==0?1:0;if(slot==1)used.add(0);
+        for(Type argument:Type.getArgumentTypes(instrumented.desc)){used.add(slot);slot+=argument.getSize();}
+        for(AbstractInsnNode instruction:before){if(instruction instanceof VarInsnNode var)used.add(var.var);else if(instruction instanceof IincInsnNode inc)used.add(inc.var);}
+        int at=0;
+        for(AbstractInsnNode instruction:after){
+            if(at<before.size()&&same(before.get(at),instruction)){at++;continue;}
+            if(instruction instanceof VarInsnNode var&&var.getOpcode()>=ISTORE&&used.contains(var.var)||instruction instanceof IincInsnNode inc&&used.contains(inc.var))
+                return "the added code writes local "+(instruction instanceof VarInsnNode var?var.var:((IincInsnNode)instruction).var)+", which the instrumented body uses";
+        }
+        if(at<before.size())return "instruction "+at+" of the instrumented body ("+describe(before.get(at))+") is gone";
+        return instrumentedCalls(before)==instrumentedCalls(after)?null:"an instrumented call is made more often than Forbric made it";
+    }
+    private static List<AbstractInsnNode> executable(MethodNode method){List<AbstractInsnNode> result=new ArrayList<>();for(AbstractInsnNode instruction:method.instructions)if(instruction.getOpcode()>=0)result.add(instruction);return result;}
+    private static long instrumentedCalls(List<AbstractInsnNode> code){return code.stream().filter(i->i instanceof MethodInsnNode call&&(call.name.startsWith("forbric$selected$")||call.name.startsWith("forbric$operation$"))).count();}
+    /** One instruction as its opcode and operands, a jump without its target (the targets are the labels the additions move). */
+    private static boolean same(AbstractInsnNode left,AbstractInsnNode right){return left.getOpcode()==right.getOpcode()&&describe(left).equals(describe(right));}
+    private static String describe(AbstractInsnNode instruction){
+        String op="op"+instruction.getOpcode();
+        return switch(instruction){
+            case MethodInsnNode call->op+" "+call.owner+"."+call.name+call.desc+(call.itf?" itf":"");
+            case FieldInsnNode field->op+" "+field.owner+"."+field.name+":"+field.desc;
+            case VarInsnNode var->op+" "+var.var;
+            case IincInsnNode inc->op+" "+inc.var+" "+inc.incr;
+            case IntInsnNode value->op+" "+value.operand;
+            case LdcInsnNode ldc->op+" "+ldc.cst.getClass().getSimpleName()+":"+ldc.cst;
+            case TypeInsnNode type->op+" "+type.desc;
+            case MultiANewArrayInsnNode array->op+" "+array.desc+" "+array.dims;
+            case InvokeDynamicInsnNode dynamic->op+" "+dynamic.name+dynamic.desc+" "+dynamic.bsm+" "+Arrays.toString(dynamic.bsmArgs);
+            case TableSwitchInsnNode table->op+" "+table.min+".."+table.max;
+            case LookupSwitchInsnNode lookup->op+" "+lookup.keys;
+            default->op;
+        };
     }
     private static ClassNode unwrapped(ClassLoader loader,ClassNode node){if(node==null)return null;ClassNode result=new ClassNode();node.accept(result);Set<String> restored=new HashSet<>();for(Installed plan:plans(loader)){for(var pair:List.of(Map.entry(plan.graph.firstOwner(),plan.parentOriginal),Map.entry(plan.graph.helper(),plan.helperOriginal)))if(pair.getKey().equals(node.name)&&restored.add(pair.getValue().name+pair.getValue().desc)){MethodNode method=NativeCallChanges.method(result,pair.getValue().name+pair.getValue().desc);if(method!=null&&plan.emitted.stream().anyMatch(value->value.owner().replace('.','/').equals(node.name)&&value.name().equals(method.name)&&value.descriptor().equals(method.desc)&&value.fingerprint().equals(MixinInstructionFingerprint.hash(method))))result.methods.set(result.methods.indexOf(method),copy(pair.getValue()));}}return result;}
     private static List<Installed> plans(ClassLoader loader){synchronized(PLANS){Map<String,Installed> registry=PLANS.get(loader);return registry==null?List.of():List.copyOf(registry.values());}}

@@ -1,0 +1,1 @@
+{"required": true, "package": "org.example.neoscreen.mixin", "compatibilityLevel": "JAVA_21", "client": ["GuiMixin"], "injectors": {"defaultRequire": 1}}
