@@ -50,7 +50,7 @@ class OptionalPartnerInjectorWeaveTest {
 	private static final String NAMED = "[Forbric/Mixin] guest mixin alpha (alpha.mixins.json):PlaqueCompatMixin names "
 			+ "@Inject target Plaque.beta$cacheable, which vanilla 26.2 lacks too";
 	private static final String AUTO_SUPPRESSED = "[Forbric/Mixin] auto-suppressing guest mixin alpha (alpha.mixins.json):"
-			+ "PlaqueCompatMixin — UNFIT on the merged base";
+			+ "PlaqueCompatMixin — UNFIT on this base";
 	private static final String REMOVED = "[Forbric/Mixin] suppressed mixin PlaqueCompatMixin from alpha (alpha.mixins.json)";
 	private static final String LEFT_OUT = "mixin:alpha.mixins.json:fixture.optionalpartner.mixin.PlaqueCompatMixin";
 
