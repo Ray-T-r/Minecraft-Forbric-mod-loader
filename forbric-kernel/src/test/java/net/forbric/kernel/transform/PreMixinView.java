@@ -74,8 +74,9 @@ public final class PreMixinView {
 	/**
 	 * {@link TestFixtures#stagedBase()} as one jar with every class passed through {@link VanillaMemberTwinInjector}, the
 	 * first COREMOD transformer KernelBoot registers, and nothing else of the chain: the base a census generator reads when
-	 * its table's runtime consumer asks Mixin's view of a class (post-chain), not the raw jar. Written once per base and
-	 * vanilla jar under {@code build/twinned-base/}, and kept as a jar so every generator's {@code ZipFile} code reads it
+	 * its table's runtime consumer asks Mixin's view of a class (post-chain), not the raw jar. Written once per base, vanilla
+	 * jar and injector ({@link #cacheKey}) under {@code build/twinned-base/}, which {@code cleanTest} keeps, and kept as a jar
+	 * so every generator's {@code ZipFile} code reads it
 	 * unchanged. Asserts that every one of the injector's rows landed: without a vanilla reference the VANILLA_BODY rows
 	 * stand down without a word, and a census would then write a table that lacks the twins.
 	 */
@@ -86,9 +87,7 @@ public final class PreMixinView {
 		Path vanillaJar = TestFixtures.vanillaJar();
 		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "the vanilla client jar the twins copy from", vanillaJar);
 		try {
-			String key = Integer.toHexString((base.toAbsolutePath().normalize() + "|" + Files.size(base) + "|"
-					+ Files.getLastModifiedTime(base).toMillis() + "|" + Files.size(vanillaJar) + "|"
-					+ Files.getLastModifiedTime(vanillaJar).toMillis()).hashCode());
+			String key = cacheKey(base, vanillaJar);
 			Path out = Path.of(System.getProperty("user.dir"), "build", "twinned-base", key, "base.jar");
 			Set<String> owners = new HashSet<>();
 			for (VanillaMemberTwinInjector.Row row : VanillaMemberTwinInjector.ROWS) owners.add(row.owner());
@@ -128,6 +127,35 @@ public final class PreMixinView {
 		} catch (IOException unwritable) {
 			throw new AssertionError("could not write the twinned base for " + base, unwritable);
 		}
+	}
+
+	/**
+	 * The directory name of a twinned base: the base's and the vanilla jar's path, size and time, and what the injector would
+	 * do — its rows as written and the bytes of every class of its nest. A cache keyed on the jars alone kept a twin the
+	 * injector no longer adds (or adds another way) after a change to it, and the landing check below sees added rows only,
+	 * so a census would have read a removed twin's members as still there.
+	 */
+	static String cacheKey(Path base, Path vanillaJar) throws IOException {
+		java.security.MessageDigest digest;
+		try {
+			digest = java.security.MessageDigest.getInstance("SHA-256");
+		} catch (java.security.NoSuchAlgorithmException impossible) {
+			throw new AssertionError(impossible);
+		}
+		digest.update((base.toAbsolutePath().normalize() + "|" + Files.size(base) + "|" + Files.getLastModifiedTime(base).toMillis()
+				+ "|" + vanillaJar.toAbsolutePath().normalize() + "|" + Files.size(vanillaJar) + "|"
+				+ Files.getLastModifiedTime(vanillaJar).toMillis() + "|" + VanillaMemberTwinInjector.ROWS)
+				.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+		java.util.List<Class<?>> nest = new java.util.ArrayList<>(java.util.List.of(VanillaMemberTwinInjector.class.getNestMembers()));
+		nest.sort(java.util.Comparator.comparing(Class::getName));
+		for (Class<?> member : nest) {
+			try (InputStream in = member.getResourceAsStream("/" + member.getName().replace('.', '/') + ".class")) {
+				if (in == null) throw new AssertionError("cannot read the class file of " + member.getName());
+				digest.update(member.getName().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+				digest.update(in.readAllBytes());
+			}
+		}
+		return java.util.HexFormat.of().formatHex(digest.digest(), 0, 8);
 	}
 
 	/** The same view parsed with {@link ClassReader} {@code flags}. */
