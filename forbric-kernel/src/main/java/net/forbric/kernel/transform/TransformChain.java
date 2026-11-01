@@ -212,6 +212,12 @@ public final class TransformChain {
 						miss.cost());
 			}
 		}
+		// The summary only counts the hedges, and a count is not something the next reader can check: name each one,
+		// with what it is there for, so "1 hedge" can be traced to a claim without a debug run.
+		for (AnchorLedger.Miss hedge : r.hedged()) {
+			ForbricLog.info("[Forbric/Anchor]   hedge %s on %s found nothing to do; it is kept for: %s",
+					hedge.transformer(), hedge.className(), hedge.cost());
+		}
 	}
 
 	private Set<String> watchedClasses() {

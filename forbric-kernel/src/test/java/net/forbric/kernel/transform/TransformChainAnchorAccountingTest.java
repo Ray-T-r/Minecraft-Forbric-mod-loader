@@ -161,6 +161,46 @@ class TransformChainAnchorAccountingTest {
 	}
 
 	@Test
+	void theCensusNamesEachHedgeThatFoundNothing() {
+		// A count alone ("1 hedge(s) correctly found nothing to do") left a verification lane guessing which hedge it
+		// was. The census names it, and a hedge that did land is not named.
+		TransformChain chain = new TransformChain();
+		chain.register(TransformPhase.COREMOD, hedging("idle-hedge", false));
+		chain.register(TransformPhase.COREMOD, hedging("busy-hedge", true));
+		chain.reportWhenLoaded("a.Landmark");
+
+		chain.applyBeforeMixin(TARGET, new byte[] {1}, CTX);
+		String log = capture(() -> chain.applyBeforeMixin("a.Landmark", new byte[] {1}, CTX));
+
+		assertTrue(log.contains("1 of 2 declared repair(s) landed"), log);
+		assertTrue(log.contains("1 hedge(s) correctly found nothing to do"), log);
+		assertTrue(log.contains("hedge idle-hedge on " + TARGET + " found nothing to do; it is kept for: "
+				+ "a carrier that brings the case back"), log);
+		assertFalse(log.contains("busy-hedge"), "a hedge that landed is counted, not named: " + log);
+		assertFalse(log.contains("made no edit"), "a hedge must not read as a decline to the gates' grep: " + log);
+		assertFalse(log.contains("did NOT"), log);
+	}
+
+	private static ClassTransformer hedging(String name, boolean edits) {
+		return new ClassTransformer() {
+			@Override
+			public String name() {
+				return name;
+			}
+
+			@Override
+			public AnchorSet anchors() {
+				return AnchorSet.of(new Anchor(TARGET, Severity.HEDGE, "a carrier that brings the case back"));
+			}
+
+			@Override
+			public byte[] transform(String className, byte[] classBytes, TransformContext context) {
+				return TARGET.equals(className) && edits ? classBytes.clone() : classBytes;
+			}
+		};
+	}
+
+	@Test
 	void aChainWithNoLandmarkNeverReports() {
 		TransformChain chain = new TransformChain();
 		chain.register(TransformPhase.COREMOD, declaring("declines", false, new AtomicInteger()));
