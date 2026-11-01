@@ -2157,7 +2157,6 @@ public final class KernelLifecycle {
 	 */
 	public static void onNeoClientSetup() {
 		ClassLoader cl = gameLoader;
-		preloadClientResources(cl);
 		// Step 3a's last chance: client setup posts RegisterDataMapTypesEvent, which reads the declared list, so the
 		// declaration must have happened by now even if the Fabric hook above never landed. Normally a no-op.
 		registerDataPackRegistries(cl);
@@ -2169,34 +2168,6 @@ public final class KernelLifecycle {
 		openLateConfigs(cl, Side.CLIENT, "the client setup lifecycle");
 		// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
 		setupNeoForgeNetwork(cl, Side.CLIENT);
-	}
-
-	/**
-	 * Fills the client {@code ResourceManager} with its selected packs before mod setup runs.
-	 *
-	 * <p>The window this hook sits in is genuine NeoForge's, and NeoForge does not do this — but MinecraftForge
-	 * runs its whole mod-loading INSIDE the first resource reload, so a MinecraftForge mod reading one of its own
-	 * assets from client setup is entitled to find it. See {@code KernelClientResources}.
-	 */
-	private static void preloadClientResources(ClassLoader cl) {
-		try {
-			Object count = Class.forName("net.forbric.kernel.runtime.KernelClientResources", true, cl)
-					.getMethod("preload").invoke(null);
-			int packs = count instanceof Integer i ? i : -2;
-			if (packs >= 0) {
-				ForbricLog.info("[Forbric/ClientResources] client resource manager preloaded with %d selected "
-						+ "pack(s) before mod setup — MinecraftForge runs mod loading INSIDE the first resource "
-						+ "reload, so a mod reading its own asset from client setup expects one that answers "
-						+ "(-D%s=off to leave it empty until vanilla's reload)",
-						packs, "forbric.clientResourcePreload");
-			} else if (packs == -2) {
-				ForbricLog.warn("[Forbric/ClientResources] could not preload the client resource manager — a mod "
-						+ "reading its own asset from client setup will get an empty Optional, and several call "
-						+ "get() on it without checking");
-			}
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/ClientResources] client resource preload did not run");
-		}
 	}
 
 	/** Hooks of {@link #fabricFreezePoint} already called; each runs once per process. */

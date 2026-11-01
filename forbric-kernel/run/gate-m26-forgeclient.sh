@@ -178,8 +178,6 @@ check "simulation survived" 'ClientSmoke\] client-ready after' "$LOG"
 check "clean disconnect" 'ClientSmoke\] clean disconnect observed' "$LOG"
 check_absent "no missing client classes or crashes" 'NoClassDefFoundError|Preparing crash report|Mod Loading has failed' "$LOG"
 check_absent "nothing was refused" '\[Forbric/Unsupported\] refusing' "$LOG"
-check "the kernel says how many packs it preloaded" \
-  'Forbric/ClientResources\] client resource manager preloaded with [1-9][0-9]* selected pack' "$LOG"
 check "client initialization bridges report installed" 'all 3 CLIENT_INIT bridge\(s\) installed' "$LOG"
 check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
 

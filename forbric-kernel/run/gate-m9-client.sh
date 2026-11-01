@@ -811,11 +811,9 @@ check "and MinecraftForge's do too" \
   "Forbric/Lang\] forge carrier: [0-9]+ built-in translation\(s\) loaded; 'fml.menu.mods' resolves" "$LOG"
 check_absent "and no carrier loaded a table without its own keys in it" \
   "Forbric/Lang\].*still does not resolve" "$LOG"
-# The other half of the same story, and the half that is NOT the carriers' private table: what the resource
-# manager can see. A pack served with no namespace of its own keeps its textures (fetched by path) and loses
-# everything found by listing — its language file among it. RED with M9_EXTRA_JVM=-Dforbric.clientResourcePreload=off.
-check "and both carriers' assets are visible to the resource manager" \
-  "Forbric/ClientResources\] [0-9]+ namespace\(s\) visible; the carriers' own: \[forge, neoforge\]" "$LOG"
+# (The check that both carriers' namespaces were visible to the resource manager read the kernel's client-resource
+# preload, which filled the manager before mod setup for MinecraftForge's sake. NeoForge runs its client setup before
+# the first reload, as this client now does, so the preload and that check went in Stage 4 C3.)
 
 step "the world is on disk before the process ends (must PASS)"
 # A real player Alt+F4'd and lost a minute of play: IntegratedServer.stopServer runs teardownPublishedState

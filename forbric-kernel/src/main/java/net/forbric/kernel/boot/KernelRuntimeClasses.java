@@ -180,10 +180,6 @@ public final class KernelRuntimeClasses {
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
 		CLASSES.put("net.forbric.kernel.runtime.KernelScanData", new Entry(Origin.COMPILED, List.of(
 				new Call("build", Object.class, List.class, List.class))));
-		// Fills the client ResourceManager with its selected packs before mod setup, because MinecraftForge runs
-		// mod loading inside the first resource reload and the kernel's window is before it. See KernelClientResources.
-		CLASSES.put("net.forbric.kernel.runtime.KernelClientResources", new Entry(Origin.COMPILED, List.of(
-				new Call("preload", int.class))));
 		// A Fabric mod's creative tabs placed by the Fabric pager's rule in NeoForge's order; CreativeTabOrderInjector calls place.
 		CLASSES.put("net.forbric.kernel.runtime.KernelCreativeTabOrder", new Entry(Origin.COMPILED, List.of()));
 		// fabric-content-registries' fuel events on NeoForge's fuel builder; FabricFuelValuesInjector calls apply.

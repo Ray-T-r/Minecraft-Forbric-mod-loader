@@ -225,7 +225,10 @@ public final class ForbricSwitches {
 					+ "every constructor of every record on its base sets each Optional component, so there is nothing to "
 					+ "default"),
 			Map.entry("forbric.neoDataMapFallback", "NeoForge's own reload path loads and applies its data maps on every server, "
-					+ "dedicated or integrated, so the kernel has no about-to-start load of its own to switch"));
+					+ "dedicated or integrated, so the kernel has no about-to-start load of its own to switch"),
+			Map.entry("forbric.clientResourcePreload", "NeoForge runs its client setup before the first resource reload and "
+					+ "Forbric loads no MinecraftForge mod, which ran its mod loading inside that reload, so the client "
+					+ "resource manager is left as NeoForge leaves it"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

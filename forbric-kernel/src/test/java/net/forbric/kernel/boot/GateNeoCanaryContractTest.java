@@ -215,7 +215,6 @@ class GateNeoCanaryContractTest {
 	private static final List<String> SESSION_GREEN = List.of(
 			"[ClientSmoke] joined world via quick-play", "[ClientSmoke] client-ready after 60 ticks",
 			"[ClientSmoke] clean disconnect observed",
-			"[Forbric/ClientResources] client resource manager preloaded with 3 selected pack(s)",
 			"[Forbric/Bridges] all 3 CLIENT_INIT bridge(s) installed", "[Forbric/Bridges] all 2 REGISTRATION bridge(s) installed",
 			"[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager — silenced 23 vanilla leaf/leaves",
 			"[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the orphaned vanilla "
