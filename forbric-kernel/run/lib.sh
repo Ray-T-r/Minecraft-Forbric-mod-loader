@@ -268,6 +268,23 @@ check_kept_up() {
 }
 
 # assert_eq <what> <expected> <actual>
+# check_forge_family_configs_are_neoforge <what> <file> — the kernel's "[Forbric/Mixin] mixin configs:" line is there, and
+# the Forge-family count it prints equals its NeoForge count: every Forge-family mixin config the boot registered is
+# NeoForge's. A regex on the line alone only proves the line exists; grep here is ugrep on the dev machine, which has no
+# backreferences, so the two numbers are compared in the shell.
+check_forge_family_configs_are_neoforge() {
+  local what="$1" file="$2" line family neo
+  if ! readable "$file"; then
+    printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
+  fi
+  line=$(grep -aE '\[Forbric/Mixin\] mixin configs: [0-9]+ Fabric \+ [0-9]+ Forge-family \([0-9]+ NeoForge\) ' "$file" 2>/dev/null | tail -n 1)
+  family=$(printf '%s\n' "$line" | sed -nE 's/.* \+ ([0-9]+) Forge-family \(([0-9]+) NeoForge\) .*/\1/p')
+  neo=$(printf '%s\n' "$line" | sed -nE 's/.* \+ ([0-9]+) Forge-family \(([0-9]+) NeoForge\) .*/\2/p')
+  if [ -z "$family" ] || [ -z "$neo" ]; then printf '[kernel] FAIL %s (no mixin configs line)\n' "$what"; FAIL=1
+  elif [ "$family" = "$neo" ]; then printf '[kernel] PASS %s (%s Forge-family, %s NeoForge)\n' "$what" "$family" "$neo"
+  else printf '[kernel] FAIL %s (%s Forge-family but %s NeoForge)\n' "$what" "$family" "$neo"; FAIL=1; fi
+}
+
 assert_eq() {
   if [ "$2" = "$3" ]; then printf '[kernel] PASS %s (%s)\n' "$1" "$3"
   else printf '[kernel] FAIL %s (want %s got %s)\n' "$1" "$2" "$3"; FAIL=1; fi
