@@ -55,8 +55,9 @@ import net.forbric.kernel.util.ForbricLog;
  * PASS 4b's, field for field: {@code findCodec(idToType, id, protocol, packetFlow, fallback)}, cast back to
  * {@code StreamCodec} — the helper returns {@code Object} because it is compiled without the game.
  *
- * <p>Stands down where {@code findCodec} already asks {@code PayloadInterop} (a second pass; the merged base, whose
- * codec class carried the call), so the anchor is a HEDGE. Registered before Mixin, so the post-Mixin arbitration finds the seam in whatever shape the
+ * <p>Stands down where {@code findCodec} already asks {@code PayloadInterop} (a second pass). The anchor was a HEDGE
+ * while the merged base's codec class carried the call itself; on NeoForge's base the splice always lands
+ * (ChainAnchorCensusStagedTest), so it is REQUIRED. Registered before Mixin, so the post-Mixin arbitration finds the seam in whatever shape the
  * guests leave around it. {@code -Dforbric.customPayloadInteropSeam=off}.
  */
 public final class CustomPayloadInteropSeam implements ClassTransformer {
@@ -106,7 +107,7 @@ public final class CustomPayloadInteropSeam implements ClassTransformer {
 	@Override
 	public AnchorSet anchors() {
 		if (!enabled()) return AnchorSet.scanned("switched off by -D" + PROPERTY);
-		return AnchorSet.of(new AnchorSet.Anchor(GENUINE_CODEC.replace('/', '.'), AnchorSet.Severity.HEDGE,
+		return AnchorSet.of(new AnchorSet.Anchor(GENUINE_CODEC.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 				"on a base that was never merged, a custom payload is encoded with the codec registered for its id rather "
 						+ "than its class (Fabric's minecraft:register fails to cast), and fabric-networking's codec wrap has "
 						+ "no seam to be arbitrated against"));
