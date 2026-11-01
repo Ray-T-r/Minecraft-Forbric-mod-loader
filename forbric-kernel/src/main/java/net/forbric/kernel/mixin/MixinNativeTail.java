@@ -55,7 +55,7 @@ public final class MixinNativeTail {
 	public static int adapt(ClassNode mixin, Function<String, ClassNode> targets) {
 		if (!VanillaEarlyReturns.enabled() || mixin == null || mixin.methods == null || targets == null) return 0;
 		Ecosystem ecosystem = MixinStubRebind.ecosystemOf(mixin.name);
-		if (ecosystem != Ecosystem.NEOFORGE && ecosystem != Ecosystem.FORGE) return 0;
+		if (ecosystem != Ecosystem.NEOFORGE) return 0;
 		List<String> owners = MixinFit.mixinTargets(mixin);
 		if (owners.isEmpty()) return 0;
 

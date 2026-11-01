@@ -17,267 +17,148 @@
 package net.forbric.api;
 
 /**
- * The Forge-family types the kernel names by string, as ONE row per concept instead of two literals per call site.
+ * The NeoForge types the kernel names by string, one row per concept.
  *
- * <p>The two Forge-family ecosystems ship the same concept under different names, and the kernel has to name both
- * because it drives both. Written inline that is two string constants sitting next to each other at every site --
- * these concepts span transform/, boot/ and interop/ -- and each pair is an invitation to handle one family and forget
- * the other. {@code ClientPackHookInjector} and {@code ForeignModPresenceInjector} both carry exactly that shape.
+ * <p>The table held a PAIR per concept while Forbric drove both Forge-family ecosystems: MinecraftForge and NeoForge ship
+ * the same concept under different names, and two literals side by side at every site invited handling one family and
+ * forgetting the other. MinecraftForge's column went with {@code Ecosystem.FORGE} in Stage 4 of its removal; collapsing
+ * what is left into plain constants (or inlining them) is a naming change left for later. Until then {@link #binary}
+ * still takes the ecosystem, and answers {@code null} for Fabric.
  *
- * <h2>Why a table of pairs and not a prefix rule</h2>
+ * <h2>Why a table and not a prefix rule</h2>
  *
  * <p>Because there is no prefix rule. NeoForge splits across THREE roots: what descends from FML keeps
  * {@code net.neoforged.} ({@code fml.*}, {@code bus.*}, {@code api.distmarker.*}); the mod-facing game API sits
  * under {@code net.neoforged.neoforge.} ({@code registries.*}, {@code client.*}, {@code common.*}, {@code event.*});
- * and the loader SPI the two families share by shape sits under {@code net.neoforged.neoforgespi.}
- * ({@code language.IModInfo}, {@code language.IConfigurable}) against MinecraftForge's {@code forgespi.*}.
- * MinecraftForge has one root for all three. So {@code fml.ModList} pairs
- * {@code net.minecraftforge.fml.ModList} with {@code net.neoforged.fml.ModList}, while {@code registries.GameData}
- * pairs {@code net.minecraftforge.registries.GameData} with {@code net.neoforged.neoforge.registries.GameData}.
- * The package path does not have to match either: {@code NetworkRegistry} is {@code network.NetworkRegistry} on
- * one side and {@code network.registration.NetworkRegistry} on the other.
- * A swap-the-prefix helper gets these wrong, silently, and a name that does not resolve here does not
- * throw -- it just means a transform never fires.
+ * and the loader SPI sits under {@code net.neoforged.neoforgespi.} ({@code language.IModInfo},
+ * {@code language.IConfigurable}). So {@code fml.ModList} is {@code net.neoforged.fml.ModList}, while
+ * {@code registries.GameData} is {@code net.neoforged.neoforge.registries.GameData}. A swap-the-prefix helper gets
+ * these wrong, silently, and a name that does not resolve here does not throw -- it just means a transform never fires.
  *
- * <h2>What this deliberately does NOT unify</h2>
+ * <h2>What this deliberately does NOT carry</h2>
  *
- * <p>Only the NAME. Where the two families' members differ in shape, that difference stays at the call site as
- * data. {@code LifecycleHookInjector}'s two server triggers are the standing example: same concept
- * ({@code ServerModLoader.load}), but NeoForge's is {@code (Z)V} and MinecraftForge's is {@code ()V}, and they
- * redirect to different kernel hooks. Folding descriptors in here would be the same mistake that cost
- * {@code KernelEventSubscribers} three simultaneous bugs -- a hub carries per-family divergence as data, it does
- * not average it away.
+ * <p>Only the NAME. Descriptors stay at the call site as data ({@code LifecycleHookInjector}'s server trigger,
+ * {@code ServerModLoader.load(Z)V}, is the standing example).
  */
 public enum ForeignType {
-	CONFIG_SPEC("net.minecraftforge.fml.config.IConfigSpec", "net.neoforged.fml.config.IConfigSpec"),
-	CLIENT_HOOKS("net.minecraftforge.client.ForgeHooksClient",
-			"net.neoforged.neoforge.client.ClientHooks"),
-	CLIENT_MOD_LOADER("net.minecraftforge.client.loading.ClientModLoader",
-			"net.neoforged.neoforge.client.loading.ClientModLoader"),
-	CLIENT_TOOLTIP_COMPONENT_MANAGER("net.minecraftforge.client.gui.ClientTooltipComponentManager",
-			"net.neoforged.neoforge.client.gui.ClientTooltipComponentManager"),
-	COLOR_RESOLVER_MANAGER("net.minecraftforge.client.ColorResolverManager",
-			"net.neoforged.neoforge.client.ColorResolverManager"),
-	CONFIG_TRACKER("net.minecraftforge.fml.config.ConfigTracker",
-			"net.neoforged.fml.config.ConfigTracker"),
-	CONFIGURABLE("net.minecraftforge.forgespi.language.IConfigurable",
-			"net.neoforged.neoforgespi.language.IConfigurable"),
-	DIST("net.minecraftforge.api.distmarker.Dist",
-			"net.neoforged.api.distmarker.Dist"),
-	EVENT_HOOKS("net.minecraftforge.common.ForgeHooks",
-			"net.neoforged.neoforge.event.EventHooks"),
-	/** The base of every event each family's bus dispatches (EventChainAuditInjector wraps both dispatches). */
-	EVENT("net.minecraftforge.eventbus.internal.Event",
-			"net.neoforged.bus.api.Event"),
-	EVENT_BUS("net.minecraftforge.eventbus.api.bus.EventBus", "net.neoforged.bus.EventBus"),
-	EVENT_LISTENER("net.minecraftforge.eventbus.api.listener.EventListener", "net.neoforged.bus.api.EventListener"),
-	DATAPACK_NEW_REGISTRY_EVENT("net.minecraftforge.registries.DataPackRegistryEvent$NewRegistry",
-			"net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry"),
-	DATAPACK_REGISTRY_DATA("net.minecraftforge.registries.DataPackRegistryEvent$DataPackRegistryData",
-			"net.neoforged.neoforge.registries.DataPackRegistryEvent$DataPackRegistryData"),
-	FLUID_INTERACTION_REGISTRY("net.minecraftforge.fluids.FluidInteractionRegistry",
-			"net.neoforged.neoforge.fluids.FluidInteractionRegistry"),
-	BLOCK_TINT_EVENT("net.minecraftforge.client.event.RegisterColorHandlersEvent$Block",
-			"net.neoforged.neoforge.client.event.RegisterColorHandlersEvent$BlockTintSources"),
-	/** Whether a body breathes and how much air it loses or regains: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
-	LIVING_BREATHE_EVENT("net.minecraftforge.event.entity.living.LivingBreatheEvent",
-			"net.neoforged.neoforge.event.entity.living.LivingBreatheEvent"),
-	/** A body out of air about to drown, and what drowning costs it: the merged game posts NeoForge's, the kernel bridges MinecraftForge's. */
-	LIVING_DROWN_EVENT("net.minecraftforge.event.entity.living.LivingDrownEvent",
-			"net.neoforged.neoforge.event.entity.living.LivingDrownEvent"),
-	/** Custom skull models: MinecraftForge's is never posted on the merged client, NeoForge's through the kernel's client init. */
-	CREATE_SKULL_MODELS_EVENT("net.minecraftforge.client.event.EntityRenderersEvent$CreateSkullModels",
-			"net.neoforged.neoforge.client.event.EntityRenderersEvent$CreateSkullModels"),
-	/** An item's burn time: NeoForge's base posts NeoForge's event from ItemStack.getBurnTime itself; no kernel code reads this pair. */
-	FURNACE_FUEL_BURN_TIME_EVENT("net.minecraftforge.event.furnace.FurnaceFuelBurnTimeEvent",
-			"net.neoforged.neoforge.event.furnace.FurnaceFuelBurnTimeEvent"),
-	// The mod-lifecycle phases. Paired because the kernel posts each one at BOTH families and the two events are
-	// different classes on different bus shapes -- naming either half inline is how one family silently stops
-	// receiving a phase, which is exactly what happened to traditional MinecraftForge until 2026-09-13.
+	CONFIG_SPEC("net.neoforged.fml.config.IConfigSpec"),
+	CLIENT_HOOKS("net.neoforged.neoforge.client.ClientHooks"),
+	CLIENT_MOD_LOADER("net.neoforged.neoforge.client.loading.ClientModLoader"),
+	CLIENT_TOOLTIP_COMPONENT_MANAGER("net.neoforged.neoforge.client.gui.ClientTooltipComponentManager"),
+	COLOR_RESOLVER_MANAGER("net.neoforged.neoforge.client.ColorResolverManager"),
+	CONFIG_TRACKER("net.neoforged.fml.config.ConfigTracker"),
+	CONFIGURABLE("net.neoforged.neoforgespi.language.IConfigurable"),
+	DIST("net.neoforged.api.distmarker.Dist"),
+	EVENT_HOOKS("net.neoforged.neoforge.event.EventHooks"),
+	/** The base of every event NeoForge's bus dispatches. */
+	EVENT("net.neoforged.bus.api.Event"),
+	EVENT_BUS("net.neoforged.bus.EventBus"),
+	EVENT_LISTENER("net.neoforged.bus.api.EventListener"),
+	DATAPACK_NEW_REGISTRY_EVENT("net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry"),
+	DATAPACK_REGISTRY_DATA("net.neoforged.neoforge.registries.DataPackRegistryEvent$DataPackRegistryData"),
+	FLUID_INTERACTION_REGISTRY("net.neoforged.neoforge.fluids.FluidInteractionRegistry"),
+	BLOCK_TINT_EVENT("net.neoforged.neoforge.client.event.RegisterColorHandlersEvent$BlockTintSources"),
+	/** Whether a body breathes and how much air it loses or regains; NeoForge's base posts it. */
+	LIVING_BREATHE_EVENT("net.neoforged.neoforge.event.entity.living.LivingBreatheEvent"),
+	/** A body out of air about to drown, and what drowning costs it; NeoForge's base posts it. */
+	LIVING_DROWN_EVENT("net.neoforged.neoforge.event.entity.living.LivingDrownEvent"),
+	/** Custom skull models, posted through the kernel's client init. */
+	CREATE_SKULL_MODELS_EVENT("net.neoforged.neoforge.client.event.EntityRenderersEvent$CreateSkullModels"),
+	/** The earliest mod-bus phase there is: genuine FML posts it at each container the moment it is built. */
+	FML_CONSTRUCT_MOD_EVENT("net.neoforged.fml.event.lifecycle.FMLConstructModEvent"),
+	FML_CLIENT_SETUP_EVENT("net.neoforged.fml.event.lifecycle.FMLClientSetupEvent"),
+	FML_COMMON_SETUP_EVENT("net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent"),
 	/**
-	 * The earliest mod-bus phase there is: genuine FML posts it at each container the moment it is built.
-	 *
-	 * <p>Pairing it is what showed that only NeoForge mods were getting it — the kernel named NeoForge's class
-	 * inline and there was no second half for anyone to notice was missing.
+	 * FML's own settings ({@code fml.toml}). NeoForge's is never loaded, so the kernel gives it the one answer that is not
+	 * its default under Forbric: there is no NeoForge early window.
 	 */
-	FML_CONSTRUCT_MOD_EVENT("net.minecraftforge.fml.event.lifecycle.FMLConstructModEvent",
-			"net.neoforged.fml.event.lifecycle.FMLConstructModEvent"),
-	FML_CLIENT_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent",
-			"net.neoforged.fml.event.lifecycle.FMLClientSetupEvent"),
-	FML_COMMON_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent",
-			"net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent"),
+	FML_CONFIG("net.neoforged.fml.loading.FMLConfig"),
+	FML_DEDICATED_SERVER_SETUP_EVENT("net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent"),
+	FML_LOAD_COMPLETE_EVENT("net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent"),
+	/** The cache of {@link #FML_LOADER}'s answers (stateless in NeoForge). */
+	FML_ENVIRONMENT("net.neoforged.fml.loading.FMLEnvironment"),
+	FML_LOADER("net.neoforged.fml.loading.FMLLoader"),
+	FML_MOD_CONTAINER("net.neoforged.fml.javafmlmod.FMLModContainer"),
+	FML_MOD_LOADER("net.neoforged.fml.ModLoader"),
+	FML_PATHS("net.neoforged.fml.loading.FMLPaths"),
+	GAME_DATA("net.neoforged.neoforge.registries.GameData"),
 	/**
-	 * FML's own settings ({@code fml.toml}). MinecraftForge's is loaded by the kernel; NeoForge's never is, so the kernel
-	 * gives it the one answer that is not its default under Forbric: there is no NeoForge early window.
+	 * NeoForge's own built-in translations — the table its screens read before any resource pack exists. Its loader is
+	 * called from the client mod loader the kernel replaces, so the kernel calls it.
 	 */
-	FML_CONFIG("net.minecraftforge.fml.loading.FMLConfig",
-			"net.neoforged.fml.loading.FMLConfig"),
-	FML_DEDICATED_SERVER_SETUP_EVENT("net.minecraftforge.fml.event.lifecycle.FMLDedicatedServerSetupEvent",
-			"net.neoforged.fml.event.lifecycle.FMLDedicatedServerSetupEvent"),
-	FML_LOAD_COMPLETE_EVENT("net.minecraftforge.fml.event.lifecycle.FMLLoadCompleteEvent",
-			"net.neoforged.fml.event.lifecycle.FMLLoadCompleteEvent"),
+	LANGUAGE_HOOK("net.neoforged.neoforge.server.LanguageHook"),
+	LOADING_MOD_LIST("net.neoforged.fml.loading.LoadingModList"),
+	INTER_MOD_ENQUEUE_EVENT("net.neoforged.fml.event.lifecycle.InterModEnqueueEvent"),
+	INTER_MOD_PROCESS_EVENT("net.neoforged.fml.event.lifecycle.InterModProcessEvent"),
+	MOD_LIST_SCREEN("net.neoforged.neoforge.client.gui.modlist.ModListScreen"),
+	MOD_BUS_EVENT("net.neoforged.fml.event.IModBusEvent"),
+	MOD_CONFIG_TYPE("net.neoforged.fml.config.ModConfig$Type"),
+	MOD_CONTAINER("net.neoforged.fml.ModContainer"),
+	MOD_FILE("net.neoforged.fml.loading.moddiscovery.ModFile"),
+	MOD_FILE_TYPE("net.neoforged.neoforgespi.locating.IModFile$Type"),
 	/**
-	 * The one-shot cache of {@link #FML_LOADER}'s answers. MinecraftForge's is four {@code public static final}
-	 * fields decided by a {@code <clinit>} that cannot throw, so whoever touches it first decides them forever;
-	 * NeoForge's is stateless. The kernel reads these fields back to check its own seeding took.
+	 * NeoForge's annotation index for one mod file. The kernel seeds the loading list with files that must answer
+	 * {@code getScanResult()}, or NeoForge's annotation walkers throw "Scanning of this mod file has not started yet."
 	 */
-	FML_ENVIRONMENT("net.minecraftforge.fml.loading.FMLEnvironment",
-			"net.neoforged.fml.loading.FMLEnvironment"),
-	FML_LOADER("net.minecraftforge.fml.loading.FMLLoader",
-			"net.neoforged.fml.loading.FMLLoader"),
-	FML_MOD_CONTAINER("net.minecraftforge.fml.javafmlmod.FMLModContainer",
-			"net.neoforged.fml.javafmlmod.FMLModContainer"),
-	FML_MOD_LOADER("net.minecraftforge.fml.ModLoader",
-			"net.neoforged.fml.ModLoader"),
-	FML_PATHS("net.minecraftforge.fml.loading.FMLPaths",
-			"net.neoforged.fml.loading.FMLPaths"),
-	GAME_DATA("net.minecraftforge.registries.GameData",
-			"net.neoforged.neoforge.registries.GameData"),
-	KEY_MAPPING_LOOKUP("net.minecraftforge.client.settings.KeyMappingLookup",
-			"net.neoforged.neoforge.client.settings.KeyMappingLookup"),
+	MOD_FILE_SCAN_DATA("net.neoforged.neoforgespi.language.ModFileScanData"),
 	/**
-	 * Each family's own built-in translations — the table its screens read before any resource pack exists.
-	 *
-	 * <p>Paired because the loader on it is called from the client mod loader the kernel replaces, so BOTH halves
-	 * need calling and a half named inline is a family whose screens quietly render raw keys.
+	 * NeoForge's rewriter for enums a mod may add constants to: the kernel supplies the class node and NeoForge's compiled
+	 * processor does the rewrite.
 	 */
-	LANGUAGE_HOOK("net.minecraftforge.server.LanguageHook",
-			"net.neoforged.neoforge.server.LanguageHook"),
-	LOADING_MOD_LIST("net.minecraftforge.fml.loading.LoadingModList",
-			"net.neoforged.fml.loading.LoadingModList"),
-	INTER_MOD_ENQUEUE_EVENT("net.minecraftforge.fml.event.lifecycle.InterModEnqueueEvent",
-			"net.neoforged.fml.event.lifecycle.InterModEnqueueEvent"),
-	INTER_MOD_PROCESS_EVENT("net.minecraftforge.fml.event.lifecycle.InterModProcessEvent",
-			"net.neoforged.fml.event.lifecycle.InterModProcessEvent"),
-	// The two families' Mods screens. Paired because the kernel REPLACES both: which one the merged pause menu's
-	// button is bound to is a byte-merge outcome, and naming only the winner would make the replacement quietly
-	// conditional on a merge detail that has changed before.
-	MOD_LIST_SCREEN("net.minecraftforge.client.gui.ModListScreen",
-			"net.neoforged.neoforge.client.gui.modlist.ModListScreen"),
-	MOD_BUS_EVENT("net.minecraftforge.fml.event.IModBusEvent",
-			"net.neoforged.fml.event.IModBusEvent"),
-	MOD_CONFIG_TYPE("net.minecraftforge.fml.config.ModConfig$Type",
-			"net.neoforged.fml.config.ModConfig$Type"),
-	MOD_CONTAINER("net.minecraftforge.fml.ModContainer",
-			"net.neoforged.fml.ModContainer"),
-	MOD_FILE("net.minecraftforge.fml.loading.moddiscovery.ModFile",
-			"net.neoforged.fml.loading.moddiscovery.ModFile"),
-	MOD_FILE_TYPE("net.minecraftforge.forgespi.locating.IModFile$Type",
-			"net.neoforged.neoforgespi.locating.IModFile$Type"),
+	RUNTIME_ENUM_EXTENDER("net.neoforged.fml.common.asm.enumextension.RuntimeEnumExtender"),
+	MOD_FILE_INFO("net.neoforged.fml.loading.moddiscovery.ModFileInfo"),
+	MOD_INFO("net.neoforged.fml.loading.moddiscovery.ModInfo"),
+	MOD_INFO_SPI("net.neoforged.neoforgespi.language.IModInfo"),
+	MOD_LIST("net.neoforged.fml.ModList"),
+	MOD_LOADING_CONTEXT("net.neoforged.fml.ModLoadingContext"),
+	NEW_REGISTRY_EVENT("net.neoforged.neoforge.registries.NewRegistryEvent"),
 	/**
-	 * Each family's annotation index for one mod file. Paired because the kernel seeds BOTH loading lists with
-	 * files that must answer {@code getScanResult()}, and a half named inline is a family whose annotation walkers
-	 * find nothing — or, on NeoForge, throw "Scanning of this mod file has not started yet." (RollingGate).
+	 * The resource-condition type NeoForge dispatches datapack elements through; a condition it cannot resolve used to
+	 * fail the whole registry load, and the world with it.
 	 */
-	MOD_FILE_SCAN_DATA("net.minecraftforge.forgespi.language.ModFileScanData",
-			"net.neoforged.neoforgespi.language.ModFileScanData"),
+	ICONDITION("net.neoforged.neoforge.common.conditions.ICondition"),
+	NETWORK_REGISTRY("net.neoforged.neoforge.network.registration.NetworkRegistry"),
+	PRESET_EDITOR_MANAGER("net.neoforged.neoforge.client.PresetEditorManager"),
+	REGISTER_EVENT("net.neoforged.neoforge.registries.RegisterEvent"),
+	REGISTRY_MANAGER("net.neoforged.neoforge.registries.RegistryManager"),
+	RESOURCE_PACK_LOADER("net.neoforged.neoforge.resource.ResourcePackLoader"),
+	SERVER_LIFECYCLE_HOOKS("net.neoforged.neoforge.server.ServerLifecycleHooks"),
+	SERVER_MOD_LOADER("net.neoforged.neoforge.server.loading.ServerModLoader"),
+	SPAWN_PLACEMENT_EVENT("net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent"),
+	BIOME_MODIFIER("net.neoforged.neoforge.common.world.BiomeModifier"),
+	STRUCTURE_MODIFIER("net.neoforged.neoforge.common.world.StructureModifier"),
+	MODIFIABLE_BIOME_INFO("net.neoforged.neoforge.common.world.ModifiableBiomeInfo"),
+	MODIFIABLE_STRUCTURE_INFO("net.neoforged.neoforge.common.world.ModifiableStructureInfo"),
+	MODIFIER_REGISTRY_KEYS("net.neoforged.neoforge.registries.NeoForgeRegistries$Keys"),
+	MOB_SPAWN_SETTINGS_BUILDER("net.neoforged.neoforge.common.world.MobSpawnSettingsBuilder"),
+	REMOVE_SPAWNS_BIOME_MODIFIER("net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier"),
+	/** The static hook class NeoForge's patched game calls to post its events. */
+	EVENT_FACTORY("net.neoforged.neoforge.event.EventHooks"),
 	/**
-	 * Each family's rewriter for enums a mod may add constants to. Same job, and the two are reached the same
-	 * way — the kernel supplies the class node and their compiled processor does the rewrite — but they sit in
-	 * different packages and take different arguments, so both injectors name this and neither may drift alone.
+	 * NeoForge's fluid type: ForeignFluidTypeInjector gives a fluid without one the type its tags imply.
 	 */
-	RUNTIME_ENUM_EXTENDER("net.minecraftforge.fml.common.asm.RuntimeEnumExtender",
-			"net.neoforged.fml.common.asm.enumextension.RuntimeEnumExtender"),
-	MOD_FILE_INFO("net.minecraftforge.fml.loading.moddiscovery.ModFileInfo",
-			"net.neoforged.fml.loading.moddiscovery.ModFileInfo"),
-	MOD_INFO("net.minecraftforge.fml.loading.moddiscovery.ModInfo",
-			"net.neoforged.fml.loading.moddiscovery.ModInfo"),
-	MOD_INFO_SPI("net.minecraftforge.forgespi.language.IModInfo",
-			"net.neoforged.neoforgespi.language.IModInfo"),
-	MOD_LIST("net.minecraftforge.fml.ModList",
-			"net.neoforged.fml.ModList"),
-	MOD_LOADING_CONTEXT("net.minecraftforge.fml.ModLoadingContext",
-			"net.neoforged.fml.ModLoadingContext"),
-	NEW_REGISTRY_EVENT("net.minecraftforge.registries.NewRegistryEvent",
-			"net.neoforged.neoforge.registries.NewRegistryEvent"),
+	FLUID_TYPE("net.neoforged.neoforge.fluids.FluidType"),
+	/** NeoForge's client extensions of a fluid type (its model, tint and fog colour). */
+	CLIENT_FLUID_TYPE_EXTENSIONS("net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions"),
+	/** NeoForge's client-command registration event, handing out the one {@code CommandDispatcher}. */
+	CLIENT_COMMANDS_EVENT("net.neoforged.neoforge.client.event.RegisterClientCommandsEvent"),
+	/** NeoForge's global-loot-modifier reload listener. */
+	LOOT_MODIFIER_MANAGER("net.neoforged.neoforge.common.loot.LootModifierManager"),
 	/**
-	 * The resource-condition type both families dispatch datapack elements through. They are separate registries
-	 * with separate dialects, and the merged base runs BOTH evaluators over every element from every pack — so a
-	 * condition one family cannot resolve used to fail the whole registry load, and the world with it.
+	 * NeoForge's per-tab creative search keys. NeoForge's creative screen reads it, and so does the client-smoke census,
+	 * to count the trees.
 	 */
-	ICONDITION("net.minecraftforge.common.crafting.conditions.ICondition",
-			"net.neoforged.neoforge.common.conditions.ICondition"),
-	NETWORK_REGISTRY("net.minecraftforge.network.NetworkRegistry",
-			"net.neoforged.neoforge.network.registration.NetworkRegistry"),
-	PRESET_EDITOR_MANAGER("net.minecraftforge.client.PresetEditorManager",
-			"net.neoforged.neoforge.client.PresetEditorManager"),
-	REGISTER_EVENT("net.minecraftforge.registries.RegisterEvent",
-			"net.neoforged.neoforge.registries.RegisterEvent"),
-	REGISTRY_MANAGER("net.minecraftforge.registries.RegistryManager",
-			"net.neoforged.neoforge.registries.RegistryManager"),
-	RESOURCE_PACK_LOADER("net.minecraftforge.resource.ResourcePackLoader",
-			"net.neoforged.neoforge.resource.ResourcePackLoader"),
-	SERVER_LIFECYCLE_HOOKS("net.minecraftforge.server.ServerLifecycleHooks",
-			"net.neoforged.neoforge.server.ServerLifecycleHooks"),
-	SERVER_MOD_LOADER("net.minecraftforge.server.loading.ServerModLoader",
-			"net.neoforged.neoforge.server.loading.ServerModLoader"),
-	SPAWN_PLACEMENT_EVENT("net.minecraftforge.event.entity.SpawnPlacementRegisterEvent",
-			"net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent"),
-	BIOME_MODIFIER("net.minecraftforge.common.world.BiomeModifier",
-			"net.neoforged.neoforge.common.world.BiomeModifier"),
-	STRUCTURE_MODIFIER("net.minecraftforge.common.world.StructureModifier",
-			"net.neoforged.neoforge.common.world.StructureModifier"),
-	MODIFIABLE_BIOME_INFO("net.minecraftforge.common.world.ModifiableBiomeInfo",
-			"net.neoforged.neoforge.common.world.ModifiableBiomeInfo"),
-	MODIFIABLE_STRUCTURE_INFO("net.minecraftforge.common.world.ModifiableStructureInfo",
-			"net.neoforged.neoforge.common.world.ModifiableStructureInfo"),
-	MODIFIER_REGISTRY_KEYS("net.minecraftforge.registries.ForgeRegistries$Keys",
-			"net.neoforged.neoforge.registries.NeoForgeRegistries$Keys"),
-	MOB_SPAWN_SETTINGS_BUILDER("net.minecraftforge.common.world.MobSpawnSettingsBuilder",
-			"net.neoforged.neoforge.common.world.MobSpawnSettingsBuilder"),
-	REMOVE_SPAWNS_BIOME_MODIFIER("net.minecraftforge.common.world.ForgeBiomeModifiers$RemoveSpawnsBiomeModifier",
-			"net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier"),
-	/** The static hook class each family's patched game calls to post its events. */
-	EVENT_FACTORY("net.minecraftforge.event.ForgeEventFactory", "net.neoforged.neoforge.event.EventHooks"),
-	/** The published conversion lifecycle event family. */
-	LIVING_CONVERSION_EVENT("net.minecraftforge.event.entity.living.LivingConversionEvent",
-			"net.neoforged.neoforge.event.entity.living.LivingConversionEvent"),
-	/**
-	 * Each family's fluid type: the merged Fluid answers NeoForge's (ForeignFluidTypeInjector gives a fluid without one
-	 * the type its tags imply) and a vanilla fluid is bridged to MinecraftForge's (ForbricMergedBaseCompatTransformer).
-	 */
-	FLUID_TYPE("net.minecraftforge.fluids.FluidType", "net.neoforged.neoforge.fluids.FluidType"),
-	/**
-	 * Each family's client extensions of a fluid type: the merged FluidRenderer asks MinecraftForge's of a MinecraftForge
-	 * fluid's type for its model and tint (ForbricMergedBaseCompatTransformer), and NeoForge's lookup answers the kernel's
-	 * view of a MinecraftForge type with that type's fog colour (ForgeFluidViewExtensionsInjector).
-	 */
-	CLIENT_FLUID_TYPE_EXTENSIONS("net.minecraftforge.client.extensions.common.IClientFluidTypeExtensions",
-			"net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions"),
-	/**
-	 * Each family's multipart-entity part: consumers may read either public array-return descriptor;
-	 * the verified runtime bridge preserves both ancestor types for the shared native array.
-	 */
-	PART_ENTITY("net.minecraftforge.entity.PartEntity", "net.neoforged.neoforge.entity.PartEntity"),
-	/**
-	 * Each family's client-command registration event, both handing out the one {@code CommandDispatcher} type: the
-	 * merged game runs NeoForge's, and MinecraftForge's is posted with that dispatcher (KernelGameClientNetworkEvents).
-	 */
-	CLIENT_COMMANDS_EVENT("net.minecraftforge.client.event.RegisterClientCommandsEvent",
-			"net.neoforged.neoforge.client.event.RegisterClientCommandsEvent"),
-	/** Each family's global-loot-modifier reload listener: same directory, two ideas of what a list file is. */
-	LOOT_MODIFIER_MANAGER("net.minecraftforge.common.loot.LootModifierManager",
-			"net.neoforged.neoforge.common.loot.LootModifierManager"),
-	/**
-	 * Each family's per-tab creative search keys. NeoForge's creative screen reads NeoForge's, which also holds the
-	 * trees; the client-smoke census reads NeoForge's to count them (the merged base's creative-search repair, the
-	 * other reader, went in Stage 4).
-	 */
-	CREATIVE_SEARCH_REGISTRY("net.minecraftforge.client.CreativeModeTabSearchRegistry",
-			"net.neoforged.neoforge.client.CreativeModeTabSearchRegistry");
+	CREATIVE_SEARCH_REGISTRY("net.neoforged.neoforge.client.CreativeModeTabSearchRegistry");
 
-	private final String forge;
 	private final String neoforge;
 
-	ForeignType(String forge, String neoforge) {
-		this.forge = forge;
+	ForeignType(String neoforge) {
 		this.neoforge = neoforge;
 	}
 
 	/** The binary (dotted) name in {@code ecosystem}, or {@code null} for {@link Ecosystem#FABRIC}. */
 	public String binary(Ecosystem ecosystem) {
 		return switch (ecosystem) {
-			case FORGE -> forge;
 			case NEOFORGE -> neoforge;
 			case FABRIC -> null;
 		};
@@ -289,8 +170,8 @@ public enum ForeignType {
 		return binary == null ? null : binary.replace('.', '/');
 	}
 
-	/** Whether {@code binaryName} is this concept in EITHER Forge-family ecosystem. */
+	/** Whether {@code binaryName} is this concept's NeoForge class. */
 	public boolean matches(String binaryName) {
-		return forge.equals(binaryName) || neoforge.equals(binaryName);
+		return neoforge.equals(binaryName);
 	}
 }

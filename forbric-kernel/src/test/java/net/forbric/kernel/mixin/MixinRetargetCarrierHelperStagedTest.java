@@ -88,7 +88,7 @@ class MixinRetargetCarrierHelperStagedTest {
 		Function<String, byte[]> resolver = mergedResolver();
 		String entry = "com/anthonyhilyard/highlighter/forge/mixin/AbstractContainerScreenMixin";
 		byte[] mixin = fromJar(SWEEP.resolve("Highlighter-26.2-forge-1.2.2.jar"), entry + ".class");
-		MixinStubRebind.noteEcosystem(entry, Ecosystem.FORGE);
+		MixinStubRebind.noteEcosystem(entry, Ecosystem.FABRIC);
 		MixinFit.Result before = MixinFit.evaluate(mixin, resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, before.verdict(), "premise: " + before.unresolved());
 
@@ -122,7 +122,7 @@ class MixinRetargetCarrierHelperStagedTest {
         assertTrue((callback.access&Opcodes.ACC_STATIC)!=0,"the released callback observes arguments without a host receiver");assertTrue((nativeHost.access&Opcodes.ACC_STATIC)==0,"the actual native host is an instance method");
         assertEquals(MixinFit.Verdict.PARTIAL,MixinFit.evaluate(bytes,resolver).verdict());
         assertTrue(NativeCallTestEvidence.plan(original,resolver).rewrites().stream().noneMatch(r->r.handler().equals(callback.name)),"AFTER the entire carrier helper would move this callback beyond fluid and event writes");
-        java.util.function.Function<String,List<ClassNode>> peers=n->java.util.stream.Stream.of(Ecosystem.FORGE,Ecosystem.NEOFORGE).map(e->NativeCallTestEvidence.staged().apply(e,n)).filter(java.util.Objects::nonNull).toList();
+        java.util.function.Function<String,List<ClassNode>> peers=n->java.util.stream.Stream.of(Ecosystem.NEOFORGE).map(e->NativeCallTestEvidence.staged().apply(e,n)).filter(java.util.Objects::nonNull).toList();
         var seam=NativeCallbackSeam.derive(source,peers.apply(owner),current,nativeHost,member,classes);assertNotNull(seam);assertEquals(seam.sourcePrefix(),seam.currentPrefix());assertEquals(6,seam.hostParameters().length);
         // A merged prefix that is no native body's — one constant changed on the way — proves nothing, peers or not.
         ClassNode drifted=expanded(resolver.apply(owner+".class"));MethodNode drift=NativeCallChanges.method(drifted,seam.method());

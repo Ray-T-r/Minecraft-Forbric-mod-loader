@@ -36,6 +36,7 @@ import net.forbric.api.ModCatalog;
 import net.forbric.kernel.metadata.forge.ForgeModEntry;
 import net.forbric.kernel.metadata.forge.ForgeModsToml;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
+import net.forbric.kernel.discovery.LoaderKind;
 import net.forbric.kernel.discovery.MetadataFailures;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
@@ -97,10 +98,10 @@ public final class KernelModCatalog {
 		addUnreadable(entries, modsDir);
 		ModCatalog.publish(entries);
 		ForbricLog.info("[Forbric/Catalog] %d installed mod(s) for the unified Mods screen: %d Fabric, %d NeoForge,"
-						+ " %d MinecraftForge — plus %d jar(s) they carry inside themselves, which are running and "
+						+ " %d refused — plus %d jar(s) they carry inside themselves, which are running and "
 						+ "are not what a player means by \"my mods\"",
 				ModCatalog.all().size(), ModCatalog.count(Ecosystem.FABRIC), ModCatalog.count(Ecosystem.NEOFORGE),
-				ModCatalog.count(Ecosystem.FORGE), ModCatalog.everything().size() - ModCatalog.all().size());
+				ModCatalog.refusedCount(), ModCatalog.everything().size() - ModCatalog.all().size());
 	}
 
 	/**
@@ -115,11 +116,14 @@ public final class KernelModCatalog {
 			String file = lost.jar().getFileName().toString();
 			if (!dir.equals(lost.jar().getParent()) || entries.stream().anyMatch(e -> e.jar().equals(file))) continue;
 			// The name the manifest gives, where it gives one: a refused MinecraftForge mod is named to the player by it.
-			// A refusal has no ecosystem (nothing loads it); its row is still shown under MinecraftForge, the loader it
-			// was built for, until the Mods screen and the catalogue count give a refused row a label of their own.
-			Ecosystem shownAs = lost.kind() == MetadataFailures.Kind.UNSUPPORTED ? Ecosystem.FORGE : lost.ecosystem();
-			entries.add(new ModCatalog.Entry(shownAs, lost.modId(), lost.name(), "", "", List.of(), file, "", "")
-					.withStatus(ModCatalog.Status.FAILED, lost.detail()));
+			// A refusal has no ecosystem (nothing loads it): its row is shown under the loader it was built for and
+			// counted under no ecosystem.
+			entries.add(lost.kind() == MetadataFailures.Kind.UNSUPPORTED
+					? ModCatalog.Entry.refused(LoaderKind.MINECRAFTFORGE.displayName(), LoaderKind.MINECRAFTFORGE.spelling(),
+							lost.modId(), lost.name(), file,
+							lost.detail())
+					: new ModCatalog.Entry(lost.ecosystem(), lost.modId(), lost.name(), "", "", List.of(), file, "", "")
+							.withStatus(ModCatalog.Status.FAILED, lost.detail()));
 		}
 	}
 

@@ -161,8 +161,8 @@ refused_and_stopped() {
   # forbriclive's fixture keeps the live canary's mixin config and its plugin, which prints [ForbricLive/PLUGIN] (above)
   # the moment Mixin is handed the config. The kernel's own count of what it registered says the same from the other
   # side: the line is there, and no config of it is MinecraftForge's or the refused canary's.
-  check "$lang: no MinecraftForge mixin config was registered" \
-    '\[Forbric/Mixin\] mixin configs: .*\([0-9]+ NeoForge, 0 MinecraftForge\)' "$log"
+  check "$lang: the Forge-family mixin configs registered are NeoForge's alone" \
+    '\[Forbric/Mixin\] mixin configs: .*\([0-9]+ NeoForge\) ' "$log"
   check_absent "$lang: and not the refused canary's under another name" \
     '\[Forbric/Mixin\] mixin configs: .*forbriclive\.mixins\.json' "$log"
   check_absent "$lang: no crash report for a policy decision" "Preparing crash report|Game crashed" "$log"

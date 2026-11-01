@@ -70,7 +70,7 @@ class ModPresenceTest {
 		assertTrue(ModPresence.isLoaded("sodium"));
 
 		// And re-publishing a side replaces only that side.
-		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.FORGE, "journeymap")));
+		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "journeymap")));
 		assertFalse(ModPresence.isLoaded("jade"), "that side was replaced");
 		assertTrue(ModPresence.isLoaded("journeymap"));
 		assertTrue(ModPresence.isLoaded("sodium"), "the other side was not");
@@ -249,12 +249,12 @@ class ModPresenceTest {
 	void soleEcosystemNamesTheOneFamilyThatLoadedAMod() {
 		ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "wover"),
 				mod(Ecosystem.FABRIC, "libjf-base").withAliases(List.of("libjf_base"))));
-		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "jade"), mod(Ecosystem.FORGE, "fusion")));
+		ModPresence.publishForgeFamily(List.of(mod(Ecosystem.NEOFORGE, "jade"), mod(Ecosystem.NEOFORGE, "fusion")));
 
 		assertEquals(Ecosystem.FABRIC, ModPresence.soleEcosystem("wover"));
 		assertEquals(Ecosystem.FABRIC, ModPresence.soleEcosystem("libjf_base"), "an alias is the same mod");
 		assertEquals(Ecosystem.NEOFORGE, ModPresence.soleEcosystem("jade"));
-		assertEquals(Ecosystem.FORGE, ModPresence.soleEcosystem("fusion"));
+		assertEquals(Ecosystem.NEOFORGE, ModPresence.soleEcosystem("fusion"));
 		assertNull(ModPresence.soleEcosystem("notinstalled"));
 		assertNull(ModPresence.soleEcosystem(null), "a null id must answer null, not throw");
 	}

@@ -98,16 +98,14 @@ public final class LoaderProbePolicy {
 	}
 
 	/**
-	 * The {@link Family} for an arbitrated ecosystem, one for one. MinecraftForge has none: no jar is owned by it (a
-	 * MinecraftForge-only jar is refused, never owned), and a jar or runtime carrier that declares only a
-	 * {@code mods.toml} gets no family, so its classes probe as an unowned jar's do. The arm goes with
-	 * {@code Ecosystem.FORGE} (C4).
+	 * The {@link Family} for an arbitrated ecosystem, one for one. MinecraftForge has none (it is no ecosystem): no jar
+	 * is owned by it (a MinecraftForge-only jar is refused, never owned), and a jar or runtime carrier that declares only
+	 * a {@code mods.toml} gets no family, so its classes probe as an unowned jar's do.
 	 */
 	public static Family familyOf(Ecosystem ecosystem) {
 		if (ecosystem == null) return null;
 		return switch (ecosystem) {
 			case FABRIC -> Family.FABRIC;
-			case FORGE -> null;
 			case NEOFORGE -> Family.NEOFORGE;
 		};
 	}

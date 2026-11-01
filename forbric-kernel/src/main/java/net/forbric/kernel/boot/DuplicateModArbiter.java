@@ -937,7 +937,7 @@ public final class DuplicateModArbiter {
 	}
 
 	/**
-	 * {@code -Dforbric.nestedDupePreference}, defaulting to NEOFORGE, then FABRIC, then traditional FORGE.
+	 * {@code -Dforbric.nestedDupePreference}, defaulting to NEOFORGE, then FABRIC.
 	 *
 	 * <p>Deliberately not the top-level order. A duplicate there is two builds of a mod the USER chose, and the
 	 * pack they built around it is the one whose glue is most likely intact. A nested jar is chosen by nobody: it
@@ -950,7 +950,7 @@ public final class DuplicateModArbiter {
 	 * the caller registers nothing, hears nothing, and dies much later somewhere else. Both defects below are
 	 * that same shape, and between them they fix the order:
 	 *
-	 * <p><b>FORGE loses to FABRIC.</b> Xaero's {@code xaerolib} is nested by a Fabric minimap and a
+	 * <p><b>FORGE lost to FABRIC</b> (while Forbric loaded MinecraftForge mods). Xaero's {@code xaerolib} is nested by a Fabric minimap and a
 	 * MinecraftForge world map. Its Fabric bootstrap sets {@code XaeroLib.client} from {@code onInitializeClient},
 	 * which the kernel runs inside {@code Minecraft.<init>} — before any tick. Its MinecraftForge bootstrap sets
 	 * the same field from {@code FMLClientSetupEvent}. Letting MinecraftForge win left the Fabric minimap's
@@ -1016,7 +1016,7 @@ public final class DuplicateModArbiter {
 
 	/** See {@link #nestedPreference()} — both halves of this order are a measured defect, one each way. */
 	private static final List<Ecosystem> NESTED_DEFAULT =
-			List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC, Ecosystem.FORGE);
+			List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC);
 
 	/** {@code -Dforbric.modOwner=sodium=fabric,lithostitched=neoforge} */
 	private static Ecosystem overrideFor(String modId) {
@@ -1214,10 +1214,9 @@ public final class DuplicateModArbiter {
 		if (declared.size() < 2) return;
 
 		for (Ecosystem lost : declared) {
+			// declaredBy lists only the ecosystems Forbric loads: a MinecraftForge half is set aside, not lost to another
+			// family, and no MinecraftForge mod list exists for an alias to answer in.
 			if (lost == owner) continue;
-			// No MinecraftForge mod is loaded, so no MinecraftForge mod list exists for an alias to answer in: the half
-			// is set aside, not lost to another family.
-			if (lost == Ecosystem.FORGE) continue;
 			Map<String, String> versions = new LinkedHashMap<>();
 			List<String> ids = lost == Ecosystem.FABRIC
 					? fabricIds(jar, envType, versions)

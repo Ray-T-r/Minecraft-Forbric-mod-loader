@@ -52,7 +52,6 @@ class LoaderProbePolicyTest {
 	void eachEcosystemMapsToItsOwnFamily() {
 		assertEquals(LoaderProbePolicy.Family.FABRIC, LoaderProbePolicy.familyOf(Ecosystem.FABRIC));
 		assertEquals(LoaderProbePolicy.Family.NEOFORGE, LoaderProbePolicy.familyOf(Ecosystem.NEOFORGE));
-		assertNull(LoaderProbePolicy.familyOf(Ecosystem.FORGE), "no jar is owned by MinecraftForge, so it has no family");
 		assertNull(LoaderProbePolicy.familyOf(null), "an unowned jar has no family and probes as before");
 	}
 

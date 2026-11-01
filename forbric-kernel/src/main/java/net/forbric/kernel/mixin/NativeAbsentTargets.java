@@ -330,7 +330,7 @@ public final class NativeAbsentTargets {
 		if (platform == null) return "the mod's own platform";
 		return switch (platform) {
 			case FABRIC -> "vanilla 26.2";
-			case FORGE -> "MinecraftForge's patched 26.2";
+
 			case NEOFORGE -> "NeoForge's patched 26.2";
 		};
 	}

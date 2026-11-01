@@ -235,7 +235,6 @@ class MixinPlatformIdentityLibraryFramesTest {
 
 	@Test void aBundledLibraryAsksForTheModThatDrivesIt() throws Throwable {
 		assertEquals(every("Knot/Fabric"), call(gadgetAs(Ecosystem.FABRIC), GADGET, "ask", new ForbricMixinService()));
-		assertEquals(every("ModLauncher"), call(gadgetAs(Ecosystem.FORGE), GADGET, "ask", new ForbricMixinService()));
 		assertEquals(every("FML"), call(gadgetAs(Ecosystem.NEOFORGE), GADGET, "ask", new ForbricMixinService()));
 	}
 

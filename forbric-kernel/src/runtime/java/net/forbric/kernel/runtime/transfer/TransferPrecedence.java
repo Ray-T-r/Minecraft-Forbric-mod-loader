@@ -51,8 +51,6 @@ public final class TransferPrecedence {
 		return switch (consumer) {
 			case FABRIC -> List.of(Source.NEOFORGE);
 			case NEOFORGE -> List.of(Source.FABRIC);
-			// No MinecraftForge consumer is bridged any more; the arm goes with Ecosystem.FORGE (C4).
-			case FORGE -> List.of();
 		};
 	}
 	/** The first foreign source that answers a consumer whose own ecosystem found nothing; null if none. */

@@ -32,10 +32,10 @@ class PluginAddedMixinEcosystemTest {
 
 	@Test void aPluginAddedMixinIsTheEcosystemOfItsConfigsPackage() {
 		MixinStubRebind.notePackage("a/mixin", Ecosystem.FABRIC, "a.mixins.json");
-		MixinStubRebind.notePackage("a/mixin/forge", Ecosystem.FORGE, "a.forge.mixins.json");
+		MixinStubRebind.notePackage("a/mixin/neoforge", Ecosystem.NEOFORGE, "a.neoforge.mixins.json");
 		assertEquals(Ecosystem.FABRIC, MixinStubRebind.ecosystemOf("a/mixin/client/Added"));
 		assertEquals("a.mixins.json", MixinStubRebind.configOf("a/mixin/client/Added"));
-		assertEquals(Ecosystem.FORGE, MixinStubRebind.ecosystemOf("a/mixin/forge/Added"), "the innermost config package");
+		assertEquals(Ecosystem.NEOFORGE, MixinStubRebind.ecosystemOf("a/mixin/neoforge/Added"), "the innermost config package");
 		assertNull(MixinStubRebind.ecosystemOf("b/mixin/Added"));
 		MixinStubRebind.noteEcosystem("a/mixin/Listed", Ecosystem.NEOFORGE, "listed.json");
 		assertEquals(Ecosystem.NEOFORGE, MixinStubRebind.ecosystemOf("a/mixin/Listed"), "a listed mixin keeps its own row");

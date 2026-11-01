@@ -186,7 +186,6 @@ class MixinPlatformIdentityTest {
 
 	@Test void aModsCodeIsToldItsOwnPlatformsServiceNameHoweverItAsks() throws Throwable {
 		assertEquals(every("fabric", "fabric", "other", "Knot/Fabric"), asked(game(jar, Ecosystem.FABRIC)));
-		assertEquals(every("forge", "other", "other", "ModLauncher"), asked(game(jar, Ecosystem.FORGE)));
 		assertEquals(every("neoforge", "other", "neoforge", "FML"), asked(game(jar, Ecosystem.NEOFORGE)));
 	}
 
@@ -228,7 +227,6 @@ class MixinPlatformIdentityTest {
 
 	@Test void eachEcosystemHasItsPlatformsOwnServiceName() {
 		assertEquals("Knot/Fabric", MixinPlatformIdentity.nativeServiceName(Ecosystem.FABRIC));
-		assertEquals("ModLauncher", MixinPlatformIdentity.nativeServiceName(Ecosystem.FORGE));
 		assertEquals("FML", MixinPlatformIdentity.nativeServiceName(Ecosystem.NEOFORGE));
 		assertNull(MixinPlatformIdentity.nativeServiceName(null));
 	}

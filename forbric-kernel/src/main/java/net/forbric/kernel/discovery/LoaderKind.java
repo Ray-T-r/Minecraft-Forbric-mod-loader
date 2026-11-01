@@ -33,18 +33,25 @@ import net.forbric.api.Ecosystem;
  */
 public enum LoaderKind {
 	/** {@code fabric.mod.json}. */
-	FABRIC(Ecosystem.FABRIC, "FABRIC"),
+	FABRIC(Ecosystem.FABRIC, "FABRIC", "Fabric"),
 	/** {@code META-INF/mods.toml}: traditional MinecraftForge, which Forbric no longer loads. */
-	MINECRAFTFORGE(null, "FORGE"),
+	MINECRAFTFORGE(null, "FORGE", "MinecraftForge"),
 	/** {@code META-INF/neoforge.mods.toml}. */
-	NEOFORGE(Ecosystem.NEOFORGE, "NEOFORGE");
+	NEOFORGE(Ecosystem.NEOFORGE, "NEOFORGE", "NeoForge");
 
 	private final Ecosystem ecosystem;
 	private final String spelling;
+	private final String displayName;
 
-	LoaderKind(Ecosystem ecosystem, String spelling) {
+	LoaderKind(Ecosystem ecosystem, String spelling, String displayName) {
 		this.ecosystem = ecosystem;
 		this.spelling = spelling;
+		this.displayName = displayName;
+	}
+
+	/** How this loader is written in prose and in user-facing lines: a refused jar's row names it to the player. */
+	public String displayName() {
+		return displayName;
 	}
 
 	/** The ecosystem that loads a half of this kind, or {@code null} for {@link #MINECRAFTFORGE}: nothing does. */
@@ -61,16 +68,11 @@ public enum LoaderKind {
 		return spelling;
 	}
 
-	/**
-	 * The kind of a half recorded under {@code ecosystem}. {@code Ecosystem.FORGE} still reaches here from the one place
-	 * that spells a manifest by it — discovery recording that a universal jar's {@code mods.toml} cannot be read — until
-	 * that constant goes.
-	 */
+	/** The kind of a half recorded under {@code ecosystem}; null for null (a refusal, which no ecosystem holds). */
 	public static LoaderKind of(Ecosystem ecosystem) {
 		if (ecosystem == null) return null;
 		return switch (ecosystem) {
 			case FABRIC -> FABRIC;
-			case FORGE -> MINECRAFTFORGE;
 			case NEOFORGE -> NEOFORGE;
 		};
 	}

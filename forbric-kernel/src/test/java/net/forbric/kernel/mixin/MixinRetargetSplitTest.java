@@ -66,11 +66,11 @@ class MixinRetargetSplitTest {
 				"the adapter keeps a plan only when the rewritten mixin re-evaluates better");
 	}
 
-	/** MinecraftForge keeps vanilla's body in extractPlayerHealth, so its mods were written against the call there too. */
+	/** A Fabric mod was written against vanilla's body in extractPlayerHealth; a NeoForge mod against NeoForge's split. */
 	@Test
-	void aMinecraftForgeModMovesAndANeoForgeModDoesNot() {
+	void aFabricModMovesAndANeoForgeModDoesNot() {
 		Function<String, byte[]> resolver = resolver(hud(List.of("extractHealthLevel", "extractFoodLevel"), false));
-		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
+		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		assertEquals(1, MixinRetarget.plan(MixinFit.parse(redirect(MAX_HEARTS)), resolver).rewrites().size());
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.NEOFORGE);
 		assertTrue(MixinRetarget.plan(MixinFit.parse(redirect(MAX_HEARTS)), resolver).isEmpty(),

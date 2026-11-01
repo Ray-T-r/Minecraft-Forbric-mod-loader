@@ -81,58 +81,46 @@ class MixinFitLivenessCensusStagedTest {
 	private static final Set<String> STANDARD = Set.of("Inject", "Redirect", "ModifyArg", "ModifyArgs", "ModifyConstant", "ModifyVariable");
 
 	/**
-	 * What changes, as {@code config:mixin verdict-off -> verdict-on}, pinned; each was read against the merged bytes. A
-	 * PARTIAL that stays PARTIAL gained a "never runs" line. Five methods carry all of the FIT → PARTIAL moves:
-	 * {@code Hud.extractHotbarAndDecorations} (NeoForge's HUD layers replaced its one caller), {@code LiquidBlock
-	 * .shouldSpreadLiquid} (both carriers' {@code FluidInteractionRegistry.canInteract} replaced it), {@code AxeItem
-	 * .getStripped} ({@code getToolModifiedState}), {@code LivingEntity.trapdoorUsableAsLadder} ({@code CommonHooks
-	 * .isLivingOnLadder}), and the vanilla-shaped forwarders the merge kept beside NeoForge's overloads, which the merged
-	 * callers skip ({@code ItemModelGenerator.bakeSideFaces}, {@code CropBlock.getGrowthSpeed(Block, …)}); plus {@code Block.tryDropExperience} and
-	 * {@code ScreenEffectRenderer.getViewBlockingState}, which the merged callers replaced outright. And NeoForge's
-	 * renamed tooltip body {@code ItemStack.addDetailsToTooltipComponents}, which nothing calls: R3 moves malilib's last
-	 * tooltip hook and trinkets' attribute-line hook there (carrier-renames.txt marks it UNCALLED), where they bind and
-	 * never run. And vanilla's private four-argument {@code RegistryDataLoader.load}, which the merged class keeps beside
-	 * NeoForge's five-argument one and never calls: the census used to read any {@code load} of that descriptor, of any class,
-	 * as a call to it, and now reads a private method's callers by their owner (fabric-registry-sync's hook there).
+	 * What changes, as {@code config:mixin verdict-off -> verdict-on}, pinned; each was read against NeoForge's own base
+	 * as Mixin sees it (the vanilla twins first). A PARTIAL that stays PARTIAL gained a "never runs" line. The FIT → PARTIAL
+	 * moves sit on methods nothing in NeoForge's game calls and vanilla's does (uncalled-methods.txt): {@code
+	 * Hud.extractHotbarAndDecorations} (NeoForge's HUD layers replaced its one caller; the method is a vanilla twin),
+	 * {@code LivingEntity.trapdoorUsableAsLadder} ({@code CommonHooks.isLivingOnLadder}), {@code ItemModelGenerator
+	 * .bakeSideFaces} and {@code CropBlock.getGrowthSpeed(Block, …)} (vanilla's signatures kept beside NeoForge's overloads,
+	 * which NeoForge's callers call; getGrowthSpeed is a vanilla twin), {@code ScreenEffectRenderer.getViewBlockingState}
+	 * (its callers replaced outright), and NeoForge's renamed tooltip body {@code ItemStack.addDetailsToTooltipComponents},
+	 * which nothing calls: R3 moves malilib's last tooltip hook and trinkets' attribute-line hook there (carrier-renames.txt
+	 * marks it UNCALLED), where they bind and never run.
 	 *
-	 * <p>Judged with the merged base's native references bound, as a boot judges: PuzzlesLib's explosion hook (an
-	 * {@code @ModifyVariable(ordinal = 0)} on the dead {@code ServerExplosion.hurtEntities()}) has its local pinned against
-	 * vanilla's body there and moves onto NeoForge's overload, and fabric-renderer-api's chunk takeover on the dead
-	 * four-argument {@code SectionCompiler.compile} moves with its shared state onto the live overload once its redirect is
-	 * counted against vanilla's compile; neither is left where it never runs. So is PuzzlesLib's effect-tooltip hook on the
-	 * dead {@code EffectsInInventory.extractText}: its sliced {@code @ModifyVariable} pair has the flag it modifies pinned
-	 * by value inside the slice, judged against vanilla's body there, and moves with its {@code @Share} partner onto
-	 * NeoForge's overload ({@code -Dforbric.mixinStubRebind.slice=off} puts it back on this list). Apoli's power bar at the
-	 * first {@code getPlayerMode()} of the dead {@code Hud.extractHotbarAndDecorations} moves with its occurrence onto the
-	 * verbatim piece NeoForge's hotbar layer runs ({@code extractHotbar}): FIT both ways, with the move. Balm's health events
-	 * at the start and end of {@code Hud.extractPlayerHealth}, whose four pieces NeoForge draws as layers, are judged where
-	 * MixinSplitBodyEdges moves them and are not on the list either ({@code -Dforbric.splitBodyEdges=off} puts them on it).
-	 * PuzzlesLib's experience hook on the dead {@code Block.tryDropExperience} left the list when the kernel began relaying
-	 * that method's woven hooks to NeoForge's drops event (UncalledValueRelay): liveness reads it as running for the Fabric
-	 * mods its census row names ({@code -Dforbric.uncalledValueRelay=off} puts it back).
+	 * <p>Judged with the base's native references bound, as a boot judges. Apoli's power bar at the first {@code
+	 * getPlayerMode()} of the dead {@code Hud.extractHotbarAndDecorations} moves with its occurrence onto the verbatim piece
+	 * NeoForge's hotbar layer runs ({@code extractHotbar}): FIT both ways, with the move; bettermounthud's the same. Balm's
+	 * health events at the start and end of {@code Hud.extractPlayerHealth}, whose four pieces NeoForge draws as layers, are
+	 * judged where MixinSplitBodyEdges moves them and are not on the list ({@code -Dforbric.splitBodyEdges=off} puts them on
+	 * it). PuzzlesLib's hooks on the dead {@code ServerExplosion.hurtEntities()}, {@code EffectsInInventory.extractText} and
+	 * {@code Block.tryDropExperience} are moved or relayed (MixinStubRebind, UncalledValueRelay) and are not on it either.
+	 *
+	 * <p>Changes from the merged base's pins (Stage 4 C4): fabric-registry-sync's RegistryDataLoaderMixin left the list —
+	 * vanilla's private four-argument {@code RegistryDataLoader.load} is not in NeoForge's base at all (a native-only row,
+	 * no uncalled row; FabricRegistryLoaderMixinAdapter adapts the injector) — and balm's FabricCropBlockMixin reads FIT with
+	 * liveness off where it read PARTIAL: {@code CropBlock.getGrowthSpeed(Block, …)} is a vanilla twin on NeoForge's base,
+	 * which resolves its anchor. LiquidBlock.shouldSpreadLiquid is no row: NeoForge's onPlace calls it.
 	 */
 	private static final Set<String> EXPECTED = Set.of(
 			"apoli.mixins.json:legacy.hud_power.HudMixin FIT -> FIT",
-			"balm.fabric.mixins.json:FabricCropBlockMixin PARTIAL -> PARTIAL",
+			"balm.fabric.mixins.json:FabricCropBlockMixin FIT -> PARTIAL",
 			"bettermounthud.mixins.json:HudMixin FIT -> FIT",
 			"fabric-block-api-v1.mixins.json:LivingEntityMixin FIT -> PARTIAL",
-			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin PARTIAL -> PARTIAL",
 			"fabric-renderer-api-v1.mixins.json:block.particle.ScreenEffectRendererMixin FIT -> PARTIAL",
 			"fabric-rendering-v1.mixins.json:HudMixin PARTIAL -> PARTIAL",
 			"mixins.malilib.json:item.MixinItemStack FIT -> PARTIAL",
 			"sodium-fabric.mixins.json:features.render.model.ItemModelGeneratorMixin FIT -> PARTIAL",
 			"trinkets.fabric.mixins.json:ItemStackMixin FIT -> PARTIAL");
 	/**
-	 * The same, counted per pack: one mixin changes in every pack that carries it. Architectury's and Forge Config API
-	 * Port's explosion hooks left the list (30 → 28): with their by-type {@code @Local} pinned beside the arguments the
-	 * carrier added, they move off the dead {@code hurtEntities()} onto NeoForge's overload, so liveness has nothing to add.
-	 * PuzzlesLib's left it the same way once the census bound the native references a boot binds (28 → 27), and its
-	 * effect-tooltip hook, in the one pack that carries it, once a sliced pinned local moves too (27 → 26). fabric-registry-sync's
-	 * hook on the private, uncalled four-argument {@code RegistryDataLoader.load} joined it in the five packs that carry it once
-	 * private methods were read by owner (26 → 31). PuzzlesLib's experience hook left it in its one pack once the method it
-	 * hooks is relayed (31 → 30).
+	 * The same, counted per pack: one mixin changes in every pack that carries it. 30 on the merged base; 25 on NeoForge's
+	 * own base, where fabric-registry-sync's hook (in five packs) is no liveness change (see {@link #EXPECTED}).
 	 */
-	private static final int EXPECTED_IN_PACKS = 30;
+	private static final int EXPECTED_IN_PACKS = 25;
 
 	/** The merged base's native references, bound for the census as ForbricMixinService.bind binds them before Mixin starts. */
 	private net.forbric.kernel.classloading.ForbricClassLoader references;
@@ -342,8 +330,9 @@ class MixinFitLivenessCensusStagedTest {
 
 	/**
 	 * Each top-level mixin config of a unit and the ecosystem whose manifest declares it; a config two manifests declare
-	 * goes to the one MultiLoaderArbiter prefers by default (NeoForge, MinecraftForge, Fabric), one no manifest names to
-	 * the unit's only ecosystem.
+	 * goes to the one MultiLoaderArbiter prefers by default (NeoForge, then Fabric), one no manifest names to the unit's only
+	 * ecosystem. A MinecraftForge manifest ({@code mods.toml}, or a manifest's {@code MixinConfigs} in a jar without
+	 * NeoForge's) declares no ecosystem's config: such a half is set aside, or the jar refused, so its mixins never load.
 	 */
 	static Map<String, Ecosystem> configOwners(Map<String, byte[]> content) {
 		Map<String, Set<Ecosystem>> declared = new LinkedHashMap<>();
@@ -359,7 +348,7 @@ class MixinFitLivenessCensusStagedTest {
 				}
 			}
 		}
-		for (Map.Entry<String, Ecosystem> toml : Map.of("META-INF/mods.toml", Ecosystem.FORGE, "META-INF/neoforge.mods.toml", Ecosystem.NEOFORGE).entrySet()) {
+		for (Map.Entry<String, Ecosystem> toml : Map.of("META-INF/neoforge.mods.toml", Ecosystem.NEOFORGE).entrySet()) {
 			byte[] bytes = content.get(toml.getKey());
 			if (bytes == null) continue;
 			unit.add(toml.getValue());
@@ -371,7 +360,7 @@ class MixinFitLivenessCensusStagedTest {
 			for (String line : new String(manifest, StandardCharsets.UTF_8).replace("\r\n ", "").split("\r?\n")) {
 				if (!line.startsWith("MixinConfigs:")) continue;
 				for (String name : line.substring("MixinConfigs:".length()).split(",")) {
-					if (!name.isBlank()) declared.computeIfAbsent(name.trim(), k -> new LinkedHashSet<>()).add(unit.contains(Ecosystem.NEOFORGE) ? Ecosystem.NEOFORGE : Ecosystem.FORGE);
+					if (!name.isBlank() && unit.contains(Ecosystem.NEOFORGE)) declared.computeIfAbsent(name.trim(), k -> new LinkedHashSet<>()).add(Ecosystem.NEOFORGE);
 				}
 			}
 		}
@@ -381,7 +370,7 @@ class MixinFitLivenessCensusStagedTest {
 		for (String name : candidates) {
 			if (!content.containsKey(name)) continue;
 			Set<Ecosystem> by = declared.getOrDefault(name, unit.size() == 1 ? unit : Set.of());
-			for (Ecosystem preferred : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC)) {
+			for (Ecosystem preferred : List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC)) {
 				if (by.contains(preferred) && (by.size() == 1 || unit.contains(preferred))) { out.put(name, preferred); break; }
 			}
 		}
@@ -422,13 +411,15 @@ class MixinFitLivenessCensusStagedTest {
 	 * {@code ReloadableServerRegistriesMixin} (suppressed by name; KernelLootBridge serves its callbacks) and
 	 * resource-conditions' {@code SimpleJsonResourceReloadListenerMixin} (SupersededMixins; KernelFabricConditions judges
 	 * the conditions at ConditionalOps' funnel). Both read FIT until the verdict asked whether the handler fits. Global widened-call contracts now retain networking wrappers and explicitly scoped sugar captures in tag generation.
+	 * On NeoForge's own base (Stage 4 C4) the count stayed 61: TagsProvider's two lambda$run$5 lines left the list (their
+	 * anchors resolve there), and two joined that the census replays no adapter for — fabric-item-api's hurtAndBreak wrap
+	 * (FabricItemDamageMixinAdapter moves it at run time, D36) and fabric-registry-sync's four-argument
+	 * {@code RegistryDataLoader.load} target, which NeoForge's base does not declare (FabricRegistryLoaderMixinAdapter).
 	 * A third-party mod's lost anchor shows only in the report of a corpus someone names.
 	 * A new line fails this, and so does one that stops being lost: delete it then.
 	 */
 	static final Set<String> FABRIC_API_LOST = Set.of(
 			"fabric-content-registries-v0.client.mixins.json:HudMixin | @At(INVOKE) net.minecraft.world.entity.player.Player.isEyeInFluid in Hud.extractAirBubbles",
-			"fabric-data-generation-api-v1.mixins.json:TagsProviderMixin | @At(INVOKE) net.minecraft.data.DataProvider.saveStable in TagsProvider.lambda$run$5",
-			"fabric-data-generation-api-v1.mixins.json:TagsProviderMixin | @At(INVOKE) net.minecraft.tags.TagFile.<init> in TagsProvider.lambda$run$5",
 			"fabric-content-registries-v0.mixins.json:FuelValuesMixin | @At(INVOKE) net.minecraft.world.level.block.entity.FuelValues$Builder.remove in FuelValues.vanillaBurnTimes",
 			"fabric-content-registries-v0.mixins.json:fluid.AbstractBoatMixin | @At(INVOKE) net.minecraft.world.level.material.FluidState.is in AbstractBoat.checkInWater",
 			"fabric-content-registries-v0.mixins.json:fluid.EntityMixin | @At(INVOKE) Entity.isUnderWater in updateSwimming",
@@ -452,6 +443,7 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-item-api-v1.mixins.json:EnchantRandomlyFunctionMixin | @At(INVOKE) net.minecraft.world.item.enchantment.Enchantment.canEnchant in EnchantRandomlyFunction.lambda$run$1",
 			"fabric-item-api-v1.mixins.json:EnchantmentHelperMixin | @At(INVOKE) net.minecraft.world.item.enchantment.Enchantment.isPrimaryItem in EnchantmentHelper.lambda$getAvailableEnchantmentResults$0",
 			"fabric-item-api-v1.mixins.json:ItemStackMixin | @At(INVOKE) ItemStack.addAttributeTooltips in addDetailsToTooltip",
+			"fabric-item-api-v1.mixins.json:ItemStackMixin | @At(INVOKE) ItemStack.hurtAndBreak in hurtAndBreak",
 			"fabric-item-api-v1.mixins.json:ItemStackMixin | @At(INVOKE) ItemStack.addToTooltip in addDetailsToTooltip",
 			"fabric-item-api-v1.mixins.json:ItemStackMixin | @At(INVOKE) net.minecraft.core.DefaultedRegistry.getKey in ItemStack.addDetailsToTooltip",
 			"fabric-item-api-v1.mixins.json:ItemStackMixin | @At(INVOKE) net.minecraft.world.item.TooltipFlag.isAdvanced in ItemStack.addDetailsToTooltip",
@@ -462,6 +454,7 @@ class MixinFitLivenessCensusStagedTest {
 			"fabric-object-builder-v1.client.mixins.json:HangingSignEditScreenMixin | @At(INVOKE) net.minecraft.resources.Identifier.withDefaultNamespace in HangingSignEditScreen.<init>",
 			"fabric-object-builder-v1.client.mixins.json:SignEditScreenMixin | @At(INVOKE) net.minecraft.resources.Identifier.withDefaultNamespace in SignEditScreen.<init>",
 			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin | @At(INVOKE) RegistryDataLoader.load in load",
+			"fabric-registry-sync-v0.mixins.json:RegistryDataLoaderMixin | @Inject target RegistryDataLoader.load(Lnet/minecraft/resources/RegistryDataLoader$LoaderFactory;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;",
 			"fabric-registry-sync-v0.mixins.json:RegistryPatchGeneratorMixin | @At(FIELD) net.minecraft.resources.RegistryDataLoader.WORLDGEN_REGISTRIES in RegistryPatchGenerator.lambda$createLookup$0",
 			"fabric-renderer-api-v1.mixins.json:block.render.LevelExtractorMixin | @At(INVOKE) net.minecraft.client.renderer.block.dispatch.BlockStateModel.hasMaterialFlag in LevelExtractor.extractBlockOutline",
 			"fabric-renderer-api-v1.mixins.json:block.render.LevelRendererMixin | @At(INVOKE) net.minecraft.client.renderer.block.dispatch.BlockStateModel.collectParts in LevelRenderer.submitBlockDestroyAnimation",
@@ -557,9 +550,14 @@ class MixinFitLivenessCensusStagedTest {
         MethodNode writer=tags.methods.stream().filter(method->method.name.equals("lambda$run$5")&&method.desc.endsWith("Ljava/util/Map$Entry;)Ljava/util/concurrent/CompletableFuture;")).findFirst().orElseThrow();
         assertTrue(MixinFit.containsMember(writer,"Lnet/minecraft/tags/TagFile;<init>(Ljava/util/List;ZLjava/util/List;)V"),"the current native file includes removal entries");
         assertTrue(MixinFit.containsMember(writer,"Lnet/minecraft/data/DataProvider;saveStable(Lnet/minecraft/data/CachedOutput;Lnet/minecraft/core/HolderLookup$Provider;Lcom/mojang/serialization/Codec;Ljava/lang/Object;Ljava/nio/file/Path;)Ljava/util/concurrent/CompletableFuture;"),"the actual provider carries the registry context");
+        // The water predicate's change is a lost anchor the census keeps showing; TagsProvider's ABI change no longer is one
+        // on NeoForge's base (both its lines left FABRIC_API_LOST in Stage 4 C4; the merged base lost them).
+        ClassNode hudMixin=StagedFabricMixinFixture.mixin("fabric-content-registries-v0","net/fabricmc/fabric/mixin/content/registry/client/fluid/HudMixin");
+        MixinStubRebind.noteEcosystem(hudMixin.name,Ecosystem.FABRIC);
+        assertFalse(lostAnchors(StagedFabricMixinFixture.bytes(hudMixin),vanillaResolver(TestFixtures.vanillaJar()),mergedResolver()).isEmpty(),"unadapted raw ABI anchors stay visible to the diagnostic");
         ClassNode source=StagedFabricMixinFixture.mixin("fabric-data-generation-api-v1","net/fabricmc/fabric/mixin/datagen/TagsProviderMixin");
         MixinStubRebind.noteEcosystem(source.name,Ecosystem.FABRIC);
-        byte[] before=StagedFabricMixinFixture.bytes(source);assertFalse(lostAnchors(before,vanillaResolver(TestFixtures.vanillaJar()),mergedResolver()).isEmpty(),"unadapted raw ABI anchors stay visible to the diagnostic");
+        assertTrue(lostAnchors(StagedFabricMixinFixture.bytes(source),vanillaResolver(TestFixtures.vanillaJar()),mergedResolver()).isEmpty(),"TagsProvider's anchors resolve on NeoForge's base");
     }
 
 	/**
@@ -585,9 +583,11 @@ class MixinFitLivenessCensusStagedTest {
 
 	/**
 	 * The census sees a name the carrier took over without asking the REPLACED rows, which only move it:
-	 * MoogsStructureLib's HEAD of {@code placeEntities}, alone in its mixin. Of no known ecosystem (a config two mods
-	 * claim: no row applies) it is a line; a Fabric mod's is moved by R7 and is none; with R7 off it is a line again, the
-	 * row naming the replacement. With the handler-fit rule off the name binds and nothing is seen — the hole this closed.
+	 * MoogsStructureLib's HEAD of {@code placeEntities}, alone in its mixin. NeoForge's StructureTemplate has no method of
+	 * that name any more (its body is {@code addEntitiesToWorld}). Of no known ecosystem (a config two mods claim: no row
+	 * applies) it is a line; a Fabric mod's is moved by R7 and is none; with R7 off it is the same line again. (On the
+	 * merged base MinecraftForge's own placeEntities kept the name, so the name bound a method the
+	 * handler was not written for, and the handler-fit rule was what saw it; on NeoForge's base the name binds nothing.)
 	 */
 	@Test
 	void theAnchorCensusSeesANameTheCarrierTookOver() throws Exception {
@@ -598,22 +598,18 @@ class MixinFitLivenessCensusStagedTest {
 		byte[] head = moogsHeadShaped();
 		MergedBaseCalleeSwaps.Replaced row = NativeCallTestEvidence.structureRow();
 		String template = row.owner().substring(row.owner().lastIndexOf('/') + 1);
-		String bound = MixinFit.parse(after.apply(row.owner() + ".class")).methods.stream()
-				.filter(m -> m.name.equals("placeEntities")).findFirst().orElseThrow().desc;
-		String binds = "binds placeEntities" + bound + ", which the handler was not written for";
+		assertTrue(MixinFit.parse(after.apply(row.owner() + ".class")).methods.stream().noneMatch(m -> m.name.equals("placeEntities")),
+				"premise: NeoForge's base has no method of the name");
 
-		assertEquals(List.of("@Inject target " + template + ".placeEntities " + binds), lostAnchors(head, before, after));
+		assertEquals(List.of("@Inject target " + template + ".placeEntities"), lostAnchors(head, before, after));
 		MixinStubRebind.noteEcosystem(MOOGS_HEAD, Ecosystem.FABRIC);
 		assertEquals(List.of(), lostAnchors(head, before, after), "R7 moves a Fabric mod's");
 		try {
 			System.setProperty(MixinRetarget.REPLACED_CALL_PROPERTY, "off");
-			assertEquals(List.of("@Inject target " + template + "." + row.vanilla() + " is gone: the carrier replaced it with "
-					+ "addEntitiesToWorld, and the name " + binds), lostAnchors(head, before, after));
-			System.setProperty(MixinFit.HANDLER_FIT_PROPERTY, "off");
-			assertEquals(List.of(), lostAnchors(head, before, after), "RED control: the name binds, and that was all it asked");
+			assertEquals(List.of("@Inject target " + template + ".placeEntities"), lostAnchors(head, before, after),
+					"without R7 the plain miss is back");
 		} finally {
 			System.clearProperty(MixinRetarget.REPLACED_CALL_PROPERTY);
-			System.clearProperty(MixinFit.HANDLER_FIT_PROPERTY);
 		}
 	}
 

@@ -1087,10 +1087,9 @@ public final class KernelBoot {
 		if (!forgeConfigs.isEmpty() || !forgeMixinDecls.isEmpty()) {
 			List<String> described = new ArrayList<>();
 			for (MixinConfigOwners.Owned one : forgeConfigs) described.add(MixinConfigOwners.describe(one.config()));
-			ForbricLog.info("[Forbric/Mixin] mixin configs: %d Fabric + %d Forge-family (%d NeoForge, %d "
-					+ "MinecraftForge) — %s", fabricConfigs.size(), forgeConfigs.size(),
+			ForbricLog.info("[Forbric/Mixin] mixin configs: %d Fabric + %d Forge-family (%d NeoForge) — %s",
+					fabricConfigs.size(), forgeConfigs.size(),
 					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, Ecosystem.NEOFORGE),
-					KernelForgeFamilyMixins.count(forgeMixinDecls, forgeConfigs, Ecosystem.FORGE),
 					described.isEmpty() ? "none kept" : String.join(", ", described));
 		}
 		KernelMixinBootstrap.init(loader, side.envType, mixinConfigs);
@@ -1273,7 +1272,7 @@ public final class KernelBoot {
 		java.util.Set<Path> universal = new java.util.LinkedHashSet<>();
 		for (List<Path> group : List.of(fabricJars, modJars)) {
 			for (Path jar : group) {
-				if (MultiLoaderArbiter.declaredBy(jar).size() > 1
+				if (MultiLoaderArbiter.loadersOf(jar).size() > 1
 						&& MultiLoaderArbiter.claimOf(jar) instanceof JarClaim.Owned) {
 					universal.add(jar);
 				}
@@ -1675,11 +1674,9 @@ public final class KernelBoot {
 		}
 		java.util.Set<String> seen = new java.util.LinkedHashSet<>();
 		for (DiscoveredMod mod : discoverer.discoverJar(jar)) {
+			// NeoForge's mods only: discovery yields no MinecraftForge mod (Forbric no longer loads them; a Forge+Fabric jar
+			// loads through Fabric's discovery), so a MinecraftForge mod's mixin configs are not collected for anyone.
 			if (!mod.getEcosystem().isForgeFamily()) continue;
-			// Forbric no longer loads MinecraftForge mods. A jar whose only Forge-family mod is a MinecraftForge one is
-			// not a Forge-family jar any more — a Forge+Fabric jar loads through Fabric's discovery instead — and a
-			// MinecraftForge mod's mixin configs are not collected for anyone.
-			if (mod.getEcosystem() == Ecosystem.FORGE) continue;
 			forgeFamily = true;
 			for (String config : mod.getMixinConfigs()) {
 				// The mod id is part of the key on purpose. ForgeMetadataMapper copies one manifest's config list

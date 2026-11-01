@@ -65,7 +65,8 @@ class ModsButtonRedirectorTest {
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
-	private static final String FORGE = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE);
+	/** MinecraftForge's Mods screen: no ecosystem's any more, still never what a button is pointed at. */
+	private static final String FORGE = "net/minecraftforge/client/gui/ModListScreen";
 
 	@Test
 	void theStagedGameStillOpensAFamilysOwnModListSomewhere() throws Exception {
@@ -257,7 +258,6 @@ class ModsButtonRedirectorTest {
 	@Test
 	void theTwoFamiliesAreNamedThroughForeignTypeAndDiffer() {
 		assertEquals("net/neoforged/neoforge/client/gui/modlist/ModListScreen", NEO);
-		assertEquals("net/minecraftforge/client/gui/ModListScreen", FORGE);
 	}
 
 	// --- helpers ---------------------------------------------------------------------------------------------

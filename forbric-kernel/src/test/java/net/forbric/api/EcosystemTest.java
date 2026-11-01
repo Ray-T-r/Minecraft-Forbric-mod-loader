@@ -21,6 +21,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.List;
+
 import org.junit.jupiter.api.Test;
 
 /** Covers the one ecosystem vocabulary, and the two places where its spellings deliberately differ. */
@@ -34,25 +36,27 @@ class EcosystemTest {
 	@Test
 	void theConstantNamesAreWhatTheDifferentialOracleCompilesAgainst() {
 		assertEquals("FABRIC", Ecosystem.FABRIC.name());
-		assertEquals("FORGE", Ecosystem.FORGE.name());
 		assertEquals("NEOFORGE", Ecosystem.NEOFORGE.name());
+		assertEquals(2, Ecosystem.values().length, "MinecraftForge is no ecosystem Forbric loads");
 	}
 
 	/**
-	 * The config id is NOT the constant name for traditional Forge. The player-facing override file has always
-	 * spelled it {@code minecraftforge}, and that file is the player's — the kernel renamed its constant, not
-	 * their config. Reading it with {@code valueOf} instead of {@link Ecosystem#parse} is a bug that has already
-	 * happened once.
+	 * MinecraftForge, in either spelling a player or a launch profile ever used, is no ecosystem: {@code parse} reads it
+	 * as none, and {@link Ecosystem#namesMinecraftForge} tells it apart, so the knobs and the player's override file say
+	 * "no longer supported" rather than "unknown". The player's spelling still reads back as that name.
 	 */
 	@Test
-	void theConfigIdKeepsThePlayersSpellingForTraditionalForge() {
-		assertEquals("minecraftforge", Ecosystem.FORGE.configId());
+	void minecraftForgeInEitherSpellingIsNoEcosystemButIsRecognised() {
 		assertEquals("neoforge", Ecosystem.NEOFORGE.configId());
 		assertEquals("fabric", Ecosystem.FABRIC.configId());
 
-		assertEquals(Ecosystem.FORGE, Ecosystem.parse("minecraftforge"));
-		assertEquals(Ecosystem.FORGE, Ecosystem.parse("forge"));
-		assertEquals(Ecosystem.FORGE, Ecosystem.parse("  MinecraftForge "));
+		for (String raw : List.of("minecraftforge", "forge", "  MinecraftForge ", "FORGE")) {
+			assertNull(Ecosystem.parse(raw), raw);
+			assertTrue(Ecosystem.namesMinecraftForge(raw), raw);
+		}
+		for (String raw : List.of("neoforge", "fabric", "quilt", "")) assertFalse(Ecosystem.namesMinecraftForge(raw), raw);
+		assertFalse(Ecosystem.namesMinecraftForge(null));
+		assertEquals(Ecosystem.NEOFORGE, Ecosystem.parse(" NeoForge "));
 	}
 
 	@Test
@@ -68,7 +72,6 @@ class EcosystemTest {
 	 */
 	@Test
 	void bothForgeFamiliesAreOneFamilyAndFabricIsNot() {
-		assertTrue(Ecosystem.FORGE.isForgeFamily());
 		assertTrue(Ecosystem.NEOFORGE.isForgeFamily());
 		assertFalse(Ecosystem.FABRIC.isForgeFamily());
 	}

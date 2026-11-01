@@ -405,7 +405,7 @@ class CandidateContractScannerTest {
 
 	private static JointCandidateSelector.Result helperSelection(List<DuplicateModArbiter.Claim> claims) {
 		return JointCandidateSelector.solve(claims, CandidateContractScanner.scan(claims, EnvType.CLIENT),
-				List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC, Ecosystem.FORGE), Map.of(), 1000);
+				List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC), Map.of(), 1000);
 	}
 
 	private List<DuplicateModArbiter.Claim> helperPack(String shape, int helperAccess, boolean finalClass, int count) throws Exception {

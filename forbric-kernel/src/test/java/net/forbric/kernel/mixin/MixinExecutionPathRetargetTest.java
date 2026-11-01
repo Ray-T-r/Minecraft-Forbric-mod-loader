@@ -65,7 +65,7 @@ class MixinExecutionPathRetargetTest {
 
 	@Test void aVerifiedOriginalAnchorCanAuthorizeTheSameRuleForAnyDeclaredFamily() {
 		ClassNode target = delegated(false), mixin = mixin("(I" + OPERATION + ")V", WRAP);
-		for (Ecosystem family : List.of(Ecosystem.FABRIC, Ecosystem.FORGE, Ecosystem.NEOFORGE)) {
+		for (Ecosystem family : List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE)) {
 			MixinStubRebind.noteEcosystem(mixin.name, family);
 			assertEquals("piece(IZ)V", plan(mixin, target).rewrites().getFirst().to(), family.toString());
 		}

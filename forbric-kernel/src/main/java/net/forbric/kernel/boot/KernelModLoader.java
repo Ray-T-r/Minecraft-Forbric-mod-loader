@@ -160,8 +160,6 @@ public final class KernelModLoader {
 		// it is the shape to recognise if a mod ever complains that a NEIGHBOUR exists but has no instance.
 		Map<String, NeoIdentity> neo = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
-			if (info.family == Ecosystem.FORGE) continue;
-
 			String modId = safeId(info);
 			if (neo.containsKey(modId)) continue;
 
@@ -247,10 +245,7 @@ public final class KernelModLoader {
 		// from otherSide because one id can be in both: see settleNeo.
 		Map<String, List<String>> failedNeo = new LinkedHashMap<>();
 		for (ModAnnotationScanner.ModClassInfo info : claimed) {
-			// Never constructed: phase 2 built no identity for it either. Arbitration already suppresses every
-			// MinecraftForge @Mod (a refused jar for every family, a universal jar's MinecraftForge half because
-			// that family never owns it); this keeps the loop from handing one to the NeoForge constructor.
-			if (info.family == Ecosystem.FORGE) continue;
+			// Every claimed @Mod is NeoForge's: the scanner records no MinecraftForge @Mod (Forbric no longer loads them).
 			// NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every class on every
 			// side regardless. Sodium's SodiumForgeMod says dist = {CLIENT}; on a dedicated server its constructor
 			// reaches a client-only type and dies with a NoClassDefFoundError blamed on the mod.
@@ -351,7 +346,7 @@ public final class KernelModLoader {
 			otherSide.add(safeId(info));
 			return;
 		}
-		if (failure != null && info.family != Ecosystem.FORGE) {
+		if (failure != null) {
 			failedNeo.computeIfAbsent(safeId(info), id -> new ArrayList<>()).add(info.className);
 		}
 	}
@@ -530,12 +525,11 @@ public final class KernelModLoader {
 	}
 
 	/**
-	 * The {@code modLoader} {@code jar}'s manifest for {@code family} declares, normalised; null when there is no
-	 * such manifest or it cannot be read. A manifest that names none is a Java one.
+	 * The {@code modLoader} {@code jar}'s NeoForge manifest declares, normalised; null when there is no such manifest
+	 * or it cannot be read. A manifest that names none is a Java one. {@code family} is the mod's (NeoForge's).
 	 */
 	static String languageOf(Path jar, Ecosystem family) {
-		String manifest = family == Ecosystem.FORGE ? ForbricModDiscoverer.FORGE_MANIFEST
-				: ForbricModDiscoverer.NEOFORGE_MANIFEST;
+		String manifest = ForbricModDiscoverer.NEOFORGE_MANIFEST;
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(jar.toFile())) {
 			java.util.zip.ZipEntry entry = zip.getEntry(manifest);
 			if (entry == null) return null;

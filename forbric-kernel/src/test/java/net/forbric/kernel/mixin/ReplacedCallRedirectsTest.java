@@ -125,9 +125,6 @@ class ReplacedCallRedirectsTest {
 	/** A row moves only its listed families' mods, only on the shape it was written for, and only while switched on. */
 	@Test void theFamilyTheHostAndTheSwitchDecide() throws Exception {
 		assertUntouched(hotbar("NeoForgeMixin", Ecosystem.NEOFORGE, false), merged(SCREEN), "NeoForge mods call NeoForge's");
-		assertEquals(1, adapt(hotbar("ForgeHotbarMixin", Ecosystem.FORGE, false), merged(SCREEN)),
-				"MinecraftForge's own screen still calls matches(KeyEvent)");
-		assertUntouched(itemUse("ForgeItemUseMixin", Ecosystem.FORGE), merged(LIVING), "MinecraftForge's own asks ForgeHooks");
 		assertUntouched(hotbar("VanillaHostMixin", Ecosystem.FABRIC, false), vanilla(SCREEN), "vanilla's call is there");
 		System.setProperty(ReplacedCallRedirects.PROPERTY, "off");
 		assertUntouched(hotbar("OffMixin", Ecosystem.FABRIC, false), merged(SCREEN), "switched off");

@@ -26,7 +26,7 @@ import net.forbric.api.Ecosystem;
  * bound nowhere, which stops a strict launch.
  *
  * <p>The fixture's {@code ItemStack} has the shape of the carrier-renames.txt pair
- * {@code addDetailsToTooltip -> addDetailsToTooltipComponents | PIECE | FABRIC,FORGE | UNCALLED}: the dispatcher makes none
+ * {@code addDetailsToTooltip -> addDetailsToTooltipComponents | PIECE | FABRIC | UNCALLED}: the dispatcher makes none
  * of vanilla's component calls, the private renamed body makes one and nothing calls it. The mixin is malilib's, cut
  * down: a HEAD hook that binds in the dispatcher, so the mixin reads PARTIAL, and a hook after the component call. The
  * probe builds a tooltip through the dispatcher.

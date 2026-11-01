@@ -51,13 +51,13 @@ class MixinConfigOwnersTest {
 
 	@Test
 	void aConfigTwoModsClaimIsAttributedToNeither() {
-		// The central correctness test. A MinecraftForge toml with several [[mods]] sections offers the SAME
+		// The central correctness test. A NeoForge toml with several [[mods]] sections offers the SAME
 		// config list under every id it declares, and two different jars can ship a config with the same name --
 		// Mixin de-duplicates those by name, so the loser is invisible. A first-wins rule would name one of them
 		// and be quietly wrong.
 		MixinConfigOwners.publish(List.of(
-				new Owned("collective.mixins.json", "collective", Ecosystem.FORGE),
-				new Owned("collective.mixins.json", "collective_extras", Ecosystem.FORGE)));
+				new Owned("collective.mixins.json", "collective", Ecosystem.NEOFORGE),
+				new Owned("collective.mixins.json", "collective_extras", Ecosystem.NEOFORGE)));
 
 		assertNull(MixinConfigOwners.modIdOf("collective.mixins.json"));
 		assertEquals("collective.mixins.json", MixinConfigOwners.describe("collective.mixins.json"),

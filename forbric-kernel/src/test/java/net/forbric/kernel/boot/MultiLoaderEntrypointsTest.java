@@ -39,14 +39,16 @@ class MultiLoaderEntrypointsTest {
 	 */
 	@Test void aJarWhoseOnlyConstructorIsMinecraftForgesIsRefused() throws Exception {
 		Path jar = fixture("forge.jar", "example.ForgeEntry", Map.of("example/ForgeEntry.class",
-				type("example/ForgeEntry", Ecosystem.FORGE, "example", null, false)));
+				type("example/ForgeEntry", LoaderKind.MINECRAFTFORGE, "example", null, false)));
 		assertEquals(new JarClaim.Refused(LoaderKind.MINECRAFTFORGE), MultiLoaderArbiter.claimOf(jar),
 				"refused is a claim of its own, never unowned (a library)");
 		assertThrows(IllegalStateException.class, () -> MultiLoaderArbiter.ownerOf(jar),
 				"a refused jar has no owner, and is not answered as a library's null");
 		assertTrue(MultiLoaderArbiter.refused(jar));
-		assertEquals(List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE, Ecosystem.FABRIC), MultiLoaderArbiter.declaredBy(jar),
+		assertEquals(List.of(LoaderKind.NEOFORGE, LoaderKind.MINECRAFTFORGE, LoaderKind.FABRIC), MultiLoaderArbiter.loadersOf(jar),
 				"declarations are still reported as they are");
+		assertEquals(List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC), MultiLoaderArbiter.declaredBy(jar),
+				"of which the ecosystems Forbric loads: MinecraftForge is none");
 		for (Ecosystem family : Ecosystem.values()) assertTrue(MultiLoaderArbiter.suppressedFor(jar, family), family.name());
 		for (String setting : List.of("fabric", "minecraftforge,neoforge,fabric")) {
 			MultiLoaderArbiter.reset();
@@ -62,12 +64,11 @@ class MultiLoaderEntrypointsTest {
 	/** Control: the same fixture with a real Fabric initializer beside the Forge constructor loads as Fabric. */
 	@Test void aForgeAndFabricJarNowLoadsAsFabric() throws Exception {
 		Path jar = fixture("arch.jar", "example.FabricEntry", Map.of(
-				"example/ForgeEntry.class", type("example/ForgeEntry", Ecosystem.FORGE, "example", null, false),
+				"example/ForgeEntry.class", type("example/ForgeEntry", LoaderKind.MINECRAFTFORGE, "example", null, false),
 				"example/FabricEntry.class", type("example/FabricEntry", null, null, "net/fabricmc/api/ModInitializer", true)));
 		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar));
 		assertFalse(MultiLoaderArbiter.refused(jar));
 		assertFalse(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC));
-		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FORGE));
 		MultiLoaderArbiter.reset();
 		System.setProperty("forbric.multiLoaderPreference", "minecraftforge,neoforge,fabric");
 		assertEquals(Ecosystem.FABRIC, MultiLoaderArbiter.ownerOf(jar), "minecraftforge in the preference is ignored");
@@ -82,7 +83,7 @@ class MultiLoaderEntrypointsTest {
 
 	@Test void aNoArgForgeClassStillDoesNotImplementTheFabricMainContract() throws Exception {
 		Path jar = fixture("wrong-interface.jar", "example.ForgeEntry", Map.of("example/ForgeEntry.class",
-				type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true)));
+				type("example/ForgeEntry", LoaderKind.MINECRAFTFORGE, "example", null, true)));
 		System.setProperty("forbric.multiLoaderPreference", "fabric");
 		// Even preferred, Fabric cannot construct the Forge class. The class is a no-argument dummy that uses nothing of
 		// Forge beyond its @Mod annotation (the Modrinth datapack-wrapper shape), so the NeoForge half is a data mod
@@ -101,8 +102,8 @@ class MultiLoaderEntrypointsTest {
 
 	@Test void preferenceStillChoosesAmongRealImplementations() throws Exception {
 		Path jar = fixture("universal.jar", "example.FabricEntry", Map.of(
-				"example/ForgeEntry.class", type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true),
-				"example/NeoEntry.class", type("example/NeoEntry", Ecosystem.NEOFORGE, "example", null, true),
+				"example/ForgeEntry.class", type("example/ForgeEntry", LoaderKind.MINECRAFTFORGE, "example", null, true),
+				"example/NeoEntry.class", type("example/NeoEntry", LoaderKind.NEOFORGE, "example", null, true),
 				"example/FabricEntry.class", type("example/FabricEntry", null, null, "net/fabricmc/api/ModInitializer", true)));
 		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar));
 		MultiLoaderArbiter.reset();
@@ -112,13 +113,13 @@ class MultiLoaderEntrypointsTest {
 
 	@Test void anUnrelatedShadedModAnnotationDoesNotValidateTheWrongManifest() throws Exception {
 		Path jar = fixture("shaded.jar", null, Map.of(
-				"example/ForgeEntry.class", type("example/ForgeEntry", Ecosystem.FORGE, "example", null, true),
-				"shaded/Library.class", type("shaded/Library", Ecosystem.NEOFORGE, "another_library", null, true)));
+				"example/ForgeEntry.class", type("example/ForgeEntry", LoaderKind.MINECRAFTFORGE, "example", null, true),
+				"shaded/Library.class", type("shaded/Library", LoaderKind.NEOFORGE, "another_library", null, true)));
 		// The shaded NeoForge @Mod names another id, so it validates nothing as an initializer; the NeoForge half is
 		// usable as a data mod (nothing here stands on Forge), and with MinecraftForge set aside the bare preference
 		// chooses it over the library fabric.mod.json. The Forge constructor no longer outranks anything.
 		assertEquals(Ecosystem.NEOFORGE, MultiLoaderArbiter.ownerOf(jar));
-		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FORGE));
+		assertTrue(MultiLoaderArbiter.suppressedFor(jar, Ecosystem.FABRIC));
 	}
 
 	@Test void dataOnlyJarsKeepTheirExistingPreference() throws Exception {
@@ -252,16 +253,16 @@ class MultiLoaderEntrypointsTest {
 		return path;
 	}
 
-	private static byte[] type(String name, Ecosystem family, String modId, String implemented, boolean noArg) {
+	private static byte[] type(String name, LoaderKind family, String modId, String implemented, boolean noArg) {
 		return type(name, family, modId, implemented, noArg, "java/lang/Object");
 	}
 
-	private static byte[] type(String name, Ecosystem family, String modId, String implemented, boolean noArg, String parent) {
+	private static byte[] type(String name, LoaderKind family, String modId, String implemented, boolean noArg, String parent) {
 		ClassWriter out = new ClassWriter(0);
 		out.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name, null, parent,
 				implemented == null ? null : new String[] {implemented});
 		if (family != null) {
-			String descriptor = family == Ecosystem.FORGE ? "Lnet/minecraftforge/fml/common/Mod;" : "Lnet/neoforged/fml/common/Mod;";
+			String descriptor = family == LoaderKind.MINECRAFTFORGE ? "Lnet/minecraftforge/fml/common/Mod;" : "Lnet/neoforged/fml/common/Mod;";
 			var annotation = out.visitAnnotation(descriptor, true); annotation.visit("value", modId); annotation.visitEnd();
 		}
 		var ctor = out.visitMethod(Opcodes.ACC_PUBLIC, "<init>", noArg ? "()V"

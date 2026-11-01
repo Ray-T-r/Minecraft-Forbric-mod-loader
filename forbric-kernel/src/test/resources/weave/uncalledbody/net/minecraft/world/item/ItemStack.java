@@ -10,7 +10,7 @@ import net.minecraft.world.item.component.TooltipDisplay;
  * Hand-written stand-in with the shape of NeoForge's tooltip on the merged base, no game code: addDetailsToTooltip is
  * the dispatcher, which makes none of vanilla's component calls (NeoForge draws those from its own appenders), and
  * vanilla's body is the private addDetailsToTooltipComponents, which makes them and which nothing calls — the
- * carrier-renames.txt pair {@code addDetailsToTooltip -> addDetailsToTooltipComponents | PIECE | FABRIC,FORGE | UNCALLED}.
+ * carrier-renames.txt pair {@code addDetailsToTooltip -> addDetailsToTooltipComponents | PIECE | FABRIC | UNCALLED}.
  */
 public final class ItemStack {
 	public final StringBuilder trace = new StringBuilder();

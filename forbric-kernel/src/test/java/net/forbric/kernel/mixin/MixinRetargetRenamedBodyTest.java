@@ -185,9 +185,6 @@ class MixinRetargetRenamedBodyTest {
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver(ITEM_STACK, uncalledTooltip(true, true))).isEmpty(), "called");
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.NEOFORGE);
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver(ITEM_STACK, uncalledTooltip(true, false))).isEmpty(), "NeoForge mod");
-		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
-		assertEquals(1, MixinRetarget.plan(MixinFit.parse(mixin), resolver(ITEM_STACK, uncalledTooltip(true, false))).rewrites().size(),
-				"MinecraftForge kept vanilla's body in addDetailsToTooltip");
 
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FABRIC);
 		System.setProperty(MixinRetarget.UNCALLED_PROPERTY, "off");
@@ -228,15 +225,13 @@ class MixinRetargetRenamedBodyTest {
 	}
 
 	/**
-	 * The row's ecosystems: MinecraftForge and NeoForge both declare addEntityWithoutEvent themselves, so their mods were
-	 * compiled against the rename and miss natively the same way; a mixin whose owner is unknown moves nowhere.
+	 * The row's ecosystems: NeoForge declares addEntityWithoutEvent itself, so its mods were compiled against the rename
+	 * and miss natively the same way; a mixin whose owner is unknown moves nowhere.
 	 */
 	@Test
 	void onlyAModOfAnEcosystemTheRowListsMoves() {
 		Function<String, byte[]> resolver = resolver(MANAGER, manager(true));
 		byte[] mixin = mixin(MANAGER, "addEntity", TICKING);
-		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.FORGE);
-		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).isEmpty());
 		MixinStubRebind.noteEcosystem(MIXIN, Ecosystem.NEOFORGE);
 		assertTrue(MixinRetarget.plan(MixinFit.parse(mixin), resolver).isEmpty());
 		MixinStubRebind.forget();

@@ -297,18 +297,6 @@ class KernelModLoaderWithdrawalTest {
 	}
 
 	@Test
-	void aMinecraftForgeClassIsNeverPartOfTheNeoForgeSettlement() {
-		// Arbitration suppresses every MinecraftForge @Mod before construction; should one reach the outcome record
-		// anyway, a NeoForge settlement must not see its id. The FORGE clause this pins goes with Ecosystem.FORGE (C4).
-		Set<String> otherSide = new LinkedHashSet<>();
-		Map<String, List<String>> failed = new LinkedHashMap<>();
-		KernelModLoader.recordNeoOutcome(new ModClassInfo("demo.ForgeMod", "demo", Ecosystem.FORGE), true,
-				new RuntimeException("boom"), otherSide, failed);
-		assertTrue(failed.isEmpty());
-		assertTrue(otherSide.isEmpty());
-	}
-
-	@Test
 	void aWithdrawnModWithNoRecordedClassKeepsThePlainReason() {
 		assertEquals("its @Mod constructor threw", KernelModLoader.constructorThrew(null));
 		assertEquals("its @Mod constructor threw", KernelModLoader.constructorThrew(List.of()));

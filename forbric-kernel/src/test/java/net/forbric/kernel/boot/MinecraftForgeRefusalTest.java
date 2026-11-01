@@ -113,7 +113,10 @@ class MinecraftForgeRefusalTest {
 				.orElseThrow(() -> new AssertionError("no row: " + ModCatalog.all()));
 		assertEquals(ModCatalog.Status.FAILED, row.status());
 		assertEquals("Only Forge", row.name());
-		assertEquals(Ecosystem.FORGE, row.ecosystem());
+		assertTrue(row.refused(), "a refusal is no ecosystem's claim");
+		assertNull(row.ecosystem());
+		assertEquals("MinecraftForge", row.loaderName(), "shown under the loader it was built for");
+		assertEquals(1, ModCatalog.refusedCount(), "and counted apart, under no ecosystem");
 		assertEquals(List.of(), CompatibilityFindings.unattributed(), "it belongs to the row of the mod the player installed");
 
 		// The decision: a strict launch and a dedicated server stop.

@@ -86,7 +86,7 @@ class LambdaShapeEvidenceStagedTest {
 		Function<String, ClassNode> targets = name -> name.equals(LEVEL_RENDERER) ? MixinFit.parse(levelRenderer) : null;
 
 		NativeReferenceSources sources = NativeReferenceSources.open(genuine.get(0), sidecar);
-		assertTrue(sources.describe().contains("FABRIC from the vanilla-reference sidecar") && sources.describe().contains("FORGE none"),
+		assertTrue(sources.describe().contains("FABRIC from the vanilla-reference sidecar") && !sources.describe().replace("NEOFORGE", "").contains("FORGE"),
 				"premise: KernelBoot's sources for this launch: " + sources.describe());
 		NativeGameReferences.configure(sources);
 		try (ForbricClassLoader loader = new ForbricClassLoader(genuine.stream().map(LambdaShapeEvidenceStagedTest::url).toArray(URL[]::new),
@@ -224,9 +224,9 @@ class LambdaShapeEvidenceStagedTest {
 		try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(jar))) {
 			for (ZipEntry e; (e = zip.getNextEntry()) != null;) if (!e.isDirectory()) entries.put(e.getName(), zip.readAllBytes());
 		}
+		// A mods.toml-only jar is refused (MinecraftForge is no ecosystem): it inherits, as a jar with no manifest does.
 		Ecosystem ecosystem = entries.containsKey("fabric.mod.json") ? Ecosystem.FABRIC
-				: entries.containsKey("META-INF/neoforge.mods.toml") ? Ecosystem.NEOFORGE
-				: entries.containsKey("META-INF/mods.toml") ? Ecosystem.FORGE : inherited;
+				: entries.containsKey("META-INF/neoforge.mods.toml") ? Ecosystem.NEOFORGE : inherited;
 		List<Guest> out = new ArrayList<>();
 		for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
 			if (entry.getKey().endsWith(".jar")) {

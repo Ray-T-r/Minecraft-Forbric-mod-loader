@@ -173,7 +173,7 @@ public final class GlideFreshEquipmentInjector implements ClassTransformer {
 
 	/** The native {@code canGlide()} asks every equipment slot and reads no attribute. */
 	private boolean nativeAsksEquipment() {
-		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.FORGE)) {
+		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC)) {
 			ClassNode reference;
 			try {
 				reference = originals.apply(ecosystem, OWNER);

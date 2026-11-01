@@ -83,7 +83,7 @@ class KernelModLoaderClasslessTest {
 		declared.put("translate", declared("translate", Ecosystem.NEOFORGE, "b.jar"));
 		declared.put("lowcode", declared("lowcode", Ecosystem.NEOFORGE, "c.jar"));
 		declared.put("kotlin", declared("kotlin", Ecosystem.NEOFORGE, "d.jar"));
-		declared.put("forge_only", declared("forge_only", Ecosystem.FORGE, "e.jar"));
+		declared.put("fabric_only", declared("fabric_only", Ecosystem.FABRIC, "e.jar"));
 		declared.put("aliased", declared("aliased", Ecosystem.NEOFORGE, "f.jar"));
 		Map<String, String> languages = Map.of("a.jar", "javafml", "b.jar", "javafml", "c.jar", "lowcodefml",
 				"d.jar", "kotlinforforge", "e.jar", "lowcodefml", "f.jar", "javafml");
@@ -130,7 +130,6 @@ class KernelModLoaderClasslessTest {
 	void theLanguageIsReadFromTheFamilysOwnManifest() throws Exception {
 		Path lowcode = KernelModLoaderDeclaredTest.neoJar(tmp.resolve("lowcode.jar"), "lowcodefml", "x", "1", "");
 		assertEquals("lowcodefml", KernelModLoader.languageOf(lowcode, Ecosystem.NEOFORGE));
-		assertNull(KernelModLoader.languageOf(lowcode, Ecosystem.FORGE), "it has no mods.toml at all");
 
 		Path unnamed = tmp.resolve("unnamed.jar");
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(unnamed))) {

@@ -29,7 +29,7 @@ import net.forbric.kernel.transform.VanillaEarlyReturns;
  * shipped {@code vanilla-early-returns.txt} row keys, so the production table splits it: the INT path gets its own
  * return again, before the tail. Runs, all through the real Mixin, differing only in owner and switch:
  * <ul>
- *   <li>neoforge, forge — MixinNativeTail rewrites TAIL to every return: the handler sees INT and SHORT, at two
+ *   <li>neoforge — MixinNativeTail rewrites TAIL to every return: the handler sees INT and SHORT, at two
  *       call sites in a method with two returns;</li>
  *   <li>neoforge-off — {@code -Dforbric.vanillaEarlyReturns=off}, the switch MixinNativeTail stands down with: nothing
  *       is split, so the same handler is woven once, before the one return, and still sees both;</li>
@@ -66,13 +66,13 @@ class MixinNativeTailWeaveTest {
 				SOURCES.resolve("fixture/nativetail/mixin/IndexTypeMixin.java")),
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		RUNS.put("neoforge", run("neoforge", Ecosystem.NEOFORGE, "on"));
-		RUNS.put("forge", run("forge", Ecosystem.FORGE, "on"));
+
 		RUNS.put("neoforge-off", run("neoforge-off", Ecosystem.NEOFORGE, "off"));
 		RUNS.put("fabric", run("fabric", Ecosystem.FABRIC, "on"));
 	}
 
 	@Test void aForgeFamilyTailStillSeesThePathVanillaReturnsEarlyFrom() throws Exception {
-		for (String label : List.of("neoforge", "forge")) {
+		for (String label : List.of("neoforge")) {
 			WeaveHarness.Result run = RUNS.get(label);
 			assertTrue(run.printed(INSTALLED), run.describe());
 			assertTrue(run.printed(SAW_BOTH), label + ": the TAIL handler missed the early path — " + run.describe());

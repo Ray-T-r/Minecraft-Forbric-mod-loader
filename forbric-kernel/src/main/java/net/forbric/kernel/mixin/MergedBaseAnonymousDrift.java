@@ -21,15 +21,16 @@ import java.util.Map;
 import java.util.Set;
 
 /**
- * Vanilla anonymous classes ({@code Outer$N}) whose NAME the merge kept but whose CLASS it did not.
+ * Vanilla anonymous classes ({@code Outer$N}) whose NAME the base kept but whose CLASS it did not.
  *
  * <p>javac numbers anonymous classes per outer class in source order. A NeoForge patch that adds an anonymous
- * class before vanilla's renumbers every later one, and the merge keeps one class per name — so
+ * class before vanilla's renumbers every later one, and the base has one class per name — so
  * {@code ByteBufCodecs$13} on this base is a different codec from vanilla's, whose body now lives at
  * {@code $12}. A mixin targeting {@code ByteBufCodecs$13} applies cleanly, every anchor resolves, and its
  * injections bind to unrelated code. Nothing else can see that.
  *
- * <p>Three buckets, derived from vanilla and the merged base by {@code MergedBaseAnonymousDriftTest}. The
+ * <p>Three buckets, derived from vanilla and the raw base (NeoForge's patched game) by
+ * {@code MergedBaseAnonymousDriftTest}; the merged base of Forbric &le; 0.4 gave the same RELOCATED and RESHAPED sets. The
  * identity of an anonymous class is its superclass plus its non-{@code <init>} method set, and a patch may ADD
  * methods to it (NeoForge gives {@code MappedRegistry$2} data-map accessors): {@code $N} still holds vanilla's
  * class while every vanilla method is there. Only a vanilla method that is GONE from {@code $N} says otherwise:
@@ -78,14 +79,12 @@ public final class MergedBaseAnonymousDrift {
 			"net/minecraft/network/codec/ByteBufCodecs$31");
 
 	public static final Set<String> CAPTURE_ONLY = Set.of(
-			"net/minecraft/client/Options$3",
 			"net/minecraft/client/gui/components/ChatComponent$1",
-			"net/minecraft/data/tags/TagAppender$1",
 			"net/minecraft/locale/Language$1",
 			"net/minecraft/network/codec/ByteBufCodecs$11",
+			"net/minecraft/network/protocol/common/custom/CustomPacketPayload$1",
 			"net/minecraft/resources/RegistryDataLoader$1",
 			"net/minecraft/server/commands/FunctionCommand$3",
-			"net/minecraft/server/network/ServerLoginPacketListenerImpl$1",
 			"net/minecraft/util/BoundedFloatFunction$1",
 			"net/minecraft/world/item/Item$TooltipContext$2",
 			"net/minecraft/world/item/ItemStack$1",
@@ -106,6 +105,6 @@ public final class MergedBaseAnonymousDrift {
 		if (candidates != null) {
 			return "vanilla's body now lives at " + String.join(" or ", candidates);
 		}
-		return RESHAPED.contains(internalName) ? "the class was reshaped by the merge" : "";
+		return RESHAPED.contains(internalName) ? "the class was reshaped by NeoForge's patches" : "";
 	}
 }

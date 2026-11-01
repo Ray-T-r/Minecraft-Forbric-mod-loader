@@ -199,6 +199,15 @@ public final class TestFixtures {
 		return stagedRoot().resolve(BASE_JAR);
 	}
 
+	/**
+	 * {@link #stagedBase()} with every class passed through {@code VanillaMemberTwinInjector}, the first transformer of the
+	 * launch's chain, as one jar ({@code transform.PreMixinView#twinnedBase}): the base the census generators read for a
+	 * table whose runtime consumer asks Mixin's (post-chain) view of a class. Every twin row is asserted to have landed.
+	 */
+	public static Path twinnedBase() {
+		return net.forbric.kernel.transform.PreMixinView.twinnedBase();
+	}
+
 	/** {@link #NEO_CARRIER_JAR} under {@link #stagedRoot()}. */
 	public static Path neoCarrier() {
 		return stagedRoot().resolve(NEO_CARRIER_JAR);

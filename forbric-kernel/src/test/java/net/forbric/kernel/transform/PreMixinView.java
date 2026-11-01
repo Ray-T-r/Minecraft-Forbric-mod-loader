@@ -3,11 +3,18 @@ package net.forbric.kernel.transform;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.Collections;
+import java.util.HashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
+import java.util.zip.ZipEntry;
 import java.util.zip.ZipFile;
+import java.util.zip.ZipOutputStream;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.tree.ClassNode;
@@ -60,6 +67,67 @@ public final class PreMixinView {
 	public static byte[] twinned(String internalName, byte[] raw) {
 		if (raw == null) return null;
 		return new VanillaMemberTwinInjector(vanilla()).transform(internalName.replace('/', '.'), raw, null);
+	}
+
+	private static Path twinnedBase;
+
+	/**
+	 * {@link TestFixtures#stagedBase()} as one jar with every class passed through {@link VanillaMemberTwinInjector}, the
+	 * first COREMOD transformer KernelBoot registers, and nothing else of the chain: the base a census generator reads when
+	 * its table's runtime consumer asks Mixin's view of a class (post-chain), not the raw jar. Written once per base and
+	 * vanilla jar under {@code build/twinned-base/}, and kept as a jar so every generator's {@code ZipFile} code reads it
+	 * unchanged. Asserts that every one of the injector's rows landed: without a vanilla reference the VANILLA_BODY rows
+	 * stand down without a word, and a census would then write a table that lacks the twins.
+	 */
+	public static synchronized Path twinnedBase() {
+		if (twinnedBase != null) return twinnedBase;
+		Path base = TestFixtures.stagedBase();
+		TestFixtures.requireFiles(Fixture.STAGED, "the base the twins are added to", base);
+		Path vanillaJar = TestFixtures.vanillaJar();
+		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "the vanilla client jar the twins copy from", vanillaJar);
+		try {
+			String key = Integer.toHexString((base.toAbsolutePath().normalize() + "|" + Files.size(base) + "|"
+					+ Files.getLastModifiedTime(base).toMillis() + "|" + Files.size(vanillaJar) + "|"
+					+ Files.getLastModifiedTime(vanillaJar).toMillis()).hashCode());
+			Path out = Path.of(System.getProperty("user.dir"), "build", "twinned-base", key, "base.jar");
+			Set<String> owners = new HashSet<>();
+			for (VanillaMemberTwinInjector.Row row : VanillaMemberTwinInjector.ROWS) owners.add(row.owner());
+			if (!Files.isRegularFile(out)) {
+				Files.createDirectories(out.getParent());
+				Path partial = out.resolveSibling("base.jar.partial");
+				try (ZipFile in = new ZipFile(base.toFile()); ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(partial))) {
+					for (ZipEntry entry : Collections.list(in.entries())) {
+						byte[] bytes;
+						try (InputStream stream = in.getInputStream(entry)) { bytes = stream.readAllBytes(); }
+						String name = entry.getName();
+						String internal = name.endsWith(".class") ? name.substring(0, name.length() - ".class".length()) : null;
+						if (internal != null && owners.contains(internal)) bytes = twinned(internal, bytes);
+						zip.putNextEntry(new ZipEntry(name));
+						zip.write(bytes);
+						zip.closeEntry();
+					}
+				}
+				Files.move(partial, out, StandardCopyOption.REPLACE_EXISTING);
+			}
+			try (ZipFile twinned = new ZipFile(out.toFile())) {
+				for (VanillaMemberTwinInjector.Row row : VanillaMemberTwinInjector.ROWS) {
+					ZipEntry entry = twinned.getEntry(row.owner() + ".class");
+					if (entry == null) throw new AssertionError("the twinned base lacks " + row.owner());
+					ClassNode node = new ClassNode();
+					try (InputStream stream = twinned.getInputStream(entry)) {
+						new ClassReader(stream.readAllBytes()).accept(node, ClassReader.SKIP_CODE);
+					}
+					boolean landed = row.kind() == VanillaMemberTwinInjector.Kind.FIELD
+							? node.fields.stream().anyMatch(f -> f.name.equals(row.name()) && f.desc.equals(row.desc()))
+							: node.methods.stream().anyMatch(m -> m.name.equals(row.name()) && m.desc.equals(row.desc()));
+					if (!landed) throw new AssertionError("a vanilla twin did not land on the census base: " + row);
+				}
+			}
+			twinnedBase = out;
+			return out;
+		} catch (IOException unwritable) {
+			throw new AssertionError("could not write the twinned base for " + base, unwritable);
+		}
 	}
 
 	/** The same view parsed with {@link ClassReader} {@code flags}. */

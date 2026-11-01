@@ -165,9 +165,9 @@ public final class ScopedClearRelayInjector implements ClassTransformer {
 		return false;
 	}
 
-	/** Whether the method as Fabric or MinecraftForge compiled it clears {@code this.field} with {@code Map.clear()}. */
+	/** Whether the method as Fabric compiled it (vanilla's) clears {@code this.field} with {@code Map.clear()}. */
 	private boolean nativeClears(String owner, MethodNode merged, FieldInsnNode field) {
-		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.FORGE)) {
+		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC)) {
 			ClassNode reference;
 			try {
 				reference = originals.apply(ecosystem, owner);

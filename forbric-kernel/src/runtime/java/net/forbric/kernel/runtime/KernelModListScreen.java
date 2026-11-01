@@ -54,7 +54,8 @@ import net.minecraft.network.chat.FormattedText;
 public final class KernelModListScreen extends Screen {
 	private static final int TAG_FABRIC = 0xFFDBB03B;
 	private static final int TAG_NEOFORGE = 0xFFE5834C;
-	private static final int TAG_FORGE = 0xFF8B9BC4;
+	/** A refused jar's tag (the colour MinecraftForge's rows had while Forbric loaded them). */
+	private static final int TAG_REFUSED = 0xFF8B9BC4;
 	private static final int DIM = 0xFFA0A0A0;
 	private static final int BRIGHT = 0xFFFFFFFF;
 	/** Panel wash, so mod names stay legible over whatever the world happens to look like behind them. */
@@ -331,9 +332,10 @@ public final class KernelModListScreen extends Screen {
 	}
 
 	private static String summary() {
+		int refused = ModCatalog.refusedCount();
 		String counts = ModCatalog.count(Ecosystem.FABRIC) + " Fabric   "
-				+ ModCatalog.count(Ecosystem.NEOFORGE) + " NeoForge   "
-				+ ModCatalog.count(Ecosystem.FORGE) + " MinecraftForge";
+				+ ModCatalog.count(Ecosystem.NEOFORGE) + " NeoForge"
+				+ (refused == 0 ? "" : "   " + refused + " refused");
 		int broken = ModCatalog.failures().size();
 		// "did not finish loading", never "not running": a withdrawn mod's classes ARE loaded and its mixins ARE
 		// applied. Telling a player it is absent sends them to reinstall something that is already there.
@@ -349,7 +351,6 @@ public final class KernelModListScreen extends Screen {
 		return switch (ecosystem) {
 			case FABRIC -> "Fabric";
 			case NEOFORGE -> "NeoForge";
-			case FORGE -> "MinecraftForge";
 		};
 	}
 
@@ -357,18 +358,27 @@ public final class KernelModListScreen extends Screen {
 		return switch (ecosystem) {
 			case FABRIC -> TAG_FABRIC;
 			case NEOFORGE -> TAG_NEOFORGE;
-			case FORGE -> TAG_FORGE;
 		};
 	}
 
-	/** A row's second line: the loader it came from; "Game" for the game, "Group" for a heading. */
+	/** Whether {@code r} is the row of a jar Forbric refused: no family, shown under the loader it was built for. */
+	private static boolean refusedRow(ModListRows.Row r) {
+		return r.family() == null && r.entry() != null && r.entry().refused();
+	}
+
+	/**
+	 * A row's second line: the loader it came from; "Game" for the game, "Group" for a heading, and for a refused jar
+	 * the loader it was built for (MinecraftForge).
+	 */
 	private static String tagLabel(ModListRows.Row r) {
 		if (r.game()) return "Game";
+		if (refusedRow(r)) return r.entry().loaderName();
 		if (r.family() == null) return "Group";
 		return label(r.family());
 	}
 
 	private static int tagColour(ModListRows.Row r) {
+		if (refusedRow(r)) return TAG_REFUSED;
 		return r.family() == null ? BRIGHT : tag(r.family());
 	}
 

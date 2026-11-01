@@ -51,7 +51,7 @@ class DependencyAuditTest {
 	@Test
 	void aMissingHardDependencyIsNamedAlongWithWhoNeedsIt() {
 		String log = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "createaddon", "1.0.0", dep("create", ">=6", true))), List.of(), Side.CLIENT));
+				mod(Ecosystem.NEOFORGE, "createaddon", "1.0.0", dep("create", ">=6", true))), List.of(), Side.CLIENT));
 
 		assertTrue(log.contains("createaddon"), log);
 		assertTrue(log.contains("create >=6"), log);
@@ -106,7 +106,7 @@ class DependencyAuditTest {
 	@Test
 	void aRequirementMetByTheOtherEcosystemIsCountedAndSaidOutLoud() {
 		String log = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "forgemod", "1.0.0", dep("sodium", ">=0.5", true)),
+				mod(Ecosystem.NEOFORGE, "forgemod", "1.0.0", dep("sodium", ">=0.5", true)),
 				mod(Ecosystem.FABRIC, "sodium", "0.6.13")), List.of(), Side.CLIENT));
 
 		assertTrue(log.contains("ACROSS ecosystems"), log);
@@ -137,7 +137,7 @@ class DependencyAuditTest {
 	@Test
 	void anOptionalDependencyIsNeverReported() {
 		String log = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "polite", "1.0.0", dep("nothere", "*", false))), List.of(), Side.CLIENT));
+				mod(Ecosystem.NEOFORGE, "polite", "1.0.0", dep("nothere", "*", false))), List.of(), Side.CLIENT));
 
 		assertFalse(log.contains("nothere"), log);
 	}
@@ -157,11 +157,11 @@ class DependencyAuditTest {
 		UnifiedDependency clientOnly =
 				new UnifiedDependency("jei", "*", true, Ordering.NONE, SideScope.CLIENT);
 		String onServer = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "servermod", "1.0.0", clientOnly)), List.of(), Side.DEDICATED_SERVER));
+				mod(Ecosystem.NEOFORGE, "servermod", "1.0.0", clientOnly)), List.of(), Side.DEDICATED_SERVER));
 		assertFalse(onServer.contains("jei"), onServer);
 
 		String onClient = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "servermod", "1.0.0", clientOnly)), List.of(), Side.CLIENT));
+				mod(Ecosystem.NEOFORGE, "servermod", "1.0.0", clientOnly)), List.of(), Side.CLIENT));
 		assertTrue(onClient.contains("jei"), onClient);
 	}
 
@@ -172,7 +172,7 @@ class DependencyAuditTest {
 	@Test
 	void withNoKnownSideASideScopedRequirementIsNotJudged() {
 		String log = capture(() -> DependencyAudit.report(List.of(
-				mod(Ecosystem.FORGE, "servermod", "1.0.0",
+				mod(Ecosystem.NEOFORGE, "servermod", "1.0.0",
 						new UnifiedDependency("jei", "*", true, Ordering.NONE, SideScope.CLIENT))), List.of(), null));
 
 		assertFalse(log.contains("jei"), log);

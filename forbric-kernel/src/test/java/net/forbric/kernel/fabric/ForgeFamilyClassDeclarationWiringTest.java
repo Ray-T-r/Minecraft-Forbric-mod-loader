@@ -97,7 +97,7 @@ class ForgeFamilyClassDeclarationWiringTest {
 		properties.put("cinderlib:tagline", "Warm light for cold caves");
 		properties.put("cinderlib:borrowed", "java.util.ArrayList");
 		properties.put("cinderlib:partial", List.of(CinderPanel.class.getName(), "fixture.cinder.Missing"));
-		ModPresence.publishForgeFamily(List.of(new DiscoveredMod(Ecosystem.FORGE, "cinder_forge", "1.0.0", "Cinder",
+		ModPresence.publishForgeFamily(List.of(new DiscoveredMod(Ecosystem.NEOFORGE, "cinder_forge", "1.0.0", "Cinder",
 				List.of(), List.of(), null, jar.toString()).withModProperties(properties)));
 
 		build();

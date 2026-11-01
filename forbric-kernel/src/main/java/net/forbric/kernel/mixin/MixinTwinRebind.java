@@ -92,7 +92,7 @@ public final class MixinTwinRebind {
 	 * @param ecosystems the mods compiled against vanilla's signature as the method that runs
 	 */
 	record Row(String owner, String name, String vanilla, String overload, int[] positions, Set<Ecosystem> ecosystems) {
-		/** {@code owner#name(vanilla) -> (overload) | 0,2,3 | FABRIC,FORGE}, as the census writes it; null when not that. */
+		/** {@code owner#name(vanilla) -> (overload) | 0,2,3 | FABRIC}, as the census writes it; null when not that. */
 		static Row parse(String line) {
 			String[] columns = line.split(" \\| ");
 			if (columns.length != 3) return null;

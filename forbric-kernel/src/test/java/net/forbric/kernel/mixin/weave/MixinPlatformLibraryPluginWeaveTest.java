@@ -84,7 +84,6 @@ class MixinPlatformLibraryPluginWeaveTest {
 
 	@Test void theLibraryBaseIsToldTheModsOwnPlatformAndThePluginActsOnIt() throws Exception {
 		returned(run("fabric", Ecosystem.FABRIC, withLibrary(true)), "platform=fabric gear=plain+mixin");
-		returned(run("forge", Ecosystem.FORGE, withLibrary(true)), "platform=forge gear=plain+mixin");
 		returned(run("neoforge", Ecosystem.NEOFORGE, withLibrary(true)), "platform=neoforge gear=plain+mixin");
 	}
 

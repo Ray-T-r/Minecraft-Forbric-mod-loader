@@ -46,8 +46,8 @@ class MixinNativeTailTest {
 	}
 
 	@Test
-	void aMinecraftForgeTailAfterAnInlineReturnNamesTheBlockAndTheTail() {
-		ClassNode mixin = mixin("test/ForgeMixed", Ecosystem.FORGE, "mixed", List.of(at("TAIL", null)));
+	void aNeoForgeTailAfterAnInlineReturnNamesTheBlockAndTheTail() {
+		ClassNode mixin = mixin("test/NeoMixed", Ecosystem.NEOFORGE, "mixed", List.of(at("TAIL", null)));
 		assertEquals(1, MixinNativeTail.adapt(mixin, repairedTargets()));
 		List<AnnotationNode> ats = MixinFit.atNodes(MixinFit.injectorOf(mixin.methods.get(0)));
 		assertEquals(List.of(1, 2), ats.stream().map(a -> MixinFit.value(a, "ordinal")).toList(),

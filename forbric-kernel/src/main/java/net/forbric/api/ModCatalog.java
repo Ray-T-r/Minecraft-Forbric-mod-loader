@@ -60,10 +60,16 @@ public final class ModCatalog {
 	 * renderer and a null there is a crash in the middle of a frame rather than a blank line. {@code iconPath} is
 	 * the path INSIDE {@code jar} — resolving it is the caller's business, and the game side is the only place
 	 * that can turn it into a texture anyway.
+	 *
+	 * <p>{@code ecosystem} is null for exactly one kind of row: a jar Forbric refused ({@link #refused()}), whose
+	 * {@code refusedLoader} names the loader it was built for ("MinecraftForge") and {@code refusedSpelling} how reports
+	 * spell that loader ("FORGE", the word the load report's {@code ecosystem} field and the finding evidence have always
+	 * carried for it). A refusal is no ecosystem's claim, so the row is counted under none ({@link #count}) and shown with
+	 * the loader it names ({@link #loaderName()}).
 	 */
 	public record Entry(Ecosystem ecosystem, String modId, String name, String version, String description,
 			List<String> authors, String jar, String iconPath, String bundledBy, Status status,
-			String statusDetail) {
+			String statusDetail, String refusedLoader, String refusedSpelling) {
 
 		/**
 		 * The nine-argument form every existing caller uses. A mod is {@link Status#OK} until something says
@@ -74,8 +80,29 @@ public final class ModCatalog {
 			this(ecosystem, modId, name, version, description, authors, jar, iconPath, bundledBy, Status.OK, "");
 		}
 
+		/** A row of a mod that loads, with what became of it. */
+		public Entry(Ecosystem ecosystem, String modId, String name, String version, String description,
+				List<String> authors, String jar, String iconPath, String bundledBy, Status status, String statusDetail) {
+			this(ecosystem, modId, name, version, description, authors, jar, iconPath, bundledBy, status, statusDetail, "", "");
+		}
+
+		/**
+		 * The row of a jar in {@code mods/} that Forbric refused: built for {@code loader} (its display name, spelled
+		 * {@code spelling} in reports), loaded by no ecosystem, {@link Status#FAILED} with {@code detail}.
+		 */
+		public static Entry refused(String loader, String spelling, String modId, String name, String jar, String detail) {
+			if (loader == null || loader.isBlank()) throw new IllegalArgumentException("loader");
+			if (spelling == null || spelling.isBlank()) throw new IllegalArgumentException("spelling");
+			return new Entry(null, modId, name, "", "", List.of(), jar, "", "", Status.FAILED, detail, loader, spelling);
+		}
+
 		public Entry {
-			if (ecosystem == null) throw new NullPointerException("ecosystem");
+			refusedLoader = orEmpty(refusedLoader);
+			refusedSpelling = orEmpty(refusedSpelling);
+			if (ecosystem == null && (refusedLoader.isEmpty() || refusedSpelling.isEmpty())) throw new NullPointerException("ecosystem");
+			if (ecosystem != null && !(refusedLoader.isEmpty() && refusedSpelling.isEmpty())) {
+				throw new IllegalArgumentException("a refused row has no ecosystem");
+			}
 			if (modId == null || modId.isBlank()) throw new IllegalArgumentException("modId");
 			name = orEmpty(name).isEmpty() ? modId : name.trim();
 			version = orEmpty(version);
@@ -91,7 +118,22 @@ public final class ModCatalog {
 		/** The same mod, with what became of it. */
 		public Entry withStatus(Status newStatus, String detail) {
 			return new Entry(ecosystem, modId, name, version, description, authors, jar, iconPath, bundledBy,
-					newStatus, detail);
+					newStatus, detail, refusedLoader, refusedSpelling);
+		}
+
+		/** Whether this is the row of a jar Forbric refused, which no ecosystem loads. */
+		public boolean refused() {
+			return ecosystem == null;
+		}
+
+		/** The loader this row is shown under: its ecosystem's name, or the loader a refused jar was built for. */
+		public String loaderName() {
+			return ecosystem != null ? ecosystem.displayName() : refusedLoader;
+		}
+
+		/** How reports spell this row's loader: its ecosystem's constant, or the refused loader's spelling. */
+		public String loaderSpelling() {
+			return ecosystem != null ? ecosystem.name() : refusedSpelling;
 		}
 
 		/**
@@ -185,7 +227,16 @@ public final class ModCatalog {
 	public static int count(Ecosystem ecosystem) {
 		int n = 0;
 		for (Entry e : installed) {
-			if (e.ecosystem() == ecosystem) n++;
+			if (e.ecosystem() == ecosystem && ecosystem != null) n++;
+		}
+		return n;
+	}
+
+	/** How many installed jars Forbric refused (a MinecraftForge build, say): rows no ecosystem counts. */
+	public static int refusedCount() {
+		int n = 0;
+		for (Entry e : installed) {
+			if (e.refused()) n++;
 		}
 		return n;
 	}

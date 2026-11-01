@@ -59,12 +59,12 @@ class MixinTwinRebindTest {
 	@ExpectCaught("No enum constant net.forbric.api.Ecosystem.QUILT")
 	@Test void aRowParsesAndAMalformedOneIsRefused() {
 		MixinTwinRebind.Row row = MixinTwinRebind.Row.parse(RENDERER + "#shouldRenderFace" + VANILLA + " -> " + OVERLOAD
-				+ " | 0,2,3,4 | FABRIC,FORGE");
+				+ " | 0,2,3,4 | FABRIC,NEOFORGE");
 		assertNotNull(row);
 		assertEquals(RENDERER, row.owner());
 		assertEquals("shouldRenderFace", row.name());
 		assertArrayEquals(new int[] {0, 2, 3, 4}, row.positions());
-		assertEquals(java.util.Set.of(Ecosystem.FABRIC, Ecosystem.FORGE), row.ecosystems());
+		assertEquals(java.util.Set.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE), row.ecosystems());
 		// A position whose type is not the vanilla parameter's, one too few, an unknown ecosystem.
 		assertNull(MixinTwinRebind.Row.parse(RENDERER + "#shouldRenderFace" + VANILLA + " -> " + OVERLOAD + " | 0,1,3,4 | FABRIC"));
 		assertNull(MixinTwinRebind.Row.parse(RENDERER + "#shouldRenderFace" + VANILLA + " -> " + OVERLOAD + " | 0,2,3 | FABRIC"));

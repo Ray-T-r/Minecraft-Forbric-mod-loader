@@ -1687,7 +1687,7 @@ public final class KernelClientSmoke {
 			}
 			Class<?> configs = Class.forName("net.forbric.kernel.runtime.KernelModConfigScreens", true, cl);
 			Object wanted = null;
-			for (String ecosystem : new String[] {"NEOFORGE", "FORGE", "FABRIC"}) {
+			for (String ecosystem : new String[] {"NEOFORGE", "FABRIC"}) {
 				wanted = configs.getMethod("firstWithConfig", String.class).invoke(null, ecosystem);
 				if (wanted != null) break;
 			}
@@ -1764,7 +1764,7 @@ public final class KernelClientSmoke {
 					configs.getMethod("summary").invoke(null));
 			Object entry = null;
 			String from = null;
-			for (String ecosystem : new String[] {"NEOFORGE", "FORGE", "FABRIC"}) {
+			for (String ecosystem : new String[] {"NEOFORGE", "FABRIC"}) {
 				entry = configs.getMethod("firstWithConfig", String.class).invoke(null, ecosystem);
 				if (entry != null) {
 					from = ecosystem;

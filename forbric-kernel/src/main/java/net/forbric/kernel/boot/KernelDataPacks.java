@@ -292,10 +292,13 @@ public final class KernelDataPacks {
 		return null;
 	}
 
-	/** Higher rank = later in the sorted order = wins a last-wins collision. */
+	/**
+	 * Higher rank = later in the sorted order = wins a last-wins collision. NeoForge's carrier keeps rank 2, the number
+	 * worlds have recorded in {@code level.dat} since MinecraftForge's carrier (rank 1) was beside it (D2); a carrier
+	 * without NeoForge's data ranks 0.
+	 */
 	static int carrierRank(Path jar) {
 		if (hasNamespace(jar, "neoforge")) return 2;
-		if (hasNamespace(jar, "forge")) return 1;
 		return 0;
 	}
 

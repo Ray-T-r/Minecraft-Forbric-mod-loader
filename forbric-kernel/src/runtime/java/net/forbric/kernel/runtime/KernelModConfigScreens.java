@@ -61,7 +61,8 @@ public final class KernelModConfigScreens {
 	 *              selection change, which is a mod's code running because the player moved the highlight.
 	 */
 	private static Screen open(ModCatalog.Entry entry, Screen parent, boolean probe) {
-		if (entry == null) return null;
+		// A refused jar's row: nothing loaded it, so no registry has a factory for it.
+		if (entry == null || entry.refused()) return null;
 		try {
 			Screen nativeScreen = nativeScreen(entry, parent, probe);
 			if (nativeScreen != null) return nativeScreen;
@@ -90,8 +91,6 @@ public final class KernelModConfigScreens {
 		return switch (entry.ecosystem()) {
 			case FABRIC -> null;
 			case NEOFORGE -> Neo.resolve(entry.modId(), parent, probe);
-			// No MinecraftForge mod is loaded any more; the arm goes with Ecosystem.FORGE (C4).
-			case FORGE -> null;
 		};
 	}
 
@@ -239,7 +238,7 @@ public final class KernelModConfigScreens {
 			return out;
 		}
 		for (ModCatalog.Entry entry : ModCatalog.everything()) {
-			if (entry.ecosystem() == Ecosystem.FABRIC || fabric.getModContainer(entry.modId()).isEmpty()) continue;
+			if (entry.refused() || entry.ecosystem() == Ecosystem.FABRIC || fabric.getModContainer(entry.modId()).isEmpty()) continue;
 			try {
 				if (nativeScreen(entry, null, true) == null) continue;
 			} catch (Throwable unreadable) {
@@ -281,7 +280,7 @@ public final class KernelModConfigScreens {
 	/** The first mod of {@code ecosystem} with a config screen, or {@code null}. For the smoke, and for it only. */
 	public static ModCatalog.Entry firstWithConfig(String ecosystem) {
 		for (ModCatalog.Entry entry : ModCatalog.all()) {
-			if (entry.ecosystem().name().equalsIgnoreCase(ecosystem) && has(entry)) return entry;
+			if (!entry.refused() && entry.ecosystem().name().equalsIgnoreCase(ecosystem) && has(entry)) return entry;
 		}
 		return null;
 	}

@@ -266,8 +266,8 @@ assert_eq "and it was still waiting for the answer when the gate stopped it" "wa
 # own count of the Forge-family configs it registered says the same from the other side: present, and none of them
 # MinecraftForge's or the refused canary's.
 check_absent "nothing of the refused canary ran" 'constructed @Mod forbriclive|\[ForbricLive' "$PROMPT_LOG"
-check "no MinecraftForge mixin config was registered" \
-  '\[Forbric/Mixin\] mixin configs: .*\([0-9]+ NeoForge, 0 MinecraftForge\)' "$PROMPT_LOG"
+check "the Forge-family mixin configs registered are NeoForge's alone" \
+  '\[Forbric/Mixin\] mixin configs: .*\([0-9]+ NeoForge\) ' "$PROMPT_LOG"
 check_absent "and not the refused canary's under another name" \
   '\[Forbric/Mixin\] mixin configs: .*forbriclive\.mixins\.json' "$PROMPT_LOG"
 check_absent "no crash" "Preparing crash report|Game crashed" "$PROMPT_LOG"

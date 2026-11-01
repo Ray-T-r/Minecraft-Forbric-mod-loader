@@ -47,8 +47,11 @@ class MixinStubRebindSpellingTest {
 	private static final String LANGUAGE = "net/minecraft/locale/Language";
 	private static final String STUB_JSON = "loadFromJson(Ljava/io/InputStream;Ljava/util/function/BiConsumer;)V";
 	private static final String BODY_JSON = "loadFromJson(Ljava/io/InputStream;Ljava/util/function/BiConsumer;Ljava/util/function/BiConsumer;)V";
-	private static final String DETECTOR = "net/minecraft/server/packs/repository/PackDetector";
-	private static final String DETECT_STUB = "detectPackResources(Ljava/nio/file/Path;Ljava/util/List;)Ljava/lang/Object;";
+	/** AxeItem's row ({@code neo=overload-body}): the stub is vanilla's evaluateNewBlockState, which the vanilla twins add back. */
+	private static final String DETECTOR = "net/minecraft/world/item/AxeItem";
+	private static final String AXE_ARGS = "Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;"
+			+ "Lnet/minecraft/world/entity/player/Player;Lnet/minecraft/world/level/block/state/BlockState;";
+	private static final String DETECT_STUB = "evaluateNewBlockState(" + AXE_ARGS + ")Ljava/util/Optional;";
 	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 
 	@AfterEach void reset() {
@@ -113,17 +116,19 @@ class MixinStubRebindSpellingTest {
 	// ---- a row's selector form, per family ----------------------------------------------------------------------------
 
 	/**
-	 * PackDetector's row moves a NeoForge mod's injector by its selector's form: each form written another way moves (or
-	 * stays) exactly as its plain spelling does, for every family.
+	 * AxeItem's row moves a NeoForge mod's injector by its selector's form (NeoForge's own AxeItem has only the widened
+	 * overload, so a bare name ran there and a descriptor bound nothing): each form written another way moves (or stays)
+	 * exactly as its plain spelling does, for every family. (On the merged base this was PackDetector's MinecraftForge stub,
+	 * which NeoForge's own base does not have.)
 	 */
 	@Test void aRowReadsTheSelectorsFormHoweverItIsWritten() throws Exception {
-		ClassNode detector = merged(DETECTOR);
+		ClassNode detector = twinned(DETECTOR);
 		String dotted = DETECTOR.replace('/', '.') + ".";
 		Map<String, List<String>> forms = new LinkedHashMap<>();
-		forms.put("detectPackResources", List.of(dotted + "detectPackResources", " L" + DETECTOR + "; detectPackResources"));
-		forms.put(DETECT_STUB, List.of(dotted + DETECT_STUB, "L" + DETECTOR + "; detectPackResources ( Ljava/nio/file/Path;Ljava/util/List; ) Ljava/lang/Object;"));
+		forms.put("evaluateNewBlockState", List.of(dotted + "evaluateNewBlockState", " L" + DETECTOR + "; evaluateNewBlockState"));
+		forms.put(DETECT_STUB, List.of(dotted + DETECT_STUB, "L" + DETECTOR + "; evaluateNewBlockState ( " + AXE_ARGS + " ) Ljava/util/Optional;"));
 		int moved = 0;
-		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.FORGE, Ecosystem.NEOFORGE)) {
+		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE)) {
 			for (var form : forms.entrySet()) {
 				int plain = detect(detector, ecosystem, form.getKey());
 				moved += plain;
@@ -132,7 +137,12 @@ class MixinStubRebindSpellingTest {
 			}
 		}
 		assertTrue(moved > 0, "premise: the row moves some family's selector");
-		assertEquals(1, detect(detector, Ecosystem.NEOFORGE, dotted + "detectPackResources"), "premise: a NeoForge mod's bare name moves");
+		// The twin is appended after NeoForge's overload, so a bare name binds NeoForge's body as it does natively: nothing to
+		// move for either family. Vanilla's descriptor binds the twin: a Fabric mod's moves off it onto the body, a NeoForge
+		// mod's (natively bound to nothing) stays.
+		assertEquals(0, detect(detector, Ecosystem.NEOFORGE, dotted + "evaluateNewBlockState"), "premise: a NeoForge mod's bare name is on the body");
+		assertEquals(0, detect(detector, Ecosystem.NEOFORGE, dotted + DETECT_STUB), "premise: a NeoForge mod's descriptor does not move");
+		assertEquals(1, detect(detector, Ecosystem.FABRIC, dotted + DETECT_STUB), "premise: a Fabric mod's descriptor moves");
 	}
 
 	private static int detect(ClassNode detector, Ecosystem ecosystem, String selector) {
@@ -215,6 +225,12 @@ class MixinStubRebindSpellingTest {
 		}
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);
 		return mixin;
+	}
+
+	private static ClassNode twinned(String name) throws Exception {
+		try (ZipFile zip = new ZipFile(TestFixtures.twinnedBase().toFile())) {
+			return MixinFit.parse(zip.getInputStream(zip.getEntry(name + ".class")).readAllBytes());
+		}
 	}
 
 	private static ClassNode merged(String name) throws Exception {

@@ -297,7 +297,7 @@ class KeyActionExitsTest {
 		Path merged = TestFixtures.stagedBase();
 		TestFixtures.requireFile(Fixture.STAGED, merged, "actual game required");
 		ClassNode current = CarpetMixinAdapterTest.from(Fixture.STAGED, merged, MixinKeyActionAdapter.TARGET);
-		ClassNode original, forge, neoforge;
+		ClassNode original, neoforge;
 		try (ZipFile jar = new ZipFile(merged.toFile())) {
 			// The hash-pinned native references production reads: for a Fabric mod, vanilla's own class.
 			NativeGameReferences references = new NativeGameReferences(path -> {
@@ -309,7 +309,7 @@ class KeyActionExitsTest {
 				}
 			}, null, TestFixtures.launchSources(merged));
 			original = references.get(Ecosystem.FABRIC, MixinKeyActionAdapter.TARGET);
-			forge = references.get(Ecosystem.FORGE, MixinKeyActionAdapter.TARGET);
+
 			neoforge = references.get(Ecosystem.NEOFORGE, MixinKeyActionAdapter.TARGET);
 		}
 		assertNotNull(original, "native reference for KeyboardHandler");
@@ -336,18 +336,8 @@ class KeyActionExitsTest {
 		assertPoint(guest, "heardTail", "TAIL", null, null);
 		CarpetMixinAdapterTest.verify(guest);
 
-		// MinecraftForge's own keyPress already joins its exits (into its own hook) and keeps three returns, like the
-		// merged one: nothing a Forge mod counted there moves. A NeoForge mod was compiled against the merged shape itself.
-		assertNotNull(forge, "Forge native reference");
-		JoinedReturnExits forgeExits = exits(forge, current);
-		assertEquals(3, forgeExits.nativeReturns());
-		assertNull(forgeExits.joined(0));
-		assertNull(forgeExits.joined(1));
-		assertNull(forgeExits.finalGuard(), "Forge's final return is reached by every action, as the merged one is");
-		ClassNode forgeGuest = guest(0, 2);
-		byte[] before = bytes(forgeGuest);
-		assertEquals(0, MixinKeyActionAdapter.adapt(forgeGuest, n -> current, (family, n) -> forge));
-		assertArrayEquals(before, bytes(forgeGuest));
+		// A NeoForge mod was compiled against the base's shape itself: NeoForge's own keyPress is the base's, so it has no
+		// joined exit to move. (A MinecraftForge leg stood here while Forbric loaded MinecraftForge mods.)
 		assertNotNull(neoforge, "NeoForge native reference");
 		assertNull(JoinedReturnExits.of(neoforge, MixinPlayerWorldCallbackAdapter.selector(neoforge, MixinKeyActionAdapter.HOST),
 				current, MixinPlayerWorldCallbackAdapter.selector(current, MixinKeyActionAdapter.HOST), MixinKeyActionAdapter.LIVE));

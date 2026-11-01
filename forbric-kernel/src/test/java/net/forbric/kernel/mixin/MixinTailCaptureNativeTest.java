@@ -100,7 +100,7 @@ class MixinTailCaptureNativeTest {
 				return null;
 			}
 		}, null, TestFixtures.launchSources(jar));
-		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
+		for (Ecosystem ecosystem : List.of(Ecosystem.FABRIC, Ecosystem.NEOFORGE)) {
 			ClassNode own = references.get(ecosystem, GUI);
 			assertNotNull(own, ecosystem.name());
 			ClassNode mixin = capture();

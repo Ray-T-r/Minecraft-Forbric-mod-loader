@@ -35,17 +35,18 @@ import org.objectweb.asm.ClassReader;
  *       row (VanillaReferenceStagedTest), and on any other base only the sidecar exists. Where the base embeds the same
  *       index, that index still answers, class by class, whatever the sidecar cannot verify against it: a sidecar built
  *       against another base never costs the merged base evidence it carries itself.</li>
- *   <li><b>The base's embedded index</b>, for every other ecosystem it carries — FORGE and NEOFORGE on the merged base.
- *       Read through the game class loader exactly as before.</li>
+ *   <li><b>The base's embedded index</b>, for every other ecosystem it carries — NEOFORGE on the merged base of
+ *       Forbric &le; 0.4 (which no launch accepts any more; tests still drive the format). Read through the game class
+ *       loader exactly as before.</li>
  *   <li><b>The base itself</b>, for the base's own ecosystem when it embeds no index at all: a NeoForge-patched base IS
  *       NeoForge's compile of every class it holds, so its untransformed bytes are the NEOFORGE references, read on
  *       demand from the jar. Nothing is generated, so nothing can go stale.</li>
  * </ol>
  *
  * <p>Which ecosystem a base belongs to is read off the base, never guessed from a file name: its {@code Block} declares
- * NeoForge's block extension interface and no MinecraftForge one (NEOFORGE), MinecraftForge's and no NeoForge one
- * (FORGE), or neither (plain vanilla, which is FABRIC's own compile). A base that declares both is the merge, which
- * embeds its index; without one it has no own ecosystem to answer for, because its bytes are neither side's compile.
+ * NeoForge's block extension interface and no MinecraftForge one (NEOFORGE), or neither (plain vanilla, which is
+ * FABRIC's own compile). A base that declares a MinecraftForge interface (a Forge-patched base, or the merge, which
+ * embeds its index) has no own ecosystem to answer for: no ecosystem Forbric loads compiled against its bytes.
  *
  * <p>{@link #describe()} is the one boot line naming those sources; gates assert its wording.
  */
@@ -203,7 +204,8 @@ public final class NativeReferenceSources {
 
 	/**
 	 * The ecosystem whose compile {@code base} is, read off its {@code Block}: see the class comment. Null when the base
-	 * has no {@code Block}, or declares both families' interfaces.
+	 * has no {@code Block}, or implements a MinecraftForge interface (an old Forge-patched or merged base, which
+	 * LaunchInputCheck refuses before this is asked, and which no ecosystem Forbric loads compiled against).
 	 */
 	private static Ecosystem ownEcosystem(ZipFile base) {
 		byte[] block = read(base, BLOCK, "the game jar");
@@ -220,7 +222,7 @@ public final class NativeReferenceSources {
 			neo |= type.equals(NEO_BLOCK);
 			forge |= type.startsWith(FORGE_PACKAGE);
 		}
-		if (neo && forge) return null;
-		return neo ? Ecosystem.NEOFORGE : forge ? Ecosystem.FORGE : Ecosystem.FABRIC;
+		if (forge) return null;
+		return neo ? Ecosystem.NEOFORGE : Ecosystem.FABRIC;
 	}
 }

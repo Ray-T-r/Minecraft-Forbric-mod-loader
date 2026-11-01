@@ -50,7 +50,8 @@ class ModsButtonRedirectorExecutionTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
 	private static final Path NEO_RUNTIME = TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);
 	private static final String NEO = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.NEOFORGE);
-	private static final String FORGE = ForeignType.MOD_LIST_SCREEN.internal(Ecosystem.FORGE);
+	/** MinecraftForge's Mods screen: no ecosystem's any more, still never what a button is pointed at. */
+	private static final String FORGE = "net/minecraftforge/client/gui/ModListScreen";
 
 	/** The statements of {@code Menu.build}, in order; each adds one widget to the layout. */
 	private static Map<String, String> standIns(String... build) {

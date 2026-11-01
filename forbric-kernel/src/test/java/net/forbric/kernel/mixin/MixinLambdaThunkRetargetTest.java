@@ -20,7 +20,7 @@ class MixinLambdaThunkRetargetTest {
 		ClassNode target=target(),reference=reference(),mixin=mixin();MethodNode handler=mixin.methods.getFirst();
 		handler.invisibleParameterAnnotations=new List[4];handler.invisibleParameterAnnotations[3]=List.of(ann(MixinRetarget.LOCAL_SUGAR,"argsOnly",true));
 		handler.desc="(L"+OWNER+";I"+OPERATION+"I)V";AbstractInsnNode body=handler.instructions.getFirst();
-		for(Ecosystem family:List.of(Ecosystem.FABRIC,Ecosystem.FORGE,Ecosystem.NEOFORGE)){
+		for(Ecosystem family:List.of(Ecosystem.FABRIC,Ecosystem.NEOFORGE)){
 			MixinStubRebind.noteEcosystem(mixin.name,family);var plan=plan(mixin,target,reference);
 			assertEquals(2,plan.rewrites().size(),plan.describe());assertTrue(plan.rewrites().getFirst().why().contains("live method-reference thunk"));
 			assertTrue(plan.rewrites().stream().anyMatch(r->r.element()==MixinRetarget.Element.LOCAL_INDEX&&r.from().equals("3")&&r.to().equals("1")),plan.describe());

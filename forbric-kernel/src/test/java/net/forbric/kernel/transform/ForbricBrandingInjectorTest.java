@@ -151,7 +151,7 @@ class ForbricBrandingInjectorTest {
 
 		List<ModCatalog.Entry> previous = ModCatalog.everything();
 		ModCatalog.publish(List.of(mod(Ecosystem.FABRIC, "sodium", ""), mod(Ecosystem.NEOFORGE, "create", ""),
-				mod(Ecosystem.FORGE, "jei", ""), mod(Ecosystem.FABRIC, "fabric-api-base", "sodium")));
+				mod(Ecosystem.NEOFORGE, "jei", ""), mod(Ecosystem.FABRIC, "fabric-api-base", "sodium")));
 		try {
 			assertEquals(List.of("Minecraft 26.2", ForbricBranding.display() + " (3 mods loaded)"), InjectorExecution.invokeStatic(
 					loader.loadClass(ForbricBrandingInjector.BRANDING_CONTROL), "getBrandings"));

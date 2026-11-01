@@ -31,14 +31,16 @@ import net.forbric.api.Ecosystem;
  */
 @ResourceLock("system-properties")
 class MergedBaseGuestScanTest {
-	private static final String LIVING = "net/minecraft/world/entity/LivingEntity";
-	private static final String VEC3 = "Lnet/minecraft/world/phys/Vec3;";
-	private static final String TRAVEL_IN_FLUID = "(" + VEC3 + ")V";
-	private static final String GAME_MODE = "net/minecraft/server/level/ServerPlayerGameMode";
-	private static final String REMOVE = "(Lnet/minecraft/core/BlockPos;Z)Z";
-	private static final String LOADER = "net/minecraft/resources/RegistryDataLoader";
-	private static final String LOAD = "(Lnet/minecraft/resources/RegistryDataLoader$LoaderFactory;Ljava/util/List;Ljava/util/List;"
-			+ "Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;";
+	// Rows of the shipped uncalled-methods.txt on NeoForge's base (the merged base's travelInFluid, removeBlock and
+	// RegistryDataLoader.load rows are gone with it): a protected method a guest may override, a private method with a
+	// twin row, and a private method an invoker may name by value.
+	private static final String LIVING = "net/minecraft/server/network/ServerCommonPacketListenerImpl";
+	private static final String TRAVEL_IN_FLUID = "(Lnet/minecraft/server/level/ClientInformation;)Lnet/minecraft/server/network/CommonListenerCookie;";
+	private static final String GAME_MODE = "net/minecraft/client/renderer/block/ModelBlockRenderer";
+	private static final String REMOVE = "(Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/world/level/block/state/BlockState;"
+			+ "Lnet/minecraft/core/Direction;Lnet/minecraft/core/BlockPos;)Z";
+	private static final String LOADER = "net/minecraft/world/level/ServerExplosion";
+	private static final String LOAD = "()V";
 	private static final String WIRE = "net/minecraft/world/level/block/RedStoneWireBlock";
 	private static final String CONNECTS = "(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/core/Direction;)Z";
 	private static final String MIXIN = "Lorg/spongepowered/asm/mixin/Mixin;";
@@ -120,55 +122,56 @@ class MergedBaseGuestScanTest {
 
 	@Test
 	void anOverridesSuperCallOfItselfIsNoCallButACallOfItIs() {
-		ClassNode living = owner(LIVING, "travelInFluid", TRAVEL_IN_FLUID, Opcodes.ACC_PROTECTED);
+		ClassNode living = owner(LIVING, "createCookie", TRAVEL_IN_FLUID, Opcodes.ACC_PROTECTED);
 		assertNotNull(neverRuns(living, Ecosystem.FABRIC), "the shipped row: nothing in the merged game calls it");
 
 		// A mod's entity overriding it and calling super: dead itself, as the census's own override is.
-		MergedBaseUncalledMethods.noteGuest(bytes(caller("org/tidewrack/entity/Swimmer", LIVING, "travelInFluid", TRAVEL_IN_FLUID,
-				Opcodes.INVOKESPECIAL, LIVING, "travelInFluid", TRAVEL_IN_FLUID)));
+		MergedBaseUncalledMethods.noteGuest(bytes(caller("org/tidewrack/net/Listener", LIVING, "createCookie", TRAVEL_IN_FLUID,
+				Opcodes.INVOKESPECIAL, LIVING, "createCookie", TRAVEL_IN_FLUID)));
 		assertNotNull(neverRuns(living, Ecosystem.FABRIC), "a super call of itself runs only when the override runs");
-		assertFalse(MergedBaseUncalledMethods.calledByGuest("travelInFluid" + TRAVEL_IN_FLUID));
+		assertFalse(MergedBaseUncalledMethods.calledByGuest("createCookie" + TRAVEL_IN_FLUID));
 
 		// Control: a mod that calls it.
-		MergedBaseUncalledMethods.noteGuest(bytes(caller("org/tidewrack/entity/Pusher", "java/lang/Object", "push", "()V",
-				Opcodes.INVOKEVIRTUAL, LIVING, "travelInFluid", TRAVEL_IN_FLUID)));
+		MergedBaseUncalledMethods.noteGuest(bytes(caller("org/tidewrack/net/Pusher", "java/lang/Object", "push", "()V",
+				Opcodes.INVOKEVIRTUAL, LIVING, "createCookie", TRAVEL_IN_FLUID)));
 		assertNull(neverRuns(living, Ecosystem.FABRIC), "a mod's call of the method makes it run");
 	}
 
 	@Test
 	void anInvokerBindsOnlyItsOwnTargetsMethodOfItsNameAndDescriptor() {
-		ClassNode mode = owner(GAME_MODE, "removeBlock", REMOVE, Opcodes.ACC_PRIVATE);
-		ClassNode loader = owner(LOADER, "load", LOAD, Opcodes.ACC_PRIVATE | Opcodes.ACC_STATIC);
-		assertNotNull(neverRuns(mode, Ecosystem.FORGE));
+		ClassNode mode = owner(GAME_MODE, "shouldRenderFace", REMOVE, Opcodes.ACC_PRIVATE);
+		ClassNode loader = owner(LOADER, "hurtEntities", LOAD, Opcodes.ACC_PRIVATE);
+		assertNotNull(neverRuns(mode, Ecosystem.FABRIC));
 		assertNotNull(neverRuns(loader, Ecosystem.FABRIC));
 
 		// Accessors of OTHER classes whose invokers spell the rows' names: they bind their own targets' methods.
-		MergedBaseUncalledMethods.noteGuest(invoker("net/minecraft/world/level/block/piston/PistonBaseBlock", "invokeRemoveBlock", REMOVE, null));
-		MergedBaseUncalledMethods.noteGuest(invoker("net/minecraft/server/level/ServerChunkCache", "quillmere$load", LOAD, "load"));
-		assertNotNull(neverRuns(mode, Ecosystem.FORGE), "an invoker on PistonBaseBlock does not call ServerPlayerGameMode's method");
-		assertNotNull(neverRuns(loader, Ecosystem.FABRIC), "an invoker on ServerChunkCache does not call RegistryDataLoader's method");
+		MergedBaseUncalledMethods.noteGuest(invoker("net/minecraft/world/level/block/piston/PistonBaseBlock", "invokeShouldRenderFace", REMOVE, null));
+		MergedBaseUncalledMethods.noteGuest(invoker("net/minecraft/server/level/ServerChunkCache", "quillmere$hurt", LOAD, "hurtEntities"));
+		assertNotNull(neverRuns(mode, Ecosystem.FABRIC), "an invoker on PistonBaseBlock does not call ModelBlockRenderer's method");
+		assertNotNull(neverRuns(loader, Ecosystem.FABRIC), "an invoker on ServerChunkCache does not call ServerExplosion's method");
 
 		// An invoker on the row's own class with another descriptor binds the other overload.
-		MergedBaseUncalledMethods.noteGuest(invoker(GAME_MODE, "callRemoveBlock",
-				"(Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;ZLnet/minecraft/world/item/ItemStack;)Z", null));
-		assertNotNull(neverRuns(mode, Ecosystem.FORGE), "another descriptor is another method");
+		MergedBaseUncalledMethods.noteGuest(invoker(GAME_MODE, "callShouldRenderFace",
+				"(Lnet/minecraft/client/renderer/block/BlockAndTintGetter;Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;"
+						+ "Lnet/minecraft/core/Direction;Lnet/minecraft/core/BlockPos;)Z", null));
+		assertNotNull(neverRuns(mode, Ecosystem.FABRIC), "another descriptor is another method");
 
 		// Control: invokers of the rows' own classes, by derived name and by value.
-		MergedBaseUncalledMethods.noteGuest(invoker(GAME_MODE, "callRemoveBlock", REMOVE, null));
-		MergedBaseUncalledMethods.noteGuest(invoker(LOADER, "quillmere$load", LOAD, "load"));
-		assertNull(neverRuns(mode, Ecosystem.FORGE), "an invoker of its own class calls it");
+		MergedBaseUncalledMethods.noteGuest(invoker(GAME_MODE, "callShouldRenderFace", REMOVE, null));
+		MergedBaseUncalledMethods.noteGuest(invoker(LOADER, "quillmere$hurt", LOAD, "hurtEntities"));
+		assertNull(neverRuns(mode, Ecosystem.FABRIC), "an invoker of its own class calls it");
 		assertNull(neverRuns(loader, Ecosystem.FABRIC), "an invoker naming it by value calls it");
 	}
 
 	@Test
 	void aMixinsCallOfItsOwnClassIsMadeInTheClassItTargets() {
-		ClassNode mode = owner(GAME_MODE, "removeBlock", REMOVE, Opcodes.ACC_PRIVATE);
-		// A mixin of ServerPlayerGameMode calling its @Shadow private removeBlock: the call names the mixin class itself.
+		ClassNode mode = owner(GAME_MODE, "shouldRenderFace", REMOVE, Opcodes.ACC_PRIVATE);
+		// A mixin of ModelBlockRenderer calling its @Shadow private shouldRenderFace: the call names the mixin class itself.
 		ClassNode shadowing = caller("org/quillmere/mixin/GameModeMixin", "java/lang/Object", "quillmere$break", "()V",
-				Opcodes.INVOKESPECIAL, "org/quillmere/mixin/GameModeMixin", "removeBlock", REMOVE);
+				Opcodes.INVOKESPECIAL, "org/quillmere/mixin/GameModeMixin", "shouldRenderFace", REMOVE);
 		mixin(shadowing, GAME_MODE);
 		MergedBaseUncalledMethods.noteGuest(bytes(shadowing));
-		assertNull(neverRuns(mode, Ecosystem.FORGE), "Mixin makes that call in ServerPlayerGameMode");
+		assertNull(neverRuns(mode, Ecosystem.FABRIC), "Mixin makes that call in ModelBlockRenderer");
 	}
 
 	@Test

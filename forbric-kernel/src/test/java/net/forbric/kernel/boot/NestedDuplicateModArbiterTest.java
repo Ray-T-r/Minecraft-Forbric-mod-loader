@@ -74,20 +74,6 @@ class NestedDuplicateModArbiterTest {
 	}
 
 	@Test
-	void twoFamiliesNestingTheSameIdIsArbitratedAndFabricWins() {
-		Decision d = nested(List.of(), List.of(
-				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
-				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
-
-		assertEquals(1, d.suppressedJars().size(), "exactly one copy may load");
-		// Measured, not preferred on principle: the MinecraftForge half sets XaeroLib.client from
-		// FMLClientSetupEvent, and the Fabric minimap's first-tick hook then read it as null. See
-		// DuplicateModArbiter.nestedPreference().
-		assertTrue(d.suppressed(Path.of(FORGE_NESTED)), "the Fabric copy is the one that is ready in time");
-		assertEquals(Path.of(FABRIC_NESTED).toAbsolutePath(), d.ownerByModId().get("xaerolib"));
-	}
-
-	@Test
 	void aNeoForgeNestedLibraryBeatsItsFabricTwin() {
 		// The other direction of the same rule, and the other measurement behind nestedPreference(). tr7zw's
 		// 'transition' is nested by EntityCulling (Fabric build) and NotEnoughAnimations (NeoForge build): same
@@ -108,36 +94,25 @@ class NestedDuplicateModArbiterTest {
 	}
 
 	@Test
-	void aFabricNestedLibraryStillBeatsItsTraditionalForgeTwin() {
-		// The order is NEOFORGE, FABRIC, FORGE and all three positions are load-bearing: raising NeoForge must
-		// not also raise traditional MinecraftForge, or the xaerolib measurement above flips back.
-		Decision d = nested(List.of(), List.of(
-				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
-				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
-
-		assertTrue(d.suppressed(Path.of(FORGE_NESTED)));
-	}
-
-	@Test
 	void theLosingFamilyStillGetsThePresenceAlias() {
 		Decision d = nested(List.of(), List.of(
-				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
-				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "transition", "1.0.25"),
+				claim(FABRIC_NESTED, Ecosystem.FABRIC, "transition", "1.0.25")));
 
-		assertEquals(1, d.aliasesFor(Ecosystem.FORGE).size(),
-				"the library really is here — a Forge mod's isLoaded(\"xaerolib\") must still answer yes");
-		assertEquals("1.7.3", d.aliasesFor(Ecosystem.FORGE).get(0).version());
+		assertEquals(1, d.aliasesFor(Ecosystem.FABRIC).size(),
+				"the library really is here — a Fabric mod's isModLoaded(\"transition\") must still answer yes");
+		assertEquals("1.0.25", d.aliasesFor(Ecosystem.FABRIC).get(0).version());
 	}
 
 	@Test
 	void theAliasFallsBackToWhicheverCopyDeclaredAVersion() {
 		Decision d = nested(List.of(), List.of(
-				new Claim(Path.of(FORGE_NESTED), Ecosystem.FORGE, List.of("xaerolib"), Map.of("xaerolib", "1.7.3")),
-				new Claim(Path.of(FABRIC_NESTED), Ecosystem.FABRIC, List.of("xaerolib"))));
+				new Claim(Path.of(NEO_NESTED), Ecosystem.NEOFORGE, List.of("xaerolib")),
+				new Claim(Path.of(FABRIC_NESTED), Ecosystem.FABRIC, List.of("xaerolib"), Map.of("xaerolib", "1.7.3"))));
 
 		// A mod comparing the aliased version against a range is better served by the loser's real number than by
 		// versionOf's "0" placeholder.
-		assertEquals("1.7.3", d.aliasesFor(Ecosystem.FORGE).get(0).version());
+		assertEquals("1.7.3", d.aliasesFor(Ecosystem.FABRIC).get(0).version());
 	}
 
 	@Test
@@ -170,23 +145,25 @@ class NestedDuplicateModArbiterTest {
 	void aNestedJarIsKeptWhenItAlsoCarriesSomethingNothingElseProvides() {
 		// The subset rule, as in the top-level pass: withdrawing this jar because 'xaerolib' collided would leave
 		// 'xaerolib_extra' loaded by nobody.
-		Claim bundle = new Claim(Path.of(FORGE_NESTED), Ecosystem.FORGE, List.of("xaerolib", "xaerolib_extra"),
+		// The bundle is Fabric's, the build the nested default (NeoForge first) would withdraw.
+		Claim bundle = new Claim(Path.of(FABRIC_NESTED), Ecosystem.FABRIC, List.of("xaerolib", "xaerolib_extra"),
 				Map.of("xaerolib", "1.7.3", "xaerolib_extra", "1.0"));
 		Decision d = nested(List.of(),
-				List.of(bundle, claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
+				List.of(bundle, claim(NEO_NESTED, Ecosystem.NEOFORGE, "xaerolib", "1.7.3")));
 
-		assertFalse(d.suppressed(Path.of(FORGE_NESTED)), "a partial overlap must suppress nothing");
+		assertFalse(d.suppressed(Path.of(FABRIC_NESTED)), "a partial overlap must suppress nothing");
 	}
 
 	@Test
 	void theParentOfALosingNestedJarIsNeverTouched() {
-		Claim parent = claim("/g/mods/xaeroworldmap-forge.jar", Ecosystem.FORGE, "xaeroworldmap", "1.46.0");
+		Claim parent = claim("/g/mods/xaerominimap-fabric.jar", Ecosystem.FABRIC, "xaerominimap", "25.2.0");
 		Decision d = nested(List.of(parent), List.of(
-				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "xaerolib", "1.7.3"),
 				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
 
 		assertEquals(1, d.suppressedJars().size());
-		assertFalse(d.suppressed(Path.of("/g/mods/xaeroworldmap-forge.jar")),
+		assertTrue(d.suppressed(Path.of(FABRIC_NESTED)), "the nested default withdraws the Fabric copy");
+		assertFalse(d.suppressed(Path.of("/g/mods/xaerominimap-fabric.jar")),
 				"losing a nested library must not cost the mod that nested it");
 	}
 
@@ -208,11 +185,11 @@ class NestedDuplicateModArbiterTest {
 		// default decides between the builds that can load.
 		System.setProperty(DuplicateModArbiter.OWNER_OVERRIDE, "xaerolib=minecraftforge");
 		Decision d = nested(List.of(), List.of(
-				claim(FORGE_NESTED, Ecosystem.FORGE, "xaerolib", "1.7.3"),
+				claim(NEO_NESTED, Ecosystem.NEOFORGE, "xaerolib", "1.7.3"),
 				claim(FABRIC_NESTED, Ecosystem.FABRIC, "xaerolib", "1.7.3")));
 
-		assertTrue(d.suppressed(Path.of(FORGE_NESTED)));
-		assertFalse(d.suppressed(Path.of(FABRIC_NESTED)));
+		assertTrue(d.suppressed(Path.of(FABRIC_NESTED)), "NeoForge first, as with no pin");
+		assertFalse(d.suppressed(Path.of(NEO_NESTED)));
 	}
 
 	@Test

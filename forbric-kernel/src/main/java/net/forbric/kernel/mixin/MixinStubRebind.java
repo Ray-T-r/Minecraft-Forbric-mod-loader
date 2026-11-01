@@ -51,13 +51,13 @@ import net.forbric.kernel.util.ForbricLog;
  *       carrier's. Vanilla keeps stub-and-overload pairs of its own ({@code Minecraft.disconnect(Screen, boolean)}
  *       forwarding to the three-argument one) and a mod that chose the short one there meant it;</li>
  *   <li>only for a mod whose own platform ran that selector on code. A Fabric mod was compiled against vanilla, so
- *       it moves along every row. A MinecraftForge or NeoForge mod moves only where its carrier's own patched class
- *       has vanilla's signature as the body (or, for a name-only selector, only the widened overload) — the row's
- *       {@code forge=}/{@code neo=} column. Most rows are NeoForge's stubs over a signature MinecraftForge kept as the
- *       body: fusion's sprite capture on {@code ModelManager.loadModels} sat on the forwarding stub nothing calls,
- *       its static stayed null, and every block and item model on the client failed to bake. A mod whose carrier
- *       keeps the same stub itself (NeoForge mods on NeoForge's stubs) gets what it would get natively.
- *       {@code -Dforbric.mixinStubRebind.forgeFamily=off} moves Fabric mods' injectors only, as before;</li>
+ *       it moves along every row. A NeoForge mod moves only where NeoForge's own patched class has vanilla's
+ *       signature as the body (or, for a name-only selector, only the widened overload) — the row's {@code neo=}
+ *       column. On NeoForge's own base that is only where a vanilla twin made the stub (AxeItem's
+ *       {@code evaluateNewBlockState}); a NeoForge mod on NeoForge's own stubs gets what it gets natively. (While
+ *       Forbric loaded MinecraftForge mods a {@code forge=} column moved theirs: fusion's sprite capture on
+ *       {@code ModelManager.loadModels} sat on a forwarding stub nothing calls.)
+ *       {@code -Dforbric.mixinStubRebind.forgeFamily=off} moves Fabric mods' injectors only;</li>
  *   <li>only a PURE stub: loads, constants, fields, lambdas and method references (a constant when they capture
  *       nothing — NeoForge's {@code Language.loadFromJson(InputStream, BiConsumer)} passes a no-op component consumer;
  *       {@code EntityFluidInteraction.update(Entity, boolean)} wraps its flag in the {@code Predicate} its body takes)
@@ -132,7 +132,10 @@ public final class MixinStubRebind {
 	public static final String SUGAR_BOUNDARY_PROPERTY = "forbric.mixinStubRebind.sugarBoundary";
 	/** {@code -Dforbric.mixinStubRebind.stubFinding=off}: a handler its captures keep on a stub is not reported. */
 	public static final String STUB_FINDING_PROPERTY = "forbric.mixinStubRebind.stubFinding";
-	/** {@code -Dforbric.mixinStubRebind.forgeFamily=off}: only Fabric mods' injectors move, as before the carrier columns. */
+	/**
+	 * {@code -Dforbric.mixinStubRebind.forgeFamily=off}: only Fabric mods' injectors move, as before the carrier column.
+	 * It gates NeoForge mods' moves only now; the name stays (D31), a rename is later naming work.
+	 */
 	public static final String FORGE_FAMILY_PROPERTY = "forbric.mixinStubRebind.forgeFamily";
 	/** {@code -Dforbric.mixinStubRebind.typedLocal=off}: a handler with a by-type-only {@code @Local} stays on the stub. */
 	public static final String TYPED_LOCAL_PROPERTY = "forbric.mixinStubRebind.typedLocal";
@@ -1261,9 +1264,9 @@ public final class MixinStubRebind {
 	}
 
 	/**
-	 * What a mod of one Forge family was compiled against where a row's stub now stands: how that carrier's OWN patched
-	 * class binds the two selectors that land on the merged stub — vanilla's name alone, and vanilla's descriptor.
-	 * CarrierStubCensusTest reads it off patched-mc-forge and patched-mc-neoforge with {@link #of}.
+	 * What a NeoForge mod was compiled against where a row's stub now stands: how NeoForge's OWN patched class (the raw
+	 * base, before the vanilla twins) binds the two selectors that land on the stub — vanilla's name alone, and vanilla's
+	 * descriptor. CarrierStubCensusTest reads it off the raw base with {@link #of}.
 	 */
 	enum Shape {
 		/** Vanilla's signature is a body there, the first of its name: both selectors ran on code. */
@@ -1321,20 +1324,20 @@ public final class MixinStubRebind {
 		}
 	}
 
-	/** One row's columns: what a MinecraftForge and a NeoForge mod were compiled against at that stub. */
-	record Row(Shape forge, Shape neo) {
+	/** One row's column: what a NeoForge mod was compiled against at that stub. */
+	record Row(Shape neo) {
 		/** Whether a mod of {@code ecosystem} with a name-only ({@code byName}) or descriptor selector moves along this row. */
 		boolean moves(Ecosystem ecosystem, boolean byName) {
 			if (ecosystem == Ecosystem.FABRIC) return true;   // compiled against vanilla, where the row's signature is the body
 			if (!forgeFamilyEnabled()) return false;
-			Shape shape = ecosystem == Ecosystem.FORGE ? forge : ecosystem == Ecosystem.NEOFORGE ? neo : null;
+			Shape shape = ecosystem == Ecosystem.NEOFORGE ? neo : null;
 			return shape != null && shape.ranOnCode(byName);
 		}
 
 		/** Whether a selector of either form ran on code on {@code ecosystem}'s own platform, whatever the switches say. */
 		boolean ranOnCode(Ecosystem ecosystem) {
 			if (ecosystem == Ecosystem.FABRIC) return true;
-			Shape shape = ecosystem == Ecosystem.FORGE ? forge : ecosystem == Ecosystem.NEOFORGE ? neo : null;
+			Shape shape = ecosystem == Ecosystem.NEOFORGE ? neo : null;
 			return shape != null && (shape.ranOnCode(true) || shape.ranOnCode(false));
 		}
 	}
@@ -1350,12 +1353,12 @@ public final class MixinStubRebind {
 					if (line.isBlank() || line.startsWith("#")) continue;
 					String[] parts = line.trim().split(" ");
 					if (parts.length < 3 || !"->".equals(parts[1])) continue;
-					Shape forge = Shape.STUB, neo = Shape.STUB;
+					Shape neo = Shape.STUB;
 					for (int i = 3; i < parts.length; i++) {
-						if (parts[i].startsWith("forge=")) forge = java.util.Objects.requireNonNullElse(Shape.parse(parts[i].substring(6)), Shape.STUB);
+						// Other tokens are ignored: a forge= column from a table written while MinecraftForge mods loaded moves nobody.
 						if (parts[i].startsWith("neo=")) neo = java.util.Objects.requireNonNullElse(Shape.parse(parts[i].substring(4)), Shape.STUB);
 					}
-					loaded.put(parts[0] + " -> " + parts[2], new Row(forge, neo));
+					loaded.put(parts[0] + " -> " + parts[2], new Row(neo));
 				}
 			}
 		} catch (java.io.IOException unreadable) {

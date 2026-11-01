@@ -246,10 +246,16 @@ class ModListRowsTest {
 		assertEquals("NeoForge", loader.name(), "named as its own entry names itself");
 	}
 
+	/**
+	 * A refused MinecraftForge jar is listed (the player installed it, and is told it does not load) but is no family's
+	 * mod, so it brings no loader row with it: NeoForge's own row needs a NeoForge mod. (While Forbric loaded
+	 * MinecraftForge mods, such a mod alone listed NeoForge's row, the carrier serving both families.)
+	 */
 	@Test
-	void aMinecraftForgeModAloneListsNeoForgesOwnRow() {
-		List<ModCatalog.Entry> all = List.of(installed("f", "Fabric Mod"), of(Ecosystem.FORGE, "m", "Forge Mod", ""));
-		assertEquals(List.of("f", "m", "game", "loader"), listedWithLoaderRows(all));
+	void aRefusedMinecraftForgeJarAloneListsNoLoaderRow() {
+		List<ModCatalog.Entry> all = List.of(installed("f", "Fabric Mod"),
+				ModCatalog.Entry.refused("MinecraftForge", "FORGE", "m", "Forge Mod", "m.jar", "is a MinecraftForge mod"));
+		assertEquals(List.of("f", "m", "game"), listedWithLoaderRows(all));
 	}
 
 	@Test

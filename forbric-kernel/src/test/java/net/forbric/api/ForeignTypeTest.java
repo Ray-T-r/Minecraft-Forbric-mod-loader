@@ -49,9 +49,6 @@ class ForeignTypeTest {
 		assertEquals("net.neoforged.fml.ModList", ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE));
 		assertEquals("net.neoforged.neoforge.registries.GameData", ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE));
 
-		assertEquals("net.minecraftforge.fml.ModList", ForeignType.MOD_LIST.binary(Ecosystem.FORGE));
-		assertEquals("net.minecraftforge.registries.GameData", ForeignType.GAME_DATA.binary(Ecosystem.FORGE));
-
 		assertFalse(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE).startsWith("net.neoforged.neoforge."),
 				"fml.* stays under net.neoforged. -- pushing it down a level is the mistake this test exists for");
 	}
@@ -60,8 +57,6 @@ class ForeignTypeTest {
 	void internalNamesAreTheSlashFormAsmWants() {
 		assertEquals("net/neoforged/neoforge/client/loading/ClientModLoader",
 				ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.NEOFORGE));
-		assertEquals("net/minecraftforge/client/loading/ClientModLoader",
-				ForeignType.CLIENT_MOD_LOADER.internal(Ecosystem.FORGE));
 	}
 
 	@Test
@@ -72,24 +67,22 @@ class ForeignTypeTest {
 		}
 	}
 
+	/** NeoForge's name and nothing else: MinecraftForge's column went with {@code Ecosystem.FORGE}. */
 	@Test
-	void matchesAnswersForEitherFamilyAndNothingElse() {
+	void matchesAnswersForNeoForgesNameAndNothingElse() {
 		assertTrue(ForeignType.MOD_LIST.matches("net.neoforged.fml.ModList"));
-		assertTrue(ForeignType.MOD_LIST.matches("net.minecraftforge.fml.ModList"));
+		assertFalse(ForeignType.MOD_LIST.matches("net.minecraftforge.fml.ModList"), "MinecraftForge is no ecosystem");
 		assertFalse(ForeignType.MOD_LIST.matches("net.neoforged.neoforge.fml.ModList"), "the wrong root is not a match");
 		assertFalse(ForeignType.MOD_LIST.matches("net.fabricmc.loader.api.FabricLoader"));
 	}
 
-	/** Every row must name both families, or a call site that asks for one gets a null it will not check. */
+	/** Every row must name NeoForge's class, or a call site that asks for it gets a null it will not check. */
 	@Test
-	void everyRowNamesBothForgeFamilies() {
+	void everyRowNamesNeoForgesClass() {
 		for (ForeignType type : ForeignType.values()) {
-			for (Ecosystem eco : new Ecosystem[] {Ecosystem.FORGE, Ecosystem.NEOFORGE}) {
-				String binary = type.binary(eco);
-				assertNotNull(binary, type + " has no " + eco + " name");
-				assertTrue(binary.startsWith(eco == Ecosystem.FORGE ? "net.minecraftforge." : "net.neoforged."),
-						type + " " + eco + " name is in the wrong root: " + binary);
-			}
+			String binary = type.binary(Ecosystem.NEOFORGE);
+			assertNotNull(binary, type + " has no NeoForge name");
+			assertTrue(binary.startsWith("net.neoforged."), type + " NeoForge name is in the wrong root: " + binary);
 		}
 	}
 
@@ -120,7 +113,7 @@ class ForeignTypeTest {
 		assertTrue(Files.isDirectory(kernel), "the kernel sources are part of this checkout: " + kernel);
 
 		Pattern literal = Pattern.compile("\"(net[./](?:minecraftforge|neoforged)[A-Za-z0-9_./$]*)\"");
-		Map<String, Map<Ecosystem, String>> byTail = new TreeMap<>();
+		Map<String, Map<Boolean, String>> byTail = new TreeMap<>();
 		Map<String, Set<String>> where = new TreeMap<>();
 
 		try (Stream<Path> files = Files.walk(kernel)) {
@@ -132,9 +125,10 @@ class ForeignTypeTest {
 					// CommonNetworkInteropInjector matches on "net/neoforged/"; neither names a concept that
 					// could have a forgotten other half, and a two-column table has nothing to offer them.
 					if (dotted.endsWith(".") || !Character.isUpperCase(lastSegment(dotted).charAt(0))) continue;
-					Ecosystem eco = dotted.startsWith("net.minecraftforge.") ? Ecosystem.FORGE : Ecosystem.NEOFORGE;
+					// MinecraftForge's name or NeoForge's: a concept written under both is a pair, whichever loads.
+					boolean minecraftForge = dotted.startsWith("net.minecraftforge.");
 					String tail = lastSegment(dotted);
-					byTail.computeIfAbsent(tail, k -> new TreeMap<>()).put(eco, dotted);
+					byTail.computeIfAbsent(tail, k -> new TreeMap<>()).put(minecraftForge, dotted);
 					where.computeIfAbsent(tail, k -> new TreeSet<>()).add(f.getFileName().toString());
 				}
 			}

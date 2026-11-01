@@ -212,7 +212,6 @@ class MergedBaseCalleeSwapTest {
 			assertEquals(0, occurrences(merged, row.member()), where + ": the merged body makes the reference call again");
 			assertEquals(1, occurrences(merged, row.replacement()), where + ": the merged body no longer makes the replacement once");
 			for (Ecosystem ecosystem : Ecosystem.values()) {
-				if (ecosystem == Ecosystem.FORGE) continue; // no MinecraftForge reference is staged any more (C4 removes the constant)
 				Path reference = ecosystem == Ecosystem.FABRIC ? vanilla : NEO_PATCHED;
 				MethodNode original = debugMethod(reference, row.target(), row.method());
 				assertTrue(original != null, where + " is not in " + ecosystem + "'s own jar");

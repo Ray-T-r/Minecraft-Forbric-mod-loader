@@ -78,7 +78,7 @@ class GenuineNativeReferencesStagedTest {
 		Path genuine = genuine();
 		String line = NativeReferenceSources.open(genuine, TestFixtures.vanillaReference(genuine)).describe();
 		assertTrue(line.contains("native references: FABRIC from the vanilla-reference sidecar"), line);
-		assertTrue(line.contains("FORGE none"), "the genuine base carries no MinecraftForge compile: " + line);
+		assertFalse(line.replace("NEOFORGE", "").contains("FORGE"), "MinecraftForge is no ecosystem, so the line names none: " + line);
 		assertTrue(line.contains("NEOFORGE from the base's own bytes"), "its Block declares NeoForge's extension: " + line);
 		String bare = NativeReferenceSources.open(genuine, null).describe();
 		assertTrue(bare.contains("native references: FABRIC none") && bare.contains("stands down"),
@@ -97,9 +97,8 @@ class GenuineNativeReferencesStagedTest {
 			assertArrayEquals(write(node(entry(genuine, owner + ".class"))),
 					write(NativeGameReferences.reference(Ecosystem.NEOFORGE, owner)),
 					"NEOFORGE " + owner + " is the base's own compile");
-			assertNull(NativeGameReferences.reference(Ecosystem.FORGE, owner), "no FORGE compile exists here");
 			assertTrue(NativeGameReferences.has(Ecosystem.FABRIC, owner) && NativeGameReferences.has(Ecosystem.NEOFORGE, owner));
-			assertEquals(2, NativeGameReferences.peers(Ecosystem.FORGE, owner).size(), owner);
+			assertEquals(1, NativeGameReferences.peers(Ecosystem.FABRIC, owner).size(), owner + ": NeoForge's, the one other ecosystem");
 		}
 	}
 

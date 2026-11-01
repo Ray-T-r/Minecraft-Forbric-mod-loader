@@ -70,7 +70,7 @@ class DiscoveredModTest {
 	 */
 	@Test
 	void anAbsentListReadsAsEmptyRatherThanNull() {
-		DiscoveredMod mod = new DiscoveredMod(Ecosystem.FORGE, "example", "1.0.0", "Example",
+		DiscoveredMod mod = new DiscoveredMod(Ecosystem.NEOFORGE, "example", "1.0.0", "Example",
 				null, null, null, null, "example.jar");
 
 		assertTrue(mod.getDependencies().isEmpty());

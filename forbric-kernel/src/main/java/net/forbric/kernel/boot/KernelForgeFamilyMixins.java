@@ -83,17 +83,9 @@ public final class KernelForgeFamilyMixins {
 		int suppressed = 0;
 		int disabled = 0;
 		for (ForgeMixinConfig decl : declared) {
-			// Forbric no longer loads MinecraftForge mods, so a MinecraftForge config is registered for nobody — whoever
-			// declared it, whichever half of its jar loads. Discovery no longer collects them; this holds if one arrives.
-			if (decl.ecosystem() == Ecosystem.FORGE) {
-				suppressed++;
-				ForbricLog.debug("[Forbric/Mixin] skipping %s's %s — a MinecraftForge mixin config", decl.modId(),
-						decl.config());
-				continue;
-			}
-			Ecosystem mine = decl.ecosystem() == Ecosystem.NEOFORGE
-					? Ecosystem.NEOFORGE
-					: Ecosystem.FORGE;
+			// Only NeoForge's manifests are collected (KernelBoot.collectForgeFamily): Forbric no longer loads MinecraftForge
+			// mods, and a MinecraftForge mixin config has no ecosystem to be declared under.
+			Ecosystem mine = decl.ecosystem();
 			if (MultiLoaderArbiter.suppressedFor(decl.jar(), mine)) {
 				suppressed++;
 				ForbricLog.debug("[Forbric/Mixin] skipping %s's %s — %s does not own %s", decl.modId(),

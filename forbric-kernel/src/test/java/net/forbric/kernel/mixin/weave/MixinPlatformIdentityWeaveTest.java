@@ -58,7 +58,6 @@ class MixinPlatformIdentityWeaveTest {
 
 	@Test void eachBuildOfTheModPicksItsOwnHalfAndTheFabricHalfDecoratesTheWeaver() throws Exception {
 		returned(run("fabric", Ecosystem.FABRIC, owned()), "platform=fabric knot=wrapped stamp=decorated+mixin");
-		returned(run("forge", Ecosystem.FORGE, owned()), "platform=forge knot=not tried stamp=plain+mixin");
 		returned(run("neoforge", Ecosystem.NEOFORGE, owned()), "platform=neoforge knot=not tried stamp=plain+mixin");
 	}
 

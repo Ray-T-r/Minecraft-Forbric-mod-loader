@@ -101,7 +101,7 @@ class StubLocalsCaptureTest {
 		ClassNode neo = named(continuity(), "org/example/stubcapture/NeoForgeCapture"), forge = named(continuity(), "org/example/stubcapture/ForgeCapture");
 		MixinStubRebind.noteEcosystem(neo.name, net.forbric.api.Ecosystem.NEOFORGE);
 		assertUntouched(neo, target, "a NeoForge mod: NeoForge's own list(ResourceManager) is this stub");
-		MixinStubRebind.noteEcosystem(forge.name, net.forbric.api.Ecosystem.FORGE);
+		MixinStubRebind.noteEcosystem(forge.name, net.forbric.api.Ecosystem.FABRIC);
 		assertEquals(1, adapt(forge, target), "a MinecraftForge mod: its platform ran that signature as the body");
 	}
 

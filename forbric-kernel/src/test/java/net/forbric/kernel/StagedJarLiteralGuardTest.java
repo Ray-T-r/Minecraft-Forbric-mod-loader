@@ -106,6 +106,9 @@ class StagedJarLiteralGuardTest {
 			"verified() builds a reader over a one-row index of the bytes it is handed, not over the base",
 			"net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java",
 			"constructs the injector over the vanilla jar's own classes (vanilla()), not over a reader of the base",
+			"net/forbric/kernel/transform/PreMixinView.java",
+			"constructs the injector over the vanilla jar's own classes (vanilla()); twinnedBase() passes the base's classes "
+					+ "through it, it reads no embedded index",
 			"net/forbric/kernel/boot/LaunchInputCheckTest.java",
 			"writes an old merged base's index entry names into synthetic jars (the D9 old-install signal); reads only the "
 					+ "staged base's Block");

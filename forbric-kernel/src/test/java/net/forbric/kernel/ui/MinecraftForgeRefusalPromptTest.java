@@ -50,9 +50,10 @@ class MinecraftForgeRefusalPromptTest {
 		}
 		new ForbricModDiscoverer().discoverJar(jar);
 		System.setProperty(DialogLang.SWITCH, "en");
-		MetadataFailures.recordFindings(path -> Ecosystem.FORGE, List.of(), mods, path -> false);
-		ModCatalog.publish(List.of(new ModCatalog.Entry(Ecosystem.FORGE, "onlyforge", "Only Forge", "", "", List.of(),
-				"onlyforge.jar", "", "")));
+		// A refused jar has no owner (MinecraftForge is no ecosystem), and its catalogue row is the refused one.
+		MetadataFailures.recordFindings(path -> null, List.of(), mods, path -> false);
+		ModCatalog.publish(List.of(ModCatalog.Entry.refused("MinecraftForge", "FORGE", "onlyforge", "Only Forge", "onlyforge.jar",
+				"is a MinecraftForge mod")));
 
 		List<DependencyReport.CompatibilityRow> asked = new ArrayList<>();
 		assertFalse(CompatibilityDecision.decide(CompatibilityFindings.confirmedRequired(), CompatibilityDecision.Policy.ASK,

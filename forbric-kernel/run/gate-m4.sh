@@ -123,14 +123,14 @@ step "one list holds all three ecosystems' mods (must PASS)"
 #
 # INSTALLED mods, i.e. the jars in mods/. The jars those carry inside themselves are running too, and are not
 # what a player means by "my mods" -- on a real pack they outnumber the answer five to one.
-CAT=$(grep -oE 'Catalog\] [0-9]+ installed mod\(s\) for the unified Mods screen: [0-9]+ Fabric, [0-9]+ NeoForge, [0-9]+ MinecraftForge' "$LOG" | head -1)
+CAT=$(grep -oE 'Catalog\] [0-9]+ installed mod\(s\) for the unified Mods screen: [0-9]+ Fabric, [0-9]+ NeoForge, [0-9]+ refused' "$LOG" | head -1)
 if [ -n "$CAT" ]; then
   set -- $(echo "$CAT" | grep -oE '[0-9]+')
   assert_eq "the catalogue counts add up"  "$1" "$(( $2 + $3 + $4 ))"
   [ "${2:-0}" -ge 1 ] && echo "[kernel] PASS Fabric mods in the catalogue ($2)"        || { echo "[kernel] FAIL no Fabric mod in the catalogue"; FAIL=1; }
   [ "${3:-0}" -ge 1 ] && echo "[kernel] PASS NeoForge mods in the catalogue ($3)"      || { echo "[kernel] FAIL no NeoForge mod in the catalogue"; FAIL=1; }
-  # Stage 3: nothing here is a MinecraftForge mod any more, and nothing may load as one.
-  assert_eq "no MinecraftForge mod in the catalogue" 0 "${4:-missing}"
+  # Stage 3: nothing here is a MinecraftForge mod any more; a refused jar would be counted apart, under no ecosystem.
+  assert_eq "no refused jar in the catalogue" 0 "${4:-missing}"
 else
   echo "[kernel] FAIL the unified mod catalogue was never published"; FAIL=1
 fi

@@ -394,9 +394,7 @@ class NestedCandidateSelectionTest {
 		assertTrue(MultiLoaderArbiter.refused(forgeOnly));
 		assertNull(DuplicateModArbiter.currentPlan(), "a refused jar is no claim, so there is nothing to plan");
 		assertTrue(refused.ownerByModId().isEmpty());
-		// The rule's MinecraftForge side, which no mod reaches any more; Stage 4 deletes it with the rest of that code.
-		assertTrue(NestedCandidateInventory.supersededByKernelMixinExtras(new DuplicateModArbiter.Claim(root, net.forbric.api.Ecosystem.FORGE,
-				List.of("mixinextras"), Map.of("mixinextras", "0.3.5")), "0.5.4"));
+
 		// A Fabric mod's own nested mixinextras-fabric is the Fabric dependency graph's business, not this rule's.
 		reset(); KernelBundledJars.mixinExtrasVersionForTests("0.5.4");
 		assertFalse(NestedCandidateInventory.supersededByKernelMixinExtras(new DuplicateModArbiter.Claim(root, net.forbric.api.Ecosystem.FABRIC,

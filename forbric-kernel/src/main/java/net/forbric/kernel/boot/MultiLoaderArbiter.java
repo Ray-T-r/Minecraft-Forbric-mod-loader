@@ -226,11 +226,9 @@ public final class MultiLoaderArbiter {
 		Set<Ecosystem> found = new HashSet<>();
 		try (JarFile zip = new JarFile(jar.toFile())) {
 			List<ModAnnotationScanner.ModClassInfo> annotations = ModAnnotationScanner.scan(jar);
-			for (Ecosystem family : List.of(Ecosystem.NEOFORGE, Ecosystem.FORGE)) {
+			for (Ecosystem family : List.of(Ecosystem.NEOFORGE)) {
 				if (!declared.contains(family)) continue;
-				String manifest = family == Ecosystem.NEOFORGE
-						? ForbricModDiscoverer.NEOFORGE_MANIFEST : ForbricModDiscoverer.FORGE_MANIFEST;
-				try (var in = zip.getInputStream(zip.getJarEntry(manifest))) {
+				try (var in = zip.getInputStream(zip.getJarEntry(ForbricModDiscoverer.NEOFORGE_MANIFEST))) {
 					Set<String> ids = new HashSet<>();
 					for (var mod : ModsTomlParser.parse(in).getMods()) ids.add(mod.getModId());
 					if (annotations.stream().anyMatch(info -> info.family == family && ids.contains(info.modId))) {
@@ -371,16 +369,24 @@ public final class MultiLoaderArbiter {
 	 * Which loader manifests the jar actually carries, in preference-independent (stable) order.
 	 *
 	 * <p>Public because a universal jar's LOSING ecosystems still have an identity that has to be handed back —
-	 * {@code DuplicateModArbiter} reads this to work out which manifests to publish presence aliases from. A
-	 * {@code mods.toml} is listed as {@code Ecosystem.FORGE} for the passes that still read the manifest list that way;
-	 * whether the jar is refused is {@link #claimOf}'s answer, never this list's.
+	 * {@code DuplicateModArbiter} reads this to work out which manifests to publish presence aliases from. Only the
+	 * ecosystems Forbric loads: a {@code mods.toml} is no ecosystem's, and {@link #loadersOf} lists it as
+	 * {@link LoaderKind#MINECRAFTFORGE}. Whether the jar is refused is {@link #claimOf}'s answer, never this list's.
 	 */
 	public static List<Ecosystem> declaredBy(Path jar) {
 		List<Ecosystem> declared = new ArrayList<>();
 		for (LoaderKind loader : manifestsOf(jar)) {
-			declared.add(loader == LoaderKind.MINECRAFTFORGE ? Ecosystem.FORGE : loader.ecosystem());
+			if (loader.ecosystem() != null) declared.add(loader.ecosystem());
 		}
 		return declared;
+	}
+
+	/**
+	 * Every loader manifest {@code jar} carries, a MinecraftForge {@code mods.toml} included, in {@link #declaredBy}'s
+	 * order: for a pass that asks how many loaders a jar was built for (a universal jar), not which of them load.
+	 */
+	public static List<LoaderKind> loadersOf(Path jar) {
+		return manifestsOf(jar);
 	}
 
 	/**

@@ -26,7 +26,7 @@ import net.forbric.kernel.mixin.MixinStubRebind;
  * land on the body the merged game actually calls.
  *
  * <p>The fixture's {@code LivingEntity} has the shape of the carrier-stubs.txt row
- * {@code randomTeleport(DDDZ)Z -> (DDDZLItemStack;)Z forge=body neo=stub}: vanilla's signature, declared first, only
+ * {@code randomTeleport(DDDZ)Z -> (DDDZLItemStack;)Z neo=stub}: vanilla's signature, declared first, only
  * forwards to the widened overload, which carries the body. The mixin names {@code randomTeleport} alone, as it would
  * against vanilla, with a HEAD that captures vanilla's four arguments and an INVOKE anchor only the body has. The probe
  * calls the body (the merged game's caller) and then the stub (an old caller), and returns both traces.
@@ -34,8 +34,8 @@ import net.forbric.kernel.mixin.MixinStubRebind;
  *   <li>fabric — both handlers move: HEAD runs on either call, still handed vanilla's arguments, and the anchor fires;</li>
  *   <li>fabric-off — {@code -Dforbric.mixinStubRebind=off}, the control: HEAD runs only when the stub is called, the
  *       anchor never fires and is a confirmed loss, and the audit flags HEAD as attached only inside the stub;</li>
- *   <li>neoforge — the row's {@code neo=stub}: a NeoForge mod was compiled against that same stub, so nothing moves;</li>
- *   <li>forge — the row's {@code forge=body}: MinecraftForge kept vanilla's signature as the body, so it moves.</li>
+ *   <li>neoforge — the row's {@code neo=stub}: a NeoForge mod was compiled against that same stub, so nothing moves.
+ *       (A MinecraftForge run, on the row's former {@code forge=body}, went with {@code Ecosystem.FORGE}.)</li>
  * </ul>
  */
 class MixinStubRebindWeaveTest {
@@ -69,7 +69,7 @@ class MixinStubRebindWeaveTest {
 		RUNS.put("fabric", run("fabric", Ecosystem.FABRIC, Map.of()));
 		RUNS.put("fabric-off", run("fabric-off", Ecosystem.FABRIC, Map.of(MixinStubRebind.PROPERTY, "off")));
 		RUNS.put("neoforge", run("neoforge", Ecosystem.NEOFORGE, Map.of()));
-		RUNS.put("forge", run("forge", Ecosystem.FORGE, Map.of()));
+
 	}
 
 	@Test void aFabricModsInjectorsLeaveTheStubForTheBody() throws Exception {
@@ -110,13 +110,6 @@ class MixinStubRebindWeaveTest {
 		// NeoForge's own class has the same stub, so the audit does not call HEAD's place a merge artefact.
 		assertEquals(List.of(), stubHosted(neoforge), neoforge.describe());
 		WeaveHarness.assertWovenAndVerified(neoforge, TARGET, fixture);
-
-		WeaveHarness.Result forge = RUNS.get("forge");
-		assertTrue(forge.printed(WeaveHarnessMain.DONE + " " + MOVED), forge.describe());
-		assertTrue(forge.printed(ANCHOR_MOVED) && forge.printed(HEAD_MOVED), forge.describe());
-		assertEquals(List.of(), losses(forge), forge.describe());
-		assertEquals(2, handlerCalls(forge, BODY), forge.describe());
-		WeaveHarness.assertWovenAndVerified(forge, TARGET, fixture);
 	}
 
 	/** The run and its control must be told apart by the very predicates the test uses on them. */

@@ -95,10 +95,9 @@ public final class ModListRows {
 	 * family that won it -- holds a mod that loader serves: its settings are the settings of what those mods run on. The
 	 * rule is the shape of the instance, not a setting.
 	 *
-	 * <p>The Forge-family carrier serves both FML families: on Forbric a NeoForge mod and a MinecraftForge mod both run on
-	 * the one NeoForge-patched base. So NeoForge's row is there when the instance has a NeoForge mod, a MinecraftForge mod,
-	 * or a universal jar arbitration gave to either, and a pure-Fabric pack -- a universal jar Fabric won included -- has no
-	 * such row. NeoForge itself still runs under every instance and still reads its own settings file; what a pure-Fabric
+	 * <p>So NeoForge's row is there when the instance has a NeoForge mod, or a universal jar arbitration gave to NeoForge,
+	 * and a pure-Fabric pack -- a universal jar Fabric won included -- has no such row; a refused MinecraftForge jar is no
+	 * family's mod and adds none. NeoForge itself still runs under every instance and still reads its own settings file; what a pure-Fabric
 	 * pack does not get is a row for a loader none of its mods is for. The game's own row is no loader's
 	 * ({@link Platform#family()} null) and is always listed.
 	 */
@@ -145,7 +144,7 @@ public final class ModListRows {
 		Set<Ecosystem> families = new HashSet<>();
 		for (ModCatalog.Entry e : everything) {
 			byId.putIfAbsent(e.modId(), e);
-			families.add(e.ecosystem());
+			if (e.ecosystem() != null) families.add(e.ecosystem());   // a refused jar is no family's
 		}
 		// Every installed entry is a block of its own, two with one id included -- though the catalogue collapses
 		// duplicate ids before this runs (see the class comment). tops is only how a parent is found by id: the first

@@ -73,7 +73,7 @@ public final class MixinPlatformIdentity {
 		if (ecosystem == null) return null;
 		return switch (ecosystem) {
 			case FABRIC -> "Knot/Fabric";        // MixinServiceKnot.getName under Knot
-			case FORGE -> "ModLauncher";         // MixinServiceModLauncher.getName
+
 			case NEOFORGE -> "FML";              // FMLMixinService.getName
 		};
 	}

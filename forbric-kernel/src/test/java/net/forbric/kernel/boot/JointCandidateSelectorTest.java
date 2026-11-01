@@ -9,7 +9,7 @@ import net.forbric.api.Ecosystem;
 import org.junit.jupiter.api.Test;
 
 class JointCandidateSelectorTest {
-	private static final List<Ecosystem> ORDER = List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC, Ecosystem.FORGE);
+	private static final List<Ecosystem> ORDER = List.of(Ecosystem.NEOFORGE, Ecosystem.FABRIC);
 	private static DuplicateModArbiter.Claim candidate(String name, Ecosystem family, String... ids) {
 		return new DuplicateModArbiter.Claim(Path.of("/mods/" + name + ".jar"), family, List.of(ids));
 	}

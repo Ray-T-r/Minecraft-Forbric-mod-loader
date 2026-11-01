@@ -42,7 +42,7 @@ class OperationCallGraphUnknownTest {
  }
  @Test void changedPrimitivesRequireActualIndexedNativeGatewayInputEvidence()throws Exception{
   var fixture=fixture("top","execute(Layers.OVERLAY,context,seed,amount);execute(getTop(),context,seed,amount);","widget.show(context,amount);","dispatch(context,seed,amount*2);");assertNull(derive(fixture));
-  byte[] target=StagedFabricMixinFixture.bytes(fixture.target);ClassNode nativeTarget=NativeCallTestEvidence.verified(Ecosystem.FORGE,ROOT,target);
-  var proof=OperationCallGraph.derive(fixture.source,fixture.target,"run",MEMBER,fixture.classes::get,(family,owner)->family==Ecosystem.FORGE&&owner.equals(ROOT)?nativeTarget:null);assertNotNull(proof);assertEquals(1,proof.forwardOrdinal());
+  byte[] target=StagedFabricMixinFixture.bytes(fixture.target);ClassNode nativeTarget=NativeCallTestEvidence.verified(Ecosystem.NEOFORGE,ROOT,target);
+  var proof=OperationCallGraph.derive(fixture.source,fixture.target,"run",MEMBER,fixture.classes::get,(family,owner)->family==Ecosystem.NEOFORGE&&owner.equals(ROOT)?nativeTarget:null);assertNotNull(proof);assertEquals(1,proof.forwardOrdinal());
  }
 }

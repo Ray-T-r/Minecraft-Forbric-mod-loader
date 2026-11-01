@@ -90,6 +90,6 @@ class TwinCapturedLocalsWeaveTest {
 	}
 
 	private static WeaveHarness.Result run(Path fixture, String label, Map<String, String> properties) throws Exception {
-		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.FORGE, EnvType.SERVER, "fixture.twinlocals.Probe", "probe", properties);
+		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.FABRIC, EnvType.SERVER, "fixture.twinlocals.Probe", "probe", properties);
 	}
 }

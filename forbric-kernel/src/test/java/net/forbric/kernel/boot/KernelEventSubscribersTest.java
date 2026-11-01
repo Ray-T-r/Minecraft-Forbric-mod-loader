@@ -44,17 +44,17 @@ class KernelEventSubscribersTest {
 		java.util.List<net.forbric.api.ModCatalog.Entry> previous = net.forbric.api.ModCatalog.everything();
 		try {
 			net.forbric.api.ModCatalog.publish(java.util.List.of(
-					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "broken", "B", "1", "", java.util.List.of(), "b.jar", "", ""),
-					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "bruised", "C", "1", "", java.util.List.of(), "c.jar", "", "")));
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "broken", "B", "1", "", java.util.List.of(), "b.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "bruised", "C", "1", "", java.util.List.of(), "c.jar", "", "")));
 			net.forbric.api.ModCatalog.mark("broken", net.forbric.api.ModCatalog.Status.FAILED, "its @Mod constructor threw");
 			net.forbric.api.ModCatalog.mark("bruised", net.forbric.api.ModCatalog.Status.DEGRADED, "it threw during common setup");
 			assertTrue(KernelEventSubscribers.didNotFinishLoading("broken"));
 			assertFalse(KernelEventSubscribers.didNotFinishLoading("bruised"), "DEGRADED still gets its listeners");
 			// wthit's shape: a second id in the SAME jar as the failed one is skipped too.
 			net.forbric.api.ModCatalog.publish(java.util.List.of(
-					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "waila", "waila", "1", "", java.util.List.of(), "wthit.jar", "", ""),
-					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "wthit", "wthit", "1", "", java.util.List.of(), "wthit.jar", "", ""),
-					new net.forbric.api.ModCatalog.Entry(Ecosystem.FORGE, "other", "other", "1", "", java.util.List.of(), "other.jar", "", "")));
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "waila", "waila", "1", "", java.util.List.of(), "wthit.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "wthit", "wthit", "1", "", java.util.List.of(), "wthit.jar", "", ""),
+					new net.forbric.api.ModCatalog.Entry(Ecosystem.NEOFORGE, "other", "other", "1", "", java.util.List.of(), "other.jar", "", "")));
 			net.forbric.api.ModCatalog.mark("waila", net.forbric.api.ModCatalog.Status.FAILED, "its @Mod constructor threw");
 			assertTrue(KernelEventSubscribers.didNotFinishLoading("wthit"), "shares the jar with a failed mod");
 			assertFalse(KernelEventSubscribers.didNotFinishLoading("other"));

@@ -257,7 +257,7 @@ class KernelTransferInteropTest {
 		try (JarOutputStream out = new JarOutputStream(Files.newOutputStream(second))) { add(out, "b/Handler"); }
 		net.forbric.api.ModCatalog.publish(List.of(
 				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FABRIC, "firstmod", "First", "1", "", List.of(), "first.jar", "", ""),
-				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.FORGE, "secondmod", "Second", "1", "", List.of(), "second.jar", "", "")));
+				new net.forbric.api.ModCatalog.Entry(net.forbric.api.Ecosystem.NEOFORGE, "secondmod", "Second", "1", "", List.of(), "second.jar", "", "")));
 		try (var a = new java.net.URLClassLoader(new java.net.URL[] { first.toUri().toURL() }, null);
 				var b = new java.net.URLClassLoader(new java.net.URL[] { second.toUri().toURL() }, null)) {
 			String shared = "jdk.proxy3.$Proxy7";

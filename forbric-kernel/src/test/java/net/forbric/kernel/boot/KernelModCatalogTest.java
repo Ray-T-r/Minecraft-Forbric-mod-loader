@@ -47,18 +47,16 @@ class KernelModCatalogTest {
 	@Test
 	void everyEcosystemsModsLandInOneList(@TempDir Path dir) throws Exception {
 		Path fabric = fabricJar(dir, "voxy", "Voxy", "A level-of-detail renderer.", "assets/voxy/icon.png");
-		Path forge = forgeJar(dir, "META-INF/mods.toml", "biomesoplenty", "Biomes O' Plenty", "More biomes.");
 		Path neo = forgeJar(dir, "META-INF/neoforge.mods.toml", "iris", "Iris Shaders", "Shader support.");
 
 		KernelModCatalog.publish(List.of(
 				mod(Ecosystem.FABRIC, "voxy", "0.2.19", fabric),
-				mod(Ecosystem.FORGE, "biomesoplenty", "26.2.0.0.28", forge),
 				mod(Ecosystem.NEOFORGE, "iris", "1.11.2", neo)), dir);
 
-		assertEquals(3, ModCatalog.all().size());
+		assertEquals(2, ModCatalog.all().size());
 		assertEquals(1, ModCatalog.count(Ecosystem.FABRIC));
-		assertEquals(1, ModCatalog.count(Ecosystem.FORGE));
 		assertEquals(1, ModCatalog.count(Ecosystem.NEOFORGE));
+		assertEquals(0, ModCatalog.refusedCount());
 	}
 
 	@Test
@@ -78,8 +76,8 @@ class KernelModCatalogTest {
 	/** A Forge-family jar's description comes from its toml, and neoforge.mods.toml wins over mods.toml. */
 	@Test
 	void aForgeFamilyModGetsItsTomlDescription(@TempDir Path dir) throws Exception {
-		Path jar = forgeJar(dir, "META-INF/mods.toml", "terrablender", "TerraBlender", "A biome API.");
-		KernelModCatalog.publish(List.of(mod(Ecosystem.FORGE, "terrablender", "26.2.0.0.2", jar)), dir);
+		Path jar = forgeJar(dir, "META-INF/neoforge.mods.toml", "terrablender", "TerraBlender", "A biome API.");
+		KernelModCatalog.publish(List.of(mod(Ecosystem.NEOFORGE, "terrablender", "26.2.0.0.2", jar)), dir);
 		assertEquals("A biome API.", ModCatalog.all().get(0).description());
 		assertEquals("TerraBlender", ModCatalog.all().get(0).name());
 	}
@@ -114,11 +112,11 @@ class KernelModCatalogTest {
 	@Test
 	void theListIsSortedByNameAcrossEcosystems(@TempDir Path dir) throws Exception {
 		Path a = fabricJar(dir, "zoomify", "Zoomify", "", "");
-		Path b = forgeJar(dir, "META-INF/mods.toml", "biomesoplenty", "Biomes O' Plenty", "");
+		Path b = forgeJar(dir, "META-INF/neoforge.mods.toml", "biomesoplenty", "Biomes O' Plenty", "");
 		Path c = fabricJar(dir, "modmenu", "Mod Menu", "", "");
 		KernelModCatalog.publish(List.of(
 				mod(Ecosystem.FABRIC, "zoomify", "1", a),
-				mod(Ecosystem.FORGE, "biomesoplenty", "1", b),
+				mod(Ecosystem.NEOFORGE, "biomesoplenty", "1", b),
 				mod(Ecosystem.FABRIC, "modmenu", "1", c)), dir);
 
 		assertEquals(List.of("biomesoplenty", "modmenu", "zoomify"),
@@ -130,7 +128,7 @@ class KernelModCatalogTest {
 	void twoModsInOneJarEachGetTheirOwnRow(@TempDir Path dir) throws Exception {
 		Path jar = dir.resolve("pair.jar");
 		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
-			write(zip, "META-INF/mods.toml", """
+			write(zip, "META-INF/neoforge.mods.toml", """
 					modLoader="javafml"
 					loaderVersion="[1,)"
 					license="Apache-2.0"
@@ -145,7 +143,7 @@ class KernelModCatalogTest {
 					""");
 		}
 		KernelModCatalog.publish(List.of(
-				mod(Ecosystem.FORGE, "one", "1", jar), mod(Ecosystem.FORGE, "two", "1", jar)), dir);
+				mod(Ecosystem.NEOFORGE, "one", "1", jar), mod(Ecosystem.NEOFORGE, "two", "1", jar)), dir);
 
 		assertEquals(2, ModCatalog.all().size());
 		assertEquals("the first one", entry("one").description());

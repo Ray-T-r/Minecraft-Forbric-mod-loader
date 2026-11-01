@@ -307,7 +307,7 @@ class FabricFreezeHookMixinAdapterTest {
 	/** text_styles' NeoForge injector there runs where NeoForge freezes; a mixin of no known owner is not guessed at. */
 	@ParameterizedTest(name = "{0}")
 	@NullSource
-	@EnumSource(value = Ecosystem.class, names = { "FORGE", "NEOFORGE" })
+	@EnumSource(value = Ecosystem.class, names = { "NEOFORGE" })
 	void aMixinThatIsNotAFabricModsStays(Ecosystem owner) {
 		ClassNode mixin = parse("ForeignOwnedMixin");
 		if (owner != null) MixinStubRebind.noteEcosystem(mixin.name, owner);

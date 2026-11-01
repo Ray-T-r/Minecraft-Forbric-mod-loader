@@ -51,18 +51,22 @@ import org.objectweb.asm.tree.ClassNode;
 
 /**
  * Re-derives {@code native-only-methods.txt} — for each platform a mod can be native to (vanilla 26.2 for Fabric,
- * MinecraftForge's and NeoForge's patched 26.2 for theirs), every method it declares in vanilla's packages that the
- * staged merged base does not, and every class there only the merged base has — plus the merged base's members digest,
- * and asserts the shipped table equals it. With the merged base's own bytes that is each platform's member list, which
- * is what {@link NativeAbsentTargets} needs to tell an injector target the mod's own platform lacks too from one the
- * merge lost.
+ * NeoForge's patched 26.2 for NeoForge), every method it declares in vanilla's packages that the staged base does not,
+ * and every class there only the base has — plus the base's members digest, and asserts the shipped table equals it.
+ * With the base's own raw bytes that is each platform's member list, which is what {@link NativeAbsentTargets} needs to
+ * tell an injector target the mod's own platform lacks too from one the base lost.
+ *
+ * <p>Raw, not after the vanilla twins: NativeAbsentTargets is asked about the raw class and the raw jar's members digest
+ * (ForbricMixinService reads the pre-chain bytes for it), so a member only a twin adds is a row here. If that twin stands
+ * down at run time (no vanilla reference), a Fabric injector on the member is then reported as the loss it is instead of
+ * being dropped as "the platform lacks it too".
  *
  * <p>The predicate is then checked against all of each platform, not a sample: no method a platform's jar declares may
  * ever be called absent for that platform's mods. That is the direction that matters — a wrong "absent" would hide a
- * merged-base loss behind native's silence — and a sample would not show it.
+ * loss of the base behind native's silence — and a sample would not show it.
  *
- * <p>The table also says which game each platform's rows describe — the versions the merged base's own build pins
- * record, which the staged carriers and vanilla's jar must declare as well — and which of Minecraft's library jars,
+ * <p>The table also says which game each platform's rows describe — the versions the base's own build pins record,
+ * which the staged NeoForge carrier and vanilla's jar must declare as well — and which of Minecraft's library jars,
  * named by vanilla's version JSON, ship classes in vanilla's packages, each by its members digest.
  */
 @ResourceLock("ModCatalog")
@@ -94,7 +98,7 @@ class NativeOnlyMethodsCensusTest {
 	private static Map<String, Path> libraries;
 
 	@BeforeAll static void read() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base required: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged base required: " + MERGED);
 		TestFixtures.requireFiles(Fixture.STAGED, "the base's build pins and the NeoForge carrier", PINS, NEO_RUNTIME);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VERSION_JSON), "vanilla's version JSON: " + VERSION_JSON);
 		for (Map.Entry<Ecosystem, Path> platform : NATIVE.entrySet()) {
@@ -122,10 +126,9 @@ class NativeOnlyMethodsCensusTest {
 	}
 
 	/**
-	 * The game each platform's rows describe, from the merge's pins ({@code mc=26.2 forge=26.2-65.0.1 neoforge=...}):
-	 * {@code minecraft} for all three, and the platform's own id at the version its loader reports to a mod's range —
-	 * MinecraftForge's without the Minecraft prefix. Asserted against what vanilla's jar, the staged MinecraftForge
-	 * carrier's manifest and the NeoForge carrier's own toml declare, so the rows' game is the one the kernel runs.
+	 * The game each platform's rows describe, from the base's own pins ({@code mc=26.2 neoforge=26.2.0.93 nfrt=...}, D31):
+	 * {@code minecraft} for both, and NeoForge's id at the version its loader reports to a mod's range. Asserted against
+	 * what vanilla's jar and the NeoForge carrier's own toml declare, so the rows' game is the one the kernel runs.
 	 */
 	private static Map<Ecosystem, Map<String, String>> gameVersions() throws Exception {
 		Map<String, String> pins = new HashMap<>();
@@ -211,7 +214,7 @@ class NativeOnlyMethodsCensusTest {
 			rows.add(line.toString());
 			for (Map.Entry<String, Set<String>> original : platform.getValue().entrySet()) {
 				Set<String> declared = mergedMethods.get(original.getKey());
-				assertNotNull(declared, "the merged base lacks " + platform.getKey().displayName() + "'s class " + original.getKey()
+				assertNotNull(declared, "the base lacks " + platform.getKey().displayName() + "'s class " + original.getKey()
 						+ "; NativeAbsentTargets' javadoc says every class the platforms declare in vanilla's packages is there");
 				for (String method : original.getValue()) {
 					if (!declared.contains(method)) rows.add(id + " " + original.getKey() + "#" + method);
@@ -236,22 +239,22 @@ class NativeOnlyMethodsCensusTest {
 		if (System.getenv("FORBRIC_WRITE_NATIVE_ONLY_METHODS") != null) {
 			Path out = Path.of("src/main/resources" + NativeAbsentTargets.TABLE);
 			Files.writeString(out, "# Generated by NativeOnlyMethodsCensusTest (FORBRIC_WRITE_NATIVE_ONLY_METHODS=1): for each platform a mod\n"
-					+ "# can be native to, what its own game declares in vanilla's packages that the staged merged base does not.\n"
-					+ "# With the merged base's raw bytes this is that platform's member list; NativeAbsentTargets asks it whether\n"
-					+ "# an injector target the merged game lacks is one the owning mod's platform lacks too.\n"
-					+ "# base <digest>                      the members digest of the merged base the rows were derived from\n"
+					+ "# can be native to, what its own game declares in vanilla's packages that the staged base does not.\n"
+					+ "# With the base's raw bytes (before any kernel transformer) this is that platform's member list;\n"
+					+ "# NativeAbsentTargets asks it whether an injector target the base lacks is one the owning mod's platform\n"
+					+ "# lacks too. The base is NeoForge's own game, so the neoforge platform has no rows.\n"
+					+ "# base <digest>                      the members digest of the raw base the rows were derived from\n"
 					+ "# library <digest> <name>            the members digest of one of vanilla's library jars, answered for\n"
 					+ "#                                    as it is (every platform loads the same jars)\n"
 					+ "# platform <id> <req>=<version>...   the table speaks for this platform, whose game is the one those\n"
-					+ "#                                    versions name (fabric: vanilla; forge: MinecraftForge's patched game;\n"
-					+ "#                                    neoforge: NeoForge's patched game); a mod whose mandatory range\n"
-					+ "#                                    excludes them is not answered for\n"
-					+ "# <id> <owner>#<name><descriptor>    a method the platform declares and the merged class does not\n"
+					+ "#                                    versions name (fabric: vanilla; neoforge: NeoForge's patched game);\n"
+					+ "#                                    a mod whose mandatory range excludes them is not answered for\n"
+					+ "# <id> <owner>#<name><descriptor>    a method the platform declares and the base's class does not\n"
 					+ "# <id> merged-only <owner>           a class in vanilla's packages the platform does not have\n"
 					+ String.join("\n", rows) + "\n");
 		}
-		assertEquals(rows, new TreeSet<>(shipped), "native-only-methods.txt must equal what the staged merged base and the "
-				+ "three platforms' jars say; regenerate with FORBRIC_WRITE_NATIVE_ONLY_METHODS=1 after a base rebuild");
+		assertEquals(rows, new TreeSet<>(shipped), "native-only-methods.txt must equal what the staged base and the "
+				+ "platforms' jars say; regenerate with FORBRIC_WRITE_NATIVE_ONLY_METHODS=1 after a base rebuild");
 	}
 
 	/** The jar the runtime reads and the bytes the table was derived from give one digest. */
@@ -284,10 +287,18 @@ class NativeOnlyMethodsCensusTest {
 		}
 	}
 
-	/** And the classes a platform does not have are never answered for: Mixin fails on those for another reason. */
+	/**
+	 * And the classes a platform does not have are never answered for: Mixin fails on those for another reason. The base
+	 * is NeoForge's own game, so it has no class NeoForge lacks; vanilla lacks a few of its anonymous and helper classes.
+	 */
 	@Test void aClassOnlyTheMergedBaseHasIsNeverAnsweredFor() {
 		NativeAbsentTargets.Table table = NativeAbsentTargets.shipped();
-		for (Ecosystem platform : Ecosystem.values()) {
+		for (Ecosystem platform : platforms.keySet()) {
+			assertNotNull(table.of(platform), "the table speaks for " + platform.displayName());
+			if (platform == Ecosystem.NEOFORGE) {
+				assertTrue(table.of(platform).mergedOnly().isEmpty(), "the base is NeoForge's own game: " + table.of(platform).mergedOnly());
+				continue;
+			}
 			assertFalse(table.of(platform).mergedOnly().isEmpty(), "the measured base has classes in vanilla's packages "
 					+ platform.displayName() + " lacks");
 			for (String owner : table.of(platform).mergedOnly()) {
@@ -336,25 +347,27 @@ class NativeOnlyMethodsCensusTest {
 	}
 
 	/**
-	 * The adversarial review's five cases: methods MinecraftForge or NeoForge patched into a vanilla class that the
-	 * merge dropped or retyped, as a descriptor or, for the two the merged class lacks even by name, as a bare name.
-	 * Vanilla lacks each too, so a Fabric mod's injector into one is dropped natively and kept here; the same bytes in a
-	 * MinecraftForge or NeoForge mod's config inject natively, so here they stay the CONFIRMED loss they are —
-	 * required, since the config says required.
+	 * Methods a mod's own game declares that the base dropped or retyped: vanilla methods NeoForge's patches replaced
+	 * (a Fabric mod's loss), and a NeoForge method the base keeps (NeoForge's own game, so nothing of NeoForge's is
+	 * lost). The other platform lacks each too, so the other platform's mod's injector into one is dropped natively and
+	 * kept here; the same bytes in the owning platform's mod's config inject natively, so here they stay the CONFIRMED
+	 * loss they are — required, since the config says required. (On the merged base four of these were MinecraftForge's
+	 * methods the merge lost; that platform is gone.)
 	 */
 	@Test void aMethodTheModsOwnPlatformHasAndTheMergeLostStaysAConfirmedLoss() {
 		List<Lost> cases = List.of(
-				new Lost(Ecosystem.FORGE, "net/minecraft/client/KeyMapping",
-						"getKeyModifier()Lnet/minecraftforge/client/settings/KeyModifier;"),
-				new Lost(Ecosystem.FORGE, "net/minecraft/world/item/AxeItem",
-						"canPerformAction(Lnet/minecraft/world/item/ItemStack;Lnet/minecraftforge/common/ToolAction;)Z"),
-				new Lost(Ecosystem.FORGE, "net/minecraft/nbt/CompoundTag", "builder"),
-				new Lost(Ecosystem.FORGE, "net/minecraft/gametest/framework/GameTestHelper", "addCleanup"),
+				new Lost(Ecosystem.FABRIC, "net/minecraft/world/entity/Entity",
+						"playMuffledStepSound(Lnet/minecraft/world/level/block/state/BlockState;)V"),
+				new Lost(Ecosystem.FABRIC, "net/minecraft/world/entity/Entity", "playCombinationStepSounds("
+						+ "Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/block/state/BlockState;)V"),
+				new Lost(Ecosystem.FABRIC, "net/minecraft/world/level/block/FireBlock", "checkBurnOut("
+						+ "Lnet/minecraft/world/level/Level;Lnet/minecraft/core/BlockPos;ILnet/minecraft/util/RandomSource;I)V"),
 				new Lost(Ecosystem.NEOFORGE, "net/minecraft/world/entity/boss/enderdragon/EnderDragon",
 						"getParts()[Lnet/neoforged/neoforge/entity/PartEntity;"));
         int retained=0,missing=0;
 		for (Lost lost : cases) {
 			String method = lost.selector();
+			Ecosystem other = lost.platform() == Ecosystem.FABRIC ? Ecosystem.NEOFORGE : Ecosystem.FABRIC;
 			assertTrue(declares(platforms.get(lost.platform()).get(lost.owner()), method),
 					lost.platform().displayName() + " declares " + lost.owner() + "#" + method);
             if(declares(methods(merged.get(lost.owner()+".class")),method)){
@@ -365,16 +378,17 @@ class NativeOnlyMethodsCensusTest {
                 assertEquals(List.of(),result.nativeAbsent());continue;
             }
             missing++;
-			assertFalse(declares(platforms.get(Ecosystem.FABRIC).get(lost.owner()), method), "…nor vanilla");
+			assertFalse(declares(platforms.get(other).get(lost.owner()), method), "…nor " + other.displayName());
 
 			Map<String, byte[]> classes = new HashMap<>(merged);
 			classes.put("net/example/lost/LostMixin.class", injecting("LostMixin", lost.owner(), method, "net/example/lost/"));
 			String config = "lost-" + lost.platform().familyId() + ".mixins.json";
-			String fabricConfig = "lost-fabric-" + lost.platform().familyId() + ".mixins.json";
+			String otherConfig = "lost-" + other.familyId() + "-" + lost.platform().familyId() + ".mixins.json";
 			MixinConfigOwners.publish(List.of(new MixinConfigOwners.Owned(config, "lostmod", lost.platform()),
-					new MixinConfigOwners.Owned(fabricConfig, "lostfabricmod", Ecosystem.FABRIC)));
-			ModPresence.publishForgeFamily(List.of(mod(lost.platform(), "lostmod")));
-			ModPresence.publishFabric(List.of(mod(Ecosystem.FABRIC, "lostfabricmod")));
+					new MixinConfigOwners.Owned(otherConfig, "lostothermod", other)));
+			DiscoveredMod owning = mod(lost.platform(), "lostmod"), others = mod(other, "lostothermod");
+			ModPresence.publishForgeFamily(List.of(lost.platform() == Ecosystem.NEOFORGE ? owning : others));
+			ModPresence.publishFabric(List.of(lost.platform() == Ecosystem.FABRIC ? owning : others));
 
 			assertEquals(List.of("LostMixin"), KernelGuestMixinAdapter.unfitMixins(config, json(), classes::get, null,
 					classes::get, owner -> mergedMembers), lost + ": the mod's own platform has it, so the merge lost it");
@@ -384,9 +398,9 @@ class NativeOnlyMethodsCensusTest {
 					lost + ": a CONFIRMED required loss — " + CompatibilityFindings.all());
 
 			CompatibilityFindings.reset();
-			assertEquals(List.of(), KernelGuestMixinAdapter.unfitMixins(fabricConfig, json(), classes::get, null,
-					classes::get, owner -> mergedMembers), lost + ": vanilla lacks it too, so a Fabric mod's injector is "
-							+ "dropped natively and the mixin is kept here");
+			assertEquals(List.of(), KernelGuestMixinAdapter.unfitMixins(otherConfig, json(), classes::get, null,
+					classes::get, owner -> mergedMembers), lost + ": " + other.displayName() + " lacks it too, so its mod's "
+							+ "injector is dropped natively and the mixin is kept here");
 			assertEquals(List.of(), CompatibilityFindings.all(), lost.toString());
 			CompatibilityFindings.reset();
 			MixinConfigOwners.reset();
@@ -427,7 +441,7 @@ class NativeOnlyMethodsCensusTest {
 				if (!inVanillaPackages(owner)) continue;
 				for (String method : methods(entry.getValue())) {
 					int paren = method.indexOf('(');
-					for (Ecosystem platform : Ecosystem.values()) {
+					for (Ecosystem platform : platforms.keySet()) {
 						asked++;
 						if (NativeAbsentTargets.nativeLacks(platform, owner, method.substring(0, paren), method.substring(paren), classes::get, table)
 								|| NativeAbsentTargets.nativeLacks(platform, owner, method.substring(0, paren), null, classes::get, table)) {
@@ -445,7 +459,7 @@ class NativeOnlyMethodsCensusTest {
 		Map<String, byte[]> classes = classes(brigadier);
 		String digest = NativeAbsentTargets.membersDigest(brigadier);
 		String dispatcher = "com/mojang/brigadier/CommandDispatcher";
-		for (Ecosystem platform : Ecosystem.values()) {
+		for (Ecosystem platform : platforms.keySet()) {
 			MixinFit.Result probe = MixinFit.evaluate(injecting("DispatcherMixin", dispatcher, "forbricNoSuchMethod"), classes::get,
 					name -> true, MixinAddedMembers.View.NONE, new NativeAbsentTargets.Context(classes::get, 0, platform,
 							owner -> digest, mod(platform, "probe")));

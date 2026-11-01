@@ -23,7 +23,7 @@ public final class NativeCallTestEvidence {
     byte[] bytes=null;
     if(owner.startsWith("java/")){try(var stream=ClassLoader.getSystemResourceAsStream(owner+".class")){bytes=stream==null?null:stream.readAllBytes();}catch(Exception absent){}}
     else {
-     Path nativeJar=switch(family){case FABRIC->TestFixtures.vanillaJar();case FORGE->null;case NEOFORGE->root.resolve(TestFixtures.BASE_JAR);}; // no MinecraftForge reference is staged any more
+     Path nativeJar=switch(family){case FABRIC->TestFixtures.vanillaJar();case NEOFORGE->root.resolve(TestFixtures.BASE_JAR);};
      bytes=nativeJar==null?null:read(nativeJar,owner+".class");
      if(bytes==null&&family==Ecosystem.NEOFORGE)bytes=read(root.resolve(TestFixtures.NEO_CARRIER_JAR),owner+".class");
     }

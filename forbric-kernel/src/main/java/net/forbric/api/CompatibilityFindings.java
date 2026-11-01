@@ -59,7 +59,8 @@ public final class CompatibilityFindings {
 			}
 			result.add(new CompatibilityFinding("initialization:" + phase, entry.modId(), "Mod initialization", source,
 					CompatibilityFinding.Confidence.CONFIRMED, true, reason,
-					List.of("ModCatalog.Status.FAILED", "phase=" + phase, "ecosystem=" + entry.ecosystem(),
+					List.of("ModCatalog.Status.FAILED", "phase=" + phase,
+							"ecosystem=" + entry.loaderSpelling(),
 							"jar=" + entry.jar(), "version=" + entry.version(), reason)));
 		}
 		if (result.isEmpty()) {
@@ -199,7 +200,10 @@ public final class CompatibilityFindings {
 			ModCatalog.Entry entry = mods.get(i);
 			if (i != 0) out.append(',');
 			out.append("{\"modId\":").append(json(entry.modId())).append(",\"version\":").append(json(entry.version()))
-					.append(",\"ecosystem\":").append(json(entry.ecosystem().name())).append(",\"jar\":").append(json(entry.jar()))
+					// A refused jar's row has no ecosystem; the field carries its loader's report spelling (FORGE), as it
+					// always has, and "refused" says it is not one.
+					.append(",\"ecosystem\":").append(json(entry.loaderSpelling())).append(entry.refused() ? ",\"refused\":true" : "")
+					.append(",\"jar\":").append(json(entry.jar()))
 					.append(",\"bundledBy\":").append(json(entry.bundledBy())).append(",\"status\":").append(json(entry.status().name())).append('}');
 		}
 		return out.append("]}\n").toString();

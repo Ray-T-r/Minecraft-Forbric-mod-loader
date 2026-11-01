@@ -53,13 +53,12 @@ class NativeGameReferencesTest {
   try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[]{jar.toUri().toURL()},getClass().getClassLoader())){
    loader.setTransformer((name,input)->current);NativeGameReferences.bind(loader);
    assertNull(NativeGameReferences.runtime(Ecosystem.NEOFORGE,OWNER),"unclassified resources are not platform evidence");
-   assertNull(NativeGameReferences.runtime(Ecosystem.FORGE,OWNER),"nor are they MinecraftForge's, which has no loader family");
    loader.addRuntimeJarFamily(jar,net.forbric.kernel.classloading.LoaderProbePolicy.Family.NEOFORGE);
    var original=NativeGameReferences.runtime(Ecosystem.NEOFORGE,OWNER);var transformed=NativeGameReferences.current(OWNER);
    assertNotNull(original);assertNotNull(transformed);
    assertEquals(7,((org.objectweb.asm.tree.LdcInsnNode)original.methods.getFirst().instructions.getFirst()).cst);
    assertEquals(11,((org.objectweb.asm.tree.LdcInsnNode)transformed.methods.getFirst().instructions.getFirst()).cst);
-   assertNull(NativeGameReferences.runtime(Ecosystem.FORGE,OWNER));assertNull(NativeGameReferences.reference(Ecosystem.NEOFORGE,OWNER),"raw external helpers cannot impersonate indexed game snapshots");
+   assertNull(NativeGameReferences.reference(Ecosystem.NEOFORGE,OWNER),"raw external helpers cannot impersonate indexed game snapshots");
    assertFalse(loader.isClassLoadedByName(OWNER.replace('/','.')));
   }finally{NativeGameReferences.bind(null);}
  }
@@ -96,7 +95,7 @@ class NativeGameReferencesTest {
   java.nio.file.Path base=jar(work.resolve("base.jar"),baseEntries),sidecar=jar(work.resolve("sidecar.jar"),sidecarEntries);
   NativeReferenceSources sources=NativeReferenceSources.open(base,sidecar);
   assertEquals("[Forbric/Mixin] native references: FABRIC from the vanilla-reference sidecar sidecar.jar (the base's "
-    +"embedded index answers what it cannot verify), FORGE none, NEOFORGE from the base's embedded index",sources.describe());
+    +"embedded index answers what it cannot verify), NEOFORGE from the base's embedded index",sources.describe());
   var reader=new NativeGameReferences(baseEntries::get,null,sources);
   var embeddedOnly=new NativeGameReferences(baseEntries::get);
   // Agree: the embedded index pins the sidecar's very hash. Alone it cannot answer (no copy, and the base changed the

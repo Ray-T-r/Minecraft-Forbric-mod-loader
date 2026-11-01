@@ -53,6 +53,11 @@ public final class ConfigApiAbiInjector implements ClassTransformer {
 	private static final String BY_ID_3 = "(" + TYPE + SPEC + "Ljava/lang/String;)" + MOD_CONFIG;
 	private static final String BY_ID_4 = "(" + TYPE + SPEC + "Ljava/lang/String;Ljava/lang/String;)" + MOD_CONFIG;
 	private static final String VALIDATE_SPEC = "validateSpec";
+	/**
+	 * MinecraftForge's spec interface as the config API port ships it for Fabric mods (its own copy, not a MinecraftForge
+	 * carrier's): the delegate whose validation default is supplied. A literal, since MinecraftForge is no ecosystem.
+	 */
+	private static final String PORTED_FORGE_SPEC = "net/minecraftforge/fml/config/IConfigSpec";
 	private static final String CONFIG_SCREEN = "net/neoforged/neoforge/client/gui/ConfigurationScreen";
 	private static final String SCREEN = "Lnet/minecraft/client/gui/screens/Screen;";
 	/** The port's shape: a mod ID where real NeoForge takes a ModContainer. */
@@ -221,7 +226,7 @@ public final class ConfigApiAbiInjector implements ClassTransformer {
 	}
 
 	private boolean addTheValidateSpecTheCarrierCalls(ClassNode node) {
-		String neo = ForeignType.CONFIG_SPEC.internal(Ecosystem.NEOFORGE), forge = ForeignType.CONFIG_SPEC.internal(Ecosystem.FORGE);
+		String neo = ForeignType.CONFIG_SPEC.internal(Ecosystem.NEOFORGE), forge = PORTED_FORGE_SPEC;
 		if (!node.interfaces.contains(neo) || node.methods.stream().anyMatch(m -> m.name.equals(VALIDATE_SPEC))) return false;
 		ClassNode api = declarations.apply(neo);
 		if (api == null || api.methods.stream().noneMatch(m -> m.name.equals(VALIDATE_SPEC) && m.desc.equals("(" + MOD_CONFIG + ")V")

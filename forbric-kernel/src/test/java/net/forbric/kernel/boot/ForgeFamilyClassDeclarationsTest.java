@@ -78,7 +78,7 @@ class ForgeFamilyClassDeclarationsTest {
 	@Test
 	void onlyTheClassesTheModsOwnJarDefinesBecomeEntrypoints() throws IOException {
 		Path jar = jar(work.resolve("cinder-forge.jar"), OWN_CLASSES);
-		assertEquals(OWN, CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.FORGE, jar.toString())),
+		assertEquals(OWN, CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.NEOFORGE, jar.toString())),
 				"a sentence, a path, a version, a literal, a domain or a package spelled like a class, the JDK's class and "
 						+ "a list with one class the jar lacks are not the mod's classes");
 	}
@@ -105,15 +105,15 @@ class ForgeFamilyClassDeclarationsTest {
 	@Test
 	void aJarThatCannotBeReadDefinesNothing() throws IOException {
 		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(
-				mod(Ecosystem.FORGE, work.resolve("gone.jar").toString())));
+				mod(Ecosystem.NEOFORGE, work.resolve("gone.jar").toString())));
 		Path notAJar = Files.writeString(work.resolve("broken.jar"), "not a zip");
-		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.FORGE, notAJar.toString())));
+		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.NEOFORGE, notAJar.toString())));
 	}
 
 	@Test
 	void aTableWithNothingClassShapedDeclaresNoEntrypointWhateverItsSource() {
 		Map<String, Object> words = Map.of("cinderlib:tagline", "Warm light", "cinderlib:enabled", true);
-		DiscoveredMod mod = new DiscoveredMod(Ecosystem.FORGE, "cinder_forge", "1.0.0", "Cinder", List.of(), List.of(),
+		DiscoveredMod mod = new DiscoveredMod(Ecosystem.NEOFORGE, "cinder_forge", "1.0.0", "Cinder", List.of(), List.of(),
 				null, "\0 not a path").withModProperties(words);
 		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(mod));
 	}
@@ -122,7 +122,7 @@ class ForgeFamilyClassDeclarationsTest {
 	void switchedOffNothingIsProjected() throws IOException {
 		Path jar = jar(work.resolve("cinder-forge.jar"), OWN_CLASSES);
 		System.setProperty(CrossEcosystemDeclarations.SWITCH, "off");
-		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.FORGE, jar.toString())));
+		assertEquals(Map.of(), CrossEcosystemDeclarations.fabricEntrypoints(mod(Ecosystem.NEOFORGE, jar.toString())));
 	}
 
 	@Test
