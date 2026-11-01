@@ -109,7 +109,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("giveTheVanillaParticleMapAViewOfTheLiveOne", PARTICLE_RESOURCES,
 				"the vanilla-typed particle provider map stays empty — particles registered the vanilla way never render"));
 		out.add(fixed("letDungeonsGenerateWithoutTheDataMap", MONSTER_ROOM_FEATURE,
-				"monster rooms never generate — the NeoForge data map they ask has no vanilla fallback"));
+				"every dungeon draws its mob from NeoForge's weighted data map instead of vanilla's four-entry table, so the "
+						+ "same seed puts a different mob in its spawners than vanilla does (gate-m31)"));
 		out.add(randomSourcePrecisionEnabled()
 				? new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
 						new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
@@ -823,25 +824,20 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/**
-	 * Lets monster rooms generate again, by giving the NeoForge data map a vanilla fallback.
+	 * Lets a dungeon pick its mob the way vanilla does while no mod has changed NeoForge's monster-room data map.
 	 *
-	 * <p>The merged {@code MonsterRoomFeature.randomEntityId} is two instructions:
-	 * {@code invokestatic MonsterRoomHooks.getRandomMonsterRoomMob}. That reads a static {@code WeightedList} which
-	 * only a {@code DataMapsUpdatedEvent} listener fills, and nothing in a Forbric instance had ever loaded a data
-	 * map — a constant-pool scan of the whole merged base finds {@code DataMapLoader} named by nothing at all,
-	 * because the merge kept MinecraftForge's {@code ReloadableServerResources}. So the list was null and the
-	 * feature threw.
+	 * <p>NeoForge's {@code MonsterRoomFeature.randomEntityId} is two instructions:
+	 * {@code invokestatic MonsterRoomHooks.getRandomMonsterRoomMob}, a weighted draw ({@code nextInt(400)} over
+	 * NeoForge's shipped skeleton 100 / spider 100 / zombie 200) from a list only a {@code DataMapsUpdatedEvent}
+	 * listener fills. Vanilla's body draws {@code MOBS[nextInt(4)]} from {@code {SKELETON, ZOMBIE, ZOMBIE, SPIDER}}.
+	 * The distribution is the same, the draw is not: for the same seed the two pick a different mob for the same
+	 * dungeon (measured: 6 of 6 dungeons), so a NeoForge-based world is not the vanilla world of its seed.
 	 *
-	 * <p>The kernel's previous answer was a {@code MethodBodyNeuter} on {@code MonsterRoomFeature.place}, which
-	 * does not fail — it means no dungeon, and therefore no spawner and no dungeon chest, in EVERY world every
-	 * player generates, with or without mods. A whole piece of vanilla, switched off silently, for everyone.
-	 *
-	 * <p>{@link net.forbric.kernel.runtime.KernelNeoWorldgen} now loads the data maps for real, so the primary
-	 * path works and a NeoForge mod's additions count. This redirect is what makes that recoverable rather than
-	 * load-bearing: when the data map is missing anyway, dungeons still generate from vanilla's own set. The two
-	 * sets are the same distribution — vanilla's {@code MOBS} array is {@code {SKELETON, ZOMBIE, ZOMBIE, SPIDER}}
-	 * and NeoForge's shipped data map is skeleton 100 / spider 100 / zombie 200 — so the fallback is vanilla's
-	 * behaviour and not an approximation of it.
+	 * <p>The call goes to {@link net.forbric.kernel.runtime.KernelNeoWorldgen#randomMonsterRoomMob} instead, which
+	 * draws vanilla's way while NeoForge's live map is still exactly its shipped default, NeoForge's way as soon as a
+	 * mod changed it (so a NeoForge mod's additions count), and vanilla's way again if the map is missing altogether,
+	 * so a world never loses its dungeons to an unloaded data map. gate-m31 holds "every dungeon spawns vanilla's mob".
+	 * This is a vanilla-parity repair, not merge damage: NeoForge's own base draws the same way the merged one did.
 	 *
 	 * <p>One instruction for one: the call is static, takes the same argument and returns the same type, so
 	 * nothing on the stack or in a frame moves.
