@@ -119,24 +119,17 @@ class MixinSharedResultTransportTest {
         assertEquals(0, MixinSharedResultTransport.adapt(guarded.mixin, name -> guarded.current, name -> guarded.reference));
     }
 
-    @Test void actualSourceSharedSnapshotIsExecutedOnceAtTheConservedCarrierResultRegion() throws Exception {
-        Inputs input = inputs(); MethodNode original = method(input.mixin, "getCraftingRemainder");
-        String fingerprint = MixinInstructionFingerprint.hash(original);
-        assertEquals(1, MixinSharedResultTransport.adapt(input.mixin, name -> input.current, name -> input.reference));
-        MethodNode preserved = input.mixin.methods.stream().filter(m -> m.name.contains("$forbricsharedresult")).findFirst().orElseThrow();
-        assertEquals(fingerprint, MixinInstructionFingerprint.hash(preserved));
-        Runtime runtime = runtime(input.mixin);
-        Snapshot live = new Snapshot(1, "original-component");
-        AtomicReference<Object> shared = new AtomicReference<>(); Object reference = runtime.reference(shared);
-        runtime.copy.invoke(null, null, live, null, reference);
-        Snapshot copy = (Snapshot) shared.get(); assertNotSame(live, copy);
-        live.count = 0; live.component = "changed-component";
-        Remainder result = (Remainder) runtime.effect.invoke(null, live, reference);
-        assertSame(copy, result.receiver()); assertEquals(1, result.count()); assertEquals("original-component", result.component());
-        assertEquals(1, copy.reads); assertEquals(0, live.reads);
-        Remainder nativeControl = live.getCraftingRemainder();
-        assertSame(live, nativeControl.receiver()); assertEquals(0, nativeControl.count()); assertEquals("changed-component", nativeControl.component());
-        assertEquals(1, live.reads);
+    /**
+     * On the merged base the furnace's redirect moved onto the carrier's remainder call and ran its HEAD snapshot there.
+     * NeoForge's own consumeFuel asks the unshrunk stack (ItemStack.getCraftingRemainder before shrink) and makes no
+     * Item.getCraftingRemainder call, so the snapshot's purpose is native and nothing is transported; a Fabric item's
+     * stack-aware remainder reaches the fuel slot as written (regressprobe fuel.remainder.consumeFuel / furnace).
+     */
+    @Test void theFurnaceSnapshotHasNoRegionToMoveToOnNeoForgesBase() throws Exception {
+        Inputs input = inputs();
+        byte[] before = TransportSpellings.bytes(input.mixin);
+        assertEquals(0, MixinSharedResultTransport.adapt(input.mixin, name -> input.current, name -> input.reference));
+        assertArrayEquals(before, TransportSpellings.bytes(input.mixin));
     }
 
     @Test void usedOldInputOrAdditionalSourceEffectCannotBeTransported() throws Exception {

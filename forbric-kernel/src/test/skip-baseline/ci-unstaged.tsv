@@ -1208,13 +1208,14 @@ test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aProducerOn
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	aShortPointThatAlsoSelectsAnotherCallIsLeftAlone()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	eachPointWrittenAnotherWayNamesTheSameCall()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	eitherSelectorWrittenAnotherWayBindsTheSameHost()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
+test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	theFurnaceRedirectHasNothingToMoveOnNeoForgesBase()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportSpellingTest	theRenamedGroupsTransportAsShipped()	[fixture:staged] actual Fabric API required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	aProducerSharingAnotherValueIsNotAPassThrough()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	actualCraftingClosedGroupPreservesBothSourceBodiesAndProjectionInvocation()	[fixture:staged] actual API and indexed base required
-test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	actualSourceSharedSnapshotIsExecutedOnceAtTheConservedCarrierResultRegion()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	ambiguousResultCallAndChangedConsumerBranchAreRejected()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	closedGroupRequiresTheSameStackSourceAndNoPathBypassingItsProducer()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	theCraftingGroupWrittenAnotherWayIsTransportedTheSame()	[fixture:staged] actual API and indexed base required
+test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	theFurnaceSnapshotHasNoRegionToMoveToOnNeoForgesBase()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	transformedProducerReceiverOrAdditionalGroupSideEffectIsNotAccepted()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinSharedResultTransportTest	usedOldInputOrAdditionalSourceEffectCannotBeTransported()	[fixture:staged] actual API and indexed base required
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo()	[fixture:third-party] sweep pack absent

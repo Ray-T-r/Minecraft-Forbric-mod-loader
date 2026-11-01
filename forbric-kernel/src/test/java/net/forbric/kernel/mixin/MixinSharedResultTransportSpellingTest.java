@@ -15,8 +15,10 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * fabric-api's two shared-result groups (the furnace's HEAD producer, the crafting recipe's closed WrapOperation
- * producer), renamed to an unrelated mixin and written the other ways Mixin reads the same thing. The transport finds the
+ * fabric-api's shared-result group (the crafting recipe's closed WrapOperation producer), renamed to an unrelated mixin
+ * and written the other ways Mixin reads the same thing. (The furnace's HEAD producer was the second group on the merged
+ * base. NeoForge's own consumeFuel asks the stack's remainder before it shrinks the stack, which is what the furnace
+ * redirect's HEAD copy is for, so there is nothing to transport there: {@link #theFurnaceRedirectHasNothingToMoveOnNeoForgesBase}.) The transport finds the
  * redirect's host, its producer's host and both points as Mixin binds them: a selector owner-qualified, dotted, spaced or
  * doubled is the same host; a producer is on the consumer's host when it binds that method, however either is spelled; a
  * bare name binds the first method of that name; a point without its owner or descriptor names the call it selects in
@@ -46,7 +48,29 @@ class MixinSharedResultTransportSpellingTest {
 		return new Group(id, MixinCallbackSelectorSpellingTest.unrelatedNames(TransportSpellings.fabricMixin("fabric-item-api-v1", mixin)),
 				TransportSpellings.merged(owner), TransportSpellings.nativeClass(Ecosystem.FABRIC, owner), expected, producer, host);
 	}
-	private static List<Group> groups() throws Exception { return List.of(furnace(), crafting()); }
+	private static List<Group> groups() throws Exception { return List.of(crafting()); }
+
+	/**
+	 * NeoForge 26.2.0.93's consumeFuel (javap: getItem, then ItemStack.getCraftingRemainder at offset 6, then shrink) asks
+	 * the stack it is about to shrink for its remainder, and makes no Item.getCraftingRemainder call. fabric-item-api's
+	 * redirect of that call, fed by a HEAD copy of the stack, exists to ask the unshrunk stack: native here. Nothing moves
+	 * (measured on the genuine stage: a Fabric item's stack-aware remainder reaches the fuel slot, regressprobe
+	 * fuel.remainder.*), and the mixin is left as written.
+	 */
+	@Test void theFurnaceRedirectHasNothingToMoveOnNeoForgesBase() throws Exception {
+		Group furnace = furnace();
+		MethodNode host = furnace.current().methods.stream().filter(m -> m.name.equals("consumeFuel")).findFirst().orElseThrow();
+		int stackRemainder = -1, item = 0, shrink = -1;
+		for (var insn : host.instructions) if (insn instanceof org.objectweb.asm.tree.MethodInsnNode call) {
+			int at = host.instructions.indexOf(insn);
+			if (call.name.equals("getCraftingRemainder") && call.owner.equals("net/minecraft/world/item/ItemStack")) stackRemainder = at;
+			if (call.name.equals("getCraftingRemainder") && call.owner.equals("net/minecraft/world/item/Item")) item++;
+			if (call.name.equals("shrink")) shrink = at;
+		}
+		assertTrue(stackRemainder >= 0 && stackRemainder < shrink && item == 0,
+				"premise: NeoForge asks the unshrunk stack, and never Item.getCraftingRemainder");
+		assertUnchanged(furnace, "nothing to transport");
+	}
 
 	@Test void theRenamedGroupsTransportAsShipped() throws Exception {
 		for (Group group : groups()) assertEquals(group.expected(), group.adapt(), group.id() + ": premise, renamed and written as released");
@@ -75,10 +99,6 @@ class MixinSharedResultTransportSpellingTest {
 
 	/** A bare name with an overload declared after the host binds the host (before: two matches, refused). */
 	@Test void aBareNameBindsTheFirstMethodOfThatName() throws Exception {
-		Group furnace = furnace();
-		TransportSpellings.overload(furnace.current(), "consumeFuel", "(I)V", Opcodes.ACC_PROTECTED, false);
-		TransportSpellings.overload(furnace.reference(), "consumeFuel", "(I)V", Opcodes.ACC_PROTECTED, false);
-		assertEquals(1, furnace.adapt(), "the furnace's bare consumeFuel binds the method declared first");
 		Group crafting = crafting();
 		TransportSpellings.overload(crafting.current(), "defaultCraftingReminder", "(I)Ljava/lang/Object;", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false);
 		TransportSpellings.overload(crafting.reference(), "defaultCraftingReminder", "(I)Ljava/lang/Object;", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, false);
@@ -100,10 +120,10 @@ class MixinSharedResultTransportSpellingTest {
 
 	@Test void aBareNameWhoseFirstMethodIsAnotherOverloadIsLeftAlone() throws Exception {
 		for (boolean inMerged : List.of(true, false)) {
-			Group furnace = furnace();
-			if (inMerged) TransportSpellings.overload(furnace.current(), "consumeFuel", "(I)V", Opcodes.ACC_PROTECTED, true);
-			TransportSpellings.overload(furnace.reference(), "consumeFuel", "(I)V", Opcodes.ACC_PROTECTED, true);
-			assertUnchanged(furnace, inMerged ? "the bare name binds the overload declared first, in both classes"
+			Group crafting = crafting();
+			if (inMerged) TransportSpellings.overload(crafting.current(), "defaultCraftingReminder", "(I)Ljava/lang/Object;", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, true);
+			TransportSpellings.overload(crafting.reference(), "defaultCraftingReminder", "(I)Ljava/lang/Object;", Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, true);
+			assertUnchanged(crafting, inMerged ? "the bare name binds the overload declared first, in both classes"
 					: "the mod's own class binds the other overload: it was not written for the merged host");
 		}
 	}
