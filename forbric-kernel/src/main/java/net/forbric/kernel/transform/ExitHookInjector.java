@@ -42,11 +42,10 @@ import net.forbric.kernel.util.ForbricLog;
  * applies that loader's mixin configs, so under the kernel the hook had never run once; this injector is how it
  * runs now, and the hook itself is a kernel class. Nothing noticed for a long time because night-config's
  * executors only get a thread when a watched config file actually changes; the runs where one did, hung.
- * FML's own shutdown would close these watchers; the kernel drives both loaders' lifecycles and does not run it.
+ * FML's own shutdown would close these watchers; the kernel drives NeoForge's lifecycle itself and does not run it.
  *
  * <p>The call takes the hooked class's loader (the game loader): night-config lives on the parent and is reached
- * by delegation, MinecraftForge's config handler is a game class and is reached directly. No branch target is
- * added, so every original stack map frame stays valid.
+ * by delegation. No branch target is added, so every original stack map frame stays valid.
  */
 public final class ExitHookInjector implements ClassTransformer {
 	/** Hooked class → the method whose returns mark that side's end of life. */
@@ -110,7 +109,7 @@ public final class ExitHookInjector implements ClassTransformer {
 		close.maxStack = Math.max(close.maxStack, 1);
 		if (!announced) {
 			announced = true;
-			ForbricLog.info("[Forbric/Shutdown] %s.%s now stops both loaders' config file-watchers before the JVM ends "
+			ForbricLog.info("[Forbric/Shutdown] %s.%s now stops NeoForge's config file-watcher (night-config's) before the JVM ends "
 					+ "(%d return(s) hooked)", className, exitMethod, returns);
 		}
 		ClassWriter writer = new ClassWriter(0);

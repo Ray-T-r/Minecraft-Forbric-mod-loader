@@ -45,7 +45,7 @@ import org.objectweb.asm.tree.analysis.BasicVerifier;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
-/** Both carriers' LootModifierManager after the repair: NeoForge's synthesized prepare, MinecraftForge's wrapped one. */
+/** NeoForge's LootModifierManager after the repair: a synthesized prepare that scans through the hiding view. */
 class MergedBaseLootModifierIndexTest {
 	private static final Path RUN = TestFixtures.stagedRoot();
 	private static final Path NEO_RT = RUN.resolve(TestFixtures.NEO_CARRIER_JAR);

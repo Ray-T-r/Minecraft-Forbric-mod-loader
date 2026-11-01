@@ -1222,7 +1222,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		clinit.instructions.insert(all, view);
 		clinit.maxStack = Math.max(clinit.maxStack, 1);
 		ForbricLog.info("[Forbric/MergedBaseCompat] KeyMapping.MAP has vanilla's descriptor again, as a view of the key "
-				+ "mappings by key — both ecosystems re-typed it to their own KeyMappingLookup, so a mod reading it as "
+				+ "mappings by key — NeoForge re-typed it to its KeyMappingLookup, so a mod reading it as "
 				+ "vanilla's Map could not link to it");
 		return true;
 	}
@@ -1337,9 +1337,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * MinecraftForge's loot-modifier manager reads {@code loot_modifiers/global_loot_modifiers.json} BY NAME as
 	 * its list of enabled modifiers, then scans the directory and drops what the list does not name; NeoForge's
 	 * has no list-file concept, scans the same directory with {@code IGlobalLootModifier.DIRECT_CODEC}, and logs
-	 * {@code Couldn't parse data file '…global_loot_modifiers'} for every index it meets — two permanent ERROR
-	 * lines on every tri-ecosystem boot (the MinecraftForge carrier ships one, mods ship another), which is what
-	 * makes a genuinely broken loot modifier indistinguishable from the furniture.
+	 * {@code Couldn't parse data file '…global_loot_modifiers'} for every index it meets — a permanent ERROR line
+	 * for each universal jar that ships one, which is what makes a genuinely broken loot modifier indistinguishable
+	 * from the furniture.
 	 *
 	 * <p>NeoForge's DIRECTORY scan now runs over a view of the resource manager that hides
 	 * {@code *&#47;loot_modifiers/global_loot_modifiers.json}: its manager has no {@code prepare} of its own, so one is
@@ -1627,7 +1627,8 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * Makes a picture-in-picture renderer registered the VANILLA way draw again, by giving NeoForge's pooled lookup
 	 * a fallback to vanilla's plain map (VanillaMemberTwinInjector adds it back; NeoForge's constructor never writes it).
 	 *
-	 * <p>{@code GuiRenderer} ends up with BOTH ecosystems' versions of the same job:
+	 * <p>{@code GuiRenderer} ends up with two versions of the same job, vanilla's (VanillaMemberTwinInjector's twin)
+	 * and NeoForge's:
 	 *
 	 * <ul>
 	 *   <li>{@code preparePictureInPictureState(T, int)} — vanilla's. Reads {@code pictureInPictureRenderers}, a
@@ -1674,8 +1675,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		node.methods.add(bridge);
 		boolean filled = fillOrphanedPipMap(node, findField(node, PIP_RENDERERS));
 		ForbricLog.warn("[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to "
-				+ "the orphaned vanilla map — NeoForge won preparePictureInPictureState, so every guest-registered "
-				+ "GUI element (Xaero's minimap, malilib's overlays) was registered where nothing reads%s",
+				+ "the orphaned vanilla map — NeoForge's preparePictureInPictureState reads only its pools, so every "
+				+ "guest-registered GUI element (Xaero's minimap, malilib's overlays) was registered where nothing "
+				+ "reads%s",
 				filled ? ", and gave that map its only writer" : "");
 		return true;
 	}
@@ -1723,7 +1725,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		// wraps it to add its renderers, SuperMartijn642's core lib injects before it to swap the renderer list, others
 		// modify or redirect it. NeoForge's constructor has no builder at all, so every such injector bound nothing. The
 		// map is built in vanilla's shape: the builder is made where a guest expects it, after the list is final, and the
-		// list's renderers and MinecraftForge's registrations are added to whatever builder the guests' injectors hand
+		// list's renderers are added to whatever builder the guests' injectors hand
 		// back. One injection point serves every injector form, and the kernel writes no adapter for any of them.
 		int builder = init.maxLocals;
 		int appended = 0;

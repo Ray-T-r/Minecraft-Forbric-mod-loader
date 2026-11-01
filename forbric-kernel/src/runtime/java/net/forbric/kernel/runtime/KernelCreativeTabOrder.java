@@ -41,7 +41,7 @@ public final class KernelCreativeTabOrder {
 				reported = true;
 				ForbricLog.info("[Forbric/CreativeTabs] Fabric mods' creative tabs follow the Fabric pager's rule — after "
 						+ "every vanilla tab, in id order — instead of NeoForge's registration chain, which put them between "
-						+ "vanilla's tabs; NeoForge and MinecraftForge mods' tabs keep NeoForge's order");
+						+ "vanilla's tabs; NeoForge mods' tabs keep NeoForge's order");
 			}
 			return placed;
 		} catch (Throwable t) {

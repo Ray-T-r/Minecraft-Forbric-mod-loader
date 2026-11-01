@@ -154,8 +154,8 @@ public final class KernelModelFormats {
 			// An id that does not parse is left to NeoForge, whose Identifier.parse reports it as it always has.
 			if (id == null || neoForgeOwns(id)) return null;
 			announce(LOADER_KEY, id, "\"loader\": \"%s\" is not a NeoForge loader — handed to the vanilla cuboid "
-					+ "deserializer, where guest hooks on it (fusion) read the key; an id none of them claims still "
-					+ "fails the model");
+					+ "deserializer, where guest hooks on it (fusion) read the key; an id none of them claims parses "
+					+ "as a plain model, since vanilla's deserializer does not read the key");
 			return asCuboid(json, context, "\"loader\": \"" + id + "\"");
 		}
 		if (loader.isJsonObject()) {

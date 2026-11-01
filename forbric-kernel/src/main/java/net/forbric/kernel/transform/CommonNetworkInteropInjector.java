@@ -40,7 +40,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
 
 /**
- * Arbitrates the common-networking channel that Fabric and NeoForge <em>both</em> claim on a tri-in-one instance.
+ * Arbitrates the common-networking channel that Fabric and NeoForge <em>both</em> claim on a Forbric instance.
  *
  * <p>Both ecosystems implement the cross-loader "Common Networking" spec — version + channel negotiation over the
  * {@code c:version}/{@code c:register} wire channels — each with its OWN payload class registered for the same id.

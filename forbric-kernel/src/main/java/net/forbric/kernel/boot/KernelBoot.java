@@ -895,7 +895,7 @@ public final class KernelBoot {
 		}
 
 		// Client only: NeoForge's model deserializer throws "Unknown loader" for every loader it did not register,
-		// BEFORE the vanilla cuboid deserializer that MinecraftForge's geometry loaders and fusion's model hook read,
+		// BEFORE the vanilla cuboid deserializer that fusion's model hook reads,
 		// and it never reads Fabric's fabric:type at all (the two injectors that dispatched it are the pair pruned
 		// above). One call ahead of NeoForge's dispatch lets each format's owner parse it. Matches only
 		// UnbakedModelParser$Deserializer, which a dedicated server never loads.
@@ -903,7 +903,7 @@ public final class KernelBoot {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ModelFormatFunnelInjector());
 		} else {
 			ForbricLog.warn("[Forbric/ModelFormats] -D%s=off — Fabric fabric:type model formats parse as plain models, "
-					+ "and a MinecraftForge geometry loader or fusion model fails as \"Unknown loader\"",
+					+ "and a fusion model fails as \"Unknown loader\"",
 					net.forbric.kernel.transform.ModelFormatFunnelInjector.PROPERTY);
 		}
 
@@ -918,10 +918,10 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoClientSetupHookInjector());
 
 		// Arbitrate the c:version / c:register common-networking channel that Fabric and NeoForge both claim — without
-		// it a tri-in-one client is kicked "invalid packet" when Fabric's addon is handed a NeoForge payload. Matches
+		// it a Forbric client is kicked "invalid packet" when Fabric's addon is handed a NeoForge payload. Matches
 		// only the Fabric addon + the server config listener, so it is inert until those classes load.
 		// -Dforbric.commonNetworkInterop=off is how the two halves of this shim get told apart. Both are needed on a
-		// tri-in-one instance and they fail in opposite directions, so a single switch that removes both is the only
+		// Forbric instance and they fail in opposite directions, so a single switch that removes both is the only
 		// honest way to ask "is the arbitration the cause?" of a networking symptom.
 		// Declared configuration protocols are independent of network-channel arbitration.
 		if (!"off".equalsIgnoreCase(System.getProperty("forbric.commonNetworkInterop", "on"))) {
@@ -931,7 +931,7 @@ public final class KernelBoot {
 				catch (java.io.IOException unavailable) { Caught.warn(unavailable, "[Forbric/Boot] could not read game class %s for the common-network interop; it reads as absent", name); return null; }
 			}));
 		} else {
-			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a tri-in-one client will be "
+			ForbricLog.warn("[Forbric/Net] common-networking arbitration DISABLED — a Forbric client with Fabric and NeoForge mods will be "
 					+ "kicked \"invalid packet\" when Fabric's addon is handed a NeoForge payload");
 		}
 

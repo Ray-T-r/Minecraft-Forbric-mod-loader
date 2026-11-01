@@ -32,13 +32,12 @@ import net.minecraft.server.packs.resources.ResourceManager;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * The resource-manager view both families' loot-modifier managers scan {@code loot_modifiers/} through: every
- * {@code loot_modifiers/global_loot_modifiers.json} — MinecraftForge's legacy list file — is hidden from the
- * directory listing and nothing else changes. MinecraftForge still reads its own index by name on the ORIGINAL
- * manager (the transformer wraps only the argument of its {@code super.prepare}); NeoForge, which has no
- * list-file concept, no longer logs {@code Couldn't parse data file} for each one.
+ * The resource-manager view NeoForge's loot-modifier manager scans {@code loot_modifiers/} through: every
+ * {@code loot_modifiers/global_loot_modifiers.json} — MinecraftForge's legacy list file, which universal jars still
+ * ship for their MinecraftForge half — is hidden from the directory listing and nothing else changes. NeoForge,
+ * which has no list-file concept, no longer logs {@code Couldn't parse data file} for each one.
  *
- * <p>{@code -Dforbric.lootModifierIndex=off}, read per call: the original manager is handed back and both ERROR
+ * <p>{@code -Dforbric.lootModifierIndex=off}, read per call: the original manager is handed back and the ERROR
  * lines return.
  */
 public final class KernelLootModifiers {
@@ -115,8 +114,8 @@ public final class KernelLootModifiers {
 		private static void report(int kept, List<Identifier> hidden) {
 			// Worded to never contain the game's own "Couldn't parse data file" phrase, which gates grep for.
 			ForbricLog.info("[Forbric/Loot] loot-modifier directory scan: %d file(s) kept, %d legacy index file(s) hidden %s — "
-					+ "NeoForge's manager has no list-file concept and used to log a parse error for each; MinecraftForge "
-					+ "still reads its own index by name", kept, hidden.size(), hidden);
+					+ "NeoForge's manager has no list-file concept and would log a parse error for each (universal jars "
+					+ "ship the file for their MinecraftForge half)", kept, hidden.size(), hidden);
 		}
 	}
 }

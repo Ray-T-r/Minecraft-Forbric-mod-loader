@@ -724,7 +724,7 @@ public final class KernelClientSmoke {
 
 		onButton.invoke(mouse, handle, left, 0);
 		ForbricLog.info("[Forbric/ClientSmoke] drove press, drag and release through MouseHandler; whether a "
-				+ "MinecraftForge mod heard them is that mod's own log");
+				+ "mod heard them is that mod's own log");
 	}
 
 	/** Writes one field anywhere up the hierarchy. Same search as {@link #fieldValue}, the other way round. */

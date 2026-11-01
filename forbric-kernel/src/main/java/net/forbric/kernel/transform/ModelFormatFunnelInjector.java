@@ -39,16 +39,16 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Asks the kernel about a model's format before NeoForge's model deserializer throws on a loader it does not own.
  *
- * <h2>What the merge did</h2>
+ * <h2>What NeoForge's base does</h2>
  *
- * <p>NeoForge won {@code ModelManager.lambda$loadBlockModels$2}, so every block model is read by
- * {@code UnbakedModelParser.parse} through {@code CuboidModel.GSON}, whose adapter for {@code UnbakedModel} is
- * NeoForge's {@code UnbakedModelParser$Deserializer}. That deserializer reads {@code "loader"}, dispatches to a
- * NeoForge {@code UnbakedModelLoader}, and throws {@code Unknown loader} when there is none — before it reaches
- * the vanilla {@code CuboidModel$Deserializer}. On MinecraftForge the same key is read INSIDE that vanilla
- * deserializer (its geometry loaders), and so are the format hooks mods put on it: fusion claims
- * {@code "loader": "fusion:model"} at its HEAD. Fabric's {@code "fabric:type"} is never read at all, because the
- * two fabric-model-loading injectors that dispatched it cannot fit NeoForge's {@code ModelManager}.
+ * <p>Every block model is read by {@code UnbakedModelParser.parse} (from NeoForge's
+ * {@code ModelManager.lambda$loadBlockModels$2}) through {@code CuboidModel.GSON}, whose adapter for
+ * {@code UnbakedModel} is NeoForge's {@code UnbakedModelParser$Deserializer}. That deserializer reads
+ * {@code "loader"}, dispatches to a NeoForge {@code UnbakedModelLoader}, and throws {@code Unknown loader} when
+ * there is none — before it reaches the vanilla {@code CuboidModel$Deserializer}, which is where the format hooks
+ * mods put on vanilla's deserializer sit: fusion claims {@code "loader": "fusion:model"} at its HEAD. Fabric's
+ * {@code "fabric:type"} is never read at all, because the two fabric-model-loading injectors that dispatched it
+ * cannot fit NeoForge's {@code ModelManager}.
  *
  * <p>Measured on sweep90: Traveler's Backpack's 220 backpack block and item models failed to bake
  * ({@code Expected BackpackDynamicModel, instead received ...CuboidModel}), and fusion's connected-texture models
@@ -108,8 +108,8 @@ public final class ModelFormatFunnelInjector implements ClassTransformer {
 	public AnchorSet anchors() {
 		return AnchorSet.of(new AnchorSet.Anchor(TARGET.replace('/', '.'), AnchorSet.Severity.REQUIRED,
 				"NeoForge's model deserializer throws on every loader it did not register, before the vanilla "
-						+ "deserializer MinecraftForge's geometry loaders and fusion's model hook read, and ignores "
-						+ "fabric:type entirely — those models parse as plain cuboids or fail"));
+						+ "deserializer fusion's model hook reads, and ignores fabric:type entirely — those models "
+						+ "parse as plain cuboids or fail"));
 	}
 
 	@Override
@@ -135,8 +135,8 @@ public final class ModelFormatFunnelInjector implements ClassTransformer {
 			VarInsnNode store = objectStore(deserialize);
 			if (store == null || !readsLoaderNext(store) || !framedAsExpected(deserialize, store)) {
 				ForbricLog.warn("[Forbric/ModelFormats] NeoForge's %s.%s is not the shape this funnel was checked "
-						+ "against — leaving it as shipped, so Fabric fabric:type formats and MinecraftForge/fusion "
-						+ "\"loader\" formats keep parsing as plain models or failing", TARGET, METHOD);
+						+ "against — leaving it as shipped, so Fabric fabric:type formats and fusion's \"loader\" "
+						+ "format keep parsing as plain models or failing", TARGET, METHOD);
 				return classBytes;
 			}
 
@@ -158,8 +158,8 @@ public final class ModelFormatFunnelInjector implements ClassTransformer {
 			node.accept(writer);
 			ForbricLog.info("[Forbric/ModelFormats] NeoForge's model deserializer asks the kernel first about a format "
 					+ "it does not own — fabric:type goes to fabric-model-loading's registry, and a \"loader\" NeoForge "
-					+ "never registered goes to the vanilla deserializer MinecraftForge's geometry loaders and fusion "
-					+ "read, instead of failing as \"Unknown loader\"");
+					+ "never registered goes to the vanilla deserializer fusion's hook reads, instead of failing as "
+					+ "\"Unknown loader\"");
 			return writer.toByteArray();
 		} catch (RuntimeException e) {
 			Caught.warn(e, "[Forbric/ModelFormats] could not funnel NeoForge's model deserializer");
