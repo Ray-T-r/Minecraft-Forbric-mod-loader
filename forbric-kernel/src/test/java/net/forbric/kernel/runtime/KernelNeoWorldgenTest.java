@@ -44,58 +44,12 @@ import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 
 /**
- * The data-map fallback's shape over the COMPILED game-side class, and the watch's registrations over a recording
- * bus: the live context on the main path with EMPTY only in a handler, the stand-down read before any load, and
- * three LOWEST-priority listeners through the four-argument overload.
+ * The data-map watch's registrations over a recording bus: three LOWEST-priority listeners through the four-argument
+ * overload. (The kernel's own data-map fallback, whose shape this also pinned, went in Stage 4.)
  */
 class KernelNeoWorldgenTest {
 	private static final Path RUNTIME = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 	private static final Path COMPILED = RUNTIME.resolve("net/forbric/kernel/runtime/KernelNeoWorldgen.class");
-
-	@Test
-	void theFallbackAsksForTheLiveConditionContextAndFallsToEmptyOnlyInAHandler() throws Exception {
-		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(COMPILED), "runtime helper not compiled");
-		ClassNode node = new ClassNode();
-		new ClassReader(Files.readAllBytes(COMPILED)).accept(node, 0);
-		MethodNode load = find(node, "loadDataMaps");
-		boolean live = false;
-		var frames=new Analyzer<>(new SourceInterpreter()).analyze(node.name,load);
-		List<FieldInsnNode> empties = new ArrayList<>();
-		for (AbstractInsnNode insn = load.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof MethodInsnNode c && c.getOpcode() == Opcodes.INVOKEVIRTUAL
-					&& "net/minecraft/server/ReloadableServerResources".equals(c.owner) && "getConditionContext".equals(c.name)) {
-				// NeoForge's base declares one getConditionContext, so the call is a plain one (VirtualGetters chose between the
-				// merged base's two, which differed only in return type).
-				assertEquals("()Lnet/neoforged/neoforge/common/conditions/ICondition$IContext;", c.desc);
-				var frame = frames[load.instructions.indexOf(c)];
-				var receiver = frame.getStack(frame.getStackSize() - 1);
-				assertEquals(1, receiver.insns.size());
-				assertTrue(receiver.insns.iterator().next() instanceof MethodInsnNode managers && managers.name.equals("managers")
-						&& managers.desc.equals("()Lnet/minecraft/server/ReloadableServerResources;"));
-				assertTrue(!insideAHandler(load, c), "the live context is asked for on the main path");
-				live = true;
-			}
-			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && "EMPTY".equals(f.name)
-					&& "net/neoforged/neoforge/common/conditions/ICondition$IContext".equals(f.owner)) empties.add(f);
-		}
-		assertTrue(live, "the live context is asked for on the main path");
-		assertEquals(1, empties.size(), "one EMPTY, the fallback of the fallback");
-		assertTrue(insideAHandler(load, empties.get(0)), "…and it sits inside a catch handler, never on the main path");
-	}
-
-	@Test
-	void beforeServerStartReadsWhatNeoForgeAppliedBeforeItLoadsAnything() throws Exception {
-		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(COMPILED), "runtime helper not compiled");
-		ClassNode node = new ClassNode();
-		new ClassReader(Files.readAllBytes(COMPILED)).accept(node, 0);
-		MethodNode before = find(node, "beforeServerStart");
-		int read = -1, load = -1, i = 0;
-		for (AbstractInsnNode insn = before.instructions.getFirst(); insn != null; insn = insn.getNext(), i++) {
-			if (insn instanceof MethodInsnNode c && "appliedTotal".equals(c.name) && c.owner.endsWith("KernelNeoDataMapWatch") && read < 0) read = i;
-			if (insn instanceof MethodInsnNode c && "loadDataMaps".equals(c.name) && load < 0) load = i;
-		}
-		assertTrue(read >= 0 && load >= 0 && read < load, "the stand-down decision precedes the load: read=" + read + " load=" + load);
-	}
 
 	@Test
 	void theWatchRegistersThreeLowestPriorityListenersThroughTheFourArgumentOverload() throws Exception {

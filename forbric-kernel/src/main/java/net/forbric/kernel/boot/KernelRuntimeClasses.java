@@ -246,11 +246,10 @@ public final class KernelRuntimeClasses {
 		// and this is its value: a view of vanilla's ALL by key.
 		CLASSES.put("net.forbric.kernel.runtime.KernelKeyMappingMap", new Entry(Origin.COMPILED, List.of(
 				new Call("vanillaView", Object.class, java.util.Map.class))));
-		// NeoForge worldgen the merge left with no driver: its data maps (nothing named DataMapLoader at all),
-		// its biome/structure modifier pass, and the monster-room mob pick that the kernel used to answer by
-		// neutering the whole dungeon feature. Its two entry points are called from REWRITTEN CALL SITES, so
-		// their descriptors are the ones the merged base and the carrier already had — game types, not the JDK
-		// types this registry's own seams use. Listed with no calls for that reason, as KernelConfigApiBridge is.
+		// NeoForge worldgen the kernel drives itself: its biome/structure modifier pass, guarded, and the monster-room
+		// mob pick, which draws vanilla's while NeoForge's data map is its default. Its two entry points are called from
+		// REWRITTEN CALL SITES, so their descriptors are the ones the base and the carrier already had — game types, not
+		// the JDK types this registry's own seams use. Listed with no calls for that reason, as KernelConfigApiBridge is.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoWorldgen", new Entry(Origin.COMPILED, List.of()));
 		// Called from the position check SpawnPositionCallsInjector writes into BaseSpawner.serverTick.
 		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnPosition", new Entry(Origin.COMPILED, List.of()));

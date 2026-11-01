@@ -223,7 +223,9 @@ public final class ForbricSwitches {
 					+ "burn, so there is no MinecraftForge instance method called as static to rebind"),
 			Map.entry("forbric.mergedRecordDefaults", "NeoForge's own ServerStatus has no MinecraftForge forgeData component, and "
 					+ "every constructor of every record on its base sets each Optional component, so there is nothing to "
-					+ "default"));
+					+ "default"),
+			Map.entry("forbric.neoDataMapFallback", "NeoForge's own reload path loads and applies its data maps on every server, "
+					+ "dedicated or integrated, so the kernel has no about-to-start load of its own to switch"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

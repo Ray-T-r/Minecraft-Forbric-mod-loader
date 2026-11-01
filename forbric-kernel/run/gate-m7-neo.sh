@@ -82,14 +82,12 @@ step "the registries froze in the one order both carriers' freezeData() finish i
 check_absent "NeoForge's freezeData finished"  "GameData.freezeData\(\) THREW" "$LOG"
 check "registries frozen NeoForge-first"       "froze the registries NeoForge-first: [1-9][0-9]* registr(ies|y), [0-9]+ tag key" "$LOG"
 
-step "NeoForge's own data-map reload path is live, and the kernel's fallback stood down (must PASS)"
-# The merged base carries the whole path: NeoForgeEventHandler registers the DataMapLoader on
-# AddServerReloadListenersEvent, the live condition context is injected, TagsUpdatedEvent applies it. The kernel
-# used to load the maps a second time from about-to-start with an EMPTY context, over the genuine apply. RED with
-# M7_EXTRA_JVM=-Dforbric.eventBridges=off is not the switch here — the watch observes; the only kernel behaviour to
-# switch is the fallback (-Dforbric.neoDataMapFallback=off), under which these lines must STILL pass.
+step "NeoForge's own data-map reload path is live (must PASS)"
+# NeoForge's own path does it all: NeoForgeEventHandler registers the DataMapLoader on AddServerReloadListenersEvent,
+# the live condition context is injected, TagsUpdatedEvent applies it; KernelNeoDataMapWatch only observes and says
+# so. The kernel's about-to-start fallback (-Dforbric.neoDataMapFallback, which loaded the maps itself when this path
+# applied none) went in Stage 4, and with it the check that it stood down.
 check "NeoForge's own data-map path is live" "reload #1: NeoForge's own reload path applied data maps for [1-9][0-9]* registr" "$LOG"
-check "the kernel's fallback stood down"     "already applied data maps for [1-9][0-9]* registr.* fallback stood down" "$LOG"
 check_absent "no DataMapLoader registration gap" "DataMapLoader is NOT registered" "$LOG"
 
 step "every pure-NeoForge @Mod constructed (must PASS)"

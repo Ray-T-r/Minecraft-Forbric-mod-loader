@@ -27,9 +27,9 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Watches NeoForge's OWN data-map reload path and counts what it does, so {@link KernelNeoWorldgen}'s
- * about-to-start fallback can stand down when the genuine path already applied. No static game state: this class
- * can be initialised and its watch installed on a recording bus outside the game.
+ * Watches NeoForge's OWN data-map reload path and says what it did on each reload: the one place a boot log shows that
+ * NeoForge's data maps (its built-ins and every mod's) were applied. No static game state: this class can be
+ * initialised and its watch installed on a recording bus outside the game.
  */
 public final class KernelNeoDataMapWatch {
 	private KernelNeoDataMapWatch() {
@@ -37,16 +37,13 @@ public final class KernelNeoDataMapWatch {
 
 	private static final java.util.concurrent.atomic.AtomicInteger GENERATION = new java.util.concurrent.atomic.AtomicInteger();
 	private static final java.util.concurrent.atomic.AtomicInteger APPLIED_THIS_GENERATION = new java.util.concurrent.atomic.AtomicInteger();
-	private static final java.util.concurrent.atomic.AtomicInteger APPLIED_TOTAL = new java.util.concurrent.atomic.AtomicInteger();
 
 	/**
-	 * Watches NeoForge's OWN data-map path, which the merged base carries whole: the carrier's
-	 * {@code NeoForgeEventHandler.onResourceReload} registers a {@code DataMapLoader} on
-	 * {@code AddServerReloadListenersEvent} (the merged {@code ReloadableServerResources} posts it and injects the
-	 * live condition context), and {@code NeoForgeEventHandler.tagsUpdated} applies it on
+	 * Watches NeoForge's OWN data-map path: the carrier's {@code NeoForgeEventHandler.onResourceReload} registers a
+	 * {@code DataMapLoader} on {@code AddServerReloadListenersEvent} ({@code ReloadableServerResources} posts it and
+	 * injects the live condition context), and {@code NeoForgeEventHandler.tagsUpdated} applies it on
 	 * {@code TagsUpdatedEvent.ServerDataLoad} — posted on the initial load and on every {@code /reload}. Three
-	 * LOWEST-priority listeners count what that path does per reload generation and say so, and
-	 * {@link #beforeServerStart} stands its fallback down when the genuine path already applied.
+	 * LOWEST-priority listeners count what that path does per reload generation and say so.
 	 *
 	 * <p>LOWEST, through the four-argument overload: the shorter ones promote to NORMAL, which would run the
 	 * count line before {@code NeoForgeEventHandler.tagsUpdated} at NORMAL has applied anything.
@@ -60,14 +57,12 @@ public final class KernelNeoDataMapWatch {
 				event.getServerResources().getListener(NeoForgeReloadListeners.DATA_MAPS_KEY);
 			} catch (IllegalArgumentException absent) {
 				Caught.warn(absent, "[Forbric/Worldgen] reload #%d: NeoForge's DataMapLoader is NOT registered — "
-						+ "NeoForgeEventHandler.onResourceReload did not run on this bus; the kernel's about-to-start "
-						+ "fallback will load the data maps", generation);
+						+ "NeoForgeEventHandler.onResourceReload did not run on this bus, so no data map loads", generation);
 			}
 		});
 		bus.addListener(EventPriority.LOWEST, false, DataMapsUpdatedEvent.class, event -> {
 			if (event.getCause() == DataMapsUpdatedEvent.UpdateCause.SERVER_RELOAD) {
 				APPLIED_THIS_GENERATION.incrementAndGet();
-				APPLIED_TOTAL.incrementAndGet();
 			}
 		});
 		bus.addListener(EventPriority.LOWEST, false, TagsUpdatedEvent.ServerDataLoad.class, event -> {
@@ -77,15 +72,10 @@ public final class KernelNeoDataMapWatch {
 						+ "registr%s", GENERATION.get(), applied, applied == 1 ? "y" : "ies");
 			} else {
 				ForbricLog.warn("[Forbric/Worldgen] reload #%d: NeoForge's own reload path applied data maps for 0 "
-						+ "registries — the kernel's about-to-start fallback will load them (with the live condition "
-						+ "context), and /reload will not rebuild them", GENERATION.get());
+						+ "registries — its built-ins (furnace fuels, compostables, monster-room mobs and the rest) and "
+						+ "every mod's own data map are empty", GENERATION.get());
 			}
 		});
-	}
-
-	/** Registries NeoForge's own path applied data maps for, across every reload so far. */
-	public static int appliedTotal() {
-		return APPLIED_TOTAL.get();
 	}
 
 }

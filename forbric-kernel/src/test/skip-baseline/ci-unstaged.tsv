@@ -1535,8 +1535,6 @@ test	net.forbric.kernel.runtime.KernelMonsterRoomDrawTest	theShippedWeightsAreTh
 test	net.forbric.kernel.runtime.KernelNeoConditionsOverlayTest	aForeignConditionIsVetoedOnlyWhileAnOverlayListIsBeingDecoded()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelNeoConditionsOverlayTest	switchedOffTheOverlayScopeIsIdentity()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelNeoConfigLoadShapeTest	theEarlyPassOpensPerConfigAndBothPassesMarkTheCatalogue()	[fixture:game-side] runtime helper not compiled
-test	net.forbric.kernel.runtime.KernelNeoWorldgenTest	beforeServerStartReadsWhatNeoForgeAppliedBeforeItLoadsAnything()	[fixture:game-side] runtime helper not compiled
-test	net.forbric.kernel.runtime.KernelNeoWorldgenTest	theFallbackAsksForTheLiveConditionContextAndFallsToEmptyOnlyInAHandler()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelNeoWorldgenTest	theWatchRegistersThreeLowestPriorityListenersThroughTheFourArgumentOverload()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelRuntimePackMetadataTest	theRuntimePackMetadataParsesStrictlyAndCoversTheGamesResourceVersion()	[fixture:staged] the staged merged game is absent
 test	net.forbric.kernel.runtime.KernelShearsTest	askedAboutAnythingElseItMakesTheVanillaCall()	[fixture:game-side] game-side classes required
