@@ -100,7 +100,7 @@ mod 写给其他 mod 的声明可以跨生态读取（`CrossEcosystemDeclaration
 
 可选 SDK 通过 `META-INF/services/net.forbric.api.ProtocolExtension` 提供独立协议适配器，每个游戏类加载器拥有自己的注册表。新增协议可以提供缺失 API、注册转换、接收配置生命周期和提供配置界面。合并掉有状态父类时，产物会声明 `required-ancestor-compositions.tsv` 要求；`AncestorComposition` 必须证明最终定义保留了该状态协议，否则加载会明确失败。
 
-共享 API 提供 `VirtualGetters`，按完整 JVM 返回类型选择公开 getter；`VirtualProperties` 根据已定义的公开 getter 证明可写存储。它们可以用于任意声明类，并保留虚调用分派；属性写入前必须先获得实际 getter/字段证据。协议提供者在构造时不能链接游戏类，应通过 `Context.gameLoader()` 解析游戏对象，具体约定见 `ProtocolExtension`。
+共享 API 提供 `VirtualProperties`，根据已定义的公开 getter 证明可写存储。它可以用于任意声明类，并保留虚调用分派；属性写入前必须先获得实际 getter/字段证据。协议提供者在构造时不能链接游戏类，应通过 `Context.gameLoader()` 解析游戏对象，具体约定见 `ProtocolExtension`。
 
 ## 构建与运行
 

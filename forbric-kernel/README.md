@@ -164,7 +164,7 @@ A mod's declarations to other mods cross ecosystems (`CrossEcosystemDeclarations
 
 Optional SDKs publish independent adapters through `META-INF/services/net.forbric.api.ProtocolExtension`, with one registry per game loader. Providers can offer absent APIs, register transforms, receive configuration lifecycle events and provide configuration screens. A merged artifact records removed stateful ancestors in `required-ancestor-compositions.tsv`; an `AncestorComposition` must prove that the final definition retains the state protocol or loading fails explicitly.
 
-The shared API also exposes `VirtualGetters` for public getters selected by their full JVM return type and `VirtualProperties` for mutable storage witnessed by a defined public getter. These work for any declaring class and preserve virtual dispatch; property writes require the actual getter/field proof before effects run. Extension providers must avoid linking game classes during construction and resolve game objects through `Context.gameLoader()`, as described in `ProtocolExtension`.
+The shared API also exposes `VirtualProperties` for mutable storage witnessed by a defined public getter. It works for any declaring class and preserve virtual dispatch; property writes require the actual getter/field proof before effects run. Extension providers must avoid linking game classes during construction and resolve game objects through `Context.gameLoader()`, as described in `ProtocolExtension`.
 
 ## Build & run
 

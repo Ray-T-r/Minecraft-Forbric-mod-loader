@@ -5,10 +5,10 @@ import org.junit.jupiter.api.Test;
 import org.objectweb.asm.*;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 class VirtualPropertiesTest implements Opcodes {
-    @Test void arbitraryFinalGetterFieldCanBeWrittenWithoutAFieldNameInTheCaller()throws Exception{
+    @Test void arbitraryFinalGetterFieldCanBeWrittenWithoutAFieldNameInTheCaller()throws Throwable{
         try(var loader=new ForbricClassLoader(new URL[0],getClass().getClassLoader())){
             Class<?> type=loader.defineRuntimeClass("unknown.State",type("unknown/State",false,false));Object state=type.getConstructor().newInstance();
-            VirtualProperties.writer(type,"value",String.class,state).accept("changed");assertEquals("changed",VirtualGetters.get(type,"value",String.class,state));
+            VirtualProperties.writer(type,"value",String.class,state).accept("changed");assertEquals("changed",getter(type,"value",String.class,state));
         }
     }
     @Test void finalMixinChangedGetterCannotBeTreatedAsItsRawField()throws Exception{
@@ -24,7 +24,7 @@ class VirtualPropertiesTest implements Opcodes {
         }
         assertThrows(IllegalStateException.class,()->VirtualProperties.writer(StringBuilder.class,"toString",String.class,new StringBuilder()));
     }
-    @Test void equalLoadersCannotShareOrOverwriteDefinitionProofs()throws Exception{
+    @Test void equalLoadersCannotShareOrOverwriteDefinitionProofs()throws Throwable{
         class EqualLoader extends ClassLoader {
             EqualLoader(){super(VirtualPropertiesTest.class.getClassLoader());}
             Class<?> add(){byte[] bytes=type("unknown/EqualState",false,false);return defineClass("unknown.EqualState",bytes,0,bytes.length);}
@@ -35,11 +35,15 @@ class VirtualPropertiesTest implements Opcodes {
         VirtualProperties.observe(first,"unknown/EqualState",java.util.Map.of("value()Ljava/lang/String;",new VirtualProperties.Field("unknown/EqualState","randomBacking","Ljava/lang/String;")));
         try{
             Object left=a.getConstructor().newInstance(),right=b.getConstructor().newInstance();
-            VirtualProperties.set(a,"value",String.class,left,"left");assertEquals("left",VirtualGetters.get(a,"value",String.class,left));
+            VirtualProperties.set(a,"value",String.class,left,"left");assertEquals("left",getter(a,"value",String.class,left));
             assertThrows(IllegalStateException.class,()->VirtualProperties.set(b,"value",String.class,right,"wrong"));
             VirtualProperties.observe(second,"unknown/EqualState",java.util.Map.of());
-            VirtualProperties.set(a,"value",String.class,left,"still-left");assertEquals("still-left",VirtualGetters.get(a,"value",String.class,left));
+            VirtualProperties.set(a,"value",String.class,left,"still-left");assertEquals("still-left",getter(a,"value",String.class,left));
         }finally{VirtualProperties.release(first);VirtualProperties.release(second);}
+    }
+    /** The public virtual getter {@code name} returning {@code result}, called on {@code receiver}: the oracle for a write. */
+    private static Object getter(Class<?> declaration,String name,Class<?> result,Object receiver)throws Throwable{
+        return java.lang.invoke.MethodHandles.publicLookup().findVirtual(declaration,name,java.lang.invoke.MethodType.methodType(result)).invoke(receiver);
     }
     private static byte[] type(String name,boolean opaque,boolean immutable){
         ClassWriter w=new ClassWriter(ClassWriter.COMPUTE_MAXS);w.visit(V21,ACC_PUBLIC,name,null,"java/lang/Object",null);w.visitField(ACC_PRIVATE|(immutable?ACC_FINAL:0),"randomBacking","Ljava/lang/String;",null,null).visitEnd();

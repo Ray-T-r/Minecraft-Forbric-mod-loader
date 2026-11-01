@@ -33,7 +33,6 @@ import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.Opcodes;
-import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
@@ -41,7 +40,6 @@ import org.objectweb.asm.tree.LabelNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.TryCatchBlockNode;
-import org.objectweb.asm.tree.LdcInsnNode;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.SourceInterpreter;
 
@@ -64,13 +62,19 @@ class KernelNeoWorldgenTest {
 		var frames=new Analyzer<>(new SourceInterpreter()).analyze(node.name,load);
 		List<FieldInsnNode> empties = new ArrayList<>();
 		for (AbstractInsnNode insn = load.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof MethodInsnNode c && c.getOpcode()==Opcodes.INVOKESTATIC&&"net/forbric/api/VirtualGetters".equals(c.owner)&&"get".equals(c.name)) {
-                var frame=frames[load.instructions.indexOf(c)];int start=frame.getStackSize()-4;
-                Object[] expected={Type.getObjectType("net/minecraft/server/ReloadableServerResources"),"getConditionContext",Type.getObjectType("net/neoforged/neoforge/common/conditions/ICondition$IContext")};
-                for(int argument=0;argument<3;argument++){var origin=frame.getStack(start+argument);assertEquals(1,origin.insns.size());assertEquals(expected[argument],((LdcInsnNode)origin.insns.iterator().next()).cst);}
-                var receiver=frame.getStack(start+3);assertEquals(1,receiver.insns.size());assertTrue(receiver.insns.iterator().next() instanceof MethodInsnNode managers&&managers.name.equals("managers")&&managers.desc.equals("()Lnet/minecraft/server/ReloadableServerResources;"));
-                assertTrue(!insideAHandler(load,c),"the exact-return virtual getter is asked on the main path");live=true;
-            }
+			if (insn instanceof MethodInsnNode c && c.getOpcode() == Opcodes.INVOKEVIRTUAL
+					&& "net/minecraft/server/ReloadableServerResources".equals(c.owner) && "getConditionContext".equals(c.name)) {
+				// NeoForge's base declares one getConditionContext, so the call is a plain one (VirtualGetters chose between the
+				// merged base's two, which differed only in return type).
+				assertEquals("()Lnet/neoforged/neoforge/common/conditions/ICondition$IContext;", c.desc);
+				var frame = frames[load.instructions.indexOf(c)];
+				var receiver = frame.getStack(frame.getStackSize() - 1);
+				assertEquals(1, receiver.insns.size());
+				assertTrue(receiver.insns.iterator().next() instanceof MethodInsnNode managers && managers.name.equals("managers")
+						&& managers.desc.equals("()Lnet/minecraft/server/ReloadableServerResources;"));
+				assertTrue(!insideAHandler(load, c), "the live context is asked for on the main path");
+				live = true;
+			}
 			if (insn instanceof FieldInsnNode f && f.getOpcode() == Opcodes.GETSTATIC && "EMPTY".equals(f.name)
 					&& "net/neoforged/neoforge/common/conditions/ICondition$IContext".equals(f.owner)) empties.add(f);
 		}

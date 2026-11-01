@@ -212,7 +212,6 @@ class ClientPartTrackingInjectorExecutionTest {
             .replace("public final PartEntity<?>[] subEntities = {new PartEntity<>(11), new PartEntity<>(12)};","public final net.minecraftforge.entity.PartEntity<?>[] subEntities = {new net.minecraftforge.entity.PartEntity<>(11), new net.minecraftforge.entity.PartEntity<>(12)};")
             .replace("return new net.minecraftforge.entity.PartEntity<?>[0];","return subEntities;"));
         source.put("net.forbric.kernel.runtime.KernelMultipartViews",java.nio.file.Files.readString(Path.of("src/runtime/java/net/forbric/kernel/runtime/KernelMultipartViews.java")));
-        source.put("net.forbric.api.VirtualGetters",java.nio.file.Files.readString(Path.of("src/main/java/net/forbric/api/VirtualGetters.java")));
         Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, source));
 		String entity = ClientPartTrackingInjector.ENTITY;
 		SimpleRemapper rename = new SimpleRemapper(Map.of(entity + ".getNeoParts" + ClientPartTrackingInjector.NEO_GET_PARTS, "getParts")) {

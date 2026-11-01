@@ -197,7 +197,7 @@ public final class KernelNeoWorldgen {
 			DataMapLoader loader = new DataMapLoader();
 			ICondition.IContext context;
 			try {
-				context = net.forbric.api.VirtualGetters.get(net.minecraft.server.ReloadableServerResources.class, "getConditionContext", ICondition.IContext.class, server.getServerResources().managers());
+				context = server.getServerResources().managers().getConditionContext();
 			} catch (Throwable noLiveContext) {
 				Caught.warn(noLiveContext, "[Forbric/Worldgen] no live condition context for the data-map fallback — "
 						+ "loading with an EMPTY one, so a tag-based condition reads no tags");
