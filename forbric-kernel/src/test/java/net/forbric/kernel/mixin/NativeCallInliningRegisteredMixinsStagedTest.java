@@ -90,31 +90,58 @@ class NativeCallInliningRegisteredMixinsStagedTest {
 		MethodNode handler = journeyMapHandler(hooks);
 		MethodNode added = gateway(hooks);
 		added.instructions.insert(headCallback(added, handler));
-		List<String> contributors = SeamDeclines.contributors(hooks, added, java.util.Set.of(fabric.name.replace('/', '.')));
-		assertEquals(List.of(JOURNEYMAP), contributors);
-		assertNull(MixinOperationSeamTransport.additions(instrumented, added, contributors), "JourneyMap only added code around the instrumented call");
+		java.util.Set<String> source = java.util.Set.of(fabric.name.replace('/', '.'));
+		MixinOperationSeamTransport.Additions accepted = MixinOperationSeamTransport.additions(instrumented, added, hooks, source);
+		assertNull(accepted.refused(), "JourneyMap only added code around the instrumented call");
+		assertEquals(List.of(JOURNEYMAP), accepted.mixins(), "and the added code is JourneyMap's");
+		assertTrue(String.valueOf(MixinOperationSeamTransport.additions(instrumented, added, hooks, java.util.Set.of(JOURNEYMAP)).refused())
+				.contains("which no other mixin merged"), "added code calling the source mixin's own handler is not another mixin's");
 
-		assertNotNull(MixinOperationSeamTransport.additions(instrumented, added, List.of()), "an addition no mixin owns is refused");
+		MethodNode unmarked = copy(instrumented);
+		MethodNode plain = journeyMapHandler(hooks);
+		plain.name = "forbric$test$unmarkedHandler";
+		plain.visibleAnnotations = null;
+		unmarked.instructions.insert(headCallback(unmarked, plain));
+		assertTrue(String.valueOf(MixinOperationSeamTransport.additions(instrumented, unmarked, hooks, source).refused())
+				.contains("which no other mixin merged"), "an addition calling a method no mixin merged is refused");
 		MethodNode dropped = copy(added);
 		org.objectweb.asm.tree.AbstractInsnNode selected = java.util.Arrays.stream(dropped.instructions.toArray())
 				.filter(i -> i instanceof org.objectweb.asm.tree.MethodInsnNode call && call.name.startsWith("forbric$selected$")).findFirst().orElseThrow();
 		dropped.instructions.set(selected, new org.objectweb.asm.tree.MethodInsnNode(org.objectweb.asm.Opcodes.INVOKESTATIC, HOOKS, "extractScreenInternal",
 				((org.objectweb.asm.tree.MethodInsnNode) selected).desc, false));
-		assertTrue(String.valueOf(MixinOperationSeamTransport.additions(instrumented, dropped, contributors)).contains("is gone"),
+		assertTrue(String.valueOf(MixinOperationSeamTransport.additions(instrumented, dropped, hooks, source).refused()).contains("is gone"),
 				"the instrumented call replaced by another is refused");
 		MethodNode reassigned = copy(added);
 		org.objectweb.asm.tree.InsnList write = new org.objectweb.asm.tree.InsnList();
 		write.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.ACONST_NULL));
 		write.add(new org.objectweb.asm.tree.VarInsnNode(org.objectweb.asm.Opcodes.ASTORE, 0));
 		reassigned.instructions.insert(write);
-		assertTrue(String.valueOf(MixinOperationSeamTransport.additions(instrumented, reassigned, contributors)).contains("writes local 0"),
+		assertTrue(String.valueOf(MixinOperationSeamTransport.additions(instrumented, reassigned, hooks, source).refused()).contains("writes local 0"),
 				"an addition that reassigns the screen is refused");
 		System.setProperty(MixinOperationSeamTransport.ADDITIONS_PROPERTY, "off");
 		try {
-			assertEquals("", MixinOperationSeamTransport.additions(instrumented, added, contributors), "the switch off refuses every change");
+			assertEquals("", MixinOperationSeamTransport.additions(instrumented, added, hooks, source).refused(), "the switch off refuses every change");
 		} finally {
 			System.clearProperty(MixinOperationSeamTransport.ADDITIONS_PROPERTY);
 		}
+
+		// A change no mixin owns that only adds code, in a body that already calls a method another mixin merged (here
+		// extractScreenInternal as another mod's @Overwrite would leave it): the instrumented code's own calls do not make
+		// the addition anyone's.
+		MethodNode internal = hooks.methods.stream().filter(m -> m.name.equals("extractScreenInternal")).findFirst().orElseThrow();
+		AnnotationNode overwrite = new AnnotationNode("Lorg/spongepowered/asm/mixin/transformer/meta/MixinMerged;");
+		overwrite.values = new java.util.ArrayList<>(List.of("mixin", "org.example.OverwriteMixin", "priority", 1000, "sessionId", "test"));
+		internal.visibleAnnotations = new java.util.ArrayList<>(List.of(overwrite));
+		MethodNode unattributed = copy(instrumented);
+		org.objectweb.asm.tree.InsnList observe = new org.objectweb.asm.tree.InsnList();
+		observe.add(new org.objectweb.asm.tree.FieldInsnNode(org.objectweb.asm.Opcodes.GETSTATIC, "java/lang/System", "out", "Ljava/io/PrintStream;"));
+		observe.add(new org.objectweb.asm.tree.InsnNode(org.objectweb.asm.Opcodes.POP));
+		unattributed.instructions.insert(observe);
+		assertEquals(List.of("org.example.OverwriteMixin"), SeamDeclines.contributors(hooks, unattributed, source),
+				"the whole body names the overwrite's mixin");
+		assertEquals("no other mixin's handler is in what was added",
+				MixinOperationSeamTransport.additions(instrumented, unattributed, hooks, source).refused(),
+				"but the added code calls no other mixin's handler, so it is refused");
 	}
 
 	/** The defect: deciding on the mixins planned so far, the inline is planned and the seam is not tried. */

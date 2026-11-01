@@ -62,7 +62,8 @@ final class SeamDeclines {
         if (mixin != null && !excluded.contains(mixin)) found.add(mixin);
     }
 
-    private static String mergedFrom(MethodNode method) {
+    /** The mixin whose {@code @MixinMerged} marks {@code method}, or null. */
+    static String mergedFrom(MethodNode method) {
         if (method.visibleAnnotations == null) return null;
         for (AnnotationNode annotation : method.visibleAnnotations) {
             if (annotation.desc.equals(MERGED) && MixinFit.value(annotation, "mixin") instanceof String mixin) return mixin;

@@ -206,8 +206,8 @@ public final class MixinOperationSeamTransport implements Opcodes {
             if(!value.owner().equals(owner))continue;
             if(DefinedMethodContracts.observed(loader,value)){plan.drift.remove(value);plan.added.remove(value);continue;}
             if(node==null)node=MixinFit.parse(bytes);MethodNode actual=NativeCallChanges.method(node,value.name()+value.descriptor());String name=owner+"."+value.name()+value.descriptor();
-            List<String> contributors=actual==null?List.of():SeamDeclines.contributors(node,actual,Set.of(plan.source.replace('/','.')));
-            String refused=actual==null?"missing":additions(plan.bodies.get(value),actual,contributors);
+            Additions additions=actual==null?new Additions("missing",List.of()):additions(plan.bodies.get(value),actual,node,Set.of(plan.source.replace('/','.')));
+            String refused=additions.refused();List<String> contributors=additions.mixins();
             if(refused==null){
                 MethodContract accepted=contract(value.owner().replace('.','/'),actual);
                 if(!accepted.equals(plan.added.put(value,accepted)))net.forbric.kernel.util.ForbricLog.info("[Forbric/Mixin] %s: the final body of %s keeps every instruction Forbric instrumented for it, in order, "
@@ -219,33 +219,50 @@ public final class MixinOperationSeamTransport implements Opcodes {
                 :"the final body of "+name+" is not the body Forbric instrumented"+SeamDeclines.changedBy(SeamDeclines.contributors(node,actual,Set.of()))+(refused.isEmpty()?"":": "+refused));
         }
     }
+    /** Why a final body is more than another mixin's additions (null when it is not), and the mixins whose handlers the added code calls. */
+    record Additions(String refused,List<String> mixins){}
     /**
      * Why the final {@code actual} body of an instrumented gateway or helper is more than another mixin's additions to the
      * {@code instrumented} one (null when it is only that): every instruction Forbric emitted is still there, in order,
      * the instrumented calls are made as often as Forbric made them, no local the instrumented body or its parameters use
-     * is written by the added code, no handler is gone, and what was added is another mixin's (a HEAD {@code @Inject} of
-     * a NeoForge mod into {@code ClientHooks.extractScreen}, JourneyMap's). Such a body still makes the proved call with
-     * the values the carrier computes, as the mixin's own loader would run both. Anything else — a call or constant
-     * replaced, a local reassigned, a transformer's change no mixin owns — declines as before, and so does every
-     * change with {@code -Dforbric.operationSeams.additions=off}. Empty: off, or no instrumented body to compare.
+     * is written by the added code, no handler is gone, and the added code is another mixin's (a HEAD {@code @Inject} of
+     * a NeoForge mod into {@code ClientHooks.extractScreen}, JourneyMap's): it calls at least one method merged into
+     * {@code owner} by a mixin not in {@code excluded}, and every method of {@code owner} it calls, or hands over as a
+     * method handle, is such a merged method. Such a body still makes the proved call with the values the carrier
+     * computes, as the mixin's own loader would run both. Anything else — a call or constant replaced, a local reassigned,
+     * added code that calls a method of the class no other mixin merged (a transformer's change, even in a body that
+     * already calls another mixin's {@code @Overwrite}) — declines as before, and so does every change with
+     * {@code -Dforbric.operationSeams.additions=off}. Refused with "": off, or no instrumented body to compare.
      */
-    static String additions(MethodNode instrumented,MethodNode actual,List<String> contributors){
-        if("off".equalsIgnoreCase(System.getProperty(ADDITIONS_PROPERTY,"on"))||instrumented==null)return "";
-        if(contributors.isEmpty())return "no other mixin's handler is in what was added";
-        if((instrumented.access&ACC_STATIC)!=(actual.access&ACC_STATIC)||!instrumented.desc.equals(actual.desc))return "its shape changed";
-        if(actual.tryCatchBlocks.size()<instrumented.tryCatchBlocks.size())return "a handler of the instrumented body is gone";
-        List<AbstractInsnNode> before=executable(instrumented),after=executable(actual);
+    static Additions additions(MethodNode instrumented,MethodNode actual,ClassNode owner,Set<String> excluded){
+        if("off".equalsIgnoreCase(System.getProperty(ADDITIONS_PROPERTY,"on"))||instrumented==null)return new Additions("",List.of());
+        if((instrumented.access&ACC_STATIC)!=(actual.access&ACC_STATIC)||!instrumented.desc.equals(actual.desc))return new Additions("its shape changed",List.of());
+        if(actual.tryCatchBlocks.size()<instrumented.tryCatchBlocks.size())return new Additions("a handler of the instrumented body is gone",List.of());
+        List<AbstractInsnNode> before=executable(instrumented),after=executable(actual),added=new ArrayList<>();
         Set<Integer> used=new HashSet<>();int slot=(instrumented.access&ACC_STATIC)==0?1:0;if(slot==1)used.add(0);
         for(Type argument:Type.getArgumentTypes(instrumented.desc)){used.add(slot);slot+=argument.getSize();}
         for(AbstractInsnNode instruction:before){if(instruction instanceof VarInsnNode var)used.add(var.var);else if(instruction instanceof IincInsnNode inc)used.add(inc.var);}
         int at=0;
         for(AbstractInsnNode instruction:after){
             if(at<before.size()&&same(before.get(at),instruction)){at++;continue;}
+            added.add(instruction);
             if(instruction instanceof VarInsnNode var&&var.getOpcode()>=ISTORE&&used.contains(var.var)||instruction instanceof IincInsnNode inc&&used.contains(inc.var))
-                return "the added code writes local "+(instruction instanceof VarInsnNode var?var.var:((IincInsnNode)instruction).var)+", which the instrumented body uses";
+                return new Additions("the added code writes local "+(instruction instanceof VarInsnNode var?var.var:((IincInsnNode)instruction).var)+", which the instrumented body uses",List.of());
         }
-        if(at<before.size())return "instruction "+at+" of the instrumented body ("+describe(before.get(at))+") is gone";
-        return instrumentedCalls(before)==instrumentedCalls(after)?null:"an instrumented call is made more often than Forbric made it";
+        if(at<before.size())return new Additions("instruction "+at+" of the instrumented body ("+describe(before.get(at))+") is gone",List.of());
+        if(instrumentedCalls(before)!=instrumentedCalls(after))return new Additions("an instrumented call is made more often than Forbric made it",List.of());
+        Set<String> mixins=new TreeSet<>();
+        for(AbstractInsnNode instruction:added){
+            List<String[]> called=new ArrayList<>();
+            if(instruction instanceof MethodInsnNode call&&call.owner.equals(owner.name))called.add(new String[]{call.name,call.desc});
+            else if(instruction instanceof InvokeDynamicInsnNode dynamic)for(Object argument:dynamic.bsmArgs)if(argument instanceof Handle handle&&handle.getOwner().equals(owner.name))called.add(new String[]{handle.getName(),handle.getDesc()});
+            for(String[] member:called){
+                MethodNode target=NativeCallChanges.method(owner,member[0]+member[1]);String mixin=target==null?null:SeamDeclines.mergedFrom(target);
+                if(mixin==null||excluded.contains(mixin))return new Additions("the added code calls "+owner.name.replace('/','.')+"."+member[0]+member[1]+", which no other mixin merged",List.of());
+                mixins.add(mixin);
+            }
+        }
+        return mixins.isEmpty()?new Additions("no other mixin's handler is in what was added",List.of()):new Additions(null,List.copyOf(mixins));
     }
     private static List<AbstractInsnNode> executable(MethodNode method){List<AbstractInsnNode> result=new ArrayList<>();for(AbstractInsnNode instruction:method.instructions)if(instruction.getOpcode()>=0)result.add(instruction);return result;}
     private static long instrumentedCalls(List<AbstractInsnNode> code){return code.stream().filter(i->i instanceof MethodInsnNode call&&(call.name.startsWith("forbric$selected$")||call.name.startsWith("forbric$operation$"))).count();}
