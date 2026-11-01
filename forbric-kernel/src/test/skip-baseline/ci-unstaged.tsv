@@ -1021,7 +1021,6 @@ test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	twoFizzCallsBothRunOn
 test	net.forbric.kernel.mixin.MixinLambdaThunkRetargetTest	actualUpstreamHudOperationHandlersReachTheirUniqueThunks()	[fixture:staged] configured Fabric API fixture required: $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar
 test	net.forbric.kernel.mixin.MixinLocalsCaptureTest	actualCreativeCoreConfigurationRedirectIsSoftened()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.mixin.MixinLocalsCaptureTest	architecturysServerPlayerGameModeCaptureIsSoftened()	[fixture:third-party] popular inputs absent
-test	net.forbric.kernel.mixin.MixinMergedTwinTest	theMergedBaseReallyCarriesTheTwinThisIsAbout()	[fixture:staged] staged merged base absent
 test	net.forbric.kernel.mixin.MixinNativeEquivalenceTest	actualSourceRedirectAndCarrierCallDispatchTheSameStackSensitiveOverrideOnce()	[fixture:staged] actual Fabric API source contract required
 test	net.forbric.kernel.mixin.MixinNativeEquivalenceTest	actualUpstreamBrewingRedirectHasTheSameCapturedReceiverInTheCarrier()	[fixture:staged] actual Fabric API source contract required
 test	net.forbric.kernel.mixin.MixinNativeEquivalenceTest	actualUpstreamFurnaceCopiedSharedReceiverCannotBorrowTheLiveStackCall()	[fixture:staged] actual Fabric API source contract required

@@ -10,8 +10,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
  * Written the way a mod compiled against VANILLA writes it: there, {@code BoundedFloatFunction$2} is the body that
  * calls {@code tag}, so that is the number it targets and the owner its INVOKE point pins.
  *
- * <p>The INVOKE target is spelled {@code owner.name(desc)}. The equally valid {@code Lowner;name(desc)} spelling is
- * not unpinned by {@code MixinMergedTwin.unpinInjectionPointOwners} today, so the argument half would be lost.
+ * <p>The INVOKE target is spelled {@code owner.name(desc)}; {@code MixinAnonymousRetarget} unpins that spelling and the
+ * equally valid {@code Lowner;name(desc)} one alike.
  */
 @Mixin(targets = "net.minecraft.util.BoundedFloatFunction$2")
 public abstract class BoundedFloatFunctionMixin {

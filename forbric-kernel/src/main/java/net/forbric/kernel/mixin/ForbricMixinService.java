@@ -446,12 +446,9 @@ public final class ForbricMixinService
 		// …and a Fabric mod's wrap of vanilla's is(Items.SHEARS) also answers the carrier's canPerformAction(SHEARS_*)
 		// that replaced it in six merged bodies (BCLib's tag-based shears), with the carrier's answer as its original.
 		MixinShearsRelay.adapt(node, this::mergedBaseNodeWithCode);
-		// …and a target whose NUMBER the merge gave to a carrier's anonymous class is moved to where vanilla's
-		// body went. Before the twin pass: the class this lands on may itself have a renamed twin.
+		// …and a target whose NUMBER a carrier patch gave to another anonymous class is moved to where vanilla's
+		// body went.
 		MixinAnonymousRetarget.retarget(node, this::mergedBaseHas);
-		// …and a target the byte merge had to rename gets its twin added, because the merged code that runs
-		// instantiates the renamed copy and the mixin names only the vanilla one.
-		MixinMergedTwin.addTwins(node, MixinMergedTwin.enabled() ? this::mergedBaseHas : binary -> false);
 		// …and an @Inject handler written for the other ecosystem's shape of the one surviving target is wrapped,
 		// so it still receives the values it asked for rather than failing the whole mixin class — on the pruner's
 		// record, or on the census of lambdas whose captures a carrier patch reordered (wover-events' WorldLoader hook).

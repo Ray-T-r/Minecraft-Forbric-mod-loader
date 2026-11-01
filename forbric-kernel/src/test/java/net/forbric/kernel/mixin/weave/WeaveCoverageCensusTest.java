@@ -89,7 +89,6 @@ class WeaveCoverageCensusTest {
 			Map.entry("MixinLocalsCapture", Switch.own("forbric.localsFailSoft", "forbric.requireFailSoft")),
 			Map.entry("MixinAtShape", Switch.own("forbric.mixinAtShape")),
 			Map.entry("MixinOverloadPin", Switch.own("forbric.mixinOverloadPin")),
-			Map.entry("MixinMergedTwin", Switch.own("forbric.mixinMergedTwins")),
 			// MixinNativeTail stands down with VanillaEarlyReturns, whose split its test puts on the run's pre-Mixin chain.
 			Map.entry("MixinNativeTail", new Switch(List.of("forbric.vanillaEarlyReturns"), "net.forbric.kernel.transform.VanillaEarlyReturns")),
 			// MixinHandlerShimWeaveTest; its aside marks (run once, after every adapter): UncalledDecisionTwoMixinsWeaveTest.

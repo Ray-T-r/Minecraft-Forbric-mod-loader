@@ -210,7 +210,9 @@ public final class ForbricSwitches {
 			Map.entry("forbric.lootPoolFields", "NeoForge's own LootPool has one name field and one codec that reads only its own fields, "
 					+ "so there is no second family's field for a constructor to fill"),
 			Map.entry("forbric.builderStubRebind", "NeoForge's own base keeps vanilla's bodies where MinecraftForge left a builder stub "
-					+ "(UnbakedCuboidGeometry.bake), so an injector binds the body it was written for and nothing moves"));
+					+ "(UnbakedCuboidGeometry.bake), so an injector binds the body it was written for and nothing moves"),
+			Map.entry("forbric.mixinMergedTwins", "NeoForge's own base has one class per name, with no $forbricneo twin the "
+					+ "merge renamed, so a mixin applies to the class it names and gets no second target"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

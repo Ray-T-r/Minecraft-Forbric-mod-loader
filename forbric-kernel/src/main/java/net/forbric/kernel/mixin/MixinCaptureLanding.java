@@ -47,8 +47,8 @@ import net.forbric.kernel.util.ForbricLog;
  * walk does not step: it reads the locals the body left, and the capture applies. Placed only where all of this holds,
  * in {@link IExtension#preApply}, as Mixin is about to apply its mixins to a class:
  * <ul>
- * <li>a mixin Mixin is applying to this class carries a moved capture — whatever class the adapter read, so a target the
- * mixin reaches through {@link MixinMergedTwin} gets its landing too, and a mixin its config plugin refused gets none;
+ * <li>a mixin Mixin is applying to this class carries a moved capture — whatever class the adapter read, so every target
+ * the mixin is applied to gets its landing, and a mixin its config plugin refused gets none;
  * <li>that mixin's config is below 0.10.0: from 0.10.0 on, the walk stops before the frame and needs nothing;
  * <li>the call is the one the moved point binds, in a method the handler binds, read off the mixin as Mixin applies it
  * and matched as Mixin matches an INVOKE point, with the ordinal counted over this method;

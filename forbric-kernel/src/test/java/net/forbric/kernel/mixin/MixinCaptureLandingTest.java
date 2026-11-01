@@ -25,7 +25,7 @@ import org.spongepowered.asm.mixin.FabricUtil;
  * Where MixinCaptureLanding puts its NOP: in a method a mixin below 0.10.0 is being applied to, after the call its moved
  * capture's point binds, counted as Mixin counts it, only where the next node is a pseudo-instruction, and not where an
  * applied mixin shifts a point BY in that method. The weave itself, both of Mixin's local walks on it, is
- * GuiItemCaptureMixinAdapterWeaveTest and TwinCaptureLandingWeaveTest.
+ * GuiItemCaptureMixinAdapterWeaveTest and CaptureLandingWeaveTest.
  */
 class MixinCaptureLandingTest {
 	private static final String OWNER = "fixture/Target";
@@ -89,11 +89,11 @@ class MixinCaptureLandingTest {
 		assertEquals(List.of("ALOAD", "SUBMIT", "LABEL", "LINE", "RETURN"), shape(target.methods.get(0)));
 	}
 
-	/** The landing follows every class the mixin is applied to, a merged twin the adapter never read included. */
+	/** The landing follows every class the mixin is applied to, one the adapter never read included. */
 	@Test void anyClassTheMixinIsAppliedToGetsItsLanding() {
 		ClassNode mixin = moved("fixture/mod/Capture", "item", SUBMIT, -1);
 		ClassNode twin = target(method("item", submit(), join()), method("other", submit(), join()));
-		twin.name = OWNER + MixinMergedTwin.NEO_SUFFIX;
+		twin.name = OWNER + "$second";
 
 		assertEquals(1, MixinCaptureLanding.land(twin, List.of(applied(mixin, LEGACY))));
 		assertEquals(List.of("ALOAD", "SUBMIT", "LABEL", "LINE", "RETURN"), shape(twin.methods.get(1)),
