@@ -11,7 +11,8 @@ import org.spongepowered.asm.mixin.injection.At;
 
 /**
  * A Fabric mod's wrap written against vanilla, where ItemStack.useOn makes the Item.useOn call itself (fabric-api's
- * ItemEvents.USE_ON hook has this shape). On the merged game that call lives in the kernel's relay instead.
+ * ItemEvents.USE_ON hook has this shape). On NeoForge's own useOn that call is made outside the method (in
+ * CommonHooks.onPlaceItemIntoWorld and a client lambda), and the kernel routes both through its relay instead.
  */
 @Mixin(ItemStack.class)
 public abstract class ItemStackMixin {

@@ -9,7 +9,7 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import net.forbric.kernel.util.Caught;
 
-/** Atomic adaptations of structurally recognized callbacks to the live merged-game operations. */
+/** Atomic adaptations of structurally recognized callbacks to the operations the live NeoForge base runs. */
 public final class MixinCarrierCallbackAdapters {
 	public static final String PROPERTY="forbric.carrierCallbackAdapters";
     private static final String OP=MixinWrapOperationShim.OPERATION;

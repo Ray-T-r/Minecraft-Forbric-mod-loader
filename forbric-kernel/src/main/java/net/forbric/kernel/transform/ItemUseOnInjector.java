@@ -74,7 +74,7 @@ public final class ItemUseOnInjector implements ClassTransformer {
 	@Override public String name() { return "forbric-item-use-on"; }
 
 	@Override public AnchorSet anchors() {
-		if (!enabled()) return AnchorSet.scanned("ItemStack.useOn explicitly left as merged with -D" + PROPERTY + "=off");
+		if (!enabled()) return AnchorSet.scanned("ItemStack.useOn explicitly left as the base has it with -D" + PROPERTY + "=off");
 		return AnchorSet.of(
 				new AnchorSet.Anchor(STACK, AnchorSet.Severity.REQUIRED, "fabric-api's ItemEvents.USE_ON never fires"),
 				new AnchorSet.Anchor(NEO_HOOKS, AnchorSet.Severity.REQUIRED, "fabric-api's ItemEvents.USE_ON never fires on a server"));

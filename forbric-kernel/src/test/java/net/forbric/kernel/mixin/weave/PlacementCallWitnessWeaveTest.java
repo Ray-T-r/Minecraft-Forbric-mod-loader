@@ -17,7 +17,7 @@ import net.forbric.api.Ecosystem;
 /**
  * {@code MixinPlacementTransactionAdapter}'s handler for a point after vanilla's {@code Item.useOn} call, replayed at the
  * return of {@code ItemStack.useOn}, runs only when the call was actually made — not merely when vanilla's checks before it
- * would let it be made. The merged {@code useOn} posts the carrier's own use event at its head (a listener may answer for
+ * would let it be made. NeoForge's {@code useOn} posts the carrier's own use event at its head (a listener may answer for
  * the use: it answers carol's with a success, without the use) and makes the call through the stack's own relay inside
  * the carrier's transaction. The guest is not Create: it notes who places before the call and reads a share after it.
  *

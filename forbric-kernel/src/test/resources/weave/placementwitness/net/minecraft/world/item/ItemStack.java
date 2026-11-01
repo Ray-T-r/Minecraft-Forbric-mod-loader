@@ -5,7 +5,7 @@ import net.minecraft.world.item.context.UseOnContext;
 import net.minecraft.world.level.block.state.pattern.BlockInWorld;
 
 /**
- * A stand-in for the merged ItemStack: the carrier's use event at the head (a listener may answer for the use), then on a
+ * A stand-in for NeoForge's ItemStack: the carrier's use event at the head (a listener may answer for the use), then on a
  * server the whole placement in the carrier's transaction, which makes vanilla's Item.useOn call through the stack's relay.
  */
 public final class ItemStack {
