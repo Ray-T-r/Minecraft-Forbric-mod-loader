@@ -15,25 +15,48 @@ G below), `$MS` merged stage (`run/merged-base/patched-mc-merged-26.2.jar` + `ru
 
 | candidate | verdict | check 1: symptom on G; merged red | check 2: whole jar (G + carrier, + fabric-api 0.155.2 nested jars) | check 3: callers | commit |
 |---|---|---|---|---|---|
-| #1 repairLambdaBootstrapHandles (+7 helpers) | DELETE (merged red impossible: inert on M too) | m9 joins/spawns, server Done | criterion C1: G 0, M 0; claim replay 0 hits | every join | 830f3a46 |
-| #55 returnFromANestedBootstrapBeforeItsTail (+realAfter) | DELETE (check written) | JFR `method-trace` of `Bootstrap::bootStrap`: G server 1 entry (Main.main), G client 1 (client Main); M server 2, the second nested at `ForgeRegistries.init` <- `BucketItem.<init>` | CB callers of `bootStrap()V`: G only mains/datagen/gametest/junit; M adds `ForgeRegistries.init` | cristellib-fabric 3.1.13 BootstrapMixin (TAIL) on a G server: ran once, Done, exit 0 | 660106a5 |
+| #1 repairLambdaBootstrapHandles (+7 helpers) | DELETE (merged red impossible: inert on M too; standing check `NeoForgeBaseStructureCensusStagedTest.noLambdaHandleDisagreesWithItsTarget`, raw and post-twin) | m9 joins/spawns, server Done | criterion C1: G 0, M 0; claim replay 0 hits | every join | 830f3a46 |
+| #55 returnFromANestedBootstrapBeforeItsTail (+realAfter) | DELETE (check written; JFR count instead of D25's `-Xlog:class+init`, see review fixes; standing check `NeoForgeBaseStructureCensusStagedTest.onlyTheGamesEntryPointsEnterBootstrap`) | JFR `method-trace` of `Bootstrap::bootStrap`: G server 1 entry (Main.main), G client 1 (client Main); M server 2, the second nested at `ForgeRegistries.init` <- `BucketItem.<init>` | CB callers of `bootStrap()V`: G only mains/datagen/gametest/junit; M adds `ForgeRegistries.init` | cristellib-fabric 3.1.13 BootstrapMixin (TAIL) on a G server: ran once, Done, exit 0 | 660106a5 |
 | #39 giveTheUnwrittenLoggerAValue (+writesStatic, LOGGER_DESC) | DELETE (check rewritten: `MergedBaseUnwrittenStaticsTest`) | census of unassigned static finals: G+C empty; same test on M: 7 entries incl. `ResourceManagerRegistryLoadTask.LOGGER` | C39: G only four fabric-api mixin `@Shadow` (non-final) LOGGERs, no game class; native Mixin binds them to the target's own (evidence §3b) | fabric-registry-sync, -model-loading, -resource-loader in m9 + server | caeb1463 |
 | #54 wrapTheStreamsVanillaWraps | KEEP, reworded | n/a (not merge damage: NeoForge's patch replaces the call; native NeoForge does not wrap, vanilla/Fabric do) | evidence §3a | owner may decide | 39d6ef58 |
 | tolerateEmptyCreativeTabStacks (+KernelLifecycle.onCreativeTabEntrySkipped) | DELETE (D25: no native ecosystem tolerates it; no merged red by design) | with the repair on: 0 skips in the m9 (97) and neo (63) packs; removed: m9 joins, m55 grid counts equal baseline, 0 count-1 throws | CT: the throw only in vanilla's accept and NeoForge's lambda | m9 pack, m55 canary | 88a16ff7 |
 | #6 routeKeyMappingClickToPopulatedLookup | DELETE (check written: `MergedBaseKeyMappingMapTest.theBaseHasOneKeyLookupAndEveryAccessToItIsNeoForges`) | green on G; red on M (two MAP fields); claims tests re-pinned on the streams claim | C6: G one static MAP, every access NeoForge-typed; DupFields: G 0 same-name pairs, M 17 | every client key (not pressed at run time) | fa025d43 |
-| #53 letTheAtlasLowerItsMipLevelLikeVanilla + AtlasMipBoundsRepair + MipLevelLimits | DELETE | m9 + `c3mipprobe.jar` (8x8 sprite, mipmapLevels 4): vanilla lowering logged, both absences PASS; M with the probe and the switch off: black screen (evidence §2 b′) | G `SpriteLoader.stitch` = vanilla's instruction for instruction; NeoForgeClientConfig has no mip key | sprite smaller than the mip level (probe stands in for Logistics) | 817a6b80 |
+| #53 letTheAtlasLowerItsMipLevelLikeVanilla + AtlasMipBoundsRepair + MipLevelLimits | DELETE | m9 + `c3mipprobe.jar` (8x8 sprite, mipmapLevels 4): vanilla lowering logged, both absences PASS (gate-m9 now writes such a sprite itself and checks the lowering line, f8fd4c85); M with the probe and the switch off: black screen (evidence §2 b′) | G `SpriteLoader.stitch` = vanilla's instruction for instruction; NeoForgeClientConfig has no mip key | sprite smaller than the mip level (probe stands in for Logistics) | 817a6b80 |
 | #28/#47/#48 + NativeMergeShapeRepair | DELETE | inert on G by construction (no MinecraftForge original: NativeGameReferences FORGE null); proof run CN: 0 removed / 0 inlined; M: C48 finds the one lost switch map (`AbstractFurnaceBlockEntity.getCapability`); standalone claim replay hit 0 on M too (no merged red by replay) | C48: G 0 / M 1; CN: G 0 | none on G | 00c9e26b |
 | adoptInterop… / stillNamesTheOldLoader / LEGACY_INTEROP_* | DELETE | m9 joins with payloads, no NoClassDefFoundError; CustomPayloadInteropSeam lands on G; M: CL finds `CustomPacketPayload$1$forbricneo` naming `net/forbric/loader/impl/` | CL: G 0 | every custom payload (m9) | 3a6c549a |
 | LootPoolFieldsInjector | DELETE | G server with tombstone-neoforge 9.9.3 loads datapacks, Done, exit 0; M: `LootPool.name` declared twice + `forge_condition` | DupFields: G 0 / M 17; G LootPool: one ctor, one name | Tombstone | f8c03154 |
 | particle claim, getProvider/providersByName half | EDIT (providers-map half kept, R2) | G has neither member; M has both | no class of G or C names `providersByName` | fabric particles via the kept half | 7255ca27 |
 | letDungeonsGenerateWithoutTheDataMap | KEEP (D20), claim text + javadoc | — | — | gate-m31 | b0facd67 |
-| CraftingRemainderConflictTest (pins InterfaceDefaultConflictRepair on Item) | test DELETED (subject gone), repair KEEP | G Item: IItemExtension's default is `(ItemInstance)`, FabricItem's `(ItemStack)`: no conflict | repair lands on G for ItemStack, TooltipFlag, DataComponentMap$Builder | — | f49d8068 |
-| OwnFluidTypeClausesInjector | KEEP (check 2 fails: defect moved) | declines on G (no MinecraftForge clause) | G `Fluid.entityInside` asks only NeoForge's type, so a Fabric fluid in `minecraft:water` gets the kernel's water stand-in and puts fire out, which vanilla (only `WaterFluid` extinguishes) never does: the Fabric half of its documented defect lives on in NeoForge's single clause | needs a NeoForge-only form (owner) | — |
+| InterfaceDefaultConflictRepair.CHAINED (CraftingRemainderConflictTest) | **MOVE** (review fix; f49d8068 had deleted the test as "subject gone") | gate-m45 remainder.neoOverride / craft.neoRemainder: a NeoForge item's `getCraftingRemainder(ItemInstance)` override was not reached with fabric-item-api aboard ("the NeoForge jug leaves null"), reached after | the conflict moved from Item to ItemStack: ItemStack is settled with FabricItemStack's default, which asks `Item.getCraftingRemainder(ItemStack)` = FabricItem's default only; CHAINED now also applies to that uncontested woven default | fabric-item-api-v1 + NeoForge item, crafting/brewing/fuel | f49d8068, fd86f1aa, 1216e981 |
+| OwnFluidTypeClausesInjector | **MOVE** (review fix: NeoForge-only form) | gate-m45 fire.fabricWater: a burning pig in the Fabric water-tagged fluid was put out before, keeps burning after; phase own-clauses-off fails exactly it; fire.vanillaWater control passes | G `Fluid.entityInside` asks only NeoForge's type, so a Fabric fluid in `minecraft:water` got the kernel's water stand-in and put fire out, which vanilla (only `WaterFluid` extinguishes) never does; the only method handing the fluid's own type to `canFluidExtinguish` in G + carrier | m45 Fabric fluid mod (fluid.water, fluid.untagged still pass) | 33a80ded, 1216e981 |
 
-Gate runs at the tip (7eabdaef, same tree as f49d8068): gate-m9-client 145 PASS / 25 FAIL, the events lane's names minus
+Gate runs at the lane tip (7eabdaef, a pre-rewrite SHA with the same tree as f49d8068; commit messages that cite it mean tree b78605c1): gate-m9-client 145 PASS / 25 FAIL, the events lane's names minus
 the deleted mip line; gate-m55: only the declining creative-search repair's two rewrite lines fail.
 Unit suite at the tip: 5795 tests, 105 failed, 0 new against the events lane's 116; 11 rows gone (the deleted or
 rewritten tests above, and the three re-pinned claims tests now green).
+
+## Review fixes (cmt-structural-review-A.md / -B.md, commits 1c24bf13..f8fd4c85)
+
+- A F1 / B F1, crafting remainder: MOVE, re-anchored (fd86f1aa) and checked in gate-m45 (1216e981); the ported
+  CraftingRemainderConflictTest and the weave fixture are in NeoForge's base's shape.
+- A F3 / B F2, OwnFluidTypeClausesInjector: MOVE, NeoForge-only form (33a80ded), no Ecosystem.FORGE read any more; gate-m45
+  fire cases and phase 4 (1216e981). Its two declines in gate-m1/m9 are gone.
+- A F2 / B F6, mip absences: gate-m9 writes a 0-class Fabric mod with one 8x8 block texture into the rundir for the run and
+  checks vanilla's lowering line for it (f8fd4c85).
+- A F4 / B F5: `NeoForgeBaseStructureCensusStagedTest` (8b257e2f) holds #1's and #55's shapes absent. D25 asked for a
+  `-Xlog:class+init` proof for #55; the lane measured the re-entry directly instead (a JFR `method-trace` of
+  `Bootstrap::bootStrap`: one entry per G process, two on M with the second inside `ForgeRegistries.init`), and the staged
+  test pins the static caller set, which is red on M (criterion CB adds `ForgeRegistries.init`).
+- B F3: ci-unstaged row for MergedBaseKeyMappingMapTest's new case (1c24bf13).
+- B F9: CustomPayloadInteropSeam's stand-down for the old loader's owner deleted (f4c11253; 0 classes in the .stage4 jars
+  name `net/forbric/loader/impl/`).
+- A F5 / A F6: dungeon log line and KernelNeoWorldgen javadoc, orphaned KernelLifecycle javadoc (f3ee5d16).
+
+Genuine gate runs for the fixes (FORBRIC_OLD=.stage4, ports 46120-46123): gate-m45 before the fixes fails exactly
+remainder.neoOverride, craft.neoRemainder and fire.fabricWater; after, positive 22/22, off = REPAIRED, withhold = the three
+burn-time cases, own-clauses-off = {fire.fabricWater} (still red: the three MinecraftForge furnace-tick / PartEntity lines,
+C5). gate-m9 146 PASS / 25 FAIL (the lane's names plus the mip presence line). gate-m1: declines down to
+furnace-tick-calls and merged-record-optional-defaults (no own-fluid-type-clauses).
 
 ## Commands
 
