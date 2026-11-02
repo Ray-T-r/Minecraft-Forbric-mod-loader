@@ -427,7 +427,8 @@ checkout's, and a gate that wiped or wrote one of them through a fixed or defaul
 pack every other tree reads. `lib.sh`'s `refuse_shared_rundir "$RUNDIR"` fails (exit 3, a
 `[kernel] FAIL refusing rundir` line) when the rundir is, lies inside, or resolves into one of those,
 `client-popular` or `forge-swap`, or is spelled inside this tree's `run/` but leaves it through a
-symlink; clone the fixture by its real path (`cp -c -R`) instead. `python3
+symlink. `forge-swap` is also refused at its own home outside every checkout (`$FORBRIC_FORGE_SWAP`,
+default `~/Forbric-backups/forge-swap`), since a tree cut before it existed has no link to it; clone the fixture by its real path (`cp -c -R`) instead. `python3
 run/compat/test_lib_guards.py` runs the real `lib.sh` in a throwaway tree laid out like a worktree
 beside a main checkout and goes red when the guard is a no-op or matches names by prefix.
 

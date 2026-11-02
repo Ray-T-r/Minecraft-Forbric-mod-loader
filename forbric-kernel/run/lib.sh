@@ -565,10 +565,21 @@ publish_canary() {
 #   refuse_shared_rundir "$RUNDIR"
 #
 # It refuses, with a FAIL line and exit 3, a rundir whose real path equals or lies inside one of the shared fixtures
-# below (this worktree's link or directory of that name, and the main checkout's), and a rundir that is spelled inside
-# this worktree's run/ but resolves outside it through a symlink. A clone (`cp -c -R` of the fixture's real path) or a
+# below (this worktree's link or directory of that name, the main checkout's, and a fixture's own home outside every
+# checkout -- forge-swap's is $FORBRIC_FORGE_SWAP, default ~/Forbric-backups/forge-swap, D54 -- because a worktree cut
+# before that fixture existed has no run/forge-swap link to find it by), and a rundir that is spelled inside this
+# worktree's run/ but resolves outside it through a symlink. A clone (`cp -c -R` of the fixture's real path) or a
 # directory the gate creates is accepted. The rundir need not exist yet; a dangling link is refused.
 SHARED_FIXTURES="client-merged-pack client-popular client-kernel client-neo-pack carry-on modmenu neoforge-builds forge-swap"
+
+# _guard_fixture_home <name> -- where a shared fixture lives when it is in no checkout at all (empty for the others)
+_guard_fixture_home() {
+  case "$1" in
+    forge-swap)
+      if [ -n "${FORBRIC_FORGE_SWAP:-}" ]; then _guard_abs "$FORBRIC_FORGE_SWAP"
+      elif [ -n "${HOME:-}" ]; then _guard_abs "$HOME/Forbric-backups/forge-swap"; fi ;;
+  esac
+}
 
 # _guard_abs <path> -- absolute and lexically normalised (. and .. folded, no symlink resolved)
 _guard_abs() {
@@ -629,7 +640,7 @@ refuse_shared_rundir() {
   local roots="$run_logical $run_real"
   [ -n "$main" ] && roots="$roots $(_guard_abs "$main/run") $(_guard_real "$main/run")"
   for name in $SHARED_FIXTURES; do
-    for candidate in $(for r in $roots; do printf '%s/%s\n' "$r" "$name"; done); do
+    for candidate in $(for r in $roots; do printf '%s/%s\n' "$r" "$name"; done; _guard_fixture_home "$name"); do
       if _guard_within "$logical" "$candidate"; then
         why="it is the shared fixture run/$name ($candidate)"
       elif [ -e "$candidate" ] && fixture_real="$(_guard_real "$candidate")" && _guard_within "$real" "$fixture_real"; then

@@ -54,27 +54,35 @@ class RefuseSharedRundirTest(unittest.TestCase):
         shutil.copytree(cls.main / 'run' / 'client-merged-pack', scratch_dir / 'clone')
         (scratch_dir / 'via-link').symlink_to(cls.main / 'run' / 'client-merged-pack')
         (scratch_dir / 'clone-link').symlink_to(scratch_dir / 'clone')
+        # D54: the frozen swap fixture lives outside every checkout, and a worktree cut before it existed has no
+        # run/forge-swap link. HOME is a throwaway directory here, so the default home is never the real one.
+        (root / 'home' / 'Forbric-backups').mkdir(parents=True)
+        (root / 'swap-elsewhere' / 'mods').mkdir(parents=True)
+        (scratch_dir / 'via-swap').symlink_to(root / 'swap-elsewhere')
 
     @classmethod
     def tearDownClass(cls):
         shutil.rmtree(cls.scratch, ignore_errors=True)
 
-    def guard(self, rundir, cwd=None):
-        env = dict(os.environ, FORBRIC_OLD=str(self.root / 'stage'), FORBRIC_MAIN_KERNEL=str(self.main))
+    def guard(self, rundir, cwd=None, **extra_env):
+        env = dict(os.environ, FORBRIC_OLD=str(self.root / 'stage'), FORBRIC_MAIN_KERNEL=str(self.main),
+                   HOME=str(self.root / 'home'))
         env.pop('FORBRIC_CAUGHT_FILE', None)
         env.pop('FORBRIC_CAUGHT_GATE', None)
+        env.pop('FORBRIC_FORGE_SWAP', None)
+        env.update(extra_env)
         script = '. "$1"; refuse_shared_rundir "$2"; echo "[guard] accepted"'
         return subprocess.run(['bash', '-c', script, 'guard', str(self.kernel / 'run' / 'lib.sh'), str(rundir)],
                               cwd=cwd or self.kernel, env=env, capture_output=True, text=True, timeout=60)
 
-    def assertRefused(self, rundir, cwd=None):
-        r = self.guard(rundir, cwd)
+    def assertRefused(self, rundir, cwd=None, **extra_env):
+        r = self.guard(rundir, cwd, **extra_env)
         self.assertEqual(3, r.returncode, f'{rundir} was not refused: rc={r.returncode} out={r.stdout!r} err={r.stderr!r}')
         self.assertIn('[kernel] FAIL refusing rundir', r.stdout, rundir)
         self.assertNotIn('[guard] accepted', r.stdout, rundir)
 
-    def assertAccepted(self, rundir, cwd=None):
-        r = self.guard(rundir, cwd)
+    def assertAccepted(self, rundir, cwd=None, **extra_env):
+        r = self.guard(rundir, cwd, **extra_env)
         self.assertEqual(0, r.returncode, f'{rundir} was refused: rc={r.returncode} out={r.stdout!r} err={r.stderr!r}')
         self.assertIn('[guard] accepted', r.stdout, rundir)
         self.assertNotIn('FAIL', r.stdout, rundir)
@@ -108,6 +116,24 @@ class RefuseSharedRundirTest(unittest.TestCase):
     def test_a_fixture_name_is_refused_when_nothing_is_there_yet(self):
         self.assertRefused('run/forge-swap')
         self.assertRefused('run/client-kernel')
+
+    def test_the_swap_fixtures_own_home_is_refused_without_a_worktree_link(self):
+        home_swap = self.root / 'home' / 'Forbric-backups' / 'forge-swap'
+        self.assertFalse((self.kernel / 'run' / 'forge-swap').exists())
+        # Default home, before the fixture exists and after.
+        self.assertRefused(home_swap / 'x')
+        home_swap.mkdir()
+        try:
+            self.assertRefused(home_swap)
+            self.assertRefused(home_swap / 'saves' / 'w')
+        finally:
+            home_swap.rmdir()
+        self.assertAccepted(self.root / 'home' / 'Forbric-backups' / 'forge-swap-clone')
+        # FORBRIC_FORGE_SWAP moves it: the new home and a link into it are refused, the default is free again.
+        moved = {'FORBRIC_FORGE_SWAP': str(self.root / 'swap-elsewhere')}
+        self.assertRefused(self.root / 'swap-elsewhere' / 'mods', **moved)
+        self.assertRefused(self.root / 'scratch' / 'via-swap', **moved)
+        self.assertAccepted(home_swap / 'x', **moved)
 
     def test_a_rundir_that_leaves_run_through_a_symlink_is_refused(self):
         self.assertRefused('run/energy-api/instance')
