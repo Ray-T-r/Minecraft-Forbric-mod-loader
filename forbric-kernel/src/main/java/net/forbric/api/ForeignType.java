@@ -42,10 +42,7 @@ package net.forbric.api;
  */
 public enum ForeignType {
 	CONFIG_SPEC("net.neoforged.fml.config.IConfigSpec"),
-	CLIENT_HOOKS("net.neoforged.neoforge.client.ClientHooks"),
 	CLIENT_MOD_LOADER("net.neoforged.neoforge.client.loading.ClientModLoader"),
-	CLIENT_TOOLTIP_COMPONENT_MANAGER("net.neoforged.neoforge.client.gui.ClientTooltipComponentManager"),
-	COLOR_RESOLVER_MANAGER("net.neoforged.neoforge.client.ColorResolverManager"),
 	CONFIG_TRACKER("net.neoforged.fml.config.ConfigTracker"),
 	CONFIGURABLE("net.neoforged.neoforgespi.language.IConfigurable"),
 	DIST("net.neoforged.api.distmarker.Dist"),
@@ -53,17 +50,7 @@ public enum ForeignType {
 	/** The base of every event NeoForge's bus dispatches. */
 	EVENT("net.neoforged.bus.api.Event"),
 	EVENT_BUS("net.neoforged.bus.EventBus"),
-	EVENT_LISTENER("net.neoforged.bus.api.EventListener"),
-	DATAPACK_NEW_REGISTRY_EVENT("net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry"),
-	DATAPACK_REGISTRY_DATA("net.neoforged.neoforge.registries.DataPackRegistryEvent$DataPackRegistryData"),
 	FLUID_INTERACTION_REGISTRY("net.neoforged.neoforge.fluids.FluidInteractionRegistry"),
-	BLOCK_TINT_EVENT("net.neoforged.neoforge.client.event.RegisterColorHandlersEvent$BlockTintSources"),
-	/** Whether a body breathes and how much air it loses or regains; NeoForge's base posts it. */
-	LIVING_BREATHE_EVENT("net.neoforged.neoforge.event.entity.living.LivingBreatheEvent"),
-	/** A body out of air about to drown, and what drowning costs it; NeoForge's base posts it. */
-	LIVING_DROWN_EVENT("net.neoforged.neoforge.event.entity.living.LivingDrownEvent"),
-	/** Custom skull models, posted through the kernel's client init. */
-	CREATE_SKULL_MODELS_EVENT("net.neoforged.neoforge.client.event.EntityRenderersEvent$CreateSkullModels"),
 	/** The earliest mod-bus phase there is: genuine FML posts it at each container the moment it is built. */
 	FML_CONSTRUCT_MOD_EVENT("net.neoforged.fml.event.lifecycle.FMLConstructModEvent"),
 	FML_CLIENT_SETUP_EVENT("net.neoforged.fml.event.lifecycle.FMLClientSetupEvent"),
@@ -78,8 +65,6 @@ public enum ForeignType {
 	/** The cache of {@link #FML_LOADER}'s answers (stateless in NeoForge). */
 	FML_ENVIRONMENT("net.neoforged.fml.loading.FMLEnvironment"),
 	FML_LOADER("net.neoforged.fml.loading.FMLLoader"),
-	FML_MOD_CONTAINER("net.neoforged.fml.javafmlmod.FMLModContainer"),
-	FML_MOD_LOADER("net.neoforged.fml.ModLoader"),
 	FML_PATHS("net.neoforged.fml.loading.FMLPaths"),
 	GAME_DATA("net.neoforged.neoforge.registries.GameData"),
 	/**
@@ -92,7 +77,6 @@ public enum ForeignType {
 	INTER_MOD_PROCESS_EVENT("net.neoforged.fml.event.lifecycle.InterModProcessEvent"),
 	MOD_LIST_SCREEN("net.neoforged.neoforge.client.gui.modlist.ModListScreen"),
 	MOD_BUS_EVENT("net.neoforged.fml.event.IModBusEvent"),
-	MOD_CONFIG_TYPE("net.neoforged.fml.config.ModConfig$Type"),
 	MOD_CONTAINER("net.neoforged.fml.ModContainer"),
 	MOD_FILE("net.neoforged.fml.loading.moddiscovery.ModFile"),
 	MOD_FILE_TYPE("net.neoforged.neoforgespi.locating.IModFile$Type"),
@@ -118,28 +102,15 @@ public enum ForeignType {
 	 */
 	ICONDITION("net.neoforged.neoforge.common.conditions.ICondition"),
 	NETWORK_REGISTRY("net.neoforged.neoforge.network.registration.NetworkRegistry"),
-	PRESET_EDITOR_MANAGER("net.neoforged.neoforge.client.PresetEditorManager"),
-	REGISTER_EVENT("net.neoforged.neoforge.registries.RegisterEvent"),
 	REGISTRY_MANAGER("net.neoforged.neoforge.registries.RegistryManager"),
 	RESOURCE_PACK_LOADER("net.neoforged.neoforge.resource.ResourcePackLoader"),
-	SERVER_LIFECYCLE_HOOKS("net.neoforged.neoforge.server.ServerLifecycleHooks"),
 	SERVER_MOD_LOADER("net.neoforged.neoforge.server.loading.ServerModLoader"),
-	SPAWN_PLACEMENT_EVENT("net.neoforged.neoforge.event.entity.RegisterSpawnPlacementsEvent"),
-	BIOME_MODIFIER("net.neoforged.neoforge.common.world.BiomeModifier"),
-	STRUCTURE_MODIFIER("net.neoforged.neoforge.common.world.StructureModifier"),
-	MODIFIABLE_BIOME_INFO("net.neoforged.neoforge.common.world.ModifiableBiomeInfo"),
-	MODIFIABLE_STRUCTURE_INFO("net.neoforged.neoforge.common.world.ModifiableStructureInfo"),
-	MODIFIER_REGISTRY_KEYS("net.neoforged.neoforge.registries.NeoForgeRegistries$Keys"),
-	MOB_SPAWN_SETTINGS_BUILDER("net.neoforged.neoforge.common.world.MobSpawnSettingsBuilder"),
-	REMOVE_SPAWNS_BIOME_MODIFIER("net.neoforged.neoforge.common.world.BiomeModifiers$RemoveSpawnsBiomeModifier"),
 	/** The static hook class NeoForge's patched game calls to post its events. */
 	EVENT_FACTORY("net.neoforged.neoforge.event.EventHooks"),
 	/**
 	 * NeoForge's fluid type: ForeignFluidTypeInjector gives a fluid without one the type its tags imply.
 	 */
 	FLUID_TYPE("net.neoforged.neoforge.fluids.FluidType"),
-	/** NeoForge's client extensions of a fluid type (its model, tint and fog colour). */
-	CLIENT_FLUID_TYPE_EXTENSIONS("net.neoforged.neoforge.client.extensions.common.IClientFluidTypeExtensions"),
 	/** NeoForge's client-command registration event, handing out the one {@code CommandDispatcher}. */
 	CLIENT_COMMANDS_EVENT("net.neoforged.neoforge.client.event.RegisterClientCommandsEvent"),
 	/** NeoForge's global-loot-modifier reload listener. */
