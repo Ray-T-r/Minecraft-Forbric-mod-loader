@@ -43,8 +43,13 @@ class RepairDriftCensusStagedTest {
 
 	@TempDir Path temporary;
 
+	/**
+	 * The staged base and carrier, then the vanilla-reference sidecar a launch on that base stages beside it: the vanilla
+	 * twins, which run before the compat transformer, copy vanilla's bodies from it.
+	 */
 	private static List<Path> stagedJars() {
-		return List.of(RUN.resolve(TestFixtures.BASE_JAR), RUN.resolve(TestFixtures.NEO_CARRIER_JAR));
+		Path base = RUN.resolve(TestFixtures.BASE_JAR);
+		return List.of(base, RUN.resolve(TestFixtures.NEO_CARRIER_JAR), TestFixtures.vanillaReference(base));
 	}
 
 	@Test
@@ -57,6 +62,23 @@ class RepairDriftCensusStagedTest {
 		assertEquals(List.of(), drift.declined(), "a repair declined on the build this tree is calibrated against");
 		assertEquals(List.of(), drift.absent(), "a claim's target is not in the staged jars at all");
 		assertEquals(drift.declared(), drift.hit());
+	}
+
+	/**
+	 * The replay is only as good as its copy of the launch's chain. Without the vanilla reference the twins that copy
+	 * vanilla's bodies stand down, and the repair that stands on one — GuiRenderer's picture-in-picture bridge, which wires
+	 * the vanilla {@code preparePictureInPictureState} body a twin puts back — must then decline by name: a replay that
+	 * dropped the twin pass (as this one did until Stage 4 C4) reads as drift on the calibrated build, never as a pass.
+	 */
+	@Test
+	void withoutTheVanillaReferenceARepairStandingOnACopiedBodyDeclinesByName() throws Exception {
+		List<Path> jars = stagedJars().subList(0, 2);
+		TestFixtures.requireFiles(Fixture.STAGED, "staged base or carrier absent", jars.toArray(Path[]::new));
+		RepairDriftCensus.Drift drift = RepairDriftCensus.replay(jars);
+		System.out.println(drift.summary());
+		assertTrue(drift.declined().stream().anyMatch(d -> d.contains("forbric-merged-base-compat#bridgeOrphanedPipRenderers")),
+				"the picture-in-picture bridge needs the twin's vanilla body: " + drift.declined());
+		assertTrue(drift.hit() < drift.declared(), "fewer claims land without the vanilla reference: " + drift.summary());
 	}
 
 	@Test

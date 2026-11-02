@@ -8,8 +8,10 @@
 #
 # Run this before adopting a carrier bump, not after a player reports it.
 #
-# Usage: ./repair-drift.sh <candidate-game-base.jar> [<carrier.jar> ...]
+# Usage: ./repair-drift.sh <candidate-game-base.jar> [<carrier.jar> ...] [<vanilla-reference.jar>]
 #        ./repair-drift.sh                     # the currently staged build, as a baseline
+# The vanilla-reference sidecar goes last: the vanilla twins run before the repairs (as at a launch) and copy vanilla's
+# bodies from it; without it the repairs that stand on a copied body report as declined.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KERNEL="$(cd "$HERE/../.." && pwd)"
@@ -18,7 +20,8 @@ RUN_OLD="$OLD/run"
 
 if [ "$#" -eq 0 ]; then
   set -- "$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar" \
-         "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar"
+         "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" \
+         "$RUN_OLD/vanilla-reference/vanilla-reference-26.2.jar"
 fi
 for f in "$@"; do
   [ -f "$f" ] || { echo "not a file: $f" >&2; exit 3; }
