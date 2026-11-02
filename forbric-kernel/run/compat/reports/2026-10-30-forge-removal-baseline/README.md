@@ -193,7 +193,7 @@ Stage 4 is one stack of branches: `s4-c2` (C2: delete MinecraftForge's code, on 
 test and launch on NeoForge's patched 26.2 jar, "G", with the NeoForge 26.2.0.93 carrier and the vanilla-reference
 sidecar) → `s4-c3` (C3: delete the repairs that existed only because the base merged Forge and NeoForge patches, each
 after three checks). Every lane was reviewed adversarially twice (A, B) and followed by a review-fix round; each phase
-ended with a completeness critic. Decisions D1-D41 bound every lane. C4's census lane (census tables regenerated with
+ended with a completeness critic. Decisions D1-D41 bound every lane, and D42 bound C4's close. C4's census lane (census tables regenerated with
 `Ecosystem.FORGE`'s removal, then its review fixes: the anchor census test, the furnace rows, the stand-ins) is recorded at
 the end of this section, followed by C4's wording lane and C4's outcome as a whole; **C5 (rebaseline: tests, gates, C5b
 world upgrade, C5c Forge → NeoForge build swap) and C6 (CI, release, installer clean-up) have not started**.
@@ -206,14 +206,17 @@ world upgrade, C5c Forge → NeoForge build swap) and C6 (CI, release, installer
 | C3 round 2 | a3791619..4201ec0c, 26 | 4201ec0c, then this record (docs only) | 94 files, +2,153 / −2,036 | `stage4-c3-gaps.md` and `stage4-c3-{useon-relocation,postmixin-fixups,cni-hedge,fluid-reaction}.md` |
 | C4 | daa94207..41fecd5f, 24 | 41fecd5f, then this record (docs only) | 415 files, +5,303 / −4,298 | `stage4-c4-census.md`, `stage4-c4-wording.md`, "C4 close" below |
 
-### Unit suite at each tip (`-Pforbric.requireFixtures=all`, task `test`; C2 on the merged stage, C1/C3 on `.stage4`)
+### Unit suite at each tip (`-Pforbric.requireFixtures=all`, task `test`; C2 on the merged stage, C1/C3/C4 on `.stage4`)
 
 | tip | tests | failed | what the failures are |
 |---|---:|---:|---|
 | 00a5e585 (C2) | 5,857 | 14 | the six lost fixtures of Stages 0-3 + eight tests whose subject is the merged base's own MinecraftForge bytecode, all green after C1 (`stage4-c2.md`) |
 | 73a4314c (C1) | 5,845 | 124 | (a) merged/MinecraftForge premise 34, (a)→C4 24, (c) a C3 candidate's subject gone on G 34, (d) genuine-base Fabric loss 26, P1 lost fixture 6 |
 | a3791619 (C3 round 1) | 5,749 | 65 | 0 new against C1; 59 C1 rows gone, each attributed to the lane that removed it; for all 65 the first 120 normalised characters of the failure message equal C1's |
-| 4201ec0c (C3 round 2) | **5,760** | **65** | names identical to a3791619 |
+| 4201ec0c (C3 round 2) | 5,760 | 65 | names identical to a3791619 |
+| cb1aaf20 (C4) | 5,762 | 42 | 0 new against the C3 tip; 23 rows gone with census-forge; C5 35, C5 tool 1, P1 6, none C4 (`stage4-c4-wording-open-failures.txt`) |
+| 41fecd5f (C4 close) | 5,763 | 41 | the C5 tool row passes (fbad0271); C5 35, P1 6 by first owner (`stage4-c4-close-open-failures.txt`) |
+| 1a27b7fe (C4 close review fixes) | **5,767** | **41** | names and 240-character messages identical to 41fecd5f's; +4 passing tests (the census's hedge red checks) |
 
 Other suites at a3791619: transferTest --rerun-tasks 57/0, python tools 52 OK, run/compat 145 OK, run/compat/mac 94 OK,
 installer linkGateTest 9 PASS and run/test-link-gate.py 9 PASS. The compile set (`compileJava compileRuntimeJava
@@ -434,9 +437,13 @@ consumeClick key (#6); whether `LocalRanges`' one site could be written correctl
   (`stage4-c4-wording-left.txt`).
 - **C5**: every gate line classified above, the 34 + 6 + 1 re-pins, the C1 gate list, gate-m49's retired switches, the
   four-native-call-sites pin, weave scenarios for the new adapters, wiring regress-gate.py and fluid-head-gate.py into the
-  gate list, C5b (world upgrade) and C5c (Forge → NeoForge build swap).
+  gate list, the `KernelModFile.perJar()` default flip (its own commit, on/off A/B on gate-m21, gate-m9 and
+  client-merged-pack; D42), VanillaDamageReadInjectorTest's MinecraftForge stand-in, MergedBaseCalleeSwapTest's
+  rewrite-or-explain, C5b (world upgrade) and C5c (Forge → NeoForge build swap).
 - **C6**: CI (merge-loss ratchet, hidden-carrier job, `ci-prepared-noforge.tsv`), release roles, installer clean-up of its
-  own old artifacts (D6), docs for the new switches and classes (KernelFluidReactions, KernelItemDamage, KernelMobShears).
+  own old artifacts (D6), gate-m17's 7 installer premises, docs for the new switches and classes (KernelFluidReactions,
+  KernelItemDamage, KernelMobShears), introduction.md:1502/1531 and introduction.zh-CN.md:390/391 (deleted `ForeignType`
+  rows named in the breathe/drown history), introduction.md:951-952 (repair-drift.sh needs the vanilla-reference sidecar).
 
 ### C4, lane census-forge (3d8364b4): census tables regenerated, `Ecosystem.FORGE` removed
 
@@ -529,9 +536,9 @@ owned by C5 (35 + 1 tool) or P1 (6). Of the C3 tip's 65 failures, the 24 owned b
 `MergedBaseCalleeSwapTest`'s C5 half.
 
 Open, handed on:
-- **C5**: the 36 C5 rows above; `MergedBaseCalleeSwapTest`'s second admitted swap; gate-m4 (reads the merged base), gate-m29's
+- **C5**: the C5 rows above (36 at the C4 tip: 35 + the tool row, which fbad0271 closed, so 35 at the close); `MergedBaseCalleeSwapTest`'s second admitted swap; gate-m4 (reads the merged base), gate-m29's
   control phases (retired capability lines) and gate-m26 (shared `client-forge-*` fixtures, no clone variable) not run on
-  `.stage4` (gate-m17 did run, in the closing verify lane: 34 PASS / 7 FAIL, all 7 installer premises, C6; see "C4 close"); regress-gate.py's four phases and fluid-head-gate.py into the gate list; skip
+  `.stage4` (gate-m17 did run, in the closing verify lane: 33 PASS / 7 FAIL (first recorded as 34), all 7 installer premises, C6; see "C4 close"); regress-gate.py's four phases and fluid-head-gate.py into the gate list; skip
   baselines (NativeOnlyMethodsCensusTest x7, MixinFitLivenessCensusStagedTest x5 must no longer skip); gate prose and
   test-tree messages that still say "merged base" (157 string literals in 84 test files, most "staged merged base" fixture
   reasons and messages; gate-m1/m10/m45 labels), wording only; the JoinedReturnExits and one-mods-button dedup
@@ -592,7 +599,8 @@ Found while proof-reading, not wording, handed on (owner decisions, evidence in 
   containing "PASS", which includes 16 `==== … (must PASS) ====` step headers; the `[kernel] PASS` lines were 149 at C3 and
   throughout C4, and the 21 FAIL lines never changed); m12 30/2 beside m9's client (one load flake), 31/1 alone; m45 17/2,
   m54 9/2 (C5 reader), regress-gate 4 phases as designed, fluid-head-gate PASS. **gate-m17 ran for the first time in Stage
-  4: 34 PASS / 7 FAIL**; the installer installs, the profile resolves, the kernel boots from it, enters the world and
+  4: 33 PASS / 7 FAIL** (first recorded as 34 PASS: the m9 miscount again, 37 lines containing "PASS" of which 4 are
+`(must PASS)` headers; `[kernel] PASS` lines are 33); the installer installs, the profile resolves, the kernel boots from it, enters the world and
   leaves cleanly; all 7 reds are installer-gate premises of the merged era (3 staged artifacts, not 4; forge-runtime and
   merged-base dedup; `Forbric/Boot] merged base`; 2 cached artifacts, not 6, ×2; the forge-runtime stamp): C6;
 - boot ladder 5/5 exit 0, injection warnings identical or fewer than C3's (the furnace warning gone); the c4-neo client's
@@ -621,7 +629,7 @@ no present-tense false claim among the 95 "merged" hits left; eight findings, cl
 Suite at 41fecd5f (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test --continue`): **5,763 tests, 0 skipped, 41
 failed**. Name for name against cb1aaf20's 42: 0 new, 1 gone (RepairDriftCensusStagedTest's calibrated-build test, now
 passing, fbad0271), the 41 kept with identical messages over the first 240 characters, digits not folded. +1 test (the
-F5 red check). Every open failure with cause and owner: `stage4-c4-close-open-failures.txt` (C5 35, P1 6; none C4; it
+F5 red check). Every open failure with cause and owner: `stage4-c4-close-open-failures.txt` (C5 35, P1 6 by first owner, MixinRetargetRenamedBodyCorpusTest being P1 + C5 (re-pin); none C4; it
 supersedes `stage4-c4-wording-open-failures.txt`). Gate-m1 at 41fecd5f (port 46470): 17 PASS / 0 FAIL, lines identical to
 verify's, anchor line `65 of 99 declared repair(s) landed; … 0 hedge(s)`, `CAUGHT none`. No other gate reads what F1 or F5
 changed (`ForeignType`'s deleted rows had no reader; repair-drift.sh is no gate's input); repair-drift.sh itself on
@@ -630,6 +638,28 @@ changed (`ForeignType`'s deleted rows had no reader; repair-drift.sh is no gate'
 Still open after C4, by owner: C5 the 35 C5 rows, MergedBaseCalleeSwapTest's rewrite-or-explain, the perJar flip,
 VanillaDamageReadInjectorTest's stand-in, the corpus test's re-pin (count above), gate-m26/m4 live runs and every gate line
 classified above; C6 gate-m17's 7 installer premises, the skip TSVs (ci-unstaged.tsv got fbad0271's new row;
-ci-prepared-noforge.tsv is stale and not touched), docs (introduction.md:1502/1531 still name two deleted `ForeignType`
-rows in the history of the MinecraftForge breathe/drown bridges); Stage 6 RegistryWalkProof's prefix, `ForeignType` to
+ci-prepared-noforge.tsv is stale and not touched), docs (introduction.md:1502/1531 and introduction.zh-CN.md:390/391 still
+name two deleted `ForeignType` rows in the history of the MinecraftForge breathe/drown bridges; introduction.md:951-952 does
+not say repair-drift.sh needs the vanilla-reference sidecar); Stage 6 RegistryWalkProof's prefix, `ForeignType` to
 plain constants, the merged-base identifiers.
+
+### C4 close review fixes (1a27b7fe and this record): reviews A and B of the close
+
+Two reviews of 3796662e..851dda37 (`s4/c4/close-review-A.md`, `close-review-B.md`). Each finding was checked again here:
+
+| finding | disposition | commit |
+|---|---|---|
+| A-1 (medium): `RepairDriftCensus` printed its all-clear while vanilla twins stood down. fbad0271 counted the twins' 7 anchors, all HEDGE; the ledger files a declined hedge under `hedged()`, which the replay dropped, and `main` judged by declines and absences alone (review A's stale sidecar: `29 declared, 26 landed, 0 declined` + the all-clear) | confirmed and fixed. `Drift` carries the hedges and whether a FABRIC index was among the jars; the summary ends `H hedge(s) stood down`; each prints as `HEDGED`; the all-clear needs `hit == declared`; a replay with no vanilla reference says so; repair-drift.sh greps `HEDGED`. Measured: staged 29/29 + all-clear; review A's stale sidecar 26 landed, 3 HEDGED (Hud, CustomPacketPayload, CropBlock), no all-clear; no sidecar 25 landed, 1 declined, 3 HEDGED. Red checks: RepairDriftCensusVerdictTest (no fixtures) and a staged test on a sidecar copy without Hud's index row (0 declined, the Hud twin hedged, 28/29, no all-clear); both go red with the old rule restored | 1a27b7fe |
+| A-2 / B-2 (low): the docs hand-on missed introduction.zh-CN.md:390/391 | confirmed; added to the C6 docs items here and in `s4/c4/handoff.md`. 3796662e's message is not rewritten (history is not rewritten) | this record |
+| A-3 (low): the census javadoc said it replays the chain "as the launch runs it" | confirmed (KernelBoot runs the ACCESS phase and other COREMOD transformers before compat; the census reads vanilla through the jars given, not the configured sources); reworded to what it replays, pointing to ChainAnchorCensusStagedTest for the full chain | 1a27b7fe |
+| A-4 (low): the no-sidecar red check built a sidecar it dropped, so it needed Minecraft's jar for nothing, and the base's skip message was unreachable | confirmed; it builds `List.of(base, carrier)`, and the base and carrier are checked before the sidecar is built in every test (skip reason no longer says "merged"; ci-unstaged.tsv's reason column follows, plus the new staged method's row) | 1a27b7fe |
+| B-1 (medium, record): gate-m17 was 33 PASS / 7 FAIL, not 34 | confirmed (`verify/gates/m17.out`: 33 `[kernel] PASS`, 7 `[kernel] FAIL`, 37 lines containing "PASS", 4 of them `(must PASS)` headers); corrected above and in verify.md, checks.md, handoff.md. 41fecd5f's and 851dda37's bodies still say 34/7: this record is the correction | this record |
+| B-3 (low): MixinRetargetRenamedBodyCorpusTest owned P1 in the list but its re-pin handed to C5; its cause still said "C4" | confirmed; owner "P1 + C5 (re-pin)", counts stated by first owner, cause reworded, in `stage4-c4-close-open-failures.txt` and `s4/c4/failures-close.txt` | this record |
+| B-4 (low): stale README lists | confirmed; "Not done yet" (C5: perJar flip, the damage stand-in, MergedBaseCalleeSwapTest; C6: gate-m17's premises, the introduction lines), "C4 as a whole" (36 → 35 at the close), the suite table's C4 rows, and D42 in the decisions line | this record |
+| B-5 (low): repair-drift.sh now needs the sidecar, undocumented | confirmed; PROTOCOL.md says so (and what HEDGED means), the census prints a line when no vanilla reference is among its jars, and introduction.md:951-952 goes to the C6 docs pass | 1a27b7fe |
+| B-6 (low): "run once, as on Fabric" for cristellib's and mixson's Bootstrap TAIL handlers stated an inference as fact | confirmed; `stage4-c4-census.md` now says it follows from the row's design and javap and was not observed in a run | this record |
+
+Suite at 1a27b7fe (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test --continue`): **5,767 tests, 0 skipped, 41
+failed**. Name for name against cb1aaf20's 42 (`s4/c4/failures-c4.txt`): 0 new, the same 1 gone, 0 message differences over 240
+characters, digits not folded; the failing set equals `stage4-c4-close-open-failures.txt`. +4 tests, all passing (the A-1 red
+checks). No gate reads what 1a27b7fe changed (repair-drift.sh is no gate's input), so no gate was re-run.
