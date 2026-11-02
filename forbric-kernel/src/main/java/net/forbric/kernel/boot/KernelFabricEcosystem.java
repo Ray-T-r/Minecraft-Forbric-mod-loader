@@ -335,7 +335,7 @@ public final class KernelFabricEcosystem {
 		// In registration order, not getAllMods() order. KernelModLoader orders the Forge-family @Mod classes over
 		// a graph that includes these (a NeoForge mod can require a Fabric one), and where a Fabric mod sits in that
 		// graph's input decides where a Forge-family mod waiting on it lands. Handing it the Fabric order would
-		// reorder NeoForge and MinecraftForge mods as a side effect.
+		// reorder the NeoForge mods as a side effect.
 		List<DiscoveredMod> fabricMods = new ArrayList<>();
 		Map<String, Map<String, Object>> entrypointNames = new LinkedHashMap<>();
 		int declaringFabric = 0;

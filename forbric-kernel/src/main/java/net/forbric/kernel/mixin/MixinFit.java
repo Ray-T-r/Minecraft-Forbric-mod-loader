@@ -74,7 +74,7 @@ import net.forbric.kernel.util.Caught;
  * <h2>What native drops as well</h2>
  *
  * <p>A miss is the base's only when the mod's own platform had the member: vanilla 26.2 for a Fabric mod, its own
- * patched game for a MinecraftForge or NeoForge mod. An injector whose every target that platform lacks too, and which
+ * patched game for a NeoForge mod. An injector whose every target that platform lacks too, and which
  * nothing requires to inject, is one native Mixin drops without a word; it is counted neither way and listed in
  * {@link Result#nativeAbsent}, so the mixin is judged on the rest. See {@link NativeAbsentTargets}.
  */
@@ -679,7 +679,7 @@ public final class MixinFit {
 		if (hits.isEmpty()) {
 			// Not Enough Crashes' populateCrashReport: a name no vanilla 26.2 BlockEntity has either, in a Fabric mod.
 			// Native Mixin skips an injector that matches nothing and need not inject, and says nothing; a miss here
-			// would have been the whole mixin's, and a required loss native never has. A MinecraftForge or NeoForge
+			// would have been the whole mixin's, and a required loss native never has. A NeoForge
 			// mod is asked about its own patched game, which may have the method the base lost. Asked only when no
 			// selector bound at all: a refused binding is a method the game HAS, bound where the handler does not fit.
 			if (refused.isEmpty() && NativeAbsentTargets.dropsNatively(m, injector, selectors, target.name, nativeView)) {

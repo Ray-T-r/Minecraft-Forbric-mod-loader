@@ -77,7 +77,7 @@ import java.util.function.Function;
  *     can ask about, or the Fabric jar of a mod whose other build won arbitration. They carry no entrypoints and no
  *     mixins, and they stay after the Fabric mods, in the order they were registered.
  * <li>The class path. Minecraft's libraries still come before every mod jar, and Fabric jars keep discovery order.
- * <li>NeoForge and MinecraftForge. Their construction order is drawn from the Fabric mods too (a Forge-family mod
+ * <li>NeoForge. Its construction order is drawn from the Fabric mods too (a Forge-family mod
  *     can require a Fabric one), and it keeps getting them in the order it always did.
  * </ul>
  *

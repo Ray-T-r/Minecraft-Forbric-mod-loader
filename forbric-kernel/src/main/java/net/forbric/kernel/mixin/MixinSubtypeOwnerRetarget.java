@@ -70,10 +70,10 @@ import net.forbric.kernel.util.Caught;
  * A receiver that may come from either declines the move.
  *
  * <p>And then the handler runs only where vanilla's could. On the base the field may hold a {@code Mob} that is
- * no {@code Monster} — a NeoForge or MinecraftForge mod's archer built on the widened goal — and a vanilla-compiled
+ * no {@code Monster} — a NeoForge mod's archer built on the widened goal — and a vanilla-compiled
  * handler reads the vanilla-typed twin of the field, which is null for it. The handler is renamed aside and the name,
  * descriptor and annotation go to a guard that calls it only when the field holds the vanilla type, so the other
- * ecosystems' mobs run the goal exactly as before. Only an {@code @Inject} with that one point, an instance handler with
+ * ecosystem's mobs run the goal exactly as before. Only an {@code @Inject} with that one point, an instance handler with
  * no sugar, on a final field. {@code -Dforbric.mixinSubtypeOwner.retypedField=off} leaves these points as compiled.
  */
 public final class MixinSubtypeOwnerRetarget {

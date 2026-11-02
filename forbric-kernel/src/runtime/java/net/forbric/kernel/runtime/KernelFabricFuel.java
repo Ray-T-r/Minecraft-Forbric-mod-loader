@@ -226,7 +226,7 @@ public final class KernelFabricFuel {
 	 *
 	 * <p>The table goes back unchanged when the body's short-circuit was never reached: a carrier whose stub stopped
 	 * forwarding to it would otherwise have the full vanilla table rebuilt in place of the data map's, and a mixin
-	 * that cancels vanillaBurnTimes at HEAD would throw away every NeoForge and MinecraftForge fuel with it. Natively
+	 * that cancels vanillaBurnTimes at HEAD would throw away every NeoForge fuel with it. Natively
 	 * such a cancel replaces only vanilla's table; here there is more in it than vanilla's, so the data map's result
 	 * stands. A hook that throws costs its own change, not the server's fuel table.
 	 */

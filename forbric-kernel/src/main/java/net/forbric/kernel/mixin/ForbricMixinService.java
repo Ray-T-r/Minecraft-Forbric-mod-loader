@@ -521,7 +521,7 @@ public final class ForbricMixinService
 		// (the last stays the last; an early one is the one the same test decides), when the base added or dropped exits.
 		// After the rebind: it reads the injector's final target. Before the native tail: that one reads a TAIL as written.
 		MixinReturnOrdinals.adapt(node, this::mergedBaseGameCode);
-		// …and a NeoForge or MinecraftForge mod's TAIL on a method whose early returns the kernel restored keeps every
+		// …and a NeoForge mod's TAIL on a method whose early returns the kernel restored keeps every
 		// return its own loader's folded body sent there. After the rebind: it reads the injector's final target.
 		MixinNativeTail.adapt(node, this::mergedBaseNodeWithCode);
 		// …and, after every rule that sets a handler's body aside, each such body is named for its own mixin: Mixin merges it into

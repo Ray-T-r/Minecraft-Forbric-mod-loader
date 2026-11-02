@@ -29,7 +29,7 @@ import net.forbric.kernel.transform.VanillaEarlyReturns;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Keeps a NeoForge or MinecraftForge mod's {@code @At("TAIL")} on the paths it ran on before
+ * Keeps a NeoForge mod's {@code @At("TAIL")} on the paths it ran on before
  * {@link VanillaEarlyReturns} gave a method back vanilla's early returns.
  *
  * <p>Those mods were compiled against their carrier's recompiled body, where the guard clause is folded into the last
