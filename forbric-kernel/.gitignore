@@ -19,18 +19,30 @@
 /run/savedrop/
 /run/world-events-m49/
 /run/compat-world/
-/run/installed/
+# installed, energy-api and .gate-downloads carry no trailing slash either: a worktree recreates them (a local dir, or a
+# link/clone of the main checkout's), and 36dfef28 committed all three as symlinks into one worktree's own path because
+# `/run/installed/` never matched a link.
+/run/installed
 
 # Generated probe jars and hash manifests; their sources live in /canary/.
 /run/canary/
-/run/energy-api/
+/run/energy-api
 /run/carry-on/
 /run/modmenu/
 # The NeoForge builds that replaced the gates' MinecraftForge jars in Stage 3 of dropping MinecraftForge (lib.sh
 # NEO_BUILDS). No trailing slash: a worktree links it to the main checkout's, and a pattern ending in / never matches
 # a symlink.
 /run/neoforge-builds
-/run/.gate-downloads/
+/run/.gate-downloads
+# Stage 4 C5 paths, ignored before they exist so a link there is never committed: the frozen Forge->NeoForge swap fixture
+# (linked from ~/Forbric-backups/forge-swap), gate-m58's world-upgrade rundir, and the rundirs of the new gates m58-m62
+# (name them <what>-m58 ... <what>-m62 or m58-<what> ... so these patterns cover them).
+/run/forge-swap
+/run/world-upgrade
+/run/*-m5[89]
+/run/*-m6[0-2]
+/run/m5[89]-*
+/run/m6[0-2]-*
 /run/.gate-clones/
 
 # Gate bookkeeping and runtime output in any custom run/ instance directory.
