@@ -190,14 +190,14 @@ class GateNeoCanaryContractTest {
 
 	@Test
 	void clientGateSeedsTheNeoForgeF9AndBothScriptsParse() throws Exception {
-		// The options section reads the world version out of the staged base, as the gate does from MERGED.
+		// The options section reads the world version out of the staged base, as the gate does from BASE.
 		Path base = TestFixtures.stagedBase();
 		TestFixtures.requireFiles(TestFixtures.Fixture.STAGED, "staged base", base);
 		String script = Files.readString(M26);
 		Path result = temporary.resolve("options-command.log");
 		ProcessBuilder builder = new ProcessBuilder("bash", "-c", section(script, "M26_OPTIONS"));
 		builder.environment().put("RUNDIR", temporary.toString());
-		builder.environment().put("MERGED", base.toAbsolutePath().toString());
+		builder.environment().put("BASE", base.toAbsolutePath().toString());
 		builder.environment().put("RUN_OLD", TestFixtures.stagedRoot().toAbsolutePath().toString());
 		Result seededRun = execute(builder, result);
 		assertEquals(0, seededRun.exit(), seededRun.output());
@@ -210,51 +210,42 @@ class GateNeoCanaryContractTest {
 		assertTrue(script.contains("# WORLD_CONFIRM_BEGIN"));
 		assertTrue(script.contains("# CLIENT_CANARY_STAGE_BEGIN"));
 		assertTrue(script.contains("SRC_MODS=\"$RUNDIR/empty-mods\""));
+		// Stage 4 C5: the merged base is gone, and with it the HUD javap that read it; the rundirs refuse a shared fixture.
+		assertTrue(script.indexOf("MERGED", script.indexOf("# GATE-PARALLEL")) < 0, "gate-m26 reads nothing from a MERGED base");
+		assertTrue(!script.contains("HUD_TREE=") && !script.contains("javap -"), "no javap of a merged Hud");
+		assertTrue(script.contains("refuse_shared_rundir \"$RUNDIR\"") && script.contains("refuse_shared_rundir \"$PROMPT_DIR\""));
 	}
+
+	/** The kernel's PiP bridge line as it prints when the bridge also gave vanilla's orphaned map its only writer. */
+	private static final String PIP_BRIDGE = "[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a "
+			+ "fallback to the orphaned vanilla map — NeoForge's preparePictureInPictureState reads only its pools, so every "
+			+ "guest-registered GUI element (Xaero's minimap, malilib's overlays) was registered where nothing reads, and gave "
+			+ "that map its only writer";
 
 	private static final List<String> SESSION_GREEN = List.of(
 			"[ClientSmoke] joined world via quick-play", "[ClientSmoke] client-ready after 60 ticks",
 			"[ClientSmoke] clean disconnect observed",
-			"[Forbric/Bridges] all 3 CLIENT_INIT bridge(s) installed", "[Forbric/Bridges] all 2 REGISTRATION bridge(s) installed",
-			"[Forbric/HudBridge] MinecraftForge's overlay stack is on NeoForge's layer manager — silenced 23 vanilla leaf/leaves",
-			"[Forbric/MergedBaseCompat] gave GuiRenderer's pooled picture-in-picture lookup a fallback to the orphaned vanilla "
-					+ "map, and gave that map its only writer",
-			"[ForbricNeoLive/FLUID] water at 3 64 -2: Block{minecraft:water}",
-			"[Forbric/Fluids] MinecraftForge client extensions consulted for 4 fluid(s) so far");
+			PIP_BRIDGE,
+			"[ForbricNeoLive/FLUID] water at 3 64 -2: Block{minecraft:water}");
 
 	/**
-	 * The session block keeps every kernel line that printed with no MinecraftForge mod aboard, and each row is
-	 * load-bearing. Some rows name kernel lines earlier Stage 4 lanes deleted; the block is C5's to re-pin, and until then
-	 * this pins the block as the gate has it.
+	 * The session block: the join, the play, the clean leave, the PiP bridge's writer and the canary's water, each row
+	 * load-bearing. Stage 4 C5 re-pinned it: the bridge inventories, the HudBridge lines (and the HUD_TREE javap that chose
+	 * between two of them) and MinecraftForge's fluid extensions have no producer on the genuine base and went with the
+	 * gate's rows. The PiP row is explicit about the WRITER (D65): the same line without its writer clause is red.
 	 */
 	@Test
-	void theSessionBlockAssertsTheRewritesThatRunWithNoMinecraftForgeMod() throws Exception {
+	void theSessionBlockAssertsTheJoinThePipWriterAndTheWater() throws Exception {
 		String green = String.join("\n", SESSION_GREEN) + "\n";
-		assertEquals(0, session(green, 0, "HUD_TREE=absent").exit());
+		assertEquals(0, session(green, 0, "").exit());
 		for (String line : SESSION_GREEN) {
-			assertEquals(1, session(green.replace(line + "\n", ""), 0, "HUD_TREE=absent").exit(),
-					"a missing row is red: " + line);
+			assertEquals(1, session(green.replace(line + "\n", ""), 0, "").exit(), "a missing row is red: " + line);
 		}
-		assertEquals(1, session("", 0, "HUD_TREE=absent").exit());
-		assertEquals(1, session(green, 1, "HUD_TREE=absent").exit(), "a preceding failure stays red");
-	}
-
-	/**
-	 * The HUD drop row follows the base the gate read before its assertions: where the base's Hud kept MinecraftForge's
-	 * overlay tree the kernel's drop line is required, and where it did not the same line is red.
-	 */
-	@Test
-	void theHudDropRowFollowsTheBaseTheGateRead() throws Exception {
-		String green = String.join("\n", SESSION_GREEN) + "\n";
-		String dropped = "[Forbric/HudBridge] net.minecraft.client.gui.Hud kept MinecraftForge's own overlay tree (built in 1 "
-				+ "place(s), drawn instead of NeoForge's layer manager in 1) — dropped: the kernel builds that tree once "
-				+ "every mod is loaded and puts it on NeoForge's manager, the one HUD pipeline\n";
-		assertEquals(0, session(green + dropped, 0, "HUD_TREE=kept").exit());
-		assertEquals(1, session(green, 0, "HUD_TREE=kept").exit(),
-				"a base that kept the tree and no drop: both pipelines still run");
-		assertEquals(0, session(green, 0, "HUD_TREE=absent").exit());
-		assertEquals(1, session(green + dropped, 0, "HUD_TREE=absent").exit(),
-				"a drop on a base that never carried the tree is a drop of something else");
+		assertEquals(1, session("", 0, "").exit());
+		assertEquals(1, session(green, 1, "").exit(), "a preceding failure stays red");
+		String noWriter = PIP_BRIDGE.substring(0, PIP_BRIDGE.indexOf(", and gave that map its only writer"));
+		assertEquals(1, session(green.replace(PIP_BRIDGE, noWriter), 0, "").exit(),
+				"the bridge without the writer leaves guest renderers unread: red");
 	}
 
 	/** gate-m26's session block over {@code log}; {@code preamble} is what the gate computes from the base first. */
