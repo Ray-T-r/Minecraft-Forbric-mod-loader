@@ -2,8 +2,6 @@
 # M25 — NeoForge's biome and structure modifiers leave the NeoForge canary's blocks in saved overworld chunks.
 # RED demonstration: M25_NO_DATA=1 ./gate-m25-worldgen.sh removes data/ from the staged canary; the NeoForge modifier,
 # served-pack and probe checks and the block probe must fail. No source jar is changed.
-# Second boot (fresh world): -Dforbric.forgeWorldgen=off takes nothing from NeoForge -- its modifier, probes and marker
-# must all stay.
 #
 # STAGE 3 OF DROPPING MinecraftForge (what changed and why). This gate ran two independent pipelines side by side: the
 # MinecraftForge canary (forbriclive) proved MinecraftForge's biome and structure modifiers ride inside NeoForge's single
@@ -13,10 +11,14 @@
 # checks (end_stone, the bridging and round-trip lines, its probes, its data pack, and the control's MinecraftForge
 # half). Everything NeoForge's stays as it was. The NeoForge canary's five event probes stay too, turned around: they
 # post NeoForge's own BreakBlockEvent, the two click events, the item use and the placement, and with no refusing
-# listener left they must come back untouched (refused=false, DEFAULT decisions) -- the bridges that still forward each
-# of them to MinecraftForge's bus, with nobody listening there, must not flip a decision the game reads. The
-# -Dforbric.forgeWorldgen=off boot stays as the evidence that the NeoForge half does not lean on the MinecraftForge
-# bridge. The worldgen bridge is kernel code Stage 3 keeps; Stage 4 deletes it.
+# listener left they must come back untouched (refused=false, DEFAULT decisions).
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The MinecraftForge worldgen bridge (KernelForgeWorldgen) and
+# the Neo->Forge event bridges went with the carrier in C2. So did the two checks that read the bridge -- the
+# declaration of forge:biome_modifier/forge:structure_modifier and its "did not stand down" absence (no producer of
+# either line remains, D34) -- and the second boot under -Dforbric.forgeWorldgen=off, a retired switch (D29) whose six
+# checks had become a copy of the first boot's. The red demonstration is M25_NO_DATA=1 (above, D48). NeoForge's
+# modifier, probes, events and the saved marker are unchanged.
 # GATE-PARALLEL: rundirs=server-worldgen-canaries mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -24,6 +26,7 @@ set -uo pipefail
 LOG="$BUILD/gate-m25-worldgen.log"
 PROBE_LOG="$BUILD/gate-m25-region.log"
 RUNDIR="$KERNEL/run/server-worldgen-canaries"
+refuse_shared_rundir "$RUNDIR"
 mkdir -p "$BUILD"
 
 step "stage the NeoForge worldgen canary into a fresh fixed-seed world"
@@ -80,23 +83,13 @@ check "NeoForge canary data was served" 'DataPacks\] served .*forbric/data/forbr
 check "NeoForge probe ran"          'ForbricNeoLive/WORLDGEN\] probe ran: plains has [0-9]+ feature' "$LOG"
 check "NeoForge probe saw its feature" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$LOG"
 
-step "the MinecraftForge modifier registries are still declared, and the bridge did not stand down"
-# Kernel code Stage 3 keeps runs on every boot: with the MinecraftForge carrier present, KernelLifecycle declares
-# forge:biome_modifier / forge:structure_modifier on NeoForge's datapack-registry list. That declaration is what makes
-# the merged RegistryDataLoader read a universal jar's data/<ns>/forge/biome_modifier and forge/structure_modifier files
-# at all; without it those files are silently ignored, though the world still loads, as the off boot below shows. RED:
-# the -Dforbric.forgeWorldgen=off boot below prints no declaration line, and its check_absent says so.
-check "forge:biome_modifier is declared" 'posted datapack-registry declaration for MinecraftForge.s modifier registries — 2 declared' "$LOG"
-check_absent "the bridge did not stand down" 'Forbric/Worldgen\] MinecraftForge modifier bridge standing down' "$LOG"
-
 step "NeoForge's structure modifier reached a structure (D6)"
 check "NeoForge structure probe saw its spawn" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$LOG"
 
 step "NeoForge's own block and interaction events come back untouched with no listener refusing them (must PASS)"
 # Until Stage 3 the MinecraftForge canary refused each of these through the Neo->Forge bridges, and these lines carried
-# its refusal back. The bridges are still installed, and still forward every one of these events to MinecraftForge's
-# bus; with no MinecraftForge mod listening there, the event the game reads must be exactly what NeoForge's own
-# listeners left -- here, nobody's -- so a bridge that writes a decision back without one is red.
+# its refusal back. The bridges are gone (Stage 4); the event the game reads must be exactly what NeoForge's own
+# listeners left -- here, nobody's -- so anything that writes a decision back without a listener is red.
 check "a block break is not refused" 'ForbricNeoLive/BLOCKBREAK\] posted BreakBlockEvent at .* refused=false' "$LOG"
 check_absent "the probe did not fail" 'BLOCKBREAK\] probe FAILED' "$LOG"
 check "a right-click keeps both default decisions" 'ForbricNeoLive/INTERACT\] right-click useBlock=DEFAULT useItem=DEFAULT' "$LOG"
@@ -118,21 +111,6 @@ if [ -n "$CHUNKS" ] && [ "$CHUNKS" -ge 20 ]; then
 else
   echo "[kernel] FAIL too little generated terrain: ${CHUNKS:-no count} chunks (need at least 20)"; FAIL=1
 fi
-
-step "second boot: -Dforbric.forgeWorldgen=off takes nothing from NeoForge"
-CONTROL_LOG="$BUILD/gate-m25-worldgen-off.log"
-CONTROL_PROBE="$BUILD/gate-m25-region-off.log"
-boot "$CONTROL_LOG" "-Dforbric.forgeWorldgen=off"
-check "control server reached Done" 'Done \(' "$CONTROL_LOG"
-check_absent "control: the switch really took the MinecraftForge declaration out" \
-  'posted datapack-registry declaration for MinecraftForge.s modifier registries' "$CONTROL_LOG"
-check "control: NeoForge still applied its modifier" "applied NeoForge's [1-9][0-9]* biome modifier" "$CONTROL_LOG"
-check "control: NeoForge probe still true" 'ForbricNeoLive/WORLDGEN\] plains underground_ores has forbricneolive:probe = true' "$CONTROL_LOG"
-check "control: NeoForge structure probe still true" 'ForbricNeoLive/WORLDGEN\] mineshaft creature override has minecraft:llama = true' "$CONTROL_LOG"
-python3 "$KERNEL/run/compat/region-probe.py" "$RUNDIR/world/dimensions/minecraft/overworld/region" \
-  minecraft:purpur_block > "$CONTROL_PROBE" 2>&1 || FAIL=1
-cat "$CONTROL_PROBE"
-check "control: NeoForge marker still generated" '^minecraft:purpur_block: [1-9][0-9]*' "$CONTROL_PROBE"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] M25 WORLDGEN GATE GREEN — NeoForge's modifiers changed saved overworld terrain, and its events came back untouched"

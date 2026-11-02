@@ -53,13 +53,15 @@ class GateWorldgenContractTest {
 
 		assertTrue(script.contains("'^unreadable: 0"));
 		assertTrue(script.contains("\"$CHUNKS\" -ge 20"));
-		// The expected-red escape stays gone, and the -Dforbric.forgeWorldgen=off boot stays: since Stage 3 it shows that
-		// switching the MinecraftForge worldgen bridge off takes nothing from NeoForge.
+		// The expected-red escape stays gone, and the red demonstration is M25_NO_DATA=1 (D48). The -Dforbric.forgeWorldgen=off
+		// boot went in Stage 4 C5 with the MinecraftForge worldgen bridge it switched off (a retired switch, D29), and so did
+		// the declaration line it read; a gate that boots on a retired switch tests nothing.
 		assertFalse(script.contains("EXPECTED: RED"), "the expected-red header must go when the gap closes");
 		assertFalse(script.contains("EXPECTED-RED"));
-		assertTrue(script.contains("M25_NO_DATA"));
-		assertTrue(script.contains("-Dforbric.forgeWorldgen=off"), "the negative-control boot must stay");
-		assertTrue(script.indexOf("boot \"$CONTROL_LOG\" \"-Dforbric.forgeWorldgen=off\"") > script.indexOf("boot \"$LOG\""));
+		assertTrue(script.contains("M25_NO_DATA"), "the M25_NO_DATA red demonstration must stay");
+		assertFalse(script.contains("boot \"$CONTROL_LOG\""), "no second boot on the retired -Dforbric.forgeWorldgen switch");
+		assertFalse(script.contains("MinecraftForge.s modifier registries"), "the MinecraftForge declaration line has no producer");
+		assertEquals(1, script.split("\nboot \"", -1).length - 1, "exactly one boot");
 		assertSuccessful(new ProcessBuilder("bash", "-n", gate.toString()));
 	}
 
