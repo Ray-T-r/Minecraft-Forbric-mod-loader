@@ -554,6 +554,101 @@ publish_canary() {
   mv -f "$1" "$2" || { echo "[kernel] FAIL could not publish $(basename "$2")" >&2; return 1; }
 }
 
+# --- shared fixtures ----------------------------------------------------------------------------------------
+# WHY THIS EXISTS. A worktree links the big client packs and the downloaded-mod directories to the main checkout's
+# (run/client-merged-pack -> /Users/.../forbric-kernel/run/client-merged-pack), and the gates wipe and write their
+# rundirs. A gate pointed at one of those links (RUNDIR=run/client-merged-pack, a fixed M*_RUNDIR default, or a scratch
+# path that resolves into one) rewrites mods/, options.txt and the world of a fixture every other worktree and the main
+# checkout read -- and nothing names it: the next run of any gate there just sees a different pack. Stage 4 lost a run
+# to exactly this (D39). So a gate with a fixed or default rundir asks first:
+#
+#   refuse_shared_rundir "$RUNDIR"
+#
+# It refuses, with a FAIL line and exit 3, a rundir whose real path equals or lies inside one of the shared fixtures
+# below (this worktree's link or directory of that name, and the main checkout's), and a rundir that is spelled inside
+# this worktree's run/ but resolves outside it through a symlink. A clone (`cp -c -R` of the fixture's real path) or a
+# directory the gate creates is accepted. The rundir need not exist yet; a dangling link is refused.
+SHARED_FIXTURES="client-merged-pack client-popular client-kernel client-neo-pack carry-on modmenu neoforge-builds forge-swap"
+
+# _guard_abs <path> -- absolute and lexically normalised (. and .. folded, no symlink resolved)
+_guard_abs() {
+  local p="$1" out="" part
+  case "$p" in /*) ;; *) p="$PWD/$p" ;; esac
+  local IFS=/
+  for part in $p; do
+    case "$part" in
+      ''|.) ;;
+      ..) out="${out%/*}" ;;
+      *) out="$out/$part" ;;
+    esac
+  done
+  printf '%s\n' "${out:-/}"
+}
+
+# _guard_real <path> -- the physical path; the part that does not exist yet is appended to its nearest existing parent.
+# Prints nothing (status 1) for a dangling symlink on the way.
+_guard_real() {
+  local p rest="" base
+  p="$(_guard_abs "$1")"
+  while [ ! -e "$p" ]; do
+    [ -L "$p" ] && return 1
+    [ "$p" = / ] && break
+    rest="/${p##*/}$rest"
+    p="$(dirname "$p")"
+  done
+  base="$(cd "$p" 2>/dev/null && pwd -P)" || return 1
+  [ "$base" = / ] && base=""
+  printf '%s%s\n' "$base" "$rest"
+}
+
+# _guard_within <path> <dir> -- the path is the dir or lies inside it
+_guard_within() { [ "$1" = "$2" ] || [ "${1#"$2"/}" != "$1" ]; }
+
+# The main checkout's kernel: FORBRIC_MAIN_KERNEL, else the parent of the repository's common .git directory.
+_guard_main_kernel() {
+  if [ -n "${FORBRIC_MAIN_KERNEL:-}" ]; then printf '%s\n' "$FORBRIC_MAIN_KERNEL"; return; fi
+  local common
+  common="$(git -C "$KERNEL" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+  [ -n "$common" ] && printf '%s/forbric-kernel\n' "$(dirname "$common")"
+}
+
+refuse_shared_rundir() {
+  local dir="${1:-}" logical real run_logical run_real main name candidate fixture_real r why=""
+  if [ -z "$dir" ]; then
+    echo "[kernel] FAIL refusing rundir '': refuse_shared_rundir was given no rundir (an unset rundir variable?)"
+    exit 3
+  fi
+  logical="$(_guard_abs "$dir")"
+  if ! real="$(_guard_real "$dir")"; then
+    echo "[kernel] FAIL refusing rundir $dir: it is (or passes through) a dangling symlink"
+    exit 3
+  fi
+  run_logical="$(_guard_abs "$KERNEL/run")"
+  run_real="$(_guard_real "$KERNEL/run")"
+  main="$(_guard_main_kernel)"
+  local roots="$run_logical $run_real"
+  [ -n "$main" ] && roots="$roots $(_guard_abs "$main/run") $(_guard_real "$main/run")"
+  for name in $SHARED_FIXTURES; do
+    for candidate in $(for r in $roots; do printf '%s/%s\n' "$r" "$name"; done); do
+      if _guard_within "$logical" "$candidate"; then
+        why="it is the shared fixture run/$name ($candidate)"
+      elif [ -e "$candidate" ] && fixture_real="$(_guard_real "$candidate")" && _guard_within "$real" "$fixture_real"; then
+        why="it resolves to $real, inside the shared fixture run/$name ($fixture_real)"
+      fi
+      [ -n "$why" ] && break 2
+    done
+  done
+  if [ -z "$why" ] && { _guard_within "$logical" "$run_logical" || _guard_within "$logical" "$run_real"; } \
+      && ! _guard_within "$real" "$run_real"; then
+    why="it is spelled inside $run_logical but resolves to $real, outside it, through a symlink"
+  fi
+  if [ -n "$why" ]; then
+    echo "[kernel] FAIL refusing rundir $dir: $why. Clone the fixture by its real path (cp -c -R \"\$(cd <link> && pwd -P)\" <scratch>) and point the gate's rundir variable at the clone"
+    exit 3
+  fi
+  return 0
+}
+
 # --- download caches ----------------------------------------------------------------------------------------
 # WHY THIS EXISTS. gate-m13 and gate-m14 both `rm -rf` their rundir to get a clean world, and that also deletes
 # the ~50 MB vanilla server jar their launcher downloaded on the previous run. So these two are the only gates

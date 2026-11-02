@@ -421,6 +421,16 @@ the environment is one the scheduler exports; no gate writes a literal port; a g
 server calls the lost-port check; and a "never reached Done" exit calls it before it leaves. It
 reads text, so it holds the call and that one shared exit, not every path through a gate.
 
+A gate's rundir must not be a fixture other worktrees share. A worktree links `client-merged-pack`,
+`client-kernel`, `client-neo-pack`, `carry-on`, `modmenu` and `neoforge-builds` to the main
+checkout's, and a gate that wiped or wrote one of them through a fixed or default rundir changed a
+pack every other tree reads. `lib.sh`'s `refuse_shared_rundir "$RUNDIR"` fails (exit 3, a
+`[kernel] FAIL refusing rundir` line) when the rundir is, lies inside, or resolves into one of those,
+`client-popular` or `forge-swap`, or is spelled inside this tree's `run/` but leaves it through a
+symlink; clone the fixture by its real path (`cp -c -R`) instead. `python3
+run/compat/test_lib_guards.py` runs the real `lib.sh` in a throwaway tree laid out like a worktree
+beside a main checkout and goes red when the guard is a no-op or matches names by prefix.
+
 The script's output is exactly the RESULT lines, byte for byte the same as `summary.txt`.
 The running commentary — what started when, on which slot and port, what each gate cost, and
 what the run would have taken sequentially — goes to `build/gates/progress.log`; `--progress`
