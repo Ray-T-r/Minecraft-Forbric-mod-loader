@@ -3,7 +3,7 @@
 #
 # Tectonic's builtin pack ships one pack.mcmeta carrying a vanilla `overlays`, a `fabric:overlays` AND a
 # `neoforge:overlays` — one source tree, every platform's section in one file. On a stock instance exactly one of
-# those parsers is live. On Forbric all three are, and the two loader patches meet in Pack.readPackMetadata:
+# those parsers is live. On Forbric both loaders' are, and the two loader patches meet in Pack.readPackMetadata:
 #
 #   NeoForge's patch:  overlaySet = new ArrayList<>(overlaySet); overlaySet.addAll(neoOverlays);
 #   fabric-api's mixin: @ModifyVariable(method="readPackMetadata", at=@At("STORE"), name="overlaySet")
@@ -11,8 +11,8 @@
 #
 # So NeoForge asks an immutable list to addAll and gets UnsupportedOperationException. readPackMetadata catches
 # Exception across its whole body, returns null, and Tectonic's RepositorySource hands that null straight to
-# PackRepository.discoverAvailable, which NPEs on it. Neither mod is wrong; the collision exists only on a base
-# that carries both patches at once. It cost a world load, and the symptom named Tectonic — a mod that is doing
+# PackRepository.discoverAvailable, which NPEs on it. Neither mod is wrong; the collision exists only on an instance
+# that carries both patches at once (NeoForge's patched game and fabric-api's mixin). It cost a world load, and the symptom named Tectonic — a mod that is doing
 # nothing unusual — so it is worth a gate of its own.
 #
 # PackOverlayMutabilityInjector rewrites the in-place merge into a copying one WITHOUT adding or removing an
@@ -43,6 +43,7 @@ set -uo pipefail
 
 LOG="$BUILD/gate-m10-overlay-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-overlay"
+refuse_shared_rundir "$RUNDIR"
 PACK="$KERNEL/run/client-merged-pack/mods"
 
 step "stage fabric-api + Tectonic + the lithostitched build Tectonic links against"
@@ -62,7 +63,7 @@ done
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
-step "boot the merged base under the kernel (no compatibility flags)"
+step "boot the game base under the kernel (no compatibility flags)"
 : > "$LOG"
 ( stop_when_ready "$LOG" 90 ) | FORBRIC_JVM="${M10_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
   "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
@@ -87,11 +88,14 @@ check_absent "no pack was skipped as null"    "Forbric/PackRepair\] a Repository
 
 step "the Forge-family mods' own data/ reached the server datapack repository (must PASS)"
 check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* datapack"             "$LOG"
-# The carriers are where the c: convention-tag skeleton lives — 513 tag files that exist in NO other jar, and that
-# every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
+# The NeoForge carrier is where NeoForge's c: convention-tag skeleton lives — 513 tag files the game base does not
+# carry (re-measured on the genuine base in Stage 4 C5: base 0, carrier 513; fabric-api ships the same 513 paths for
+# its own side), and every cross-mod recipe of a NeoForge mod is written against them. Assert the NUMBER: the line
+# keeps printing when the count goes to zero. One carrier since MinecraftForge left the stage (Stage 4), and its pack
+# id keeps its rank, 2 (D2): it is the id a world written by Forbric <= 0.4 already holds in its enabled pack list.
 CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
-assert_eq "loader carriers served" 2 "${CARRIERS:-none}"
-check "carriers sit below the mods"   "forbric/carrier/1-forge-runtime-interop, forbric/carrier/2-neoforge-runtime" "$LOG"
+assert_eq "loader carriers served" 1 "${CARRIERS:-none}"
+check "the carrier sits below the mods" "mod pack\(s\) .*: \[forbric/carrier/2-neoforge-runtime, forbric/data/" "$LOG"
 check_absent "hook anchor still matches"      "no longer exists — Forge-family mods" "$LOG"
 # lithostitched's own mixin redirects vanilla's ruined-portal template selection into TemplateLists.getRandom, which
 # calls Optional.get() on the lithostitched:template_list registry. The registry is declared either way; only the
@@ -109,7 +113,7 @@ check "server reached Done"                   "Done \(" "$LOG"
 # unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
 # is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
 # the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
-# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
+# finished — await_server is what fails a server that cannot finish. The alternation covers a base that
 # lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
 # and never the command's, so this pair must not be copied into a client gate.
 check "server ticked (the stop command ran)"  "Stopping the server|commands\.stop\.stopping" "$LOG"
@@ -125,7 +129,7 @@ check_absent "no post-Done exception"         "Encountered an unexpected excepti
 
 step "M10 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M10 GATE GREEN — a pack carrying both loaders' overlays survives the merged base"
+  echo "[kernel] ✅ M10 GATE GREEN — a pack carrying both loaders' overlays survives NeoForge's patched game with fabric-api aboard"
 else
   echo "[kernel] ❌ GATE RED"
 fi

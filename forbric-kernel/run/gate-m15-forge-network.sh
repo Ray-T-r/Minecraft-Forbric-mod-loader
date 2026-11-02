@@ -24,7 +24,15 @@
 # socket. It is a universal jar; with its MinecraftForge half set aside it loads through its NeoForge half (asserted
 # below), so its channel is now NeoForge's payload path, and every encode/decode absence check stays as it was. So do
 # the join, the clean leave, the config watchers' shutdown and the absence checks that name MinecraftForge's dispatcher
-# and channel declaration: that plumbing still runs with zero MinecraftForge mods. The file keeps its name until Stage 4.
+# and channel declaration: that plumbing still runs with zero MinecraftForge mods.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The game base is NeoForge's own patched game now and the
+# MinecraftForge carrier is off the stage, so MinecraftForge's dispatcher and channel declaration no longer exist to
+# fail: the four absence checks that named them ("dispatcher threw", "no MinecraftForge handler took", "could not
+# declare MinecraftForge's channels" on each end) went, because nothing in the base, the NeoForge carrier, the kernel or
+# FallingTree prints any of those strings (0 producers) -- an absence nothing can break is no check (D34). What covers
+# the path now is what was always the subject: FallingTree's config sync over NeoForge's payload path, with every
+# encode/decode absence, the join and the clean leave. The file keeps its name until Stage 6 (D4).
 #
 # Port 25603, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fnet-server,fnet-client mem=3500
@@ -34,6 +42,8 @@ set -uo pipefail
 PORT="${M15_PORT:-25603}"
 SRV="$KERNEL/run/fnet-server"
 CLI="$KERNEL/run/fnet-client"
+refuse_shared_rundir "$SRV"
+refuse_shared_rundir "$CLI"
 SLOG="$BUILD/gate-m15-server.log"
 CLOG="$BUILD/gate-m15-client.log"
 mkdir -p "$BUILD"
@@ -128,10 +138,6 @@ step "nothing in a real mod's traffic fails to encode, decode or dispatch (must 
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"
 check_absent "every payload encodes (client)"  "Failed to encode packet"                  "$CLOG"
 check_absent "every payload decodes"  "Failed to decode packet|Failed decoding custom payload|Unknown custom packet" "$CLOG"
-check_absent "no Forge dispatch error (server)" "dispatcher threw|no MinecraftForge handler took" "$SLOG"
-check_absent "no Forge dispatch error (client)" "dispatcher threw|no MinecraftForge handler took" "$CLOG"
-check_absent "client declared its Forge channels" "could not declare MinecraftForge's channels" "$CLOG"
-check_absent "server declared its Forge channels" "could not declare MinecraftForge's channels" "$SLOG"
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
 check "left cleanly"                 "ClientSmoke\] clean disconnect observed"          "$CLOG"

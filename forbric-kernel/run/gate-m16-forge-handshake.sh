@@ -1,26 +1,21 @@
 #!/usr/bin/env bash
-# M16 gate — MinecraftForge's own login/configuration handshake, over a socket.
+# M16 gate — the login/configuration handshake over a socket, and a mod's per-world SERVER config reaching the client.
 #
-# WHY THIS EXISTS. m15 proved a Forge mod's PLAY-phase packets cross the wire. Everything that happens BEFORE that
-# — Forge telling each end what the other is running, and pushing the server's per-world SERVER configs to the
-# client — is a separate pipeline, and three of its links lost the byte-merge to NeoForge: the client never
-# installed Forge's per-connection packet handler (Connection.channelActive lost the activation call), the server
-# never posted Forge's gather event (its configuration body is NeoForge's), and the surviving task dispatch used
-# the vanilla overload that Forge's own tasks refuse. So on Forbric every Forge mod saw a vanilla peer with an
-# empty mod list, and a server config a mod set in its world never reached the client.
+# WHY THIS EXISTS. m15 proved a mod's PLAY-phase packets cross the wire. Everything that happens BEFORE that -- each end
+# telling the other what it runs, and the server pushing its per-world SERVER configs to the client -- is a separate
+# pipeline. It was written for MinecraftForge's handshake, three of whose links lost the byte-merge to NeoForge's; that
+# family left in Stages 3 and 4 (below), and the gate is now about NeoForge's own configuration-phase sync.
 #
-# WHAT THIS PROVES. The gate writes a NON-DEFAULT value into the server's world config before the server boots.
-# The client ships the same mod with the same default. If the client ends up reading the server's value, Forge's
-# configuration-phase sync ran end to end; if the handshake is off, it reads its own default — which is exactly
-# what the negative control (-Dforbric.forgeHandshake=off) asserts.
+# WHAT THIS PROVES. The gate writes a NON-DEFAULT value into the server's world config before the server boots. The
+# client ships the same mod with the same default. If the client ends up reading the server's value, the
+# configuration-phase sync ran end to end; if it reads its own default, it did not.
 #
 # THE NEOFORGE HALF. The NeoForge canary (forbricneolive) rides along on both ends and carries the same two contracts
 # in its own family's shape: a per-world SERVER config whose pre-written value must reach the client (NeoForge's
 # SyncConfig configuration task and ConfigFilePayload, not MinecraftForge's handshake), and a CLIENT config that loads
 # once on the client and never on the dedicated server. These are the checks that outlive the MinecraftForge canary.
-# Their negative control is not -Dforbric.forgeHandshake=off -- that switch takes out MinecraftForge's handshake only:
-# measured 2026-10-30, it turns exactly ten MinecraftForge checks red and none of the NeoForge ones, which is the
-# evidence this half does not lean on MinecraftForge. NeoForge's sync rests on NeoForge's own configuration tasks, and
+# (Until Stage 4 a -Dforbric.forgeHandshake=off control took out MinecraftForge's handshake only and turned none of
+# these red; the switch is retired, D29.) NeoForge's sync rests on NeoForge's own configuration tasks, and
 # the kernel's whole part in it is wiring NeoForge's internal @EventBusSubscriber classes (KernelEventSubscribers.
 # registerNeoForgeInternal). Unwiring just net.neoforged.neoforge.network.ConfigurationInitialization was measured too:
 # it is not a clean control, because NeoForge's two halves are coupled -- the task that collects the configs never
@@ -54,8 +49,17 @@
 # FMLEnvironment checks (published before Mixin, read back as built, dist decided by the kernel): those lines print on
 # every boot until Stage 4 deletes the carrier; only the canary's own dist read-back went with the canary. FallingTree stays on both ends: it is a
 # universal jar, and with its MinecraftForge half set aside it now loads through its NeoForge half, which this gate
-# asserts. The -Dforbric.forgeHandshake=off control below took out MinecraftForge's handshake only; with nothing
-# MinecraftForge-shaped left on the wire it has no check left to turn red.
+# asserts.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The MinecraftForge carrier is off the stage, so the lines
+# Stage 3 kept "until Stage 4 deletes the carrier" have no producer any more: the seeded traditional-Forge LoadingModList,
+# its publication before Mixin, the LazyInit rewrite, FMLEnvironment's dist decided by the kernel, and MinecraftForge's
+# own CLIENT configs -- their positive checks went, and with them the absences that only read those lines (D34). So did
+# the absences that named MinecraftForge's dispatcher, channel declaration and login rejection and the channel-list
+# mismatch: nothing in the game base, the NeoForge carrier, the vanilla client, FallingTree, the canary or the kernel
+# prints any of those strings (0 producers measured on the genuine stage), as did the registry-sync failure strings, so
+# an absence of them proves nothing. NeoForge's half, the join, the encode/decode and configuration-task absences and
+# the clean leave are unchanged. The file keeps its name until Stage 6 (D4).
 #
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
 # GATE-PARALLEL: rundirs=fhs-server,fhs-client mem=3500
@@ -65,6 +69,8 @@ set -uo pipefail
 PORT="${M16_PORT:-25604}"
 SRV="$KERNEL/run/fhs-server"
 CLI="$KERNEL/run/fhs-client"
+refuse_shared_rundir "$SRV"
+refuse_shared_rundir "$CLI"
 SLOG="$BUILD/gate-m16-server.log"
 CLOG="$BUILD/gate-m16-client.log"
 mkdir -p "$BUILD"
@@ -163,30 +169,6 @@ check "client finished configuring"   "ClientSmoke\] joined world via quick-play
 check_absent "nothing was refused on the server" "\[Forbric/Unsupported\] refusing" "$SLOG"
 check_absent "nothing was refused on the client" "\[Forbric/Unsupported\] refusing" "$CLOG"
 
-step "MinecraftForge's loading list and FMLEnvironment are still published early, on both ends (must PASS)"
-# These run with zero MinecraftForge mods: the carrier's LoadingModList and FMLEnvironment are read by its own plumbing
-# on every boot, and both are one-shot class initializers. Whoever touches LoadingModList before the seed used to NPE
-# inside it and leave the class permanently erroneous; FMLEnvironment caches dist into a static final decided by the
-# first toucher, and Mixin constructs every guest config plugin before the kernel's main seeding pass. Until Stage 4
-# deletes the carrier these are kernel rewrites that must keep landing.
-check "the kernel seeded MinecraftForge's loading list for real" "Seed\] seeded traditional-Forge LoadingModList with [1-9]" "$SLOG"
-check "the list exists before Mixin starts (server)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$SLOG"
-check "the list exists before Mixin starts (client)" "ForgeList\] published MinecraftForge's LoadingModList BEFORE Mixin starts — [1-9]" "$CLOG"
-check_absent "and not late, from the mod-loading window (server)" "ForgeList\] .*published LATE" "$SLOG"
-check_absent "and not late, from the mod-loading window (client)" "ForgeList\] .*published LATE" "$CLOG"
-check "the lazy holder no longer reads temp (server)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$SLOG"
-check "the lazy holder no longer reads temp (client)" "ForgeList\] .*LazyInit now builds MinecraftForge's LoadingModList from the kernel's published list" "$CLOG"
-check_absent "the list reads back as the kernel built it (server)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$SLOG"
-check_absent "the list reads back as the kernel built it (client)" "ForgeList\] .*(UNREADABLE|but the kernel built)" "$CLOG"
-# The value, positively, so the absences below cannot pass on a boot that never decided it.
-check "the kernel decided FMLEnvironment's dist (server)" "Seed\] MinecraftForge FMLEnvironment decided here: dist=DEDICATED_SERVER" "$SLOG"
-check "the kernel decided FMLEnvironment's dist (client)" "Seed\] MinecraftForge FMLEnvironment decided here: dist=CLIENT" "$CLOG"
-check_absent "the kernel's own read-back agrees (server)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$SLOG"
-check_absent "the kernel's own read-back agrees (client)" "Seed\] MinecraftForge FMLEnvironment (is null|disagrees)" "$CLOG"
-# The carrier's own CLIENT config (MinecraftForge registers one with no mod aboard). Counted in CGAME, not CLOG: since
-# System.out was routed into log4j each print reaches CLOG twice.
-check "Forge CLIENT configs were applied" 'loaded MinecraftForge configs \(CLIENT\): applied [1-9][0-9]*, already loaded [0-9]+, failed 0 from ' "$CGAME"
-
 step "FallingTree, a universal jar, loads through its NeoForge half on both ends (must PASS)"
 # All three manifests, and MinecraftForge's half is set aside (Stage 3); NeoForge wins over Fabric by preference.
 check "server: its MinecraftForge half is set aside" "FallingTree-26\.2-25\.jar: its MinecraftForge half is set aside" "$SLOG"
@@ -233,13 +215,7 @@ step "nothing in that handshake failed (must be ABSENT)"
 check_absent "every payload encodes (server)"  "Failed to encode packet"                  "$SLOG"
 check_absent "every payload encodes (client)"  "Failed to encode packet"                  "$CLOG"
 check_absent "every payload decodes"  "Failed to decode packet|Failed decoding custom payload|Unknown custom packet" "$CLOG"
-check_absent "no Forge dispatch error (server)" "dispatcher threw|no MinecraftForge handler took" "$SLOG"
-check_absent "no Forge dispatch error (client)" "dispatcher threw|no MinecraftForge handler took" "$CLOG"
-check_absent "client declared its Forge channels" "could not declare MinecraftForge's channels" "$CLOG"
-check_absent "no Forge login rejection"   "Server is still starting|require Forge to be installed|mismatched mod channel list" "$SLOG"
-check_absent "no channel-list mismatch"   "mismatched mod channel list|Connection closed - mismatched"                        "$CLOG"
 check_absent "no configuration task failed" "Failed to start configuration task|Failed to tick configuration task|This should never be called" "$SLOG"
-check_absent "no registry-sync failure"   "Failed to synchronize registry data|Missing registry data for connection"          "$CLOG"
 
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"

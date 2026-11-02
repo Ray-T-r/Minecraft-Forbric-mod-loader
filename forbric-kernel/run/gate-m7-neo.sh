@@ -29,6 +29,7 @@ set -uo pipefail
 
 LOG="$BUILD/gate-m7-neo-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-neo-only"
+refuse_shared_rundir "$RUNDIR"
 DL="$RUN_OLD/downloads/neoforge-26.2"
 # Five PURE NeoForge distributions (neoforge.mods.toml only): an optimisation mod that mixins deep into blockstate
 # internals, a HUD/network mod, and three library layers that all resolve themselves through ModList.
@@ -74,11 +75,12 @@ BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 240
 
-step "the registries froze in the one order both carriers' freezeData() finish in (must PASS)"
-# MinecraftForge-first aborted NeoForge's GameData.freezeData at the first already-frozen registry
-# (bindAllTagsToEmpty → validateWrite throws): the THREW warning on every boot, no tag keys bound to empty, no
-# snapshot. NeoForge-first completes; MinecraftForge's pass afterwards early-returns on every plain registry. RED
-# with M7_EXTRA_JVM=-Dforbric.freezeNeoForgeFirst=off (the THREW line returns, the count line says MinecraftForge-first).
+step "the registries froze through NeoForge's freezeData(), which finished (must PASS)"
+# On the merged base two carriers' freezeData() passes ran and the order mattered: MinecraftForge-first aborted
+# NeoForge's GameData.freezeData at the first already-frozen registry (bindAllTagsToEmpty → validateWrite throws).
+# One carrier is left (Stage 4), so there is no order to choose and the -Dforbric.freezeNeoForgeFirst control is
+# retired (D29). What stays is the proof NeoForge's own pass ran to the end: no THREW line (the kernel's generic
+# "a method that is there and threw" warning) and the count line, whose wording is kept as it was (D32).
 check_absent "NeoForge's freezeData finished"  "GameData.freezeData\(\) THREW" "$LOG"
 check "registries frozen NeoForge-first"       "froze the registries NeoForge-first: [1-9][0-9]* registr(ies|y), [0-9]+ tag key" "$LOG"
 
@@ -113,7 +115,6 @@ check "a pure-NeoForge mod registered real content" "registered content: bookshe
 # changes nothing else in the breakdown. The number is a canary for "NeoForge still registers its own built-ins",
 # so it is pinned exactly and re-derived from the log when the carrier moves.
 check "NeoForge baseline intact (38)"      "registered content: neoforge: 38 entr" "$LOG"
-check "MinecraftForge baseline intact (10)" "registered content: forge: 10 entr" "$LOG"
 check_absent "no double-registration"      "Adding duplicate key" "$LOG"
 check_absent "no registry rollback"        "Rolling back to VANILLA state" "$LOG"
 
