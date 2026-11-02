@@ -19,6 +19,7 @@ set -uo pipefail
 LOG="$BUILD/gate-m24c-disabled.log"
 CONTROL="$BUILD/gate-m24c-control.log"
 RUNDIR="$KERNEL/run/server-disabled"
+refuse_shared_rundir "$RUNDIR"
 REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 PENDING="$RUNDIR/.forbric-kernel/crash-suspects.json"
 DISABLED="$RUNDIR/forbric-disabled.txt"

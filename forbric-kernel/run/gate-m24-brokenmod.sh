@@ -22,6 +22,7 @@ LOG="$BUILD/gate-m24-brokenmod.log"
 CONTROL="$BUILD/gate-m24-control.log"
 STRICT="$BUILD/gate-m24-strict.log"
 RUNDIR="$KERNEL/run/server-brokenmod"
+refuse_shared_rundir "$RUNDIR"
 REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 COMPAT="$RUNDIR/.forbric-kernel/compatibility-report.json"
 BROKEN="$KERNEL/run/canary/forbricbrokencanary.jar"
@@ -111,7 +112,7 @@ check "server reached Done"                   "Done \("                         
 # unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
 # is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
 # the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
-# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
+# finished — await_server is what fails a server that cannot finish. The alternation covers a base that
 # lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
 # and never the command's, so this pair must not be copied into a client gate.
 check "server ticked (the stop command ran)"  "Stopping the server|commands\.stop\.stopping" "$LOG"

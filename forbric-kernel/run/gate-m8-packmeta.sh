@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
-# M8 gate — a multiloader mod's pack.mcmeta must not delete its own resource pack on a tri-ecosystem instance.
+# M8 gate — a multiloader mod's pack.mcmeta must not delete its own resource pack on an instance that loads Fabric and NeoForge mods together.
 #
 # lithostitched and Terralith are FABRIC-ONLY builds whose pack.mcmeta ships both a fabric:overlays and a
 # neoforge:overlays section (one source tree, every platform's section in one file). On stock Fabric the NeoForge
-# section is never read. On Forbric all three parsers are live, so NeoForge's reads it, tries to resolve
+# section is never read. On Forbric both loaders' parsers are live, so NeoForge's reads it, tries to resolve
 # "lithostitched:breaks_seed_parity" in the neoforge:condition_codecs registry — where the Fabric build never
 # registered it — and throws. Pack.readPackMetadata catches Exception across its whole body and returns null, so
 # that ONE optional section silently dropped BOTH packs: lithostitched's template_list data never loaded,
@@ -33,6 +33,7 @@ set -uo pipefail
 
 LOG="$BUILD/gate-m8-packmeta-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-packmeta"
+refuse_shared_rundir "$RUNDIR"
 MODS="$KERNEL/run/client-kernel/mods"
 
 step "stage fabric-api + the two multiloader-mcmeta mods"
@@ -57,7 +58,7 @@ cat > "$RUNDIR/config/terralith.json" <<'JSON'
 JSON
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
-step "boot the merged base under the kernel (no compatibility flags)"
+step "boot the game base under the kernel (no compatibility flags)"
 : > "$LOG"
 ( stop_when_ready "$LOG" 60 ) | FORBRIC_JVM="${M8_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
@@ -72,7 +73,7 @@ check_absent "no pack metadata read failed"   "Failed to read pack .* metadata" 
 # fail-soft correctly never fires here. What is asserted instead is the mechanism that now handles it.
 check        "the unknown condition type was tolerated, not fatal" \
   "Forbric/Conditions\] resource condition 'terralith:config' is not in NeoForge" "$LOG"
-# A guest mixin's half-applied pair leaves a bare Object where the merged reader casts to Optional; unrepaired
+# A guest mixin's half-applied pair leaves a bare Object where NeoForge's reader casts to Optional; unrepaired
 # that is a ClassCastException and the server never starts. The conversion USED to be asserted to happen here,
 # but the only data files with fabric:load_conditions in this set sit under Terralith's condition-gated overlays,
 # which the overlay veto now keeps out unless their module is on — so the trigger is gone from this gate (the
@@ -102,7 +103,7 @@ check "server reached Done"                   "Done \(" "$LOG"
 # unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
 # is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
 # the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
-# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
+# finished — await_server is what fails a server that cannot finish. The alternation covers a base that
 # lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
 # and never the command's, so this pair must not be copied into a client gate.
 check "server ticked (the stop command ran)"  "Stopping the server|commands\.stop\.stopping" "$LOG"

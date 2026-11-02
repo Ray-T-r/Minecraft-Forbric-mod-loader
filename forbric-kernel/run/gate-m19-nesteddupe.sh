@@ -35,6 +35,7 @@ set -uo pipefail
 
 LOG="$BUILD/gate-m19-nesteddupe.log"
 RUNDIR="$KERNEL/run/server-nesteddupe"
+refuse_shared_rundir "$RUNDIR"
 FAB="$KERNEL/run/canary/forbricnestfab.jar"
 FORGE="$KERNEL/run/canary/forge-refused/forbricnestforge.jar"
 NEOPARENT="$KERNEL/run/canary/forbricnestneo.jar"
