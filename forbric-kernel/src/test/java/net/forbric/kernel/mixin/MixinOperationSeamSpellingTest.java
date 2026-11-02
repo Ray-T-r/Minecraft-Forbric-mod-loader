@@ -29,7 +29,7 @@ import net.forbric.kernel.classloading.ForbricClassLoader;
  * dotted owner, an owner prefix, whitespace or two spellings, and its target with whitespace, a dotted owner, and — where
  * vanilla's {@code Gui.extractRenderState} decides it — without the owner or the descriptor: each is carried to the
  * carrier's gateway exactly as the released spelling is. A shortened target that also selects another owner's or
- * overload's call natively, or any call left in the merged method, a target naming another owner, and a selector
+ * overload's call natively, or any call left in the carrier's method, a target naming another owner, and a selector
  * binding another method or two leave the mixin exactly as written.
  */
 @ResourceLock("system-properties")
@@ -37,7 +37,8 @@ class MixinOperationSeamSpellingTest {
 	private static final String GUI = "net/minecraft/client/gui/Gui";
 	private static final String HOST = "extractRenderState(Lnet/minecraft/client/DeltaTracker;ZZ)V";
 	private static final String SCREEN_DRAW = "Lnet/minecraft/client/gui/screens/Screen;extractRenderStateWithTooltipAndSubtitles(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V";
-	private static final String GATEWAY_DRAW = "Lnet/minecraft/client/gui/Gui;drawScreen(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V";
+	/** NeoForge's own gateway for the top screen draw ({@code Gui.extractRenderState} bci 249 on the genuine base): every case is the seam's registered-anchor branch. */
+	private static final String GATEWAY_DRAW = "Lnet/neoforged/neoforge/client/ClientHooks;extractScreen(Lnet/minecraft/client/gui/screens/Screen;Ljava/util/Stack;Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V";
 
 	private final List<ForbricClassLoader> loaders = new ArrayList<>();
 
@@ -142,7 +143,7 @@ class MixinOperationSeamSpellingTest {
 	}
 
 	/**
-	 * {@code draw} with the native ({@code nativeSide}) or merged {@code extractRenderState} crowded by
+	 * {@code draw} with the native ({@code nativeSide}) or carrier's {@code extractRenderState} crowded by
 	 * {@link PointRespelling#crowd}, which reads the point as released: crowd before respelling it.
 	 */
 	private static Draw crowded(Draw draw, boolean otherOwner, boolean nativeSide) {
@@ -154,7 +155,7 @@ class MixinOperationSeamSpellingTest {
 		return new Draw(draw.mixin(), draw.handler(), draw.merged(), (family, owner) -> family == Ecosystem.FABRIC && owner.equals(GUI) ? copy : natives.apply(family, owner));
 	}
 
-	/** fabric-api's screen mixin under other names, its screen-draw wrap, the merged Gui and the staged native classes. */
+	/** fabric-api's screen mixin under other names, its screen-draw wrap, NeoForge's Gui and the staged native classes. */
 	private static Draw draw() throws Exception {
 		ClassNode mixin = MixinCallbackSelectorSpellingTest.unrelatedNames(StagedFabricMixinFixture.mixin("fabric-screen-api-v1", "net/fabricmc/fabric/mixin/screen/GuiMixin"));
 		MixinStubRebind.noteEcosystem(mixin.name, Ecosystem.FABRIC);

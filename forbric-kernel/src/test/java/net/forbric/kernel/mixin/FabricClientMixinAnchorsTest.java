@@ -63,7 +63,9 @@ class FabricClientMixinAnchorsTest {
   return MixinOperationSeamTransport.adapt(mixin,name->name.equals(target.name)?target:CarpetMixinAdapterTest.target(name),NativeCallTestEvidence.staged(),loader);
  }
  private static final String SCREEN_DRAW="Lnet/minecraft/client/gui/screens/Screen;extractRenderStateWithTooltipAndSubtitles(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V";
- private static final String GATEWAY_DRAW="Lnet/minecraft/client/gui/Gui;drawScreen(Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V";
+ /** The gateway NeoForge's own Gui hands the top screen draw to ({@code extractRenderState} bci 249, javap of the genuine base).
+  * Every case here is the operation seam's branch with a registered anchor (the D36 screen-draw adaptation). */
+ private static final String GATEWAY_DRAW="Lnet/neoforged/neoforge/client/ClientHooks;extractScreen(Lnet/minecraft/client/gui/screens/Screen;Ljava/util/Stack;Lnet/minecraft/client/gui/GuiGraphicsExtractor;IIF)V";
  private static final String OPERATION="com/llamalad7/mixinextras/injector/wrapoperation/Operation";
  /** A mixin on Gui with one closed {@code (CallbackInfo)V} {@code @Inject} (or {@code kind}) at the screen draw, {@code shift} AFTER/BEFORE/none. */
  private static ClassNode drawHook(String name,String kind,String shift,net.forbric.api.Ecosystem owner){
@@ -92,20 +94,20 @@ class FabricClientMixinAnchorsTest {
   MixinStubRebind.forget();
  }
  @Test void unmatchedSignaturesMissingNativePointsAndAVanillaHostRemainUnchanged()throws Exception{
-  ClassNode merged=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",false),vanilla=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",true);
+  ClassNode carrier=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",false),vanilla=StagedFabricMixinFixture.game("net/minecraft/client/gui/Gui",true);
   // A wrap or a redirect replaces the call: its handler is shaped by the call, which NeoForge's is not.
   for(String kind:List.of("Lcom/llamalad7/mixinextras/injector/wrapoperation/WrapOperation;","Lorg/spongepowered/asm/mixin/injection/Redirect;")){
-   ClassNode mixin=drawHook("Wrap"+kind.length(),kind,null,net.forbric.api.Ecosystem.FABRIC);assertEquals(0,screenAdapt(mixin,merged),kind);
+   ClassNode mixin=drawHook("Wrap"+kind.length(),kind,null,net.forbric.api.Ecosystem.FABRIC);assertEquals(0,screenAdapt(mixin,carrier),kind);
    assertEquals(SCREEN_DRAW,MixinFit.value(StagedFabricMixinFixture.at(mixin,"hookScreenRender"),"target"));
   }
   // A NeoForge mod was written against NeoForge's call, and a mixin nobody owns moves nowhere.
   for(net.forbric.api.Ecosystem owner:Arrays.asList(net.forbric.api.Ecosystem.NEOFORGE,null)){
-   ClassNode mixin=drawHook("Owner"+owner,"Lorg/spongepowered/asm/mixin/injection/Inject;","AFTER",owner);assertEquals(0,screenAdapt(mixin,merged),String.valueOf(owner));
+   ClassNode mixin=drawHook("Owner"+owner,"Lorg/spongepowered/asm/mixin/injection/Inject;","AFTER",owner);assertEquals(0,screenAdapt(mixin,carrier),String.valueOf(owner));
   }
   // Where the host still makes vanilla's call the injector binds as written.
   assertEquals(0,screenAdapt(drawHook("Vanilla","Lorg/spongepowered/asm/mixin/injection/Inject;","AFTER",net.forbric.api.Ecosystem.FABRIC),vanilla));
   ClassNode off=drawHook("Off","Lorg/spongepowered/asm/mixin/injection/Inject;","AFTER",net.forbric.api.Ecosystem.FABRIC);System.setProperty(MixinOperationSeamTransport.PROPERTY,"off");
-  assertEquals(0,screenAdapt(off,merged));
+  assertEquals(0,screenAdapt(off,carrier));
   MixinStubRebind.forget();
  }
 
@@ -153,9 +155,9 @@ class FabricClientMixinAnchorsTest {
   for(int i=0;i<Type.getArgumentTypes(desc).length;i++)assertFalse(MixinFit.sugar(kept,i),"the retained body is no handler: no sugar is left for MixinExtras");
   MethodNode moved=named(mixin,m->m.name.endsWith("$invoke$scope")&&MixinFit.injectorOf(m)!=null);
   assertEquals(GATEWAY_DRAW,MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(moved)).getFirst(),"target"));
-  // Wrapper (this; Gui, canvas, x, y, partialTick; Operation; tracker, level, loaded): this, the host's three
-  // arguments, then the gateway's canvas (slot 2) and x (slot 3) — what the host hands the draw.
-  assertEquals(List.of(0,7,8,9,2,3),handedToTheBridge(moved));
+  // Wrapper (this; screen, layers, canvas, x, y, partialTick; Operation; tracker, level, loaded): this, the host's three
+  // arguments, then the gateway's canvas (slot 3) and x (slot 4) — what the host hands the draw.
+  assertEquals(List.of(0,8,9,10,3,4),handedToTheBridge(moved));
   MethodNode bridge=named(mixin,m->m.name.endsWith("$invoke")&&!m.name.endsWith("$scope"));
   assertEquals("("+HOST+CANVAS+"I"+OBJECTS+")Ljava/lang/Object;",bridge.desc);
   // The bridge (this; tracker, level, loaded, canvas, x; operation, arguments) passes canvas, x, then its own tracker.
@@ -192,9 +194,11 @@ class FabricClientMixinAnchorsTest {
  }
 
  /**
-  * A local the source handed the draw is still refused when the carrier hands the same draw something else in that
-  * place. The merged Gui passes NeoForge's real-time partial tick where vanilla passed the game-time one; a source that
-  * kept vanilla's in a local cannot have that local filled from the carrier's operand, while its canvas still can.
+  * A local the source handed the draw is carried when the carrier hands its gateway the same value, and refused when it
+  * hands something else in that place. NeoForge's Gui passes {@code getGameTimeDeltaTicks} to the gateway (bci 244), the
+  * value vanilla passes the draw, so a source that kept vanilla's partial tick in a local has it filled from the gateway's
+  * operand. A copy of NeoForge's Gui rewritten to pass {@code getRealtimeDeltaTicks} there instead (the operand
+  * difference the merged base had) refuses that local, while the canvas is still carried.
   */
  @Test void aLocalWhoseOperandTheCarrierComputesDifferentlyIsRefused()throws Exception{
   var staged=NativeCallTestEvidence.staged();ClassNode gui=StagedFabricMixinFixture.game(GUI,false),vanilla=new ClassNode();
@@ -206,17 +210,30 @@ class FabricClientMixinAnchorsTest {
   InsnList store=new InsnList();store.add(new VarInsnNode(Opcodes.FSTORE,slot));store.add(kept);store.add(new VarInsnNode(Opcodes.FLOAD,slot));host.instructions.insertBefore(draw,store);
   host.localVariables.add(new LocalVariableNode("partialTick","F",null,kept,end,slot));
   java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> natives=(family,owner)->family==net.forbric.api.Ecosystem.FABRIC&&owner.equals(GUI)?vanilla:staged.apply(family,owner);
-  ClassNode tick=painter("Ticked",HOST+CALLBACK+"F",null,null,null,null,local("name",List.of("partialTick")));
-  assertEquals(0,MixinOperationSeamTransport.adapt(tick,name->name.equals(GUI)?gui:CarpetMixinAdapterTest.target(name),natives,loader),"the carrier's partial tick is not the source's");
+  ClassNode same=painter("Ticked",HOST+CALLBACK+"F",null,null,null,null,local("name",List.of("partialTick")));
+  assertEquals(1,MixinOperationSeamTransport.adapt(same,name->name.equals(GUI)?gui:CarpetMixinAdapterTest.target(name),natives,loader),
+    "NeoForge's Gui hands its gateway the game-time partial tick vanilla hands the draw: the local is the gateway's operand");
+  // The same Gui, but the gateway's partial tick computed another way — the carrier's own code, as NeoForge's native
+  // class too, so the seam can still prove which operands the carrier changed.
+  ClassNode realtime=StagedFabricMixinFixture.game(GUI,false);
+  MethodNode carrierHost=named(realtime,m->m.name.equals("extractRenderState")&&m.desc.equals("("+HOST+")V"));
+  MethodInsnNode gateway=null;for(var i:carrierHost.instructions)if(i instanceof MethodInsnNode c&&(c.owner+";"+c.name+c.desc).equals(GATEWAY_DRAW.substring(1)))gateway=c;
+  assertNotNull(gateway);MethodInsnNode carrierTick=(MethodInsnNode)gateway.getPrevious();
+  assertEquals("getGameTimeDeltaTicks",carrierTick.name,"premise: the genuine gateway's partial tick");
+  carrierTick.name="getRealtimeDeltaTicks";
+  ClassNode realtimeNative=new ClassNode();realtime.accept(realtimeNative);
+  java.util.function.BiFunction<net.forbric.api.Ecosystem,String,ClassNode> realtimeNatives=(family,owner)->family==net.forbric.api.Ecosystem.NEOFORGE&&owner.equals(GUI)?realtimeNative:natives.apply(family,owner);
+  ClassNode tick=painter("TickedRealtime",HOST+CALLBACK+"F",null,null,null,null,local("name",List.of("partialTick")));
+  assertEquals(0,MixinOperationSeamTransport.adapt(tick,name->name.equals(GUI)?realtime:CarpetMixinAdapterTest.target(name),realtimeNatives,loader),"the carrier's partial tick is not the source's");
   ClassNode canvas=painter("Canvassed",HOST+CALLBACK+CANVAS,null,null,null,null,local("name",List.of("graphics")));
-  assertEquals(1,MixinOperationSeamTransport.adapt(canvas,name->name.equals(GUI)?gui:CarpetMixinAdapterTest.target(name),natives,loader),"the canvas still is");
+  assertEquals(1,MixinOperationSeamTransport.adapt(canvas,name->name.equals(GUI)?realtime:CarpetMixinAdapterTest.target(name),realtimeNatives,loader),"the canvas still is");
   MixinStubRebind.forget();
  }
 
  private static final java.nio.file.Path LIQUIDBOUNCE=java.nio.file.Path.of("../build/lb-vfp/jars/liquidbounce-9889fe2.jar");
  private static final java.nio.file.Path LIQUIDBOUNCE_RELEASE=java.nio.file.Path.of("../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar");
  /** Issue #59 on the released jars: their menu is drawn right after the screen with the draw's canvas, read through a
-  * {@code @Local}. That callback alone is carried to the merged Gui's gateway, with the canvas the host draws with. */
+  * {@code @Local}. That callback alone is carried to NeoForge's gateway, with the canvas the host draws with. */
  @Test void releasedLiquidBounceDrawsItsMenuWithTheCanvasTheGatewayDraws()throws Exception{liquidBounce(LIQUIDBOUNCE);}
  @Test void releasedLiquidBounceBuildDrawsItsMenuWithTheCanvasTheGatewayDraws()throws Exception{liquidBounce(LIQUIDBOUNCE_RELEASE);}
  private void liquidBounce(java.nio.file.Path jar)throws Exception{
@@ -233,7 +250,7 @@ class FabricClientMixinAnchorsTest {
   MethodNode moved=named(mixin,m->m.name.endsWith("$invoke$scope")&&MixinFit.injectorOf(m)!=null);
   assertEquals(List.of("extractRenderState("+HOST+")V"),MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(moved),"method")));
   assertEquals(GATEWAY_DRAW,MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(moved)).getFirst(),"target"));
-  assertEquals(List.of(0,7,8,9,2),handedToTheBridge(moved),"the host's arguments, then the canvas the host hands its gateway");
+  assertEquals(List.of(0,8,9,10,3),handedToTheBridge(moved),"the host's arguments, then the canvas the host hands its gateway");
   MethodNode bridge=named(mixin,m->m.name.endsWith("$invoke")&&!m.name.endsWith("$scope"));
   assertEquals("("+HOST+CANVAS+OBJECTS+")Ljava/lang/Object;",bridge.desc);assertEquals(List.of(4),handedToTheHandler(bridge,kept.name));
   List<String> after=new ArrayList<>();for(MethodNode m:mixin.methods)if(MixinFit.injectorOf(m)!=null&&m!=moved)after.add(m.name+m.desc+MixinFit.value(MixinFit.injectorOf(m),"method")+MixinFit.atNodes(MixinFit.injectorOf(m)).stream().map(a->MixinFit.value(a,"target")).toList());
