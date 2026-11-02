@@ -11,8 +11,24 @@ import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
 import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 @org.junit.jupiter.api.parallel.ResourceLock("system-properties")
+@org.junit.jupiter.api.parallel.ResourceLock("native-game-references")
 @org.junit.jupiter.api.extension.ExtendWith(net.forbric.kernel.mixin.VanillaLambdaReference.class)
 class InsertedLambdaArgumentShimTest {
+ interface Body{void run()throws Exception;}
+ /**
+  * {@code body} with the FABRIC reference a launch on the staged base has: the vanilla-reference sidecar, through the
+  * sources KernelBoot configures and a reader bound to a loader over the base and its carrier. The real-mod cases need
+  * it: NeoForge's base embeds no FABRIC index, so without it no reader knows vanilla's lambda shape.
+  */
+ private static void withTheLaunchReference(Body body)throws Exception{
+  List<Path> genuine=net.forbric.kernel.transform.ChainReferences.genuineJars();
+  NativeGameReferences.configure(TestFixtures.launchSources(genuine.get(0)));
+  java.net.URL[] urls=new java.net.URL[genuine.size()];for(int i=0;i<urls.length;i++)urls[i]=genuine.get(i).toUri().toURL();
+  try(var loader=new net.forbric.kernel.classloading.ForbricClassLoader(urls,InsertedLambdaArgumentShimTest.class.getClassLoader())){
+   NativeGameReferences.bind(loader);
+   body.run();
+  }finally{NativeGameReferences.bind(null);NativeGameReferences.configure(null);}
+ }
  private static final String OLD="(JLjava/lang/Object;Ljava/lang/Object;D)V",NEW="(JLjava/lang/Object;Ljava/lang/String;Ljava/lang/Object;D)V",CI="Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
  @AfterEach void reset(){System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}
  public static class Shell {
@@ -70,9 +86,13 @@ class InsertedLambdaArgumentShimTest {
   Path jar;try(var files=Files.list(Path.of("run/client-merged-pack/mods"))){jar=files.filter(p->p.getFileName().toString().contains("litematica")&&p.toString().endsWith(".jar")).findFirst().orElse(null);}
   TestFixtures.require(Fixture.THIRD_PARTY,jar!=null,"Litematica in the local merged mod pack");
   ClassNode mixin;try(ZipFile z=new ZipFile(jar.toFile())){mixin=MixinFit.parse(z.getInputStream(z.getEntry("fi/dy/masa/litematica/mixin/render/MixinLevelRenderer.class")).readAllBytes());}
+  MixinStubRebind.noteEcosystem(mixin.name,net.forbric.api.Ecosystem.FABRIC); // Litematica is a Fabric mod: its native class is vanilla's
   String owner="net/minecraft/client/renderer/LevelRenderer";ClassNode target=StagedFabricMixinFixture.game(owner,false);ClassNode finalTarget=target;
-  assertEquals(2,InsertedLambdaArgumentShim.adapt(mixin,n->finalTarget));
-  for(String suffix:List.of("Opaque","Translucent")){MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$litematica_renderMainSection_"+suffix);assertEquals(12,Type.getArgumentTypes(shim.desc).length);assertEquals("Lorg/joml/Matrix4fc;",Type.getArgumentTypes(shim.desc)[4].getDescriptor());new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,shim);assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"litematica_renderMainSection_"+suffix)));}
+  withTheLaunchReference(()->{
+   assertEquals(2,InsertedLambdaArgumentShim.adapt(mixin,n->finalTarget));
+   for(String suffix:List.of("Opaque","Translucent")){MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$litematica_renderMainSection_"+suffix);assertEquals(12,Type.getArgumentTypes(shim.desc).length);assertEquals("Lorg/joml/Matrix4fc;",Type.getArgumentTypes(shim.desc)[4].getDescriptor());new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,shim);assertNull(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin,"litematica_renderMainSection_"+suffix)));}
+  });
+  MixinStubRebind.forget();
  }
  @Test void existingOldBodyUnreferencedLambdaMissingAnchorAndWrongOrdinalRefuse()throws Exception{
   for(int mode=0;mode<4;mode++){ClassNode mixin=shell(),target=target();if(mode==0)target.methods.add(new MethodNode(Opcodes.ACC_PRIVATE|Opcodes.ACC_STATIC,"lambda$render$0",OLD,null,null));if(mode==1)target.methods.removeIf(m->m.name.equals("render"));if(mode==2)StagedFabricMixinFixture.method(target,"lambda$render$0").instructions.clear();if(mode==3){AnnotationNode at=StagedFabricMixinFixture.at(mixin,"capture");at.values.set(at.values.indexOf("ordinal")+1,1);}assertEquals(0,InsertedLambdaArgumentShim.adapt(mixin,n->target),"mode="+mode);}
@@ -124,21 +144,34 @@ class InsertedLambdaArgumentShimTest {
   try{assertEquals(MixinFit.Verdict.UNFIT,MixinFit.evaluate(StagedFabricMixinFixture.bytes(localsShell()),path->path.equals("probe/Target.class")?targetBytes:null).verdict(),"without the shim the vanilla-shaped selector resolves nothing");}
   finally{System.clearProperty(InsertedLambdaArgumentShim.PROPERTY);}
  }
+ /** Fusion's Fabric build, read where the sweep left it (no census pack walks this directory); its sha1, so another build cannot stand in. */
+ private static final Path FUSION=Path.of("build/sweep80-mac/v020-rounds/r3/mods/fusion-1.3.15a-fabric-mc26.2.jar");
+ private static final String FUSION_SHA1="e00012f22e80e609838fdd7c9d09f20db7f34d1b";
+ /**
+  * Fusion's SpriteResourceLoaderMixin, a Fabric mod's: its handler names vanilla's {@code lambda$create$0(Set, Identifier,
+  * Resource)}, which NeoForge's base has with a {@code SpriteContentsConstructor} inserted. Vanilla's shape is known from
+  * the launch's FABRIC reference, and the handler is shimmed onto the live lambda.
+  */
  @Test void actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()throws Exception{
-  Path jar=Path.of("build/compat-inputs/sweep90/mods/fusion-1.3.15a-forge-mc26.2.jar");TestFixtures.require(Fixture.THIRD_PARTY,Files.isRegularFile(jar),"sweep pack absent");
+  Path jar=FUSION;TestFixtures.require(Fixture.THIRD_PARTY,Files.isRegularFile(jar),jar+" absent (link build/sweep80-mac from the main checkout)");
+  assertEquals(FUSION_SHA1,java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-1").digest(Files.readAllBytes(jar))),"fusion's Fabric build, not another");
   ClassNode mixin;try(ZipFile z=new ZipFile(jar.toFile())){mixin=MixinFit.parse(z.getInputStream(z.getEntry("com/supermartijn642/fusion/mixin/SpriteResourceLoaderMixin.class")).readAllBytes());}
+  MixinStubRebind.noteEcosystem(mixin.name,net.forbric.api.Ecosystem.FABRIC);
   String owner="net/minecraft/client/renderer/texture/atlas/SpriteResourceLoader";
   // The raw class, local variable table included: the fixture's parse drops it, and the live table is the proof.
-  Path merged=TestFixtures.stagedBase();TestFixtures.requireFile(Fixture.STAGED, merged,"actual game required");
-  byte[] raw;try(ZipFile z=new ZipFile(merged.toFile())){raw=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();}
+  Path base=TestFixtures.stagedBase();TestFixtures.requireFile(Fixture.STAGED, base,"actual game required");
+  byte[] raw;try(ZipFile z=new ZipFile(base.toFile())){raw=z.getInputStream(z.getEntry(owner+".class")).readAllBytes();}
   ClassNode target=new ClassNode();new ClassReader(raw).accept(target,ClassReader.SKIP_FRAMES);
-  MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?raw:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" vanished="+LambdaShapeEvidence.descriptors(target,"lambda$create$0"));
-  assertEquals(1,InsertedLambdaArgumentShim.adapt(mixin,n->target));
+  withTheLaunchReference(()->{
+   MixinFit.Result real=MixinFit.evaluate(StagedFabricMixinFixture.bytes(mixin),path->path.equals(owner+".class")?raw:null);assertEquals(MixinFit.Verdict.FIT,real.verdict(),real.unresolved()+" vanished="+LambdaShapeEvidence.descriptors(target,"lambda$create$0"));
+   assertEquals(1,InsertedLambdaArgumentShim.adapt(mixin,n->target));
+  });
   MethodNode shim=StagedFabricMixinFixture.method(mixin,"forbric$expanded$handleFusionTextures");
   assertEquals(8+1,Type.getArgumentTypes(shim.desc).length,"4 live arguments, the callback, 4 captured locals");
   assertTrue((mixin.access&Opcodes.ACC_INTERFACE)!=0,"fusion's mixin onto the SpriteResourceLoader interface is an interface");
   for(var i:shim.instructions)if(i instanceof MethodInsnNode c&&c.owner.equals(mixin.name))assertTrue(c.itf,"its call must be an InterfaceMethodref or the first reload throws");
   new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(mixin.name,shim);
+  MixinStubRebind.forget();
  }
  @Test void capturedLocalsWithoutATableOrOfAnotherTypeRefuse()throws Exception{
   assertEquals(0,InsertedLambdaArgumentShim.adapt(localsShell(),n->{try{return targetWithLocals(false,"Ljava/lang/String;");}catch(Exception e){throw new RuntimeException(e);}}),"no table, no proof");
