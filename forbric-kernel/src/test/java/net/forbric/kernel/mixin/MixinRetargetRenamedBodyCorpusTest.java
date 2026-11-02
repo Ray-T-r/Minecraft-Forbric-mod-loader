@@ -30,7 +30,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
  * R3 over the corpus its audit read: every mixin a mod's config lists, in every jar of the local compatibility packs and
- * sweeps and every jar nested in them, planned against the staged merged base as KernelGuestMixinAdapter plans it, each
+ * sweeps and every jar nested in them, planned against NeoForge's staged base as KernelGuestMixinAdapter plans it, each
  * with the ecosystem whose manifest declares its config. Pins exactly which injectors R3 moves and where, so a row of
  * {@code carrier-renames.txt} that the census would let in by mistake shows here as a move nobody reviewed, and the
  * audit's wrong targets are named: with {@code -Dforbric.mixinRetarget.renameCensus=off} (the bytes alone, as before
@@ -56,7 +56,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 
 	/**
 	 * Every move, as {@code mixin#handler -> renamed method}: each read against vanilla 26.2, both carriers' patched jars
-	 * and the merged base. The entity hooks follow NeoForge's {@code addEntityWithoutEvent} (the whole body); the anvil
+	 * and NeoForge's base. The entity hooks follow NeoForge's {@code addEntityWithoutEvent} (the whole body); the anvil
 	 * hooks its {@code createResultInternal}, Fabric API's HUD wraps its four layers and davids' preview rotation its
 	 * {@code renderEntityInInventoryFollowsAngle} (pieces, handlers that need only the call); the sleep hooks the lambda
 	 * that holds vanilla's checks (a piece the method hands the position in place, and whose lefts it returns: apoli's
@@ -85,17 +85,24 @@ class MixinRetargetRenamedBodyCorpusTest {
 			"net/fabricmc/fabric/mixin/entity/event/ServerPlayerMixin#onSetSpawnPoint -> lambda$startSleepInBed$0",
 			"net/fabricmc/fabric/mixin/entity/event/ServerPlayerMixin#redirectSleepDirection -> lambda$startSleepInBed$0",
 			"net/fabricmc/fabric/mixin/resource/ServerConfigurationPacketListenerImplMixin#filterKnownPacks -> runConfiguration");
-	/** The same, counted per jar: one handler moves in every jar (fabric-api build, bundle) that carries it. */
-	private static final int EXPECTED_IN_JARS = 52;
+	/*
+	 * Counted per jar, the moves are not pinned by number: the corpus lost jars since the count was taken (52 then, 44 at
+	 * C5 on NeoForge's base, with the lost random100 copies), and a number cannot say which jar stopped moving. Instead each
+	 * move is pinned to every jar that carries it: every unit listing the move's mixin with that handler as an injector
+	 * moves it, and no unit moves a handler it does not carry.
+	 */
 
 	/**
-	 * What R3 moved on the bytes alone and must not: the audit's four wrong targets (methods of one shape, each vanilla's
+	 * What R3 moved on the bytes alone and must not: the audit's wrong targets (methods of one shape, each vanilla's
 	 * own), a NeoForge mod's genuine rename (it was compiled against it), the piece move whose handler means something
 	 * else in a piece — an index it shares with the injectors left in the method — and Fabric API's tooltip injectors into
 	 * the renamed body nothing calls, which share that index too (they could not bind there as in vanilla's body).
+	 * The audit's fourth wrong target, goldenpotions' {@code CreativeModeTabs} hook into {@code lambda$bootstrap$24}, was a
+	 * merged-base lambda numbering: NeoForge's {@code CreativeModeTabs} numbers its {@code bootstrap} lambdas as vanilla's
+	 * (javap of both), so not even the bytes alone move it, and {@link #EXPECTED} pins that it does not move.
 	 */
 	private static final Set<String> REFUSED = Set.of(
-			"-> withShadowColor", "-> releaseUsingItem", "-> keyPressed", "-> lambda$bootstrap$24",
+			"-> withShadowColor", "-> releaseUsingItem", "-> keyPressed",
 			"net/fabricmc/fabric/mixin/item/ItemStackMixin#preAppendComponentTooltip -> addDetailsToTooltipComponents",
 			"taxfreelevels/", "net/fabricmc/fabric/mixin/item/ItemStackMixin#postTooltipsAdvanced -> addDetailsToTooltipTail");
 
@@ -128,7 +135,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 		}
 		Census census = new Census(resolver);
 		for (Path jar : jars) census.unit(jar.getFileName().toString(), Files.readAllBytes(jar), seen);
-		Set<String> moves = census.moves, inJars = census.inJars, bytesAlone = census.bytesAlone;
+		Set<String> moves = census.moves, inJars = census.inJars, bytesAlone = census.bytesAlone, carried = census.carried;
 		int mixins = census.mixins;
 		int units = census.units;
 		System.clearProperty(MixinRetarget.RENAME_CENSUS_PROPERTY);
@@ -143,7 +150,10 @@ class MixinRetargetRenamedBodyCorpusTest {
 		System.out.println(report);
 
 		assertEquals(EXPECTED, moves, report.toString());
-		assertEquals(EXPECTED_IN_JARS, inJars.size(), report.toString());
+		Set<String> movedInJars = new TreeSet<>();
+		for (String line : inJars) movedInJars.add(line.substring(0, line.lastIndexOf("  [")));
+		assertEquals(carried, movedInJars, "every jar that carries a pinned handler moves it, and only those\n" + report);
+		System.out.printf("R3: %d per-jar moves, each in a jar that carries its handler%n", movedInJars.size());
 		for (String refused : REFUSED) {
 			assertFalse(moves.stream().anyMatch(move -> move.contains(refused)), refused);
 			assertTrue(bytesAlone.stream().anyMatch(move -> move.contains(refused)), "control, on the bytes alone: " + refused);
@@ -170,7 +180,7 @@ class MixinRetargetRenamedBodyCorpusTest {
 	/** What R3 does to every listed mixin of each unit read: a jar, and every jar nested in it at any depth, once each. */
 	private static final class Census {
 		final Function<String, byte[]> resolver;
-		final Set<String> moves = new TreeSet<>(), inJars = new TreeSet<>(), bytesAlone = new TreeSet<>();
+		final Set<String> moves = new TreeSet<>(), inJars = new TreeSet<>(), bytesAlone = new TreeSet<>(), carried = new TreeSet<>();
 		int mixins, units;
 
 		Census(Function<String, byte[]> resolver) {
@@ -211,6 +221,12 @@ class MixinRetargetRenamedBodyCorpusTest {
 						continue;
 					}
 					mixins++;
+					// The pinned moves this unit carries: the move's mixin listed, declaring the handler as an injector.
+					for (String expected : EXPECTED) {
+						String handler = expected.substring(expected.indexOf('#') + 1, expected.indexOf(" -> "));
+						if (expected.startsWith(mixin.name + "#") && mixin.methods.stream()
+								.anyMatch(m -> m.name.equals(handler) && MixinFit.injectorOf(m) != null)) carried.add(unit + "  " + expected);
+					}
 					MixinStubRebind.noteEcosystem(mixin.name, config.getValue());
 					System.clearProperty(MixinRetarget.RENAME_CENSUS_PROPERTY);
 					for (String move : renamedBodyMoves(mixin, resolver)) {
