@@ -27,8 +27,10 @@
 # Generated probe jars and hash manifests; their sources live in /canary/.
 /run/canary/
 /run/energy-api
-/run/carry-on/
-/run/modmenu/
+# carry-on and modmenu: no trailing slash, every worktree links them to the main checkout's (until 2026-11-02 only the
+# machine-local .git/info/exclude ignored those links).
+/run/carry-on
+/run/modmenu
 # The NeoForge builds that replaced the gates' MinecraftForge jars in Stage 3 of dropping MinecraftForge (lib.sh
 # NEO_BUILDS). No trailing slash: a worktree links it to the main checkout's, and a pattern ending in / never matches
 # a symlink.
