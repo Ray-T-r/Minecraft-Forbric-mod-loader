@@ -11,7 +11,8 @@
 # Usage: ./repair-drift.sh <candidate-game-base.jar> [<carrier.jar> ...] [<vanilla-reference.jar>]
 #        ./repair-drift.sh                     # the currently staged build, as a baseline
 # The vanilla-reference sidecar goes last: the vanilla twins run before the repairs (as at a launch) and copy vanilla's
-# bodies from it; without it the repairs that stand on a copied body report as declined.
+# bodies from it; without it the census says so and the repairs that stand on a copied body report as declined. A twin
+# that stands down (a stale sidecar) is printed as HEDGED, and the all-clear line appears only when every claim landed.
 set -uo pipefail
 HERE="$(cd "$(dirname "$0")" && pwd)"
 KERNEL="$(cd "$HERE/../.." && pwd)"
@@ -35,5 +36,5 @@ JAR="$(find build/libs -name '*.jar' ! -name '*sources*' | head -1)"
 # The transformer narrates every repair it applies; that is its job at boot and noise here. The verdict lines
 # are the ones prefixed RepairDrift, and a script asserting on this greps THOSE.
 java -cp "$JAR:$CP" net.forbric.kernel.transform.RepairDriftCensus "$@" 2>&1 \
-  | grep -E 'RepairDrift|DECLINED|ABSENT'
+  | grep -E 'RepairDrift|DECLINED|HEDGED|ABSENT'
 exit "${PIPESTATUS[0]}"

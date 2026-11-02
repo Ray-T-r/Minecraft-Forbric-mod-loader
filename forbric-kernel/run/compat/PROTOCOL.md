@@ -53,7 +53,11 @@ ones to the jars in a mods directory that name them, so the list is ordered by h
 mods notice rather than by whatever order the byte-merge produced. `repair-drift.sh`
 replays the compat transformer's claim ledger against a CANDIDATE game build and names
 the repairs that would stop applying, which is the question a carrier bump asks and that
-nothing answered before a player did. `control-diff.sh` answers the question that has
+nothing answered before a player did. It runs the vanilla twins first, as a launch does, so a
+candidate run needs the vanilla-reference sidecar last in its jar list (with no arguments it uses
+the staged one); without it the census says so and reports the repairs that stand on a copied
+vanilla body as declined, and a twin that stands down on a stale sidecar prints as HEDGED, which
+withholds the all-clear. `control-diff.sh` answers the question that has
 been settled by argument until now — is this symptom Forbric's — by booting the same
 Fabric mods on a native Fabric server and on Forbric and saying which log it appears in:
 FORBRIC-ONLY, BOTH, NATIVE-ONLY or NEITHER, and INCONCLUSIVE when an arm did not start.

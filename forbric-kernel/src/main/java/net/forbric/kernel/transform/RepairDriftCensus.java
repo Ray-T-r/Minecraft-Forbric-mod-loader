@@ -50,32 +50,74 @@ import net.forbric.kernel.util.Caught;
  * <p>It is a report and not an assertion. A candidate build is by definition not the one the tree is calibrated
  * against, so a miss here is information for a decision, not a regression.
  *
- * <h2>Replayed as the launch runs it</h2>
+ * <h2>What of the launch's chain it replays</h2>
  *
  * <p>The compat transformer is not the first edit a class meets: {@code KernelBoot} registers
  * {@link VanillaMemberTwinInjector} before it, and several repairs wire up exactly the vanilla members the twins put
  * back (GuiRenderer's {@code pictureInPictureRenderers}, ParticleResources' int-keyed {@code providers}). Replayed
  * alone, those repairs decline on the very build the tree is calibrated against, for want of a member the launch
- * always has by then. So the replay runs the twins first, with vanilla's bodies read from the jars it is given: pass
- * the vanilla-reference sidecar among them (the file the installer stages beside the base), unless the candidate
- * base embeds its own index. Without one the twins that copy vanilla's bodies stand down (their anchors are hedges),
- * and a repair that stands on such a body declines by name: the picture-in-picture bridge, on GuiRenderer.
+ * always has by then. So the replay runs the twins first, in KernelBoot's order, and then the repairs. It does NOT
+ * replay the rest of the chain: the ACCESS phase and the other COREMOD transformers KernelBoot registers before the
+ * compat transformer ({@code CustomPayloadInteropSeam}, {@code FabricItemContractTransformer}, ...) are left out, and
+ * {@code ChainAnchorCensusStagedTest} is the census of every transformer's anchors over the full chain.
+ *
+ * <p>The twins read vanilla's bodies through a {@link NativeGameReferences} over the jars given here, not through the
+ * launch's configured sources ({@link NativeGameReferences#over}): pass the vanilla-reference sidecar among them (the
+ * file the installer stages beside the base), unless the candidate base embeds its own index. On the genuine base the
+ * two answer alike; a candidate that embeds an index of its own is read from that index here. Without a reference the
+ * replay says so, the twins that copy vanilla's bodies stand down, and a repair that stands on such a body declines by
+ * name: the picture-in-picture bridge, on GuiRenderer.
+ *
+ * <h2>Hedges count</h2>
+ *
+ * <p>The twins' anchors are hedges, and the ledger files a declined hedge apart from its misses. Here a twin that
+ * stands down is the case the tool exists for (a stale sidecar after a base bump: the vanilla members Fabric mods call
+ * would be missing at launch), so every hedge that did not land is printed by name, and the all-clear is printed only
+ * when every declared claim landed.
  */
 public final class RepairDriftCensus {
 
 	/** What a replay found. */
-	public record Drift(int declared, int hit, List<String> declined, List<String> absent) {
+	public record Drift(int declared, int hit, List<String> declined, List<String> hedged, List<String> absent,
+			boolean vanillaReference) {
 		public Drift {
 			declined = List.copyOf(declined);
+			hedged = List.copyOf(hedged);
 			absent = List.copyOf(absent);
 		}
 
 		/** The line a script greps: denominator first, as every census here does. */
 		public String summary() {
 			return "[Forbric/RepairDrift] " + declared + " claim(s) declared, " + hit + " landed, "
-					+ declined.size() + " declined, " + absent.size() + " had no target in these jars";
+					+ declined.size() + " declined, " + absent.size() + " had no target in these jars, "
+					+ hedged.size() + " hedge(s) stood down";
+		}
+
+		/** True only when every declared claim landed: a hedge that stood down is not a landing. */
+		public boolean everyClaimLanded() {
+			return hit == declared && declined.isEmpty() && hedged.isEmpty() && absent.isEmpty();
+		}
+
+		/** What {@link #main} prints: the summary, every claim that did not land by name, then the verdict. */
+		public List<String> lines() {
+			List<String> lines = new ArrayList<>();
+			lines.add(summary());
+			if (!vanillaReference) {
+				lines.add("[Forbric/RepairDrift] no vanilla reference among these jars: the vanilla twins that copy"
+						+ " vanilla's bodies stand down, and the repairs standing on those bodies read as declined");
+			}
+			for (String d : declined) lines.add("    DECLINED  " + d);
+			for (String h : hedged) lines.add("    HEDGED    " + h);
+			for (String a : absent) lines.add("    ABSENT    " + a);
+			if (everyClaimLanded()) {
+				lines.add("[Forbric/RepairDrift] every repair still lands — this build does not move any anchor.");
+			}
+			return lines;
 		}
 	}
+
+	/** Where a vanilla-reference sidecar, or a base that embeds its own, keeps the FABRIC index the twins read. */
+	static final String FABRIC_INDEX = "META-INF/forbric/native-reference/FABRIC/index.tsv";
 
 	private RepairDriftCensus() {
 	}
@@ -110,9 +152,12 @@ public final class RepairDriftCensus {
 		AnchorLedger.Report report = chain.ledger().report();
 		List<String> declined = new ArrayList<>();
 		report.misses().forEach(m -> declined.add(String.valueOf(m)));
+		List<String> hedged = new ArrayList<>();
+		report.hedged().forEach(h -> hedged.add(String.valueOf(h)));
 		List<String> absent = new ArrayList<>();
 		report.absent().forEach(a -> absent.add(String.valueOf(a)));
-		return new Drift(report.declared(), report.hit(), declined, absent);
+		return new Drift(report.declared(), report.hit(), declined, hedged, absent,
+				resourceOf(jars, FABRIC_INDEX) != null);
 	}
 
 	static byte[] bytesOf(List<Path> jars, String binaryName) {
@@ -145,12 +190,6 @@ public final class RepairDriftCensus {
 		}
 		List<Path> jars = new ArrayList<>();
 		for (String a : args) jars.add(Path.of(a));
-		Drift drift = replay(jars);
-		System.out.println(drift.summary());
-		for (String d : drift.declined()) System.out.println("    DECLINED  " + d);
-		for (String a : drift.absent()) System.out.println("    ABSENT    " + a);
-		if (drift.declined().isEmpty() && drift.absent().isEmpty()) {
-			System.out.println("[Forbric/RepairDrift] every repair still lands — this build does not move any anchor.");
-		}
+		for (String line : replay(jars).lines()) System.out.println(line);
 	}
 }
