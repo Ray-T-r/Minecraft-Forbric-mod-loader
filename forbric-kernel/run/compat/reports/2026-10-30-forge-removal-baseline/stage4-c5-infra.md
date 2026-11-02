@@ -10,6 +10,8 @@ Ports 46600-46607 (block 46600-46619). Logs: `s4/c5/infra/` (scratchpad).
 |---|---|---|
 | `cee74905` | 0b (H1) | Stop tracking run/installed, run/energy-api and run/.gate-downloads, since every worktree cut from the branch checked them out as symlinks looping into one worktree's own path |
 | `3500dc9b` | 0c (D39/D46) | Add refuse_shared_rundir to lib.sh, so a gate can refuse a rundir that is, or resolves into, a fixture every worktree shares |
+| `c365cf58` | review INFRA-1 | Make refuse_shared_rundir also refuse forge-swap at its own home, since a worktree cut before that fixture existed has no run/forge-swap link to find it by |
+| `28c97cb6` | review INFRA-3 | Drop the trailing slash from the run/carry-on and run/modmenu ignore patterns, since every worktree links them and a pattern ending in / never matches a link |
 
 0a, 0d and 0e change only untracked files (`.stage4/`, the scratchpad, `.stage/`).
 
@@ -25,7 +27,9 @@ Ports 46600-46607 (block 46600-46619). Logs: `s4/c5/infra/` (scratchpad).
 The file sha1 is not reproducible across builds (jar entries carry build times; the earlier 20:46 build of the same
 sources, 32930 B, was `e24767d1…` and was overwritten by this build). A rebuild compares by content: sha1 over the sorted
 non-directory entries (name + bytes) = `c001358616720d37c6a9d5ea020b279dd1e76022`. The stale jar has none of the probe
-strings; the fresh one has `CFG]` ×4, `SCAN]` ×2, `CLIENT]` ×17 (34 entries, incl. `ForbricNeoLiveClient*`,
+strings; in the fresh one `/CFG]` is in 2 entries (9 distinct strings), `/SCAN]` in 1 (8), `/CLIENT]` in 2 (27)
+(corrected after review INFRA-5: the first version gave `grep -c` counts over the binary stream, ×4/×2/×17, which count
+newline-split stretches, not entries or strings). The jar has 34 entries, incl. `ForbricNeoLiveClient*`,
 `ForbricNeoLiveMixinPlugin`, `NeoLiveScanned*`, the mixin config and the biome/structure-modifier data). The stale name
 does not end in `.jar`, so nothing that lists `neoforge-runtime/*.jar` picks it up.
 
@@ -147,6 +151,16 @@ at `s4/c5/infra/heavy.sh.orig`.
 
 gate-m1 on `.stage4` with the fresh canary (`GATE_PORT=46600`, through heavy.sh): **17 PASS / 0 FAIL**, line for line the
 same as C4 verify's `s4/c4/verify/gates/m1.out`.
+
+## Review of Phase 0 (`s4/c5/review-infra.md`) and what changed
+
+| finding | verdict | change | evidence (`s4/c5/infra/`) |
+|---|---|---|---|
+| INFRA-1 (MEDIUM) guard blind to forge-swap's home `~/Forbric-backups/forge-swap` | confirmed, fixed | `c365cf58`: lib.sh also checks `$FORBRIC_FORGE_SWAP` (default `$HOME/Forbric-backups/forge-swap`), lexically and by real path; +1 test; PROTOCOL.md; the bootstrap links `run/forge-swap` from the same variable | test fails on the old lib.sh (other 12 pass); `return 0` → 10/13 fail; 13/13 as written; compat python 158 OK (`review-compat-py.out`); Java lib.sh/PROTOCOL readers + compile tasks 93/0 (`review-java.out`); on this machine `refuse_shared_rundir $HOME/Forbric-backups/forge-swap/x` → FAIL, exit 3 |
+| INFRA-2 (LOW) client.lock read stale after `kill -9` of both wrappers while the command runs | confirmed, fixed (untracked `.stage/lock-lib.sh`) | owner line 5 names the enclosing lock (`<lockdir>\|<holder pid> <start>`), passed down in `LOCK_ENCLOSING` by the wrapper; a lock is also live while a live lock names it there; the command line is written on one line; the owner-less reap no longer prints `owner: No such file` | reviewer's `heavy-test6.sh`: old lib → second `client.sh` took the lock after 0 s with the command alive (`infra2-t6-oldlib.out`); new lib → it waited 5 s, until the command ended (`infra2-t6.out`); same through `client.sh bash -c "bash -c 'heavy.sh …'"` (`infra2-t9-deep.out`); reviewer's whole `heavy-tests.sh` unchanged otherwise (`infra2-heavy-tests.out`) |
+| INFRA-3 (LOW) `.stage4/` not ignored; carry-on/modmenu ignored only by `.git/info/exclude` | confirmed, fixed | `.stage4/` added to the shared `.git/info/exclude` (machine-local, like `.stage/`); `28c97cb6` drops the slash from `/run/carry-on/`, `/run/modmenu/` | `git check-ignore -v` names `forbric-kernel/.gitignore` for both links; `git status` here no longer lists `.stage4/` |
+| INFRA-4 (LOW) `s4/c5/controls/m14/slot.sh` is the old owner-less lock loop | confirmed, fixed (scratchpad) | reduced to `exec .stage/heavy.sh "$@"`; the old file kept as `slot.sh.orig` | `slot.sh bash -c 'exit 4'` on a scratch lock dir → `[heavy] slot 1`, rc 4 |
+| INFRA-5 (LOW) probe counts were binary `grep -c` | confirmed, fixed | §0a reworded | recount: 2/1/2 entries, 9/8/27 distinct strings (`strings -n 4`), the stale jar 0 |
 
 ## Open / for the lanes
 
