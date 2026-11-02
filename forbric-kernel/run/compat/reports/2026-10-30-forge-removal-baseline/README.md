@@ -204,6 +204,7 @@ world upgrade, C5c Forge → NeoForge build swap) and C6 (CI, release, installer
 | C1 | 00a5e585..73a4314c, 46 | 73a4314c | 237 files, +4,605 / −6,504 | `stage4-c1.md` |
 | C3 round 1 | 73a4314c..a3791619, 81 | a3791619 | 240 files, +7,443 / −13,893 | `stage4-c3-{events-hooks,cmt-structural,mixin-side,runtime-injectors,regress-server,regress-client}.md` |
 | C3 round 2 | a3791619..4201ec0c, 26 | 4201ec0c, then this record (docs only) | 94 files, +2,153 / −2,036 | `stage4-c3-gaps.md` and `stage4-c3-{useon-relocation,postmixin-fixups,cni-hedge,fluid-reaction}.md` |
+| C4 | daa94207..41fecd5f, 24 | 41fecd5f, then this record (docs only) | 415 files, +5,303 / −4,298 | `stage4-c4-census.md`, `stage4-c4-wording.md`, "C4 close" below |
 
 ### Unit suite at each tip (`-Pforbric.requireFixtures=all`, task `test`; C2 on the merged stage, C1/C3 on `.stage4`)
 
@@ -427,7 +428,8 @@ consumeClick key (#6); whether `LocalRanges`' one site could be written correctl
 
 ### Not done yet
 
-- **C4**: done (census lane, its review fixes, the wording lane and its review fixes, sections below). Left for Stage 6's
+- **C4**: done (census lane, its review fixes, the wording lane and its review fixes, the closing verify lane and the
+  critic's F1-F8 closed, sections below). Left for Stage 6's
   naming pass: the merged-base identifiers. No present-tense merged-base prose is left in `src/main` or `src/runtime`
   (`stage4-c4-wording-left.txt`).
 - **C5**: every gate line classified above, the 34 + 6 + 1 re-pins, the C1 gate list, gate-m49's retired switches, the
@@ -450,7 +452,7 @@ raw-vs-post-twin choice per table (D31) and the review of every new FABRIC row b
 | rows naming FORGE | 1,007 (+ native-only's `platform forge` line; corrected, see the review fixes) | 0 |
 | new FABRIC rows | | renames 10 (EntityType.trackDeltas), twins 2, uncalled 8 |
 | unit suite (`.stage4`) | 5,760 / 65 failed (C3 tip) | **5,755 / 45 failed**: 23 C4 rows fixed, 3 new (TwinCapturedLocalsWeaveTest, its fixture models the merged base's FORGE-only twin row; C5) |
-| gates | | m1 GREEN, m46 GREEN, m9 165/21 (same 21 C5 lines as at 5efabdc5), m29 refusal phases PASS (control phases: C5) |
+| gates | | m1 GREEN, m46 GREEN, m9 149/21 (first recorded as 165/21, see "C4 close"; same 21 C5 lines as at 5efabdc5), m29 refusal phases PASS (control phases: C5) |
 
 Behaviour visible to players: a refused MinecraftForge jar is still listed on the Mods screen under "MinecraftForge",
 but counted under no ecosystem ("N refused") and no longer makes NeoForge's own settings row appear; the boot lines
@@ -492,7 +494,7 @@ Gates at 38bed6fb (`.stage4`, ports 46412-46416; the tree was dirty only by this
 (boot line `0 Forge-family mod(s) in mods/, 0 nested jar(s)`, anchor line 65/99 landed), m46 GREEN, m52 GREEN (the hopper
 mixin still "is superseded" with the witness observed first), m29 refusal phases PASS en and zh including the new
 Forge-family = NeoForge check (1 = 1), its control phases fail on the retired capability lines exactly as for the lane
-(C5), m9 165 PASS / 21 FAIL, the same 21 lines as the lane's and verify-c3b's (C5), with both furnace rows RESOLVED in the
+(C5), m9 149 PASS / 21 FAIL (first recorded as 165; see "C4 close"), the same 21 lines as the lane's and verify-c3b's (C5), with both furnace rows RESOLVED in the
 98-mod client's report and no furnace injection warning. regress-gate (four phases, on the tree of d3ab1755, ports
 46400-46411): 4/4. gate-m26 not run (shared client-forge fixtures, no clone variable), gate-m17 not run (installer, C6).
 
@@ -513,7 +515,7 @@ identical to 38bed6fb's 42, same message prefixes; against the C3 tip's 65: 0 ne
 `stage4-c4-wording-open-failures.txt` (C5 35, C5 tool 1, P1 6).
 
 Gates at 9debd7b4 (`.stage4`, clean tree, ports 46420-46424; m9 on an APFS clone of `client-merged-pack` resolved by
-real path): m1 GREEN, m46 GREEN, m52 GREEN, m9 165 PASS / 21 FAIL, the same 21 lines as the census lane's (C5). The m9
+real path): m1 GREEN, m46 GREEN, m52 GREEN, m9 149 PASS / 21 FAIL (first recorded as 165; see "C4 close"), the same 21 lines as the census lane's (C5). The m9
 boot log carries no merged-base wording; its one "merged" line is Mixin merging a private method into its target.
 
 ### C4 as a whole: outcome, suite at the C4 tip, open items
@@ -528,8 +530,8 @@ owned by C5 (35 + 1 tool) or P1 (6). Of the C3 tip's 65 failures, the 24 owned b
 
 Open, handed on:
 - **C5**: the 36 C5 rows above; `MergedBaseCalleeSwapTest`'s second admitted swap; gate-m4 (reads the merged base), gate-m29's
-  control phases (retired capability lines), gate-m26 (shared `client-forge-*` fixtures, no clone variable) and gate-m17
-  (installer) not run on `.stage4`; regress-gate.py's four phases and fluid-head-gate.py into the gate list; skip
+  control phases (retired capability lines) and gate-m26 (shared `client-forge-*` fixtures, no clone variable) not run on
+  `.stage4` (gate-m17 did run, in the closing verify lane: 34 PASS / 7 FAIL, all 7 installer premises, C6; see "C4 close"); regress-gate.py's four phases and fluid-head-gate.py into the gate list; skip
   baselines (NativeOnlyMethodsCensusTest x7, MixinFitLivenessCensusStagedTest x5 must no longer skip); gate prose and
   test-tree messages that still say "merged base" (157 string literals in 84 test files, most "staged merged base" fixture
   reasons and messages; gate-m1/m10/m45 labels), wording only; the JoinedReturnExits and one-mods-button dedup
@@ -565,7 +567,7 @@ wording still false on NeoForge's base. Every finding was checked before it was 
 Suite at 0407d118 (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test --continue`): **5,762 tests, 0 skipped, 42 failed**, name for name and message prefix for message prefix identical to 9debd7b4's 42 (`s4/c4/wr-fix/suite.log`, `suite-results/`); `stage4-c4-wording-open-failures.txt` stands.
 Re-run at ae0092c0 (same command): 5,762 / 0 skipped / 42 failed, identical to 0407d118 name for name and message prefix (`s4/c4/wr-fix2/suite.log`, `suite.fails`).
 
-Gates: at 0407d118 (`.stage4`, ports 46430-46431, m9 on an APFS clone of `client-merged-pack` resolved by real path): m1 GREEN; m9 165 PASS / 21 FAIL, the same 21 lines as before (C5); `CAUGHT none`. The m9 and m1 boot logs carry the new KeyMapping, Shutdown, PiP and ModelFormats lines and none of the old wording (logs: `s4/c4/wr-fix/gates/`). The only "merged base" left in either gate's output is gate-m1's own labels (C5).
+Gates: at 0407d118 (`.stage4`, ports 46430-46431, m9 on an APFS clone of `client-merged-pack` resolved by real path): m1 GREEN; m9 149 PASS / 21 FAIL (first recorded as 165; see "C4 close"), the same 21 lines as before (C5); `CAUGHT none`. The m9 and m1 boot logs carry the new KeyMapping, Shutdown, PiP and ModelFormats lines and none of the old wording (logs: `s4/c4/wr-fix/gates/`). The only "merged base" left in either gate's output is gate-m1's own labels (C5).
 
 Found while proof-reading, not wording, handed on (owner decisions, evidence in `s4/c4/handoff.md`):
 - KernelModelFormats' string-loader arm: on NeoForge's base a `"loader"` id NeoForge did not register and no guest hook
@@ -574,6 +576,60 @@ Found while proof-reading, not wording, handed on (owner decisions, evidence in 
   pins that. Narrow the arm or accept the plain parse (owner), then re-pin the stand-in (C5).
 - KernelClientPacks: NeoForge's own `ClientModLoader.setupModResourcePacks` reaches `ResourcePackLoader` on this base;
   the kernel replaces that body. Whether NeoForge's source would now serve every jar is unmeasured (possible deletion).
-- KernelModFile's `-Dforbric.modFilePerJar`: the Stage 4 obligation to turn it on (stage2-measurements.md) is not done.
+- KernelModFile's `-Dforbric.modFilePerJar`: the Stage 4 obligation to turn it on (stage2-measurements.md) is not done;
+  owner now C5 (D42, see "C4 close").
 - gate-m18 expects two "answers for the other ecosystems" lines (one per Forge family); C5's rewrite of m18 decides the
   count, and ForeignModPresenceInjector's plural goes with it.
+
+### C4 close: the closing verify lane's results and the critic's F1-F8 (3796662e, fbad0271, 41fecd5f)
+
+**Verify lane at cb1aaf20** (nothing committed; `s4/c4/verify.md`). Not in this record before:
+- unit suite 5,762 / 0 skipped / 42 failed, name for name and message prefix identical to the wording lane's list;
+  against the C3 tip's 65: 0 new, 23 gone (all census-forge's), no row owned by C4;
+- transferTest 57 / 0 failed; installer `linkGateTest` 9 PASS and `run/test-link-gate.py` 9 PASS; python tools 52, run/compat
+  145, run/compat/mac 94 OK;
+- gates: m1 17/0, m44 9/0, m22 5/0 GREEN; m9 **149 PASS / 21 FAIL** (the C4 lanes' "165" counted every output line
+  containing "PASS", which includes 16 `==== … (must PASS) ====` step headers; the `[kernel] PASS` lines were 149 at C3 and
+  throughout C4, and the 21 FAIL lines never changed); m12 30/2 beside m9's client (one load flake), 31/1 alone; m45 17/2,
+  m54 9/2 (C5 reader), regress-gate 4 phases as designed, fluid-head-gate PASS. **gate-m17 ran for the first time in Stage
+  4: 34 PASS / 7 FAIL**; the installer installs, the profile resolves, the kernel boots from it, enters the world and
+  leaves cleanly; all 7 reds are installer-gate premises of the merged era (3 staged artifacts, not 4; forge-runtime and
+  merged-base dedup; `Forbric/Boot] merged base`; 2 cached artifacts, not 6, ×2; the forge-runtime stamp): C6;
+- boot ladder 5/5 exit 0, injection warnings identical or fewer than C3's (the furnace warning gone); the c4-neo client's
+  compatibility findings 24 → 21: lambdynlights' `OptionsMixin#onLoad` SUSPECTED left with the stale merged stub row
+  (genuine `Options.load()V` has its body, javap), and iris's `MixinSpriteContents`/`MixinBufferBuilder` now read "NeoForge's
+  patched 26.2 lacks [the target] too; native Mixin drops that injector without a word" because native-only-methods
+  carries the running base's digest;
+- zh locale: the suite under zh gives the same 5,762 / 42 names and messages; gates m1-zh and m44-zh identical to en; a
+  ladder step's load report is in Chinese (`Forbric 加载报告 …`), proving the locale took effect.
+
+**Critic** (`s4/c4/critic.md`, at cb1aaf20; reproduced the suite name for name): C4's core complete, no C4-owned failure,
+no present-tense false claim among the 95 "merged" hits left; eight findings, closed under D42:
+
+| finding | disposition | commit |
+|---|---|---|
+| F1: 25 `ForeignType` rows with no reader (CLIENT_HOOKS … CLIENT_FLUID_TYPE_EXTENSIONS) | deleted after `git grep -w` over every source set, tools, run/ and the installer found no reader; the two `values()` tests unchanged and green; 71 → 46 rows | 3796662e |
+| F2: the repo record lacked verify's results and said m9 165/21 | the m9 figure corrected in every place it appeared (here and in `stage4-c4-census.md`, `stage4-c4-wording.md`); verify's results above | this record |
+| F3: MixinRetargetRenamedBodyCorpusTest went from 11,987 to 11,598 listed mixins unremarked (digits folded) | expected: `MixinFitLivenessCensusStagedTest.configOwners`, which it shares, no longer lists `META-INF/mods.toml` or manifest-only MinecraftForge mixin configs (3d8364b4; those jars are refused); moves unchanged (44 / 19 / 28). Noted in its failure row so C5's re-pin does not chase it | this record |
+| F4: the new carrier-stubs moves and the 5 new vanilla-early-returns rows were not reviewed per row | reviewed with javap against both games and a scan of the Fabric mixin corpus: every row right, no defect, no table change; `Bootstrap.bootStrap`'s row does not conflict with the wrapStreams restoration (D38). Table in `stage4-c4-census.md` "Per-row review" | this record |
+| F5: RepairDriftCensusStagedTest red, "C5 (tool)" | a replay gap: `RepairDriftCensus.replay` ran the compat transformer without the vanilla twins KernelBoot registers first, so the PiP bridge and the particle-map view (which wire twin members) declined on the calibrated build. The replay now runs the twins first, vanilla bodies from the sidecar in its jar list (repair-drift.sh passes the staged one): 29 / 29 landed; the candidate red check still names exactly `wrapTheStreamsVanillaWraps`; new red check: without the sidecar `bridgeOrphanedPipRenderers` declines by name | fbad0271 |
+| F5, second half: would a Fabric `@At(INVOKE unsetRemoved)` in `ServerPlayer.teleport` miss after MergedBaseCalleeSwapTest's genuine swap? | it would (vanilla calls `unsetRemoved()V` at bci 187, NeoForge `revive()V` at bci 203), but no `@Mixin` class in the corpus (1,002 jars, 2,689 with nested) names `unsetRemoved` or `revive`, refmaps included; the 11 injectors on `teleport(TeleportTransition)` are HEAD/RETURN/TAIL, which a callee swap does not move. Evidence for C5's rewrite-or-explain | — |
+| F6: the `KernelModFile.perJar()` default flip had no owner | C5: its own commit with an on/off A/B on gate-m21, gate-m9 and client-merged-pack; if anything regresses it stays off with the reason recorded (D42) | — |
+| F7: hand-ons only in checks.md; KernelBoot's gate-m17 comment named C5 | VanillaDamageReadInjectorTest's `ForgeHooks.onLivingHurt` stand-in → C5; RegistryWalkProof's `net/minecraftforge/` platform prefix (RegistryWalkPlatformFieldTest) → Stage 6; DelegationPolicy's `net.minecraftforge.` prefix: plan keep. KernelBoot's comment names C6 | 41fecd5f |
+| F8: gate-m26's mixin-configs check and gate-m4's catalogue regex never ran live on `.stage4` | already handed to C5 (confirmed in `s4/c4/handoff.md`) | — |
+
+Suite at 41fecd5f (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test --continue`): **5,763 tests, 0 skipped, 41
+failed**. Name for name against cb1aaf20's 42: 0 new, 1 gone (RepairDriftCensusStagedTest's calibrated-build test, now
+passing, fbad0271), the 41 kept with identical messages over the first 240 characters, digits not folded. +1 test (the
+F5 red check). Every open failure with cause and owner: `stage4-c4-close-open-failures.txt` (C5 35, P1 6; none C4; it
+supersedes `stage4-c4-wording-open-failures.txt`). Gate-m1 at 41fecd5f (port 46470): 17 PASS / 0 FAIL, lines identical to
+verify's, anchor line `65 of 99 declared repair(s) landed; … 0 hedge(s)`, `CAUGHT none`. No other gate reads what F1 or F5
+changed (`ForeignType`'s deleted rows had no reader; repair-drift.sh is no gate's input); repair-drift.sh itself on
+`.stage4`: `29 claim(s) declared, 29 landed, 0 declined`.
+
+Still open after C4, by owner: C5 the 35 C5 rows, MergedBaseCalleeSwapTest's rewrite-or-explain, the perJar flip,
+VanillaDamageReadInjectorTest's stand-in, the corpus test's re-pin (count above), gate-m26/m4 live runs and every gate line
+classified above; C6 gate-m17's 7 installer premises, the skip TSVs (ci-unstaged.tsv got fbad0271's new row;
+ci-prepared-noforge.tsv is stale and not touched), docs (introduction.md:1502/1531 still name two deleted `ForeignType`
+rows in the history of the MinecraftForge breathe/drown bridges); Stage 6 RegistryWalkProof's prefix, `ForeignType` to
+plain constants, the merged-base identifiers.

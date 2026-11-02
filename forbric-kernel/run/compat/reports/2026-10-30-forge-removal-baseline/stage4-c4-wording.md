@@ -51,7 +51,7 @@ P1 6). An intermediate run (log strings changed, pins not yet) failed 63: the sa
 
 ## Gates
 
-m1, m46, m52 GREEN; m9 165 PASS / 21 FAIL, the same 21 lines as the census lane's (C5); at 9debd7b4, clean tree, ports 46420-46424, m9 on an APFS clone of `client-merged-pack`. Logs: `s4/c4/wording-reports/gates/`. The m9 boot log has no merged-base wording left; its one "merged" line is Mixin merging a private method.
+m1, m46, m52 GREEN; m9 149 PASS / 21 FAIL (first recorded as 165, which counted the 16 `(must PASS)` step headers), the same 21 lines as the census lane's (C5); at 9debd7b4, clean tree, ports 46420-46424, m9 on an APFS clone of `client-merged-pack`. Logs: `s4/c4/wording-reports/gates/`. The m9 boot log has no merged-base wording left; its one "merged" line is Mixin merging a private method.
 
 ## Open, with owner
 

@@ -77,6 +77,38 @@ the 7 twin members, `MultiPartModel/WeightedVariants#collectParts`, `UnbakedCubo
 gained 5 methods with a folded guard (ChestRenderer.getChestMaterial, LevelExtractor.extractBlockOutline,
 Bootstrap.bootStrap, PackDetector.detectPackResources, Spider.canBeAffected).
 
+### Per-row review: the new carrier-stubs moves and the 5 new vanilla-early-returns rows (C4 close, critic F4)
+
+Each row checked with javap against NeoForge's base (`.stage4/run/neoforge-patched/patched-mc-neoforge-26.2.jar`) and
+vanilla's class from the sidecar (`vanilla-reference-26.2.jar`, `META-INF/forbric/native-reference/FABRIC/…`), and
+against the Fabric mixin corpus (1,002 jars, 2,689 with nested ones: `build/compat-inputs`, `client-merged-pack`,
+`client-neo-pack`, `client-popular`, `sweep100-mac-network`, `purefabric-2026-10-03`, `random100-20260929`, fabric-api
+0.155.2; every `@Mixin` class naming one of the methods, its injector annotations read with `javap -v`). Evidence:
+`s4/c4/close/javap/`, `s4/c4/close/corpus/relevant.txt`. **Every row is right; none is a defect; no generator or table
+changed.**
+
+carrier-stubs (rows a Fabric mod's `method=` selector is moved along; new against the merged table):
+
+| row | javap | Fabric mods that depend on it |
+|---|---|---|
+| `ItemStack#hurtAndBreak(I, ServerLevel, ServerPlayer, Consumer)V -> (I, ServerLevel, LivingEntity, Consumer)V neo=stub` (new) | vanilla: the body (`processDurabilityChange`, `applyDamage` on the ServerPlayer overloads). NeoForge: a 9-byte forwarder to the LivingEntity overload, which holds the body and first asks `Item.damageItem`; NeoForge's own `hurtAndBreak(I, LivingEntity, EquipmentSlot)` calls the LivingEntity overload (vanilla calls the ServerPlayer one). `neo=stub`: NeoForge's own class keeps the same forwarder, so a NeoForge mod never moves | none selects it as `method=` in the corpus. fabric-item-api's `ItemStackMixin` wraps it as an INVOKE target inside `hurtAndBreak(I, LivingEntity, EquipmentSlot)`; that is D36's adaptation (b2b3e240, e3da7384: the wrap onto NeoForge's LivingEntity overload), not this row, and regress-gate's item-damage phase measures it (15/15, 13/15 with it off). debugify's `BlocksAttacksMixin` wraps `hurtAndBreak(I, LivingEntity, EquipmentSlot)`, a signature both games have |
+| `ItemStack#processDurabilityChange(I, ServerLevel, ServerPlayer)I -> (I, ServerLevel, LivingEntity)I neo=stub` (target corrected) | the merged row moved to MinecraftForge's `(…ServerPlayer, Z, Consumer)I`, which NeoForge's base does not have. NeoForge: the ServerPlayer signature forwards to the LivingEntity overload, which holds vanilla's body (`isDamageableItem`, `hasInfiniteMaterials`, `EnchantmentHelper.processDurabilityChange`) | none in the corpus (no `@Mixin` class names `processDurabilityChange` or `applyDamage`) |
+
+vanilla-early-returns (a vanilla early return that NeoForge's recompiled body sends to the last return, so a Fabric
+`@At("TAIL")` would also run on the path vanilla returned from; VanillaEarlyReturns gives the path its own return):
+
+| row | javap: vanilla return → NeoForge | Fabric mods that depend on it |
+|---|---|---|
+| `Bootstrap#bootStrap()V 901ae7f1=0` | vanilla `getstatic isBootstrapped; ifeq 7; return` (#0 at bci 6); NeoForge `ifne 99`, the tail. So on NeoForge's body a TAIL handler runs on every repeated `bootStrap()` call, not once | cristellib's `BootstrapMixin` and mixson's Fabric `BootstrapMixin` (`@At("TAIL")`) run once, as on Fabric (mixson's jar also carries a NeoForge `BootstrapMixin`; it applies only when the jar loads as a NeoForge mod, and MixinNativeTail then keeps a NeoForge mod's TAIL on the folded tail, where NeoForge runs it). fabric-registry-sync's `BootstrapMixin` (INVOKE `wrapStreams`, redirect of `BuiltInRegistries.bootStrap`) is not a TAIL. **No conflict with the wrapStreams restoration (D38)**: `wrapTheStreamsVanillaWraps` inserts `invokestatic wrapStreams` before the `getstatic bootstrapDuration` in the body, after the guard; the row's key is the guard's block (`getstatic isBootstrapped; ifne`), which the insertion does not touch, the census keys the body after the compat transformer (KernelBoot's order), and the split puts the guard's return before the tail, so `wrapStreams` still runs only on the first call, as in vanilla |
+| `ChestRenderer#getChestMaterial(BlockEntity, Z) ed8501d8=3` | vanilla returns TRAPPED at bci 121 (#3); NeoForge `getstatic TRAPPED; goto 127`, the tail | none in the corpus |
+| `LevelExtractor#extractBlockOutline(Camera, LevelRenderState)V ff86b7e6=0` | vanilla returns at 31 (#0, not a `BlockHitResult`) and 42 (#1, `MISS`); NeoForge sends both to the tail (`ifeq 303`, `if_acmpeq 303`). Only #0 is keyed: NeoForge's recompiler merged the `MISS` test into the block before it, so that edge's key does not occur in vanilla's body and it stays on the tail (ambiguity loses, as designed: today's behaviour, never a hidden path) | the corpus's injectors here are `@At("RETURN")` (fabric-rendering-v1's `LevelExtractorMixin`, balm's), which fire at every return either way, Axiom's HEAD and FIELD, and fabric-renderer-api's `hasMaterialFlag(I)Z` redirect (an INVOKE target; NeoForge calls the 4-arg overload, handled by MixinAtWidenedCall / MixinWrapOperationShim). No TAIL or RETURN ordinal: no corpus mod's behaviour changes with this row |
+| `PackDetector#detectPackResources(Path, List) b9139e45=5` | vanilla returns `createZipPack` at 170 (#5); NeoForge `goto 176`, the tail. (NeoForge also folds #3 into #4's return at 137; not the last return, so not this table's) | none in the corpus |
+| `Spider#canBeAffected(MobEffectInstance)Z 00287d54=0` | vanilla `ifeq 12; iconst_0; ireturn` (#0, poison); NeoForge `iconst_0; goto 19`, the tail | none on Spider in the corpus (PuzzlesLib and Apoli inject HEAD into `LivingEntity.canBeAffected`; fabric-entity-events wraps `LivingEntity.canBeAffected` and calls it from `forceAddEffect`) |
+
+Why these are new: the merged table, generated as exactly from the merged base, had no row for them, so the merged
+bodies did not send these paths to the tail (and, for the two stubs, the merged `ItemStack` kept vanilla's ServerPlayer
+bodies or moved to MinecraftForge's overloads); NeoForge's own patched game does.
+
 ## Pins re-pinned with the tables
 
 - `MergedBaseAnonymousDrift.CAPTURE_ONLY`: −`Options$3`, −`TagAppender$1`, −`ServerLoginPacketListenerImpl$1`,
@@ -132,8 +164,8 @@ Bootstrap.bootStrap, PackDetector.detectPackResources, Spider.canBeAffected).
    Language.loadFromJson / parseTranslations, ClientLanguage.appendFrom, LivingEntity.canGlide, SimpleContainer and
    BaseContainerBlockEntity setItem, asserted by CarrierStubCensusTest) and AxeItem `neo=overload-body`; uncalled
    `Hud#extractHotbarAndDecorations` and `Hud#extractPlayerHealth`; a FABRIC native-only row for every twin member. PASS.
-5. gate-m46 GREEN (positive and `-Dforbric.mixinStubRebind=off` control); gate-m9 165 PASS / 21 FAIL, the same 21 lines
-   as at 5efabdc5 (all C5), G1 and G4 PASS; gate-m1 GREEN with the sidecar line. gate-m17 not run. gate-m4 cannot run
+5. gate-m46 GREEN (positive and `-Dforbric.mixinStubRebind=off` control); gate-m9 149 PASS / 21 FAIL (first recorded as 165: that
+   count included the 16 `(must PASS)` step headers), the same 21 lines as at 5efabdc5 (all C5), G1 and G4 PASS; gate-m1 GREEN with the sidecar line. gate-m17 not run. gate-m4 cannot run
    on `.stage4` (reads the merged base, C5). gate-m29's refusal phases PASS (both changed checks), its control phases
    fail on retired capability-composition lines (C5). gate-m26 not run (its rundirs are the shared client-forge
    fixtures).
