@@ -4,7 +4,6 @@
 #                                                                         mixin config
 #   run/canary/forge-refused/forbricnestforge.jar    gate-m19             a MinecraftForge parent JarJar-nesting its own build
 #                                                                         of forbricnestlib
-#   run/canary/forge-refused/forbricforgecanary.jar  gate-m30             an @Mod.EventBusSubscriber waiting on a Forge event
 #   run/canary/forge-refused/forbricbreathforge.jar  gate-m57             a Forge liquid, bucket and breathe/drown listeners
 #
 # WHY STUBS. Forbric refuses a jar whose only usable loader half is MinecraftForge's (LoaderHalfJudge), and that refusal
@@ -15,7 +14,7 @@
 # net.minecraftforge types their sources name, with the real signatures, retention and element defaults — and against
 # canary/forge-refusal-stubs/patched-vanilla, the two constructors MinecraftForge patched into vanilla that the breath
 # canary calls. Neither is ever in a fixture jar (checked below), and every fixture keeps its own source and manifest:
-#   forbricnestforge, forbricforgecanary, forbricbreathforge  their sources in canary/nesteddupe, canary/attribution and
+#   forbricnestforge, forbricbreathforge                      their sources in canary/nesteddupe and
 #                                                             canary/forge-breath-drown, unchanged;
 #   forbriclive                                               canary/forge-refusal-stubs/forbriclive: the live canary's
 #                                                             mods.toml and forbriclive.mixins.json byte for byte, its
@@ -34,9 +33,10 @@
 # rename, because gates that run in parallel read them while another gate rebuilds them), so every caller checks the
 # exit code instead of only testing that the jar exists.
 #
-# Only forbricforgecanary (gate-m30's refusal boot) and forbricbreathforge (gate-m57's refused phase) use the event,
-# fluid and registry stand-ins and patched-vanilla; Stage 4 deletes those two phases (gate-m26 and gate-m29 cover the
-# refusal), and whoever deletes them removes their steps here and the stand-ins only they use.
+# Only forbricbreathforge (gate-m57's refused phase) uses the event, fluid and registry stand-ins and patched-vanilla.
+# Stage 4 deletes that phase and gate-m30's refusal boot (D32: gate-m26 and gate-m29 cover the refusal). gate-m30's
+# went in C5 with its fixture forbricforgecanary, its step here and the one stand-in only it used (BlockEvent); whoever
+# deletes gate-m57's phase removes forbricbreathforge's step here and the stand-ins only it uses.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
@@ -163,13 +163,6 @@ cp "$NEST/parentforge/metadata.json" "$WORK/forbricnestlib-forge.jar" "$WORK/nes
 (cd "$WORK/nestparent" && jar --create --file "$WORK/forbricnestforge.jar" .) || exit 1
 publish "$WORK/forbricnestforge.jar"
 
-step "forbricforgecanary"
-ATTR="$KERNEL/canary/attribution/forbricforgecanary"
-compile "$WORK/forgecanary" $(find "$ATTR/src" -name '*.java')
-mkdir -p "$WORK/forgecanary/META-INF" && cp "$ATTR/META-INF/mods.toml" "$WORK/forgecanary/META-INF/"
-(cd "$WORK/forgecanary" && jar --create --file "$WORK/forbricforgecanary.jar" .) || exit 1
-publish "$WORK/forbricforgecanary.jar"
-
 step "forbricbreathforge"
 BREATH="$KERNEL/canary/forge-breath-drown"
 # Its copy of the shared core under its own package, as build-breath-drown-canary.sh does for each family.
@@ -181,4 +174,4 @@ mkdir -p "$WORK/breath/META-INF" && cp "$BREATH/forge/META-INF/mods.toml" "$WORK
 publish "$WORK/forbricbreathforge.jar"
 
 step "result"
-echo "[kernel] ✅ built forbriclive.jar, forbricnestforge.jar, forbricforgecanary.jar, forbricbreathforge.jar in $OUT"
+echo "[kernel] ✅ built forbriclive.jar, forbricnestforge.jar, forbricbreathforge.jar in $OUT"

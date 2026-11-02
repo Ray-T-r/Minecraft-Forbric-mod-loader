@@ -1,19 +1,17 @@
 #!/usr/bin/env bash
 # M29 — a MinecraftForge-only mod is refused by name, and a dedicated server stops on the refusal.
 #
-# STAGE 3 OF DROPPING MinecraftForge (what changed and why). This gate proved MinecraftForge's capability system on
-# the merged base (AttachCapabilitiesEvent, getCapability on block entities / entities / levels / chunks / item stacks,
-# LazyOptional invalidation, "ForgeCaps" persistence) through the MinecraftForge canary forbriclive. Forbric now refuses
-# a jar whose only usable loader half is MinecraftForge's, so that canary never constructs and none of those probes can
-# run: the capability system is reachable only by a MinecraftForge mod, and no MinecraftForge mod loads. The canary's
-# probes, the attach/injectCapabilities/token/audit lines and the lifecycle counts went with it. What did NOT go is the
-# kernel's rewrite of vanilla classes: the capability composition into Entity, Level and BlockEntity, the ServerLevel and
-# LevelChunk initialisers, and the LivingEntity/furnace/bookshelf initialisers the merge dropped while keeping every
-# reader (the first mob death once crashed in invalidateCaps). Those run on every boot of the merged base with no
-# MinecraftForge mod at all, so the control boot (3) still asserts them, and boot 4 keeps the dispatch-off proof that the
-# roots get their inert composition and the loader never refuses to define one. The capability code stays in the kernel
-# and the merged base — Stage 3 deletes nothing — and goes in Stage 4.
-# The file keeps its name so the scheduler, its port block and every reference to it stay put; Stage 4 renames it.
+# STAGE 3 OF DROPPING MinecraftForge (what changed and why). This gate proved MinecraftForge's capability system
+# (AttachCapabilitiesEvent, getCapability, LazyOptional invalidation, "ForgeCaps" persistence) through the MinecraftForge
+# canary forbriclive. Forbric refuses a jar whose only usable loader half is MinecraftForge's, so that canary never
+# constructs and none of those probes can run; they went in Stage 3, and the gate became the server side of the refusal.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The game base is NeoForge's own patched game: its vanilla
+# classes carry no MinecraftForge capability edits, and the kernel's capability composition went with the carrier in C2
+# (no "[Forbric/Capabilities]" line has a producer any more). So the control boot's eight capability lines and their two
+# absences went (D34: an absence of a deleted line proves nothing), and so did boot 4, whose switch
+# -Dforbric.forgeCapabilities is retired (D29). Boot 3 stays as the control that the stop in boots 1 and 2 is the
+# refusal's and nothing else's. The file keeps its name until Stage 6 (D4).
 #
 # WHAT IT PROVES NOW. The same canary, plus a real multi-manifest MinecraftForge build, put in front of the user-visible
 # switch, on the server side, where the answer is a stop (a client asks in the game instead; that path is pinned by
@@ -30,11 +28,8 @@
 #      launch stops with the typed policy stop (exit 78) and never reaches Done; nothing of either jar ran.
 #   2. strict (zh): the same refusal under FORBRIC_JVM="-Duser.language=zh -Duser.country=CN" — the load report and the
 #      finding's detail are in Chinese (DialogLang), the evidence stays machine words.
-#   3. control: the NeoForge canary alone, strict — reaches Done with zero confirmed required findings, so the stop in 1
-#      and 2 is the refusal's and nothing else's; and the capability rewrites of vanilla classes still land, with no
-#      capability error signature and a clean save.
-#   4. control with -Dforbric.forgeCapabilities=off: the switch says it is off, the roots still get the inert
-#      composition their definition requires, and no class is refused for a missing ancestor composition.
+#   3. control: the NeoForge canary alone, strict — reaches Done with zero confirmed required findings and a clean save,
+#      so the stop in 1 and 2 is the refusal's and nothing else's.
 #
 # RED, measured 2026-10-30. M29_POLICY=continue (boot 1 only) turns exactly boot 1's four stop checks red — "the report
 # says strict decided" (CONTINUE), "strict stopped the launch with the typed policy stop" (exit 0), "and said so", "it
@@ -46,10 +41,10 @@ set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 RUNDIR="$KERNEL/run/server-forgecaps"
+refuse_shared_rundir "$RUNDIR"
 LOG="$BUILD/gate-m29-refusal.log"
 ZH_LOG="$BUILD/gate-m29-refusal-zh.log"
 CONTROL_LOG="$BUILD/gate-m29-control.log"
-OFF_LOG="$BUILD/gate-m29-control-off.log"
 # The live canary's manifest and @Mod, compiled against stand-ins for MinecraftForge (run/build-forge-refusal-fixtures.sh):
 # the refusal reads only those, and the stage needs no MinecraftForge carrier to build it.
 FORGE_CANARY="$KERNEL/run/canary/forge-refused/forbriclive.jar"
@@ -193,37 +188,12 @@ assert_eq "control: it stopped normally" "0" "$(cat "$CONTROL_LOG.exit" 2>/dev/n
 assert_eq "control: zero confirmed required findings" "0" "$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["confirmedRequired"])' "$CONTROL_LOG.json" 2>/dev/null || echo missing)"
 check_absent "control: nothing refused" "\[Forbric/Unsupported\] refusing" "$CONTROL_LOG"
 check "control: the NeoForge canary was constructed" "constructed @Mod forbricneolive" "$CONTROL_LOG"
-# The merged base's vanilla classes carry MinecraftForge's capability edits whether or not a Forge mod is installed;
-# these are the kernel's rewrites of them, which run on every boot until Stage 4 swaps the base. A merge that keeps both
-# sides' edits has the initialiser sites natively and the repair stands by; either line means the site has the code.
-check "control: the roots were composed" 'Capabilities\] composed MinecraftForge capabilities into net\.minecraft\.world\.entity\.Entity' "$CONTROL_LOG"
-check "control: block entities were composed" 'Capabilities\] composed MinecraftForge capabilities into net\.minecraft\.world\.level\.block\.entity\.BlockEntity' "$CONTROL_LOG"
-check "control: levels were composed" 'Capabilities\] composed MinecraftForge capabilities into net\.minecraft\.world\.level\.Level' "$CONTROL_LOG"
-check "control: ServerLevel gathers" 'Capabilities\] ServerLevel\.<init> (gathers MinecraftForge level capabilities again|already gathers MinecraftForge level capabilities in the merged base.s own bytes)' "$CONTROL_LOG"
-check "control: LevelChunk writes its provider" 'Capabilities\] LevelChunk\.<init> (writes Forge.s own capability provider again|already writes Forge.s own capability provider in the merged base.s own bytes)' "$CONTROL_LOG"
-check "control: the lost LivingEntity initializer was replayed" 'Capabilities\] net\.minecraft\.world\.entity\.LivingEntity\.<init> (assigns handlers again|already assigns handlers in the merged base.s own bytes)' "$CONTROL_LOG"
-check "control: the lost furnace initializer was replayed" 'Capabilities\] net\.minecraft\.world\.level\.block\.entity\.AbstractFurnaceBlockEntity\.<init> (assigns handlers again|already assigns handlers in the merged base.s own bytes)' "$CONTROL_LOG"
-check "control: the lost bookshelf initializer was replayed" 'Capabilities\] net\.minecraft\.world\.level\.block\.entity\.ChiseledBookShelfBlockEntity\.<init> (assigns itemHandler again|already assigns itemHandler in the merged base.s own bytes)' "$CONTROL_LOG"
-check_absent "control: no lost initializer left unrepaired" 'Capabilities\] .*(not repaired|initializer not replayed)' "$CONTROL_LOG"
-# Thrown exceptions print as java.lang.X: the kernel's own stub line mentions "AbstractMethodError" in prose.
-check_absent "control: no capability error signature" 'java\.lang\.(ExceptionInInitializerError|AbstractMethodError)|NoSuchMethodError.*Caps|NullPointerException.*capProvider|This will be implemented by a transformer|which the merged game does not carry' "$CONTROL_LOG"
 check "control: the server saved cleanly" 'All dimensions are saved' "$CONTROL_LOG"
-
-step "4. control with MinecraftForge capability dispatch off"
-# The switch turns off DISPATCH only, so the roots still get the (inert) composition. (MinecraftForge capabilities went in
-# Stage 4 C2; C5 rewrites this boot. Its "no root refused for a missing ancestor composition" absence went with
-# RequiredAncestorCompositions in C3, which was the only producer of that refusal.)
-boot "$OFF_LOG" strict "-Dforbric.forgeCapabilities=off" "$NEOLIVE"
-check "off: the kernel says it is off" 'forgeCapabilities=off — MinecraftForge capability dispatch is off' "$OFF_LOG"
-check "off: the roots still get the inert composition their definition requires" 'Capabilities\] gave net\.minecraft\.world\.entity\.Entity the composed MinecraftForge provider state .* with dispatch off' "$OFF_LOG"
-check "off: the server still reached Done" 'Done \(' "$OFF_LOG"
-check_absent "off: and the composition line of boot 3 is gone, so the switch reached it" \
-  'Capabilities\] composed MinecraftForge capabilities into net\.minecraft\.world\.entity\.Entity' "$OFF_LOG"
 
 step "M29 result"
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE GREEN — MinecraftForge-only jars are refused by name, in the player's language, and a strict server stops on them"
 else
-  echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE RED — see $LOG, $ZH_LOG, $CONTROL_LOG and $OFF_LOG"
+  echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE RED — see $LOG, $ZH_LOG and $CONTROL_LOG"
 fi
 exit "$FAIL"

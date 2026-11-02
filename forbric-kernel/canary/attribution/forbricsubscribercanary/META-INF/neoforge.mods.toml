@@ -7,8 +7,8 @@ modId="forbricsubscribercanary"
 version="1.0.0"
 displayName="Forbric Subscriber Canary"
 description='''
-One @EventBusSubscriber whose static initializer throws. The dead-event half moved to forbricforgecanary when
-NeoForge's last dead row, ItemTooltipEvent, was bridged.
+One @EventBusSubscriber whose static initializer throws. Its dead-event half went with DeadEventAudit when
+MinecraftForge left the stage (Stage 4).
 '''
 
 [[dependencies.forbricsubscribercanary]]

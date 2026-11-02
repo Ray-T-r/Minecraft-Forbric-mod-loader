@@ -16,27 +16,16 @@
 #   forbricsubscribercanary BrokenSubscriber (<clinit> throws)
 #   forbricabicanary        compiled against net.neoforged.neoforge.event.ForbricVanishedEvent, absent here; its
 #                           common-setup deferred task touches it (the bucket_of_frog shape)
-# and, in a boot of its own, the MinecraftForge fixture forbricforgecanary (FluidSourceWaiter, a listener for Forge's
-# CreateFluidSourceEvent), which Forbric now refuses.
 #
-# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Stage 3 refuses a MinecraftForge-only jar, and
-# forbricforgecanary is one: a dedicated server stops on the refusal under the default (strict) policy, so with it
-# staged the attribution boot never reached Done and almost every check went red. That fixture carried the gate's
-# dead-event row: its FluidSourceWaiter waited on Forge's CreateFluidSourceEvent, which the merged base never posts,
-# and DeadEventAudit named it ("the dead event named its listener" in the log, "the dead event" in load-report.txt,
-# both turned red by -Dforbric.deadEventAudit=off). The owner had decided (2026-10-30) that the row stays on this
-# fixture until Stage 4 deletes it together with DeadEventAudit, and declined moving it to a NeoForge canary. That
-# decision cannot hold through Stage 3: no loader loads any of a refused jar, so its listener is never registered
-# and there is nothing left for the audit to name. The row therefore goes in Stage 3 -- its two checks and
-# the -Dforbric.deadEventAudit control -- and it is NOT moved to NeoForge; DeadEventAudit itself still goes in Stage 4.
-# Nothing else here was the fixture's: the other three canaries (a Fabric mixin canary, two NeoForge canaries), their
-# checks and their controls carry the gate unchanged, the summary and the report now name exactly those three, and the
-# fixture leaves the boot that must reach Done. In its place a third boot stages it beside the healthy pair under
-# -Dforbric.compatibilityPolicy=continue and asserts the refusal: named in the log, counted in the load summary, and
-# reported in load-report.txt as not loaded because MinecraftForge is unsupported -- never as a mod that partly ran.
+# STAGES 3 AND 4 OF DROPPING MinecraftForge (what changed and why). Until Stage 3 a fourth fixture rode here, the
+# MinecraftForge-only forbricforgecanary, whose listener waited on an event the merged base never posted; DeadEventAudit
+# named it. Stage 3 refuses a MinecraftForge-only jar, so that listener could never register and the dead-event row went
+# then; DeadEventAudit itself went in Stage 4 C2 (D24). Stage 3 put the fixture into a boot of its own that asserted
+# the refusal; Stage 4 deletes that boot (D32/D51: gate-m26 and gate-m29 cover the refusal, on the client and the
+# server), and the fixture with it. The three canaries above, their checks and their controls carry the gate.
 #
-# RED demonstrations (re-measured 2026-10-30 after the change above: green 38/38; each switch fails exactly the checks
-# named — 7, 3, 2 — and none of the refusal boot's or the control's):
+# RED demonstrations (re-measured on the genuine base in Stage 4 C5 after the refusal boot went; each switch fails
+# exactly the checks named — 7, 3, 2 — and none of the control's):
 #   M30_EXTRA_JVM=-Dforbric.loadReportRewrite=off     the report is written once at load-complete, before the subscriber
 #                                                     registers and the deferred task runs and before the world creates
 #                                                     RegionFileStorage: the summary names two mods, not three, no
@@ -56,22 +45,18 @@ set -uo pipefail
 
 LOG="$BUILD/gate-m30-attribution.log"
 CONTROL="$BUILD/gate-m30-control.log"
-REFUSED="$BUILD/gate-m30-refused.log"
 RUNDIR="$KERNEL/run/server-attribution"
+refuse_shared_rundir "$RUNDIR"
 REPORT="$RUNDIR/.forbric-kernel/load-report.txt"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 NEO="$NEOLIVE"
 CANARIES="$KERNEL/run/canary/forbricmixincanary.jar $KERNEL/run/canary/forbricsubscribercanary.jar $KERNEL/run/canary/forbricabicanary.jar"
-FORGEFIXTURE="$KERNEL/run/canary/forge-refused/forbricforgecanary.jar"   # refused under Stage 3: only the refusal boot stages it
 mkdir -p "$BUILD"
 
-step "build three attribution canaries, the refused MinecraftForge fixture and two healthy ones"
+step "build three attribution canaries and two healthy ones"
 "$KERNEL/run/build-attribution-canaries.sh" >"$BUILD/gate-m30-canary.log" 2>&1
 "$KERNEL/run/build-fabric-canary.sh" >>"$BUILD/gate-m30-canary.log" 2>&1
-# Its exit code, not only the jar: a failed build leaves the previous jar in place.
-"$KERNEL/run/build-forge-refusal-fixtures.sh" >>"$BUILD/gate-m30-canary.log" 2>&1 \
-  || { echo "[kernel] FAIL canary build (see $BUILD/gate-m30-canary.log): build-forge-refusal-fixtures.sh"; exit 1; }
-for jar in $CANARIES "$FORGEFIXTURE" "$FABRIC" "$NEO"; do
+for jar in $CANARIES "$FABRIC" "$NEO"; do
   [ -f "$jar" ] || { echo "[kernel] FAIL missing canary: $jar (see $BUILD/gate-m30-canary.log)"; exit 1; }
 done
 
@@ -141,31 +126,6 @@ if [ -f "$REPORT" ]; then
   check_absent "and none says the mod is broken" "did not finish loading —|没有完成加载 —"                 "$REPORT"
 else
   echo "[kernel] FAIL no load report at $REPORT"; FAIL=1
-fi
-
-step "the MinecraftForge fixture is refused by name, and only refused (must PASS)"
-# Stage 3: the fixture that used to carry the dead-event row. Under the default policy a dedicated server stops on the
-# refusal (exit 78), so this boot asks to continue: the refusal must be named and reported, and the healthy pair must
-# still come up beside it.
-stage "$FORGEFIXTURE"
-boot "$REFUSED" "-Dforbric.compatibilityPolicy=continue"
-check "the fixture is refused by name" \
-  "\[Forbric/Unsupported\] refusing forbricforgecanary\.jar \(forbricforgecanary\): it is a MinecraftForge mod with no usable Fabric or NeoForge half" "$REFUSED"
-check "the server came up under the continue policy" "Done \("                     "$REFUSED"
-check "the healthy Fabric mod still initialised"   "\[ForbricFabricLive\] onInitialize" "$REFUSED"
-check "the healthy NeoForge mod still constructed" "\[ForbricNeoLive\]"                  "$REFUSED"
-check_absent "no crash report was written"         "Preparing crash report"              "$REFUSED"
-check "the load summary counts it, and only it" \
-  "Forbric/Load\] 1 mod\(s\) did not finish loading: forbricforgecanary —" "$REFUSED"
-if [ -f "$REPORT" ]; then
-  cp "$REPORT" "$BUILD/gate-m30-refused-report.txt"
-  # Written in the system language like the rows above; the English and Chinese wordings are accepted.
-  check "the report says why it was not loaded" \
-    "not loaded: Forbric no longer supports MinecraftForge|没有加载：Forbric 已不再支持 MinecraftForge" "$REPORT"
-  check "and names the jar"                      "^    forbricforgecanary\.jar$"                      "$REPORT"
-  check_absent "and never as a mod that partly ran" "partly did not run|有一部分没有跑起来"             "$REPORT"
-else
-  echo "[kernel] FAIL no load report for the refused fixture at $REPORT"; FAIL=1
 fi
 
 step "negative control: the same instance without the attribution canaries"
