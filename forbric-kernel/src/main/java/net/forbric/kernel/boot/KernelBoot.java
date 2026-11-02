@@ -1371,10 +1371,10 @@ public final class KernelBoot {
 
 		if (directives.isEmpty()) return null;
 
-		// "of them from the runtime carriers" is what gate-m21 greps; it stays until C5 changes the line and the gate together.
-		ForbricLog.info("[Forbric/AT] applying %d Forge-family access-transformer directive(s) from %d jar(s), %d of "
-				+ "them from the runtime carriers — the NeoForge carrier's file is what makes the game's own "
-				+ "members reachable to every NeoForge mod",
+		// gate-m21 greps "of them from the NeoForge carrier" with a non-zero count (one carrier since Stage 4 C5).
+		ForbricLog.info("[Forbric/AT] applying %d NeoForge access-transformer directive(s) from %d jar(s), %d of "
+				+ "them from the NeoForge carrier — its file is what makes the game's own members reachable to every "
+				+ "NeoForge mod",
 				directives.size(), jarsWithAts, carrierDirectives);
 		return new net.forbric.kernel.access.AccessTransformer(directives);
 	}

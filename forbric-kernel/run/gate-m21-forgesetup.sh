@@ -1,10 +1,8 @@
 #!/usr/bin/env bash
-# RED controls: M21_EXTRA_JVM='-Dforbric.forgeConditions=off' (I8: the dual-dialect element fails MinecraftForge's
-#               strict codec, and the registries do not load) and the condition funnel's controls further down; the
-#               NeoForge canary's own controls are in the M21_NEO_CONTRACTS block. Until Stage 3 of dropping
-#               MinecraftForge, '-Dforbric.forgeSpawnPlacements=off', '-Dforbric.forgeCreativeTabs=off' and
-#               '-Dforbric.forgeScanData=off' each turned MinecraftForge-canary checks red; those checks are gone (below).
-# Client counterpart: M26_EXTRA_JVM='-Dforbric.forgeClientInit=off'. Existing setup controls remain ordinary RED.
+# RED controls: the NeoForge canary's own, in the M21_NEO_CONTRACTS block (neoScanData, seededScanData, modDataPacks,
+#               modFilePerJar). The MinecraftForge recipes that stood here (forgeConditions, forgeConditionFunnel,
+#               forgeConditionContext, forgeSpawnPlacements, forgeCreativeTabs, forgeScanData, forgeReloadListeners,
+#               forgeClientInit) are retired switches (D29) and went with the checks they turned red (Stage 4 C5).
 # M21 gate — the mod-loading SETUP lifecycle reaches NeoForge mods, and what a listener defers actually runs.
 #
 # WHY THIS EXISTS (written when it covered both Forge families). The kernel posted FMLCommonSetupEvent,
@@ -32,29 +30,24 @@
 #
 # STAGE 3 OF DROPPING MinecraftForge (what changed and why). Until Stage 3 this gate staged one canary per Forge
 # family. Forbric now refuses a MinecraftForge-only jar and a dedicated server stops on the refusal, so the
-# MinecraftForge canary (forbriclive) is no longer staged and every check that read its lines is gone: the five setup
-# phases and their deferred work delivered to a traditional-Forge mod, its own container during its constructor, the
-# kernel's "posted ... to N traditional-Forge mod(s)" counts, its command, server lifecycle and per-world config, a
-# vanilla enum constant added through MinecraftForge's factory, the walk over MinecraftForge's ModFiles, its scan index
-# (and the kernel's MinecraftForge index count), CompoundTag.builder(), AddReloadListenerEvent, the forge:intersection
-# ingredient, and its spawn-placement and creative-tab registrations. No MinecraftForge mod can reach any of them now.
-# What stays: every NeoForge check (the M21_NEO_CONTRACTS block, written in Stage 2.5 as the twins of those, is
-# unchanged); the per-phase drain order, now read off the NeoForge canary's lines (the kernel drains NeoForge's queues
-# phase by phase too); the resource-condition funnel and its world-datapack probes, which judge data, not a mod --
-# forge:condition still appears in the data of universal jars that now load as NeoForge, and the funnel is kernel code
-# Stage 3 keeps; the runtime carriers' access transformers; and the plumbing lines that still print with no
-# MinecraftForge mod (the registration bridges installed, no phase failing to post). The absence checks for the old
-# H1/H2 link errors stay as absences, and so do two carrier lines that print with no MinecraftForge mod: the kernel's
-# index of the carrier's own annotations (ModList.getAllScanData() still answers from it) and the bridging of the
-# carrier's own server reload listeners into NeoForge's reload. The RED controls above that switch off a MinecraftForge
-# path for a mod (forgeSpawnPlacements, forgeCreativeTabs) have no check left to turn red; forgeScanData turns the index
-# check red again, and forgeConditions and the funnel's controls (below) still do.
+# MinecraftForge canary (forbriclive) is no longer staged and every check that read its lines went then.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The game base is NeoForge's own patched game and the
+# MinecraftForge carrier is off the stage. What Stage 3 kept "until Stage 4" went with it, each because nothing prints
+# its line any more (D34): the kernel's index of the carrier's annotations, the bridging of its server reload listeners,
+# the registration bridges' inventory, the "could not post traditional-Forge" absence, and the whole MinecraftForge
+# resource-condition funnel (KernelForgeConditions: the transform's markers, the leniency lines, the rejection count, the
+# recipe-condition context). The world-datapack probes stay, re-derived (D49): a forge:condition / forge:conditional is
+# MinecraftForge's dialect, which native NeoForge 26.2.0.93 does not judge, so each probe now expects native NeoForge's
+# own answer -- measured once on native NeoForge 26.2.0.93's dedicated server with this exact pack (native-controls'
+# NeoForge image, 2026-11-02, Stage 4 C5 record). The access-transformer line now says it is the NeoForge carrier's.
 # GATE-PARALLEL: rundirs=server-forgesetup mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 LOG="$BUILD/gate-m21-forgesetup.log"
 RUNDIR="$KERNEL/run/server-forgesetup"
+refuse_shared_rundir "$RUNDIR"
 NEO="$NEOLIVE"
 mkdir -p "$BUILD"
 
@@ -70,26 +63,23 @@ done
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
-# The conditions canary: a world datapack whose elements MinecraftForge's evaluator has to judge, each with a
-# console command below that asks the live registry whether it is there. Written here rather than shipped in a mod
-# jar so the gate needs nothing rebuilt; a world pack is loaded by vanilla's own repository, from no ecosystem.
+# The conditions canary: a world datapack written in MinecraftForge's condition dialect (and one NeoForge-dialect pair),
+# each element with a console command below that asks the live registry whether it is there. Written here rather than
+# shipped in a mod jar so the gate needs nothing rebuilt; a world pack is loaded by vanilla's own repository, from no
+# ecosystem. Native NeoForge 26.2.0.93 judges only neoforge:conditions, so (measured there, see the header):
 #   kept / dropped        forge:true / forge:false, one predicate (reloadable registry) and one configured feature
-#                         (datapack registry) each -- the two loader bodies the funnel is asked from
-#   variant               a forge:conditional array, the other half of ForgeHooks.readConditional: the first variant's
-#                         condition is false and it would answer "Test failed"; the second holds and answers "passed"
-#   dual_neo              neoforge:conditions [neoforge:always] beside forge:condition forge:false: NeoForge judges its
-#                         own conditions, so its verdict (keep) stands and MinecraftForge is not asked
+#                         (datapack registry) each: both kept, the forge: key is an unknown field
+#   variant               a forge:conditional array: not a predicate at all, so the file does not parse and is skipped
+#   dual_neo              neoforge:conditions [neoforge:always] beside forge:condition forge:false: kept (NeoForge's own)
 #   dual_forge            neoforge:conditions naming a type NeoForge does not have, beside forge:condition forge:false:
-#                         NeoForge cannot judge it, so MinecraftForge decides (drop)
-#   neo_owned             forge:condition naming NeoForge's own neoforge:always: another ecosystem's type, not vetoed
-#   unowned               a condition type no ecosystem here registers (the mod that would is absent): a data file is
-#                         skipped and a forge:conditional variant passed over, as MinecraftForge's SAFE_CODEC reads it as
-#                         false; a datapack-registry element loads, because there MinecraftForge's own answer would fail
-#                         the whole registry load
-#   recipes               MinecraftForge's recipe conditions read the tags this reload loads: a shapeless recipe guarded
-#                         by forge:not(forge:tag_empty forbricm21:full) is there, one guarded by the same over the pack's
-#                         empty tag is not. No command lists recipes without a player, so a crafter crafts each one into
-#                         the chest below it and the probe asks the chest -- the recipe manager's own answer.
+#                         native NeoForge fails to parse the file ("Unknown registry key ... neoforge:condition_codecs")
+#                         and skips it
+#   neo_owned             forge:condition naming NeoForge's own neoforge:always: kept
+#   unowned               a forge:condition type nobody registers: kept (data file and datapack-registry element alike);
+#                         its forge:conditional twin is skipped like variant
+#   recipes               shapeless recipes guarded by forge:not(forge:tag_empty ...) over a full and an empty tag: both
+#                         present. No command lists recipes without a player, so a crafter crafts each one into the
+#                         chest below it and the probe asks the chest -- the recipe manager's own answer.
 PACK="$RUNDIR/world/datapacks/forbricm21"
 mkdir -p "$PACK/data/forbricm21/predicate" "$PACK/data/forbricm21/worldgen/configured_feature" "$PACK/data/forbricm21/recipe" \
   "$PACK/data/forbricm21/tags/item"
@@ -198,23 +188,14 @@ step "the kernel says what it did, and says it about the family it did it to (mu
 check "the kernel posted common setup to the NeoForge mods" "posted FML common setup to [1-9][0-9]* NeoForge mod\(s\)" "$LOG"
 check "and the earliest phase, construct, reaches them" "posted FML construct to [1-9][0-9]* NeoForge mod\(s\)" "$LOG"
 
-# B5: each Forge family ships an access transformer that widens the GAME for every mod of that family, and only
-# mod jars' files were ever fed in. Where the merge kept one family's method body it kept that body's access too,
-# so the other family's widening was gone — MenuScreens.register, which every MinecraftForge GUI mod calls during
-# client setup, came out private. The carriers' files are now applied too.
-check "the runtime carriers' access transformers are applied" \
-  "Forbric/AT\] applying [0-9]+ Forge-family access-transformer directive\(s\) from [0-9]+ jar\(s\), [1-9][0-9]* of them from the runtime carriers" "$LOG"
-
-# The carrier's own scan index and reload listeners: kernel plumbing that runs on every boot until Stage 4.
-# RED with M21_EXTRA_JVM='-Dforbric.forgeScanData=off' (the index check).
-check "the kernel indexed the MinecraftForge carrier's annotations" \
-  'Forbric/Seed\] indexed [1-9][0-9]* annotation\(s\) across [1-9][0-9]* MinecraftForge jar\(s\)' "$LOG"
-check "the carrier's server reload listeners were bridged" \
-  'EventMux\] bridged [1-9][0-9]* MinecraftForge server reload listener' "$LOG"
+# B5: NeoForge's carrier ships an access transformer that widens the GAME for every NeoForge mod, and only mod jars'
+# files were ever fed in, so members NeoForge mods rely on (MenuScreens.register for every GUI mod) stayed private. The
+# carrier's file is applied too, and its directives must be among those counted.
+check "the NeoForge carrier's access transformer is applied" \
+  "Forbric/AT\] applying [0-9]+ NeoForge access-transformer directive\(s\) from [0-9]+ jar\(s\), [1-9][0-9]* of them from the NeoForge carrier" "$LOG"
 
 step "nothing quietly broken by the extra posts (must be ABSENT)"
 check_absent "no NoClassDefFound"        "NoClassDefFoundError"                          "$LOG"
-check_absent "no phase failed to post"   "could not post traditional-Forge"              "$LOG"
 check_absent "no deferred queue failure" "its deferred work did not run"                  "$LOG"
 check "server still reached Done"        "Done \("                                        "$LOG"
 
@@ -223,62 +204,30 @@ step "the old H1/H2 link errors stay gone (must be ABSENT)"
 check_absent "no NoSuchMethodError on CompoundTag.builder" 'NoSuchMethodError.*CompoundTag\.builder' "$LOG"
 check_absent "no NoSuchMethodError on getConditionContext" 'NoSuchMethodError.*getConditionContext' "$LOG"
 
-step "MinecraftForge's resource conditions decide real data again, and only where MinecraftForge would (I8)"
-# MinecraftForge judges forge:condition in its own ResourceManagerRegistryLoadTask.load (ConditionCodec.wrap) and
-# SimpleJsonResourceReloadListener.scanDirectory (ForgeHooks.readConditional, which also reads a forge:conditional
-# array). The merged bodies are NeoForge's and MinecraftForge's are uncalled orphans, so the kernel asks MinecraftForge
-# where every conditional decode funnels (ConditionalOps -> KernelForgeConditions.alsoAskForge). The canary pack staged
-# above asks the live registries whether each element survived; a "kept" check that cannot see a rejection proves
-# nothing, so every element here is one whose absence or presence a command reports.
-# The NeoForge canary also ships forbricneolive:dual_dialect, a biome_modifier whose forge:condition is of type
-# neoforge:true. No ecosystem registers that type (NeoForge's own true condition is neoforge:always), so on this
-# datapack-registry element MinecraftForge's own answer would fail the whole registry load; the element is kept instead
-# and the kernel names the type. No command can list biome modifiers, so its survival is held by the exact rejection
-# count: the five false elements of the canary pack, and nothing else. A type another ecosystem does register
-# (neo_owned's neoforge:always) is that ecosystem's to judge, so even on a data file it does not veto.
-# RED with M21_EXTRA_JVM=-Dforbric.forgeConditionFunnel=off: nothing asks MinecraftForge -- the transform line, the
-# funnel line and the leniency lines are gone, the dropped and unowned predicates, the dropped feature, dual_forge and
-# the empty-tag recipe are present, both variants fail to parse ("Can't find element"), and nothing is rejected (count
-# 0): thirteen checks, verified. dual_neo, neo_owned, the unowned feature and the kept elements stay.
-# RED with -Dforbric.forgeConditions=off: strict CODEC.parse error -> 'Failed to load registries due to errors' -> no Done.
-# RED with -Dforbric.forgeConditionContext=off: the recipe context line is gone (and "context=live" above), the full_tag
-# recipe is not there (the crafter crafts nothing), and it is a sixth rejection -- exactly those four checks, verified.
-# KernelForgeConditionFunnelTest greps the funnel's real output with the funnel pattern.
-check "the transform says MinecraftForge is asked at the funnel" "MergedBaseCompat\] forge:condition has an evaluator again" "$LOG"
-# The funnel judges only inside MinecraftForge's two readers -- the data-file scan and the datapack-registry loader -- so
-# both must be marked; an unmarked reader is a probe below that keeps what it should drop.
-check "the transform marks MinecraftForge's data-file reader" "MergedBaseCompat\] MinecraftForge's data-file reader is marked again: [1-9]" "$LOG"
-check "the transform marks MinecraftForge's datapack-registry reader" "MergedBaseCompat\] MinecraftForge's datapack-registry reader is marked again: [1-9]" "$LOG"
-check "and loadFromResource decodes the loads it announces as that reader" \
-  "MergedBaseCompat\] net/minecraft/resources/RegistryLoadTask\\\$PendingRegistration\.loadFromResource decodes a load ResourceManagerRegistryLoadTask announced" "$LOG"
-check "MinecraftForge judges forge:condition at the conditional-decode funnel" "Forbric/Conditions\] MinecraftForge's forge:condition is judged again" "$LOG"
-check "the MinecraftForge leniency fired on a real datapack element" \
-  "resource condition 'neoforge:true' on a datapack-registry element is registered by no ecosystem on this instance" "$LOG"
-check "and a type another ecosystem registers is left to it" \
-  "resource condition 'neoforge:always' is not in MinecraftForge's condition registry; another ecosystem on this instance registers it" "$LOG"
+step "conditions in MinecraftForge's dialect are data NeoForge does not judge, as on native NeoForge (D49)"
+# Every probe's expected answer is native NeoForge 26.2.0.93's, measured with this pack (header). A Forbric answer that
+# differs is a Forbric-only behaviour: dual_forge's is one today (Forbric's condition leniency keeps a file whose
+# neoforge:conditions names a type nobody registers; native skips it), recorded in the Stage 4 C5 record as an open
+# defect with its owner, not hidden by matching Forbric's answer here.
 check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
 check "the canary pack was loaded" "data pack file/forbricm21" "$LOG"
-check_probe "a true forge:condition keeps a predicate"        "predicate kept"     'Test passed'
-check_probe "a false forge:condition removes a predicate"     "predicate dropped"  "Can't find element 'forbricm21:dropped'"
-check_probe "the first forge:conditional variant that holds is the file" "predicate variant" 'Test passed'
-check_probe "a file NeoForge judges keeps NeoForge's verdict" "predicate dual_neo" 'Test passed'
-check_probe "MinecraftForge decides a file NeoForge cannot judge" "predicate dual_forge" "Can't find element 'forbricm21:dual_forge'"
+check_probe "a true forge:condition keeps a predicate"           "predicate kept"     'Test passed'
+check_probe "a false forge:condition is not judged: the predicate stays" "predicate dropped" 'Test passed'
+check_probe "a forge:conditional file does not parse and is skipped" "predicate variant" "Can't find element 'forbricm21:variant'"
+check_probe "a file NeoForge judges keeps NeoForge's verdict"    "predicate dual_neo" 'Test passed'
+check_probe "a file whose neoforge:conditions name an unknown type is skipped, as native NeoForge does" \
+  "predicate dual_forge" "Can't find element 'forbricm21:dual_forge'"
 check_probe "a true forge:condition keeps a datapack-registry element" "feature kept" 'Placed "forbricm21:kept"'
-check_probe "a false forge:condition removes a datapack-registry element" "feature dropped" 'There is no feature with type "forbricm21:dropped"'
-check_probe "a type NeoForge registers does not veto a data file" "predicate neo_owned" 'Test passed'
-check_probe "a type no ecosystem registers skips a data file, as MinecraftForge does" "predicate unowned" "Can't find element 'forbricm21:unowned'"
-check_probe "and passes over the forge:conditional variant it guards" "predicate variant_unowned" 'Test passed'
-check_probe "but does not lose a datapack-registry element" "feature unowned" 'Placed "forbricm21:unowned"'
-check "and the kernel names the type it ignored there" \
-  "resource condition 'forbricm21:registered_by_nobody' on a datapack-registry element is registered by no ecosystem on this instance" "$LOG"
-check_probe "a recipe whose tag has entries is there when forge:not(forge:tag_empty) guards it" "recipe full_tag" 'Test passed'
-check_probe "and one whose tag is empty is not" "recipe empty_tag" 'Test failed'
-check_exactly "exactly the canary pack's five false elements were rejected -- not the dual-dialect biome modifier" \
-  "\[Forbric/Conditions\] forge:condition(al)? said no to a data file" "$LOG" 5
-check "MinecraftForge's recipe conditions read this reload's tags" "MinecraftForge's recipe conditions read the tags this reload loads again" "$LOG"
+check_probe "a false forge:condition does not remove a datapack-registry element" "feature dropped" 'Placed "forbricm21:dropped"'
+check_probe "a forge:condition naming NeoForge's own type keeps a data file" "predicate neo_owned" 'Test passed'
+check_probe "a forge:condition type nobody registers keeps a data file"     "predicate unowned" 'Test passed'
+check_probe "and its forge:conditional twin is skipped like any forge:conditional" "predicate variant_unowned" "Can't find element 'forbricm21:variant_unowned'"
+check_probe "and keeps a datapack-registry element"          "feature unowned" 'Placed "forbricm21:unowned"'
+check_probe "a recipe guarded by forge:not(forge:tag_empty) over a full tag is there" "recipe full_tag" 'Test passed'
+check_probe "and so is one over an empty tag: the guard is not judged" "recipe empty_tag" 'Test passed'
 
 step "boot the same instance again with -Dforbric.modFilePerJar=on, the scan index's native shape"
-# The one-IModFile-per-jar shape is behind a switch that is OFF in Stage 2 of the MinecraftForge removal (the merged
+# The one-IModFile-per-jar shape is behind a switch that was OFF through Stage 2 of the MinecraftForge removal (the merged
 # base must not change behaviour, and what a mod walking the scan index meets changes with it); Stage 4 turns it on.
 # Every check above and below reads the default boot. This second boot exists for the two checks that count the
 # canary's jar in the index with the switch on, in the NeoForge block below. It needs nothing but Done: the canary
@@ -292,50 +241,35 @@ record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG_PERJAR" 130
 check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
 
-# M21_NEO_CONTRACTS_BEGIN — the shared contracts above, asked of the NeoForge canary as well.
+# M21_NEO_CONTRACTS_BEGIN — the contracts the kernel gives a NeoForge mod, read out of NeoForge's own API by forbricneolive.
 #
-# Everything this gate asserts of a MinecraftForge mod that is a contract the kernel gives BOTH families -- the scan
-# index, a server data loader, a mod finding its own container, a mixin config plugin, a per-world SERVER config --
-# was proved by the MinecraftForge canary alone. That canary goes when its family goes, and its checks with it; these
-# are what stays. Each is the MinecraftForge check's twin, read out of NeoForge's own API by forbricneolive.
+# The scan index, a server data loader, a mod finding its own container, a mixin config plugin, a per-world SERVER
+# config: until Stage 3 the MinecraftForge canary proved each for its family too; these are the NeoForge twins that stay.
 #
-# RED controls, measured:
+# RED controls (re-measured on the genuine base, Stage 4 C5 record, unless marked):
 #   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
 #                                                its own" lines, both shape lines and both member lines are gone,
 #                                                ModList's count line says 0 annotations and lists the jar 0 times --
-#                                                eleven checks go red: the nine NeoForge scan checks of the default boot
-#                                                and the per-jar boot's two, which the switch reaches too (measured
-#                                                2026-10-30) -- and the kernel names the switch ("NeoForge scan index
+#                                                @NEOSCAN@ -- and the kernel names the switch ("NeoForge scan index
 #                                                DISABLED (-Dforbric.neoScanData=off)")
 #   M21_PERJAR_JVM='-Dforbric.modFilePerJar=off' the second boot keeps one IModFile per MOD, the default: the canary's
 #                                                jar holds two @Mod classes, NeoForge's own distinct() keeps both
 #                                                entries, and the index lists the jar twice -- exactly the two per-jar
 #                                                checks go red ("lists the canary's jar once", 2 for 1; "found in one
-#                                                entry", exactly 1 got 2)
+#                                                entry", exactly 1 got 2) (measured 2026-10-30)
 #   M21_EXTRA_JVM='-Dforbric.modFilePerJar=on'   the switch on in the default boot too: exactly the two checks of the
-#                                                default go red (1 for 2; exactly 2 got 1) -- what would show the
-#                                                default flipped before Stage 4
+#                                                default go red (1 for 2; exactly 2 got 1) (measured 2026-10-30)
 #   M21_EXTRA_JVM='-Dforbric.seededScanData=off' the seeded LoadingModList's ModFile has no index again, so its reader
 #                                                throws FML's "Scanning of this mod file has not started yet." and the
-#                                                three LoadingModList lines are gone; ModList's reader is untouched
-#   M21_EXTRA_JVM='-Dforbric.forgeReloadListeners=off' turns the four MinecraftForge RELOAD checks red and leaves the
-#                                                three NeoForge ones green: with the kernel's reload routing off, the
-#                                                merged ReloadableServerResources calls NeoForge's own onResourceReload,
-#                                                so the NeoForge listener is not on the MinecraftForge bridge
-#   M21_EXTRA_JVM='-Dforbric.modDataPacks=off'   the kernel serves no Forge-family mod's own data/ (ModList.modFiles is
+#                                                LoadingModList lines are gone; ModList's reader is untouched: @SEEDED@
+#   M21_EXTRA_JVM='-Dforbric.modDataPacks=off'   the kernel serves no NeoForge mod's own data/ (ModList.modFiles is
 #                                                empty, so NeoForge's own pack finder finds none; KernelDataPacks is the
-#                                                only server of it): the canary's listener still runs, over 0 files, and
-#                                                "NeoForge: the registered data loader ran" goes red, with the four
-#                                                MinecraftForge checks that read its canary's data ("the Forge-registered
-#                                                data loader ran", the forge:intersection recipe and its count line, the
-#                                                leniency on a real element). Measured 2026-10-30 together with
-#                                                -Dforbric.modFilePerJar=on (whose two default checks went red too):
-#                                                exactly those 7 of 110 red, "DELIVERED" and "context=live" green
+#                                                only server of it): the canary's listener still runs, over 0 files --
+#                                                @DATAPACKS@
 # So of the three NeoForge RELOAD checks only the data loader has a red control. "DELIVERED" and "context=live" are
 # POSITIVE-ONLY: no kernel switch turns them red, because the event is posted by NeoForge's own EventHooks.onResourceReload
 # on NeoForge's own game bus, where the canary's constructor registers its listener, and its condition context is
-# NeoForge's own. The SELF, PLUGIN and SERVER-config checks have no kernel switch either, like their MinecraftForge twins
-# here.
+# NeoForge's own. The SELF, PLUGIN and SERVER-config checks have no kernel switch either.
 step "the NeoForge canary finds its OWN members through both readers of the scan index (must PASS)"
 for reader in ModList LoadingModList; do
   check "NeoForge ($reader): the index carries the mod's own annotation" \
@@ -357,7 +291,7 @@ check "NeoForge, per jar: the index lists the canary's jar once, as one IModFile
   "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 1 time\(s\)" "$LOG_PERJAR"
 check_exactly "NeoForge (ModList), per jar: its own annotation is found in one entry, not one per mod" \
   "ForbricNeoLive/SCAN\] ModList found its own @NeoLiveScanned" "$LOG_PERJAR" 1
-# and by default (Stage 2) one file per mod, exactly as the merged base has always had it: the jar twice, as two
+# and by default (until the Stage 4 flip) one file per mod, as the merged base always had it: the jar twice, as two
 # entries over the same index object. Stage 4 turns the switch on and moves these two to "1" (stage2-measurements.md).
 check "NeoForge, default: the index still lists the canary's jar once per mod (Stage 2 keeps the file per mod)" \
   "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 2 time\(s\)" "$LOG"
@@ -367,12 +301,10 @@ check_absent "NeoForge: neither reader failed" "ForbricNeoLive/SCAN\] (could not
 check_absent "NeoForge, per jar: neither reader failed" "ForbricNeoLive/SCAN\] (could not read|LoadingModList has no file)" "$LOG_PERJAR"
 
 step "a NeoForge mod's server data loader is registered and runs (must PASS)"
-# NeoForge's AddServerReloadListenersEvent, posted by NeoForge's own EventHooks.onResourceReload, which the merged
-# ReloadableServerResources calls as the genuine base does. The kernel redirects that one call to KernelForgeReload,
-# which calls NeoForge's hook first and MinecraftForge's after it; with that routing off the merged class calls
-# NeoForge's hook directly. So this is the NeoForge half of the route the MinecraftForge RELOAD checks above cover, and
-# the probe that says nothing is lost when the MinecraftForge half goes away. Only the file count has a red control
-# (-Dforbric.modDataPacks=off); the delivery and the context are positive-only (see the header).
+# NeoForge's AddServerReloadListenersEvent, posted by NeoForge's own EventHooks.onResourceReload, which the game base's
+# ReloadableServerResources calls itself (the kernel's routing of that call through MinecraftForge's hook went with the
+# carrier). Only the file count has a red control (-Dforbric.modDataPacks=off); the delivery and the context are
+# positive-only (see the header).
 check "NeoForge: the event was delivered"          '\[ForbricNeoLive/RELOAD\] AddServerReloadListenersEvent DELIVERED' "$LOG"
 check "NeoForge: the registered data loader ran"   '\[ForbricNeoLive/RELOAD\] reload listener ran over [1-9][0-9]* file' "$LOG"
 check "NeoForge: the event hands out a live condition context" '\[ForbricNeoLive/RELOAD\] context=live' "$LOG"
@@ -393,14 +325,10 @@ check "NeoForge: and its value was read from the loaded spec" \
   "ForbricNeoLive/CFG\] LOADING forbricneolive-server\.toml: greeting=default loaded=true" "$LOG"
 # M21_NEO_CONTRACTS_END
 
-# M21_REGISTRATION_ASSERTIONS_BEGIN — the Phase 1 A registration hooks; green since A8 landed the bridge inventory.
-# The MinecraftForge canary's spawn-placement and creative-tab rows went with it (header); the bridges are still installed.
-check "registration bridges report installed" 'all 2 REGISTRATION bridge\(s\) installed' "$LOG"
 step "M21 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M21 SETUP GATE GREEN — NeoForge mods receive every setup phase, resource conditions judge real data, and the carrier's plumbing still installs"
+  echo "[kernel] ✅ M21 SETUP GATE GREEN — NeoForge mods receive every setup phase, conditions are judged as native NeoForge judges them, and the scan index, reload and config contracts hold"
 else
   echo "[kernel] ❌ M21 GATE RED — run $LOG"
 fi
 exit "$FAIL"
-# M21_REGISTRATION_ASSERTIONS_END
