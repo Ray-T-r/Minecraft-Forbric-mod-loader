@@ -20,6 +20,11 @@
 # control's was added in Stage 2.5 for exactly this), and every Fabric<->NeoForge check, both directions and both
 # controls, is unchanged. The "Forge-family" wording in the kernel's lines below is the kernel's own (it counts the
 # NeoForge mods there) and is matched as before.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The MinecraftForge carrier is off the stage, so there is
+# one Forge-family ModList left, NeoForge's, and ForeignModPresenceInjector rewrites exactly one isLoaded: the check
+# that counted two lines ("both families' isLoaded") now asks for exactly one, in the injector's new wording, which says
+# whose mods it answers for (Fabric's) instead of "the other ecosystems'" (measured on the genuine base: one line).
 # GATE-PARALLEL: rundirs=server-presence mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -27,6 +32,7 @@ set -uo pipefail
 LOG="$BUILD/gate-m18-presence.log"
 CONTROL="$BUILD/gate-m18-control.log"
 RUNDIR="$KERNEL/run/server-presence"
+refuse_shared_rundir "$RUNDIR"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 NEO="$NEOLIVE"
 mkdir -p "$BUILD"
@@ -63,8 +69,8 @@ check "the NeoForge list carries the Fabric mods for presence" \
   "seeded NeoForge LoadingModList with [0-9]+ mod\(s\) \([0-9]+ Forge-family, [1-9][0-9]* Fabric for presence\)" "$LOG"
 check "the Fabric side carries the Forge-family mods" \
   "[1-9][0-9]* Forge-family mod\(s\) registered for presence only" "$LOG"
-check "both families' isLoaded gained the cross-ecosystem answer" \
-  "ModList.isLoaded now answers for the other ecosystems" "$LOG" 2
+check_exactly "NeoForge's isLoaded gained the Fabric answer, once" \
+  "net\.neoforged\.fml\.ModList\.isLoaded now answers for Fabric's mods too" "$LOG" 1
 
 step "and the mods themselves get the right answer (must PASS — this is the whole point)"
 # Asked through the three APIs a real mod actually uses: FabricLoader.isModLoaded, ModList.isLoaded (NeoForge's

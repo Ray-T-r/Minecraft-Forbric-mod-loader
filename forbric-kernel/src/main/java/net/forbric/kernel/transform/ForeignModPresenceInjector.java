@@ -32,9 +32,9 @@ import net.forbric.api.ModPresence;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Makes NeoForge's {@code ModList.isLoaded} answer for mods the OTHER ecosystem loaded.
+ * Makes NeoForge's {@code ModList.isLoaded} answer for mods the OTHER ecosystem, Fabric, loaded.
  *
- * <p>{@code isLoaded} is the presence check Forge-family mods gate their compatibility branches on, and it reads
+ * <p>{@code isLoaded} is the presence check NeoForge mods gate their compatibility branches on, and it reads
  * NeoForge's own {@code indexedMods}. In this instance that map can only ever hold NeoForge's mods, so a
  * NeoForge mod asking whether Sodium is installed is told no while a Fabric Sodium is running — and it then takes
  * the "no Sodium" branch, which is not a smaller feature but a wrong one. See {@code ModPresence} for why
@@ -102,8 +102,10 @@ public final class ForeignModPresenceInjector implements ClassTransformer {
 		}
 		if (returns == 0) return classBytes;
 
-		ForbricLog.info("[Forbric/Presence] %s.isLoaded now answers for the other ecosystems' mods too — it reads "
-				+ "only its own family's indexedMods, so a mod gating a compatibility branch on \"is Sodium here\" "
+		// One Forge-family ModList is left since MinecraftForge went (Stage 4), so the line names the one ecosystem it
+		// answers for; gate-m18 asserts it exactly once.
+		ForbricLog.info("[Forbric/Presence] %s.isLoaded now answers for Fabric's mods too — it reads only "
+				+ "NeoForge's own indexedMods, so a NeoForge mod gating a compatibility branch on \"is Sodium here\" "
 				+ "was told no next to a live Fabric Sodium and took the wrong branch in silence", className);
 
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
