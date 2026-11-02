@@ -16,11 +16,19 @@
 # the jar declares no Fabric or NeoForge mod, and the kernel reported nothing from it. Every other difference stays a
 # failure: a FORGE mod missing with no refusal naming its jar, any Fabric or NeoForge miss, anything spurious, and a
 # refusal of a jar the ground truth does not read as a MinecraftForge-only jar in this directory. The PASS line names
-# each refused mod and its jar. A FORGE mod the kernel still reports (the carrier forge-runtime.jar's own mods.toml,
-# which sits beside its Fabric half) is compared exactly as before.
+# each refused mod and its jar.
 #
-# ORACLE_CONTROL=unrefused is the negative control (gate-m0 step 5b): the kernel's refusal lines are withheld from the
-# comparison, so each refused mod is an unexplained miss again and the oracle must FAIL naming exactly those mods.
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). Discovery reports no MinecraftForge mod at all now: a
+# universal jar's mods.toml half is SET ASIDE (its Fabric or NeoForge half loads), as the old MinecraftForge carrier
+# forge-runtime.jar in the fixture sets shows -- its Fabric half "forge" is reported, its mods.toml half is not. That
+# difference passes only as an asserted divergence too (D32): a (FORGE, id) the kernel did not report is accepted as set
+# aside when every jar declaring it also declares at least one Fabric or NeoForge mod, the kernel reported every one of
+# those from that jar, and no refusal names the jar. The PASS line names each set-aside mod and its jar. A jar declaring
+# only a mods.toml is never "set aside": it is accepted only through a sound refusal, as above.
+#
+# ORACLE_CONTROL=unrefused is the negative control (gate-m0 step 5b): the kernel's refusal lines and the set-aside
+# acceptance are withheld from the comparison, so each refused or set-aside mod is an unexplained miss again and the
+# oracle must FAIL naming exactly those mods.
 #
 # usage: diff-oracle.sh <mods-dir> [<mods-dir> ...]
 set -uo pipefail
@@ -115,12 +123,23 @@ name = "/".join(pathlib.Path(mods_dir).parts[-2:])
 # A missing FORGE mod is the refusal, asserted: every jar declaring it was refused by name, soundly.
 expected = {key for key in missing if key[0] == "FORGE"
             and all(jar in refused and jar not in unsound for jar in declared_by[key])}
-unexplained = missing - expected
+# Or a set-aside half, asserted: every jar declaring it also declares a Fabric or NeoForge mod, the kernel reported each
+# of those from that jar, and no refusal names it. Withheld under the control, like the refusals.
+reported = {(m["ecosystem"], m["id"], m.get("source")) for m in k["mods"]}
+def set_aside_in(jar):
+    others = {(eco, mid) for eco, mid in jar_decls.get(jar, set()) if eco != "FORGE"}
+    return bool(others) and jar not in refused and all((eco, mid, jar) in reported for eco, mid in others)
+set_aside = set() if control == "unrefused" else {
+    key for key in missing - expected if key[0] == "FORGE" and all(set_aside_in(jar) for jar in declared_by[key])}
+unexplained = missing - expected - set_aside
 if not unexplained and not spurious and not unsound:
     note = ""
     if expected:
         named = ", ".join(f"{mid} ({' '.join(sorted(declared_by[(eco, mid)]))})" for eco, mid in sorted(expected))
         note = f"; {len(expected)} MinecraftForge-only mod(s) absent because the kernel refused them by name: {named}"
+    if set_aside:
+        named = ", ".join(f"{mid} ({' '.join(sorted(declared_by[(eco, mid)]))})" for eco, mid in sorted(set_aside))
+        note += f"; {len(set_aside)} MinecraftForge half(s) set aside beside a loaded Fabric or NeoForge half: {named}"
     print(f"[oracle] PASS {name}: {len(kernel)} mods, kernel ≡ independent ground truth{note}")
     sys.exit(0)
 if unexplained:

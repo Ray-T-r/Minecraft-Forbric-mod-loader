@@ -3,9 +3,11 @@
 #   1. offline build (boot jar) succeeds
 #   1b. capture what the kernel defines with fabric-api installed (the one opt-in unit-test fixture)
 #   2. ported unit tests green (transform / access / mapping / metadata / discovery), with nothing skipped
-#   3. kernel --scan produces well-formed JSON discovering mods across all 3 ecosystems (both merged sets)
-#   4. differential oracle: kernel parser ≡ independent ground-truth parser on the real mod sets
-#      (step 5), and its negative control (step 5b): with the kernel's refusals withheld it fails on exactly those mods
+#   3. kernel --scan produces well-formed JSON discovering Fabric and NeoForge mods, and no MinecraftForge mod, in both
+#      fixture sets (server-merged, client-merged: the names are the fixtures', Stage 5 renames them)
+#   4. the link check -- reported SKIP until C6 reseeds it on the game base (D32, D64)
+#   5. differential oracle: kernel parser ≡ independent ground-truth parser on the real mod sets, and its negative
+#      control (step 5b): with the kernel's refusals and set-asides withheld it fails on exactly those mods
 #   6. the evidence, soak and link-gate tools' own tests, and the transfer-engine suite, all actually executed
 # This is the differential-oracle foundation every later milestone builds on.
 #
@@ -18,8 +20,22 @@
 # mod, and nothing reported from it -- and its PASS line names each refused mod; every other difference (a FORGE mod
 # missing with no refusal, any Fabric or NeoForge miss, anything spurious, an unsound refusal) still fails. Step 5b is
 # new: the same scans with the refusal lines withheld must fail on exactly the mods step 5 named, so the acceptance is
-# shown to rest on the refusals. Step 3 is unchanged and still sees FORGE: the carrier forge-runtime.jar is not
-# refused (it has a Fabric half), and its own mods.toml is still discovered.
+# shown to rest on the refusals.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The base is NeoForge's own patched game; the merged base
+# and the MinecraftForge carrier are gone from the stage. Step 0 compares the base the tests read (BASE) instead of
+# MERGED. Step 3: discovery no longer reports any MinecraftForge mod (a universal jar's mods.toml half is set aside, a
+# MinecraftForge-only jar is refused), so the scan must show Fabric and NeoForge and NOT FORGE; it used to require all
+# three. Step 4 checked the merged base's links against the merged baseline, an input that no longer exists; the link
+# check is reseeded on the game base in C6 (kernel tree, access levels and invokedynamic handles, D32), and until then
+# the step prints an explicit "[kernel] SKIP (C6: ...)" line instead of a FAIL (D64). Step 5: the fixture sets still
+# hold forge-runtime.jar, the old MinecraftForge carrier with a Fabric half ("forge") and a mods.toml half; the kernel
+# loads the Fabric half and sets the mods.toml half aside, so the oracle (which reads every mods.toml as FORGE) sees
+# (FORGE, forge) missing. diff-oracle accepts that too, only as an asserted divergence of its own (a set-aside half,
+# D32): the jar also declares a Fabric or NeoForge mod, every one of those the kernel reported from that jar, and the
+# jar was not refused. Step 5b withholds the set-asides with the refusals, and must fail on exactly both sets of mods.
+# Step 6's two installer checks (the packaged link tools and the bundled baseline) still pass on what the installer
+# bundles today; C6 rewrites them with the link check.
 # GATE-PARALLEL: rundirs=server-m0-definitions mem=2000  (builds and runs the unit suite)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -44,14 +60,16 @@ PYEOF
 }
 
 step "0. the base the unit tests read is the base this run checks"
-# The bytecode tests and the kernel-runtime compile read $RUN_OLD/... (build.gradle hands them that root); step 4
-# link-checks ${MERGED:-...}. With MERGED naming a candidate and FORBRIC_OLD the reference checkout they are two
-# different jars, and this gate would pass the unit tests on one base and the link check on another while the
-# evidence recorded only the second. Same bytes, or no verdict. (FORGE_RT is the interop jar, derived from the raw
-# runtime the tests read, so it has no staged twin to compare.)
-for pair in "MERGED:$RUN_OLD/merged-base/patched-mc-merged-26.2.jar" "NEO_RT:$RUN_OLD/neoforge-runtime/neoforge-runtime.jar"; do
+# The bytecode tests and the kernel-runtime compile read $RUN_OLD/... (build.gradle hands them that root); a BASE or
+# NEO_RT naming a candidate while FORBRIC_OLD names the reference checkout would be two different jars, and this gate
+# would pass the unit tests on one base while the evidence recorded the other. Same bytes, or no verdict.
+for pair in "BASE:$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar" "NEO_RT:$RUN_OLD/neoforge-runtime/neoforge-runtime.jar"; do
   var="${pair%%:*}"; staged="${pair#*:}"; requested="${!var:-}"
-  [ -n "$requested" ] || { echo "[kernel] PASS $var unset: the tests and the link check both read $staged"; continue; }
+  if [ -z "$requested" ]; then
+    if [ -f "$staged" ]; then echo "[kernel] PASS $var unset: the tests read $staged"
+    else echo "[kernel] FAIL $var unset and the base the tests read is missing: $staged"; FAIL=1; fi
+    continue
+  fi
   if [ -f "$requested" ] && [ -f "$staged" ] && cmp -s "$requested" "$staged"; then
     echo "[kernel] PASS $var is the jar the unit tests read ($staged)"
   else
@@ -73,6 +91,7 @@ step "1b. capture the final definitions the opt-in replay test reads"
 # without them. Step 2 counts every skip as a failure, and nothing here produced the capture, so this gate was red on
 # every machine for two tests nobody could run. It is produced here instead: a dedicated server with fabric-api
 # alone, recording every class its loader defines (-Dforbric.definedClassEvidence).
+refuse_shared_rundir "$KERNEL/run/server-m0-definitions"   # outside the fragment: its contract test stubs lib.sh
 # M0_CAPTURE_BEGIN (AntiCheatGateLogTest's way: GateM0CaptureStepTest runs this fragment against a stubbed server)
 DEFINED="$BUILD/gate-m0-definitions"
 DRUN="$KERNEL/run/server-m0-definitions"
@@ -159,59 +178,47 @@ else
   echo "[kernel] PASS transfer tests ($tests ran, 0 skipped, 0 failed)"
 fi
 
-step "3. --scan across both merged mod sets"
+step "3. --scan across both fixture mod sets (Fabric and NeoForge, no MinecraftForge)"
 kernel_classpath
 for set in server-merged client-merged; do
   dir="$RUN_OLD/$set/mods"
   [ -d "$dir" ] || { echo "[kernel] FAIL $set (required fixture missing: $dir)"; FAIL=1; continue; }
   out="$BUILD/scan/$set.json"; mkdir -p "$BUILD/scan"
   kernel_scan "$dir" "$out" >/dev/null
-  # well-formed + non-empty + all three ecosystems represented
+  # well-formed + non-empty + both loaded ecosystems represented, and no MinecraftForge mod reported
+  # M0_SCAN_JUDGE_BEGIN (the red control runs this exact judge on a scan JSON copy with a FORGE row)
   python3 - "$out" "$set" <<'PY'
 import json,sys
 o=json.loads(open(sys.argv[1]).read()); s=sys.argv[2]
 ecos={m["ecosystem"] for m in o["mods"]}
-ok = o["count"]>0 and {"FABRIC","FORGE","NEOFORGE"}<=ecos
+ok = o["count"]>0 and {"FABRIC","NEOFORGE"}<=ecos and "FORGE" not in ecos
 print(f"[kernel] {'PASS' if ok else 'FAIL'} scan {s}: {o['count']} mods, ecosystems={sorted(ecos)}")
 sys.exit(0 if ok else 1)
 PY
   [ $? -eq 0 ] || FAIL=1
+  # M0_SCAN_JUDGE_END
 done
 
-step "4. the merged base links (against the committed baseline)"
-# The link check lived only in build-merged-base.sh, which runs when someone rebuilds the base -- so between
-# rebuilds nothing ever asked whether the artifact every test and every gate reads still resolves. That is the
-# same shape as the check whose exit code was thrown away: present, and never consulted.
-#
-# Here it costs one pass over three staged jars and answers the only question that matters between rebuilds:
-# is this the base the tree was calibrated against. This is an integration gate: missing inputs FAIL.
-# A clean checkout can still run `gradlew jar test` independently without staged game artifacts.
-# The baseline and the TOOL are SOURCE (committed, in this tree); the jars are ARTIFACTS (staged, wherever
-# FORBRIC_OLD says). Resolving source through RUN_OLD sends a second worktree to another checkout for both --
-# which it did on the first run here, compiling that checkout's copy of the tool, which had no --baseline flag
-# and read the flag as a jar path.
-LINK_BASELINE="${LINK_BASELINE:-$KERNEL/../forbric-loader/src/test/resources/merge/link-check-baseline.txt}"
-LINKLOG="$BUILD/gate-m0-linkcheck.log"
-if LINK_BASELINE="$LINK_BASELINE" bash "$KERNEL/../forbric-loader/run/check-merged-links.sh" \
-    "${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}" \
-    "${NEO_RT:-$RUN_OLD/neoforge-runtime/neoforge-runtime.jar}" \
-    "${FORGE_RT:-$RUN_OLD/merged-base/forge-runtime-interop.jar}" > "$LINKLOG" 2>&1; then
-  check "the merged base links no worse than the baseline" "dangling references: [0-9]+ \(known [0-9]+, new 0\)" "$LINKLOG"
-else
-  echo "[kernel] FAIL link check — missing inputs or new dangling references (see $LINKLOG)"; FAIL=1
-  tail -15 "$LINKLOG"
-fi
+step "4. the game base links (C6)"
+# The link check lived only in build-merged-base.sh and was then run here against the merged base, the MinecraftForge
+# interop jar and a baseline recorded on that pair. None of those inputs exists on the genuine stage: the base is
+# NeoForge's own patched game and C6 reseeds the check for it, in the kernel tree, with access levels and invokedynamic
+# handles (D32). Until C6 lands the step cannot give a verdict on anything, so it says so on a line of its own (D64) --
+# never a FAIL (a known red is not allowed in C5) and never silence (a dropped check would look like a passed one).
+# C6's acceptance removes this line. The installer's own link gate (step 6) still runs on what the installer ships.
+echo "[kernel] SKIP (C6: the link check is reseeded on the game base in C6 -- kernel tree, access levels, invokedynamic handles (D32); its merged-base inputs no longer exist)"
 
 step "5. differential oracle (kernel parser vs independent ground truth)"
 ORACLELOG="$BUILD/gate-m0-oracle.log"
 "$KERNEL/run/diff-oracle.sh" "$RUN_OLD/server-merged/mods" "$RUN_OLD/client-merged/mods" >"$ORACLELOG" 2>&1 || FAIL=1
 cat "$ORACLELOG"
 
-step "5b. negative control: the same sets with the kernel's refusal lines withheld (must FAIL on exactly the refused mods)"
-# Step 5 accepts a MinecraftForge mod the kernel left out only on the kernel's own refusal of its jar. Withhold those
-# lines and the same scans must turn into misses -- exactly the mods step 5 named as refused, in each set, and nothing
-# else. If the oracle still passed, its acceptance would not be reading the refusals at all; and with no refused mod in
-# either set the acceptance (and this control) would be measuring nothing, which is a failure here too.
+step "5b. negative control: the same sets with the refusals and set-asides withheld (must FAIL on exactly those mods)"
+# Step 5 accepts a MinecraftForge mod the kernel left out only on the kernel's own refusal of its jar, or as the
+# set-aside half of a jar whose Fabric or NeoForge half the kernel reported. Withhold both and the same scans must turn
+# into misses -- exactly the mods step 5 named as refused or set aside, in each set, and nothing else. If the oracle
+# still passed, its acceptance would not be reading them at all; and with no refused or no set-aside mod in the sets
+# that acceptance (and this control) would be measuring nothing, which is a failure here too.
 CONTROLLOG="$BUILD/gate-m0-oracle-control.log"
 if ORACLE_CONTROL=unrefused "$KERNEL/run/diff-oracle.sh" "$RUN_OLD/server-merged/mods" "$RUN_OLD/client-merged/mods" \
     >"$CONTROLLOG" 2>&1; then
@@ -220,11 +227,18 @@ fi
 python3 - "$ORACLELOG" "$CONTROLLOG" <<'PY' || FAIL=1
 import ast, re, sys
 main, control = (open(p, errors="replace").read().splitlines() for p in sys.argv[1:3])
-refused = {}  # set -> {(FORGE, id)} step 5 accepted as refused by name
+refused = {}  # set -> {(FORGE, id)} step 5 accepted as refused by name or as a set-aside half
+kinds = {"refused": 0, "set aside": 0}
 for line in main:
-    m = re.match(r"\[oracle\] PASS (\S+): .*refused them by name: (.*)$", line)
-    if m:
-        refused[m.group(1)] = {("FORGE", part.split(" (")[0]) for part in m.group(2).split(", ")}
+    m = re.match(r"\[oracle\] PASS (\S+): (.*)$", line)
+    if not m:
+        continue
+    for note in m.group(2).split("; "):
+        for marker, kind in (("refused them by name: ", "refused"), ("set aside beside a loaded Fabric or NeoForge half: ", "set aside")):
+            if marker in note:
+                ids = {("FORGE", part.split(" (")[0]) for part in note.split(marker, 1)[1].split(", ")}
+                refused.setdefault(m.group(1), set()).update(ids)
+                kinds[kind] += len(ids)
 missed, other = {}, []
 for line in control:
     m = re.match(r"\[oracle\] FAIL (\S+): kernel MISSED (\[.*?\]) \(", line)
@@ -232,13 +246,13 @@ for line in control:
         missed[m.group(1)] = set(ast.literal_eval(m.group(2)))
     elif line.startswith("[oracle] FAIL"):
         other.append(line)
-ok = bool(refused) and missed == refused and not other
+ok = all(kinds.values()) and missed == refused and not other
 total = sum(len(v) for v in refused.values())
 if ok:
-    print(f"[kernel] PASS withholding the refusals fails the oracle on exactly the {total} refused mod(s) "
-          f"of {len(refused)} set(s), and on nothing else")
+    print(f"[kernel] PASS withholding the refusals and set-asides fails the oracle on exactly the {total} mod(s) "
+          f"({kinds['refused']} refused, {kinds['set aside']} set aside) of {len(refused)} set(s), and on nothing else")
 else:
-    print(f"[kernel] FAIL withholding the refusals did not fail the oracle on exactly the refused mods: "
+    print(f"[kernel] FAIL withholding the refusals and set-asides did not fail the oracle on exactly those mods ({kinds}): "
           f"refused={sorted((s, sorted(v)) for s, v in refused.items())} "
           f"control missed={sorted((s, sorted(v)) for s, v in missed.items())} other={other}")
 sys.exit(0 if ok else 1)
