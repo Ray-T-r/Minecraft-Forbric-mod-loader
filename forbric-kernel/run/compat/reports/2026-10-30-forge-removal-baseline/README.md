@@ -560,8 +560,10 @@ wording still false on NeoForge's base. Every finding was checked before it was 
 | B-F5: "Forge-family wording kept (D32)" | the rule is the plan's Stage 6 bullet; D32 keeps only "froze the registries NeoForge-first"; `stage4-c4-wording.md` corrected | record |
 | B-F6: test-tree count "~80" | 157 string literals in 84 test files still say "merged base/merged-base/merged game" (C5, with the re-pins) | record |
 | A notes: "merge-added" in MixinStubRebind's javadoc, FabricFuelValuesInjector{,Execution}Test, gate-m46's header and a gate-m9 comment | "carrier-added", as the log line already said | 0407d118 |
+| closing check (after the reviews): comment lines still naming a MinecraftForge mod as one the kernel loads, outside both reviews' patterns (scan for "NeoForge or/and MinecraftForge") | 11 lines in 8 files now name NeoForge alone (ForbricMixinService, MixinNativeTail, MixinSubtypeOwnerRetarget, MixinFit x2, EnvironmentStripTransformer x2, KernelFabricFuel, FabricLoadOrder, KernelFabricEcosystem); lines saying what MinecraftForge and NeoForge each ship or read stay. Comment lines only | ae0092c0 |
 
 Suite at 0407d118 (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test --continue`): **5,762 tests, 0 skipped, 42 failed**, name for name and message prefix for message prefix identical to 9debd7b4's 42 (`s4/c4/wr-fix/suite.log`, `suite-results/`); `stage4-c4-wording-open-failures.txt` stands.
+Re-run at ae0092c0 (same command): 5,762 / 0 skipped / 42 failed, identical to 0407d118 name for name and message prefix (`s4/c4/wr-fix2/suite.log`, `suite.fails`).
 
 Gates: at 0407d118 (`.stage4`, ports 46430-46431, m9 on an APFS clone of `client-merged-pack` resolved by real path): m1 GREEN; m9 165 PASS / 21 FAIL, the same 21 lines as before (C5); `CAUGHT none`. The m9 and m1 boot logs carry the new KeyMapping, Shutdown, PiP and ModelFormats lines and none of the old wording (logs: `s4/c4/wr-fix/gates/`). The only "merged base" left in either gate's output is gate-m1's own labels (C5).
 
