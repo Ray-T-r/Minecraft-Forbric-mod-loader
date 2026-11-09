@@ -38,7 +38,16 @@ import net.neoforged.neoforge.event.entity.living.FinalizeSpawnEvent;
 import net.neoforged.neoforge.event.entity.living.LivingEntityUseItemEvent;
 import net.neoforged.neoforge.event.level.BlockEvent;
 
-/** Live ServerLevel callers only: no manual event post, kernel helper invocation, or substituted game class. */
+/**
+ * Live ServerLevel callers only: no manual event post, kernel helper invocation, or substituted game class.
+ *
+ * <p>Phase {@code withhold} is the premise control. Every NeoForge listener still counts its event (so a case that only
+ * asks whether NeoForge was asked still passes) but withholds its answer: no portal veto, no replacement SpawnGroupData,
+ * no finalize cancel or spawn veto, no result stack. The cases that judge an answer reaching the game must then fail
+ * (portal-neo-veto, the four spawner cases, item-result) while portal-allow, which asks only that the event fired, holds.
+ * It proves the positive phase's verdicts come from NeoForge's listeners through the live game callers and not from the
+ * world doing the same thing on its own.
+ */
 public final class WorldProbe {
     public static final Identifier MOB_ID = Identifier.fromNamespaceAndPath("forbricbehaviorprobe", "probe_mob");
     public static final SpawnGroupData NEO_DATA = new SpawnGroupData() { }, RETURNED_DATA = new SpawnGroupData() { };
@@ -61,25 +70,33 @@ public final class WorldProbe {
         NeoForge.EVENT_BUS.addListener(BlockEvent.PortalSpawnEvent.class, event -> {
             if (activePortal == null || !event.getPos().equals(activeFire)) return;
             portalNeo++;
+            if (withheld()) return;
             if (activePortal.equals("neo-veto")) event.setCanceled(true);
         });
         NeoForge.EVENT_BUS.addListener(FinalizeSpawnEvent.class, event -> {
             if (activeSpawner == null || !(event.getEntity() instanceof ProbeMob)) return;
-            spawnerNeo++; neoFinalize = event; event.setSpawnData(NEO_DATA);
+            spawnerNeo++; neoFinalize = event;
+            if (withheld()) return;
+            event.setSpawnData(NEO_DATA);
             if (activeSpawner.equals("neo-cancel-finalize")) event.setCanceled(true);
             if (activeSpawner.equals("neo-veto-spawn")) event.setSpawnCancelled(true);
         });
         NeoForge.EVENT_BUS.addListener(LivingEntityUseItemEvent.Finish.class, event -> {
             if (event.getEntity() != itemUser) return;
-            itemNeo++; event.setResultStack(tagged(new ItemStack(Items.GOLD_INGOT, 1)));
+            itemNeo++;
+            if (withheld()) return;
+            event.setResultStack(tagged(new ItemStack(Items.GOLD_INGOT, 1)));
         });
     }
+
+    /** The premise control: the listeners still count their events but give none of their answers. */
+    private static boolean withheld() { return "withhold".equals(phase); }
 
     public static void arm(MinecraftServer server) {
         try {
             root = Path.of(System.getProperty("forbric.behaviorRoot", ".")).toAbsolutePath().normalize();
             token = System.getProperty("forbric.behaviorToken", ""); phase = System.getProperty("forbric.behaviorPhase", "");
-            if (token.isBlank() || !List.of("positive", "portal-off", "spawner-off", "item-off").contains(phase)
+            if (token.isBlank() || !List.of("positive", "withhold").contains(phase)
                     || !Files.readString(root.resolve(".m35-owned")).trim().equals(token)
                     || !server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().equals(root.resolve("world"))) {
                 System.out.println("[M35Behavior] DISARMED: gate ownership absent"); return;

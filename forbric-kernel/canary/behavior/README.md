@@ -25,7 +25,13 @@ Seven cases execute after the actual dedicated server starts in a nonce-owned fr
   gold ingot carrying custom components; the live hand slot, the callback count and actual entity ticks are
   checked. The fixture does not manually tick the entity or call `completeUsingItem`.
 
-`gate-m35-behavior.sh` runs the same jar in fresh worlds and judges every case from the probe's JSON.
+`gate-m35-behavior.sh` runs the same jar in fresh worlds and judges every case from the probe's JSON: once as `positive`
+(all seven pass) and once as `withhold`, the premise control. In `withhold` every NeoForge listener still counts its event
+but gives no answer (no portal veto, no replacement SpawnGroupData, no finalize cancel or spawn veto, no result stack), so
+exactly `portal-neo-veto`, the four `spawner-*` cases and `item-result` must fail and `portal-allow` must pass: the
+positive verdicts come from NeoForge's listeners reaching the game through its live callers. (The three repair-off
+phases this gate ran on the merged base, portal-off, spawner-off and item-off, went with the merged base: their
+switches are retired and nothing on NeoForge's base is repaired on these paths.)
 
 Run from the worktree root (the root agent schedules kernel Gradle/server work):
 

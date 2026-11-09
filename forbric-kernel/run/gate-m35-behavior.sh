@@ -1,5 +1,19 @@
 #!/usr/bin/env bash
-# M35: actual game callers in a fresh world, with three independently red repair-off controls.
+# M35: actual game callers in a fresh world (NeoForge's portal, spawner-finalize and item-finish events through the live
+# BaseFireBlock, BaseSpawner and LivingEntity callers), seven cases, and a premise control that must go red exactly.
+#
+# STAGE 4 (the game base is NeoForge's own patched game). The three repair-off controls are gone with what they switched
+# off: portal-off (-Dforbric.portalSpawn, PortalSpawnInjector composed NeoForge's and MinecraftForge's portal hooks),
+# spawner-off (-Dforbric.spawnerFinalize, SpawnerFinalizeInjector) and item-off (-Dforbric.unifiedEvents, the
+# NeoForge->MinecraftForge item-finish bridge) are all retired switches whose code was deleted in C2 (D22, D29): on this
+# base BaseFireBlock.onPlace asks only EventHooks.onTrySpawnPortal and EventHooks.finalizeMobSpawnSpawner is NeoForge's
+# own (javap: invokevirtual Mob.finalizeSpawn; pop), so each switch only warns and its phase could not fail. So did the
+# javap read of the merged base's portal-hook order and the MinecraftForge carrier this gate required. No kernel
+# transformer touches these seven paths (NativeCoremodParity's targets have no BaseSpawner, BaseFireBlock or
+# LivingEntity), so the replacement control is a premise control (D48): the probe's `withhold` phase keeps every NeoForge
+# listener counting its event but withholds its answer, and the cases that judge an answer reaching the game must fail,
+# exactly portal-neo-veto, the four spawner-* cases and item-result; portal-allow, which asks only that NeoForge's event
+# fired once, holds.
 # GATE-PARALLEL: rundirs=server-behavior-m35 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25595}"
@@ -10,21 +24,10 @@ mkdir -p "$RESULTS"
 
 if [ "${1:-}" = "--execute-phase" ]; then
   phase="$2"; token="$3"; result="$RESULTS/$phase-probe.json"
-  portal=on; spawner=on; events=on; policy=strict
-  case "$phase" in
-    positive) ;;
-    portal-off) portal=off ;;
-    spawner-off) spawner=off; policy=continue ;; # Known required finding is retained; this is an explicit fault experiment.
-    item-off) events=off ;;
-    *) exit 2 ;;
-  esac
+  case "$phase" in positive|withhold) ;; *) exit 2 ;; esac
   rm -f "$result" "$RESULTS/$phase-compatibility.json"
-  # The order the two families' portal listeners are asked in: the merged base's own while the composition is on,
-  # NeoForge's and then the legacy forward's when it is off (it takes a restored MinecraftForge call back out).
-  order="${M35_BASE_PORTAL_ORDER:?the parent run reads it from the merged base}"
-  [ "$portal" = off ] && order=neo-first
-  RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY="$policy" \
-    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.behaviorPortalOrder=$order -Dforbric.portalSpawn=$portal -Dforbric.spawnerFinalize=$spawner -Dforbric.unifiedEvents=$events -Dforbric.relaxGuestMixins=off -Dforbric.behaviorPhase=$phase -Dforbric.behaviorToken=$token -Dforbric.behaviorRoot=$RUNDIR -Dforbric.behaviorOutput=$result" \
+  RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY=strict \
+    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.relaxGuestMixins=off -Dforbric.behaviorPhase=$phase -Dforbric.behaviorToken=$token -Dforbric.behaviorRoot=$RUNDIR -Dforbric.behaviorOutput=$result" \
     "$KERNEL/run/launch-kernel-server.sh" </dev/null
   code=$?
   if [ -f "$RUNDIR/.forbric-kernel/compatibility-report.json" ]; then
@@ -35,7 +38,7 @@ if [ "${1:-}" = "--execute-phase" ]; then
 import json, sys
 proof = json.load(open(sys.argv[1]))
 assert proof['phase'] == sys.argv[2] and proof['token'] == sys.argv[3], proof
-assert len(proof['cases']) == proof['expectedCases'] == 11, proof
+assert len(proof['cases']) == proof['expectedCases'] == 7, proof
 assert proof['pass'] is True, proof
 PY
   exit "$?"
@@ -45,33 +48,11 @@ step "build the kernel and one explicitly mixed-bus behavioral test mod"
 kernel_jar
 bash "$KERNEL/run/build-behavior-canary.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 INPUTS="$KERNEL/run/canary/m35-build-inputs.json"
-MERGED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["merged"]["path"])' "$INPUTS")"
-# The builder records "forge": null when no MinecraftForge carrier is staged. This gate's cases veto and finalize through
-# MinecraftForge's own portal and spawner events, so it has nothing to run without one: say so instead of a TypeError.
-FORGE_RT="$(python3 -c 'import json,sys; forge = json.load(open(sys.argv[1]))["forge"]; print(forge["path"] if forge else "")' "$INPUTS")"
-[ -n "$FORGE_RT" ] || { echo "[kernel] FAIL M35 needs the MinecraftForge carrier: $INPUTS records \"forge\": null (none staged under $OLD/run)"; exit 1; }
+BASE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["base"]["path"])' "$INPUTS")"
 NEO_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["neo"]["path"])' "$INPUTS")"
 COMPILE_GAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["compileGame"]["path"])' "$INPUTS")"
-export MERGED FORGE_RT NEO_RT
-
-# Which family BaseFireBlock.onPlace asks first, read from the merged base this run boots. A base carrying both portal
-# hooks asks them in its own order; one carrying only NeoForge's asks MinecraftForge through the forward, after it.
-# The probe is told, not left to assume: it once hard-coded NeoForge first, and a merge that keeps both sides' edits
-# writes MinecraftForge's statement first, so every veto case failed on a caller the kernel composes correctly.
-M35_BASE_PORTAL_ORDER="$(javap -c -p -cp "$MERGED" net.minecraft.world.level.block.BaseFireBlock 2>/dev/null | python3 -c '
-import re, sys
-text = sys.stdin.read()
-body = re.search(r"\n  [^\n]* onPlace\(net\.minecraft\.world\.level\.block\.state\.BlockState, net\.minecraft\.world\.level\.Level, "
-                 r"net\.minecraft\.core\.BlockPos, net\.minecraft\.world\.level\.block\.state\.BlockState, boolean\);\n(.*?)\n\n", text, re.S)
-if not body:
-    sys.exit("no BaseFireBlock.onPlace in the merged base")
-calls = [m.group(1) for m in re.finditer(r"Method (net/minecraftforge/event/ForgeEventFactory|net/neoforged/neoforge/event/EventHooks)\.onTrySpawnPortal:", body.group(1))]
-if "net/neoforged/neoforge/event/EventHooks" not in calls:
-    sys.exit("BaseFireBlock.onPlace asks no NeoForge portal hook: " + str(calls))
-print("forge-first" if calls[0] == "net/minecraftforge/event/ForgeEventFactory" else "neo-first")
-')" || { echo "[kernel] FAIL cannot read BaseFireBlock.onPlace's portal hooks from the merged base ($MERGED)"; exit 1; }
-export M35_BASE_PORTAL_ORDER
-echo "[kernel] the merged base asks the portal hooks $M35_BASE_PORTAL_ORDER"
+# The launcher's own inputs: the game base and its carrier the probe was compiled and recorded against.
+export BASE NEO_RT
 
 kill_owned_descendants() {
   local parent="$1" child
@@ -108,7 +89,7 @@ run_phase() {
   fresh_world; token="$(cat "$RUNDIR/.m35-owned")"
   rm -f "$RESULTS/$phase-inputs.log"   # port_was_free below must not read an earlier run's log
   python3 "$KERNEL/run/compat/evidence.py" run --source "$KERNEL/.." \
-    --artifact "merged=$MERGED" --artifact "forge-interop=$FORGE_RT" --artifact "neo-runtime=$NEO_RT" \
+    --artifact "neo-patched=$BASE" --artifact "neo-runtime=$NEO_RT" \
     --artifact "kernel=$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar" \
     --artifact "kernel-runtime=$BUILD/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar" \
     --artifact "compile-game=$COMPILE_GAME" --mods "$RUNDIR/mods" --output "$RESULTS/$phase-inputs.json" \
@@ -130,14 +111,16 @@ proof_path = root / (phase + '-probe.json')
 proof = json.loads(proof_path.read_text())
 outcome = json.loads((root / (phase + '-inputs.result.json')).read_text())
 assert proof['phase'] == phase and proof['token'] == token, 'stale or foreign proof'
-assert len(proof['cases']) == proof['expectedCases'] == 11, proof
+assert len(proof['cases']) == proof['expectedCases'] == 7, proof
 names = [row['name'] for row in proof['cases']]
-assert len(set(names)) == 11, names
+assert set(names) == {'portal-allow', 'portal-neo-veto', 'spawner-data', 'spawner-neo-cancel-finalize',
+                      'spawner-neo-veto-spawn', 'spawner-nonempty-input', 'item-result'}, names
 failures = {row['name'] for row in proof['cases'] if row['pass'] is not True}
+# withhold: NeoForge's listeners still count their events but give no answer (D48's premise control).
 expected = {
-    'positive': set(), 'portal-off': {'portal-replacement'}, 'item-off': {'item-result'},
-    'spawner-off': {'spawner-data', 'spawner-forge-cancel-finalize', 'spawner-neo-veto-spawn',
-                    'spawner-forge-veto-spawn', 'spawner-nonempty-input'},
+    'positive': set(),
+    'withhold': {'portal-neo-veto', 'spawner-data', 'spawner-neo-cancel-finalize', 'spawner-neo-veto-spawn',
+                 'spawner-nonempty-input', 'item-result'},
 }[phase]
 assert failures == expected, (phase, failures, expected, proof)
 assert proof['pass'] is (phase == 'positive'), proof
@@ -146,10 +129,9 @@ assert outcome['commandPassed'] is (phase == 'positive'), outcome
 assert outcome['exitCode'] == (0 if phase == 'positive' else 1), outcome
 log = (root / (phase + '-inputs.log')).read_text(errors='replace')
 assert 'Done (' in log and '[M35Behavior] ARMED natural item consumption' in log, 'world/action startup absent'
-if phase == 'spawner-off':
-    compatibility = json.loads((root / (phase + '-compatibility.json')).read_text())
-    assert any(row['id'] == 'spawner-finalize-input' and row['required'] is True and row['confidence'] == 'CONFIRMED'
-               for row in compatibility['findings']), 'negative lost its required finding evidence'
+# Every listener was asked in both phases: a withheld answer is not a missing event.
+for row in proof['cases']:
+    assert row.get('neoEvents') == 1, ('NeoForge was not asked exactly once', phase, row)
 (root / (phase + '-probe.sha256')).write_text(hashlib.sha256(proof_path.read_bytes()).hexdigest() + '\n')
 print('[kernel] PASS M35', phase, 'expected behavioral failures:', sorted(failures))
 PY
@@ -158,12 +140,12 @@ PY
   fi
 }
 
-for phase in positive portal-off spawner-off item-off; do
+for phase in positive withhold; do
   step "M35 actual world behavior: $phase"
   run_phase "$phase"
 done
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M35 WORLD BEHAVIOR GATE GREEN — 11 positive cases and exact repair-off counterexamples"
+  echo "[kernel] ✅ M35 WORLD BEHAVIOR GATE GREEN — 7 positive cases and the withhold premise control red on exactly its six"
 else
   echo "[kernel] ❌ M35 GATE RED — inspect $RESULTS"
 fi
