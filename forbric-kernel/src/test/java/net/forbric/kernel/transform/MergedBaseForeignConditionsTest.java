@@ -72,7 +72,8 @@ class MergedBaseForeignConditionsTest {
 		}
 
 		assertTrue(wrap >= 0, "ICondition.CODEC is not wrapped — a Fabric mod's own condition id then fails the "
-				+ "whole registry load, because the merged base runs NeoForge's evaluator over every pack");
+				+ "whole registry load, because NeoForge's base runs NeoForge's evaluator over every pack's data, a Fabric "
+				+ "mod's included (the wrap tolerates the type only in a Fabric mod's own pack, D69)");
 		assertTrue(store > wrap, "the wrap must happen before CODEC is stored");
 		assertTrue(list < 0 || list > store,
 				"LIST_CODEC is derived from CODEC, so it has to be built after the wrapped value is in place — "
@@ -108,6 +109,76 @@ class MergedBaseForeignConditionsTest {
 			assertEquals(m.instructions.size() + 3, open.instructions.size(), "three instructions added, nothing else");
 		}
 		assertSame(once, new ForbricMergedBaseCompatTransformer().transform(binary, once, null), "a second pass stands down");
+	}
+
+	/**
+	 * Recipes are parsed in one pass and decoded in a second, so the pack named at the open is the last file's at every
+	 * decode (lens A of lane S's wave-2 review). On NeoForge's base {@code scanDirectoryWithModifier} starts a scan, records
+	 * each element right after its {@code JsonParser.parseReader}, names it again right before the second loop's
+	 * {@code Codec.parse} (which stays, for a guest's wrap), and ends the scan before its return; the one-pass
+	 * {@code scanDirectory} clears the pack before its return. The bytecode still verifies, and a second pass stands down.
+	 */
+	@Test
+	void recipesTwoPassScanNamesEachElementsOwnPack() throws Exception {
+		String owner = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
+		byte[] raw = TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedBase(), owner + ".class");
+		byte[] once = new ForbricMergedBaseCompatTransformer().transform(owner.replace('/', '.'), raw, null);
+		ClassNode node = new ClassNode();
+		new ClassReader(once).accept(node, 0);
+		String sources = ForbricMergedBaseCompatTransformer.KERNEL_CONDITION_SOURCES;
+		MethodNode twoPass = null, onePass = null;
+		for (MethodNode m : node.methods) {
+			if (m.name.equals("scanDirectoryWithModifier")) twoPass = m;
+			if (m.name.equals("scanDirectory") && m.desc.contains("FileToIdConverter;Lcom/mojang/serialization/DynamicOps;")) onePass = m;
+		}
+		assertTrue(twoPass != null && onePass != null, "both scans are there");
+		java.util.List<AbstractInsnNode> code = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn : twoPass.instructions) if (insn.getOpcode() >= 0) code.add(insn);
+		assertTrue(isCall(code.get(0), sources, "beginTwoPassScan"), "the scan starts first");
+		int parse = -1, decode = -1, returns = 0, ends = 0;
+		for (int i = 0; i < code.size(); i++) {
+			AbstractInsnNode insn = code.get(i);
+			if (insn instanceof MethodInsnNode call && call.owner.equals("com/google/gson/JsonParser")) parse = i;
+			if (insn instanceof MethodInsnNode call && call.owner.equals("com/mojang/serialization/Codec") && call.name.equals("parse")) decode = i;
+			if (insn.getOpcode() == Opcodes.RETURN) {
+				returns++;
+				if (isCall(code.get(i - 1), sources, "endTwoPassScan")) ends++;
+			}
+		}
+		assertTrue(parse > 0 && decode > 0, "the json parse and the codec parse are both still there");
+		assertEquals(Opcodes.DUP, code.get(parse + 1).getOpcode());
+		assertTrue(isCall(code.get(parse + 2), sources, "parsed"), "each parsed element is recorded with its pack");
+		assertEquals(Opcodes.DUP, code.get(decode - 2).getOpcode());
+		assertTrue(isCall(code.get(decode - 1), sources, "decoding"), "and named again right before its decode");
+		assertTrue(returns > 0 && ends == returns, "every return ends the scan");
+		int oneReturns = 0, done = 0;
+		java.util.List<AbstractInsnNode> one = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn : onePass.instructions) if (insn.getOpcode() >= 0) one.add(insn);
+		for (int i = 0; i < one.size(); i++) {
+			if (one.get(i).getOpcode() != Opcodes.RETURN) continue;
+			oneReturns++;
+			if (isCall(one.get(i - 1), sources, "doneReading")) done++;
+		}
+		assertTrue(oneReturns > 0 && done == oneReturns, "the one-pass scan names no pack past its return");
+		for (MethodNode m : java.util.List.of(twoPass, onePass)) {
+			new org.objectweb.asm.tree.analysis.Analyzer<>(new org.objectweb.asm.tree.analysis.BasicVerifier()).analyze(node.name, m);
+		}
+		ClassNode before = new ClassNode();
+		new ClassReader(raw).accept(before, 0);
+		for (MethodNode m : before.methods) {
+			if (!m.name.equals("scanDirectoryWithModifier")) continue;
+			assertEquals(m.instructions.size() + 5 + returns, twoPass.instructions.size(), "insertions only");
+		}
+		byte[] twice = new ForbricMergedBaseCompatTransformer().transform(owner.replace('/', '.'), once, null);
+		ClassNode again = new ClassNode();
+		new ClassReader(twice).accept(again, 0);
+		for (MethodNode m : again.methods) {
+			if (m.name.equals("scanDirectoryWithModifier")) assertEquals(twoPass.instructions.size(), m.instructions.size(), "a second pass stands down");
+		}
+	}
+
+	private static boolean isCall(AbstractInsnNode insn, String owner, String name) {
+		return insn instanceof MethodInsnNode call && call.owner.equals(owner) && call.name.equals(name);
 	}
 
 	@Test

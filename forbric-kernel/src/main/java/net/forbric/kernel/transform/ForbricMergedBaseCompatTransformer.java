@@ -84,7 +84,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -137,7 +137,12 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"another ecosystem's condition type fails NeoForge's evaluator and the whole registry load with it"));
 		out.add(fixed("tellTheConditionsWhichPackAFileIsReadFrom", RESOURCE,
 				"no data file is known to be a Fabric mod's, so the condition leniency never applies — a Fabric mod's own "
-						+ "condition type in its neoforge:conditions (Terralith's terralith:config) skips its data file"));
+						+ "condition type in its neoforge:conditions (Waystones' waystones:force_spawn_in_villages) skips its data "
+						+ "file, and in a datapack registry fails the whole registry load"));
+		out.add(fixed("tellTheConditionsWhichPackEachRecipeCameFrom", JSON_RELOAD_LISTENER,
+				"recipes are parsed in one pass and decoded in a second, so each recipe is judged by the pack of the LAST "
+						+ "file opened — a Fabric mod's recipe naming its own condition type is skipped, or a world datapack's "
+						+ "kept"));
 		out.add(fixed("letFabricResourceConditionsDecide", CONDITIONAL_OPS,
 				"fabric:load_conditions has no evaluator — a Fabric mod's conditional data files all load"));
 		out.add(fixed("translateAGuestsPrivateSkipMarker", JSON_RELOAD_LISTENER,
@@ -212,6 +217,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
 			changed |= claim(reporter, "tellTheConditionsWhichPackAFileIsReadFrom", tellTheConditionsWhichPackAFileIsReadFrom(node));
+			changed |= claim(reporter, "tellTheConditionsWhichPackEachRecipeCameFrom", tellTheConditionsWhichPackEachRecipeCameFrom(node));
 			changed |= claim(reporter, "letFabricResourceConditionsDecide", letFabricResourceConditionsDecide(node));
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
@@ -665,9 +671,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * Fabric nothing reads that key. Native NeoForge skips any other file whose {@code neoforge:conditions} name an
 	 * unregistered type ("Couldn't parse data file … Unknown registry key … neoforge:condition_codecs"), and so must
 	 * Forbric for a world datapack, a NeoForge mod's pack or vanilla's (decision D69, gate-m21's {@code dual_forge}). The
-	 * codec cannot see the file it decodes; the reader that opened it can. Every reader the base runs NeoForge's evaluator
-	 * in opens the file through {@code Resource.open()} (directly or through {@code openAsReader()}) and decodes it on the
-	 * same thread before it opens the next, so the pack recorded at the open is the decoded file's.
+	 * codec cannot see the file it decodes; the reader that opened it can. Each reader the base runs NeoForge's evaluator
+	 * in opens its file through {@code Resource.open()} (directly or through {@code openAsReader()}); all but one then
+	 * decode it on the same thread before opening the next, so the pack recorded at the open is the decoded file's (lane
+	 * S's C5 reader census, {@code reader-census.out}). The exception, recipes' two-pass scan, is
+	 * {@link #tellTheConditionsWhichPackEachRecipeCameFrom}'s.
 	 *
 	 * <p>Three instructions at the head of {@code open()}, nothing moved: {@code aload_0; getfield source;
 	 * invokestatic reading(Object)V}. Stands down when the call is already there.
@@ -691,6 +699,85 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "from, so an unregistered condition type is tolerated only in a Fabric mod's own pack (-D%s=off: every pack)",
 				"forbric.neoConditions.fabricPacksOnly");
 		return true;
+	}
+
+	/**
+	 * Names each recipe's own pack to the condition leniency, because recipes are not read one file at a time.
+	 *
+	 * <p>{@code SimpleJsonResourceReloadListener.scanDirectoryWithModifier}, which {@code RecipeManager} alone calls, opens
+	 * and parses every recipe file in a first loop, posts NeoForge's {@code ModifyRecipeJsonsEvent} over the parsed map,
+	 * and decodes the elements in a second loop. The pack {@link #tellTheConditionsWhichPackAFileIsReadFrom} records at
+	 * each open is therefore, at every decode, the last file's: a Fabric mod's recipe naming its own condition type was
+	 * skipped whenever another pack's file was opened last, and a world datapack's kept whenever a Fabric mod's was (lens A
+	 * of lane S's C5 wave-2 review measured the first).
+	 *
+	 * <p>Insertions only, nothing moved: {@code KernelConditionSources.beginTwoPassScan()} at the head;
+	 * {@code dup; parsed(Object)} right after the first loop's {@code JsonParser.parseReader}, which records the parsed
+	 * element with the pack its file was just opened from; {@code dup; decoding(Object)} right before the second loop's
+	 * {@code Codec.parse}, whose argument is that element, which names its pack again (none for an element a mod added in
+	 * the event); and {@code endTwoPassScan()} before every return. {@code scanDirectory}, the one-pass reader, gets
+	 * {@code doneReading()} before every return, so the last file's pack is named to no later decode. The parse call itself
+	 * stays, so a guest's {@code @WrapOperation} on it still binds. Declines, saying so, unless each loop call is there
+	 * exactly once; stands down when the calls are already there.
+	 */
+	private static boolean tellTheConditionsWhichPackEachRecipeCameFrom(ClassNode node) {
+		if (!JSON_RELOAD_LISTENER.equals(node.name)) return false;
+		MethodNode twoPass = null, onePass = null;
+		for (MethodNode m : node.methods) {
+			if (m.instructions == null || m.instructions.size() == 0) continue;
+			if (m.name.equals("scanDirectoryWithModifier")) twoPass = m;
+			else if (m.name.equals("scanDirectory") && m.desc.startsWith("(Lnet/minecraft/server/packs/resources/ResourceManager;"
+					+ "Lnet/minecraft/resources/FileToIdConverter;")) onePass = m;
+		}
+		if (twoPass == null || callsConditionSources(twoPass)) return false;
+		List<MethodInsnNode> parses = new ArrayList<>(), decodes = new ArrayList<>();
+		for (AbstractInsnNode insn = twoPass.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof MethodInsnNode call)) continue;
+			if (call.owner.equals("com/google/gson/JsonParser") && call.name.startsWith("parse")
+					&& call.desc.endsWith(")Lcom/google/gson/JsonElement;")) parses.add(call);
+			if (call.owner.equals("com/mojang/serialization/Codec") && call.name.equals("parse")
+					&& call.desc.equals("(Lcom/mojang/serialization/DynamicOps;Ljava/lang/Object;)Lcom/mojang/serialization/DataResult;")) {
+				decodes.add(call);
+			}
+		}
+		if (parses.size() != 1 || decodes.size() != 1) {
+			ForbricLog.warn("[Forbric/MergedBaseCompat] %s.scanDirectoryWithModifier has %d json parse(s) and %d codec parse(s), "
+					+ "not one of each — recipes keep being judged by the pack of the file opened last", node.name,
+					parses.size(), decodes.size());
+			return false;
+		}
+		twoPass.instructions.insert(conditionSourcesCall("beginTwoPassScan", "()V"));
+		InsnList record = new InsnList();
+		record.add(new InsnNode(Opcodes.DUP));
+		record.add(conditionSourcesCall("parsed", "(Ljava/lang/Object;)V"));
+		twoPass.instructions.insert(parses.get(0), record);
+		InsnList name = new InsnList();
+		name.add(new InsnNode(Opcodes.DUP));
+		name.add(conditionSourcesCall("decoding", "(Ljava/lang/Object;)V"));
+		twoPass.instructions.insertBefore(decodes.get(0), name);
+		beforeEachReturn(twoPass, "endTwoPassScan");
+		twoPass.maxStack += 1;
+		if (onePass != null && !callsConditionSources(onePass)) beforeEachReturn(onePass, "doneReading");
+		ForbricLog.info("[Forbric/MergedBaseCompat] recipes' two-pass scan names each recipe's own pack to the condition "
+				+ "leniency at its decode, not the pack of the last file opened");
+		return true;
+	}
+
+	private static boolean callsConditionSources(MethodNode method) {
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && KERNEL_CONDITION_SOURCES.equals(call.owner)) return true;
+		}
+		return false;
+	}
+
+	private static MethodInsnNode conditionSourcesCall(String name, String desc) {
+		return new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_CONDITION_SOURCES, name, desc, false);
+	}
+
+	private static void beforeEachReturn(MethodNode method, String hook) {
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn.getOpcode() == Opcodes.RETURN) method.instructions.insertBefore(insn, conditionSourcesCall(hook, "()V"));
+		}
 	}
 
 	/**
