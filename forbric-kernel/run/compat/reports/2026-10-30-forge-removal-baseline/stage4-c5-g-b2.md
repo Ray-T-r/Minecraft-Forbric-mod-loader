@@ -9,7 +9,8 @@ Gradle and game run through `.stage/heavy.sh` (client runs under `.stage/client.
 ## First act (D66 suite at f0cb66b0)
 
 `heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test --continue` in the
-fresh lane worktree: **5772 tests, 0 skipped, 7 failed** (`suite-first.log`, XML `suite-first-xml/`). Five are exactly
+fresh lane worktree: **5772 tests, 0 skipped, 7 failed** (`suite-first.log` only: `suite-first-xml/` holds the 2-test rerun after `jar`,
+which overwrote build/test-results, not this run's XML; corrected after review B-4). Five are exactly
 `failures-wave1.txt` (LB x3, SharedFinalSourceActualTest x2, D58). The two others are
 `KernelBundledMixinExtrasStagedTest.[1] true` / `[2] false`: "[fixture:third-party] stage the popular compatibility
 pack and the boot jar ... build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar". The popular pack is there (through the
@@ -24,16 +25,16 @@ after the gates, so build/libs exists there.
 |---|---|---|
 | plumbing re-key `merged/forge` -> `base/neo` | DONE: m33, m35, m36, m37, m38, m39, m40 read the build record's `base`/`neo` (m39 the stage defaults), export them as the launcher's `BASE`/`NEO_RT` and attest them as `neo-patched`/`neo-runtime` (existing roles, no `evidence.py` edit) | d20d74d8, 4cec54cd, 38f34512, c702365b, c2fc3c6c; every gate below GREEN |
 | m33 wording + vacuous check | DONE: the refused-face check now names Fabric's generic Container view (what `BlockTransferBridge.neoFallback` refuses for a NeoForge owner); TransferWorldProbe comments/failure text/PASS line reworded; Forge InvWrapper absence check deleted (D34 below) | d20d74d8; m33 22/0 |
-| m35: 11->7, delete portal-off/spawner-off/item-off, withhold phase (D48) | DONE: probe phase `withhold` (listeners count but withhold their answer); measured red set exactly item-result, portal-neo-veto, spawner-data, spawner-neo-cancel-finalize, spawner-neo-veto-spawn, spawner-nonempty-input; portal-allow passes = D48's set, now measured | 38f34512; m35 2/0 |
+| m35: 11->7, delete portal-off/spawner-off/item-off, withhold phase (D48) | DONE: probe phase `withhold` (listeners count but withhold their answer); measured red set exactly item-result, portal-neo-veto, spawner-data, spawner-neo-cancel-finalize, spawner-neo-veto-spawn, spawner-nonempty-input; portal-allow passes = D48's set, now measured. After review: each red's reason pinned, `spawn-position-off` native A/B phase added; spawner-nonempty-input's red is probe-side only (see review fixes) | 38f34512, cc10eb35; m35 3/0 |
 | m36/m37/m38 | DONE: re-keyed; `[kernel] PASS/FAIL M3x` lines; m37 off/guard-off and m38 off re-measured (below) | c702365b |
 | m39 (D32, critic #195, D65 BASE rename) | DONE: Forge scenarios gone; the suite (57 of 57) stays required; watchdog proof on `WatchdogCanary` + fabric-api on a strict non-Forge server; results var `BASE` -> `RESULTS` | c2fc3c6c; m39 6/0 |
 | m40 expectations + H3 | DONE: counts per the probe (2 families/2 cells/2 consumers/4 routes/40,000 E; noreborn 1/1/1/0/20,000 with SKIP lines); old Forge-consumer counts deleted, not reworded; `ForgeEnergyAdapters` class check re-pointed; `$RESULTS` cleared at start | 4cec54cd; m40 36/0; H3 control below |
 | m34: fail instead of launching without `--nativeReference` | DONE: `vanilla_reference` raises `SystemExit`; flag always passed; test_soak +1 case (28/28), red with the old fallback put back; gate prints a countable verdict line | d1cfbcb8, 6cb3cb0f; failure path measured; short control run measured, REVIEW_REQUIRED (below) |
 | m31 + `M31_UNFIXED=1` | DONE (no edit): GREEN 13/0; unfixed RED 12/1 on exactly "every chunk carries vanilla's biomes (want 0 got 11)", the 11 chunks the gate's TEETH note recorded | gates/m31.out, m31-unfixed.out |
 | m32 | no edit needed: GREEN 10/0 (M32_PORT from the lane block) | gates/m32.out |
-| D61 wrappers m60/m61/m62 | DONE: GATE_PORT, `# GATE-PARALLEL:` line, inputs from the `build/` fixture links with env overrides, `port_was_free` on every server, exact per-phase lines; `test_gate_ports` 11/11 OK | e5f2f24e; m60 10/0, m61 6/0, m62 6/0 |
+| D61 wrappers m60/m61/m62 | DONE: GATE_PORT, `# GATE-PARALLEL:` line, inputs from the `build/` fixture links with env overrides (m60's fabric-api from `.dev/api`, else the client-merged-pack copy, since cdae9449; review B-7), `port_was_free` on every server, exact per-phase lines; `test_gate_ports` 11/11 OK | e5f2f24e; m60 10/0, m61 6/0, m62 6/0 |
 | menu-codec-gate.py | DONE: baseline phase and `MC_DIR` removed; stays manual | a4c04f49; run: fixed 3/3, "Menu codec gate passed" |
-| fluid-parity-gate.py | DONE: GATE_PORT, `--unfixed` and the native-Forge column dropped, `canary/fluid-interactions/forge` deleted; stays manual | f5e5ad33; plain mode PASS; `--mods` not measurable here (below) |
+| fluid-parity-gate.py | DONE: GATE_PORT, `--unfixed` and the native-Forge column dropped, `canary/fluid-interactions/forge` deleted; stays manual | f5e5ad33 (the canary's two files were deleted in d20d74d8, the m33 commit, not f5e5ad33 as its message says; between the two, `--mods` would compile a canary that is gone; review B-3); plain mode PASS; `--mods` PASS against native NeoForge 26.2.0.93 (review fixes) |
 | carpet-gate.py:66 | already done in C1 (aaacdeef took the Forge interop jar off its classpath); this lane adds `--port` for m62 and rewords the `--staged-root` help | 578083d3 |
 | c2me `build.py:20` | already done (610fb9ab compiles against `BASE`/`NEO_RT`, not the merged base); nothing left | `git show cf0498eb:` vs tip |
 | fluid-head-gate.py `:47` help | DONE: no longer names the retired `nativeEntryRelay` | 578083d3 |
@@ -50,7 +51,7 @@ after the gates, so build/libs exists there.
 | m32 | 10 / 0 | |
 | m33 | 22 / 0 | bridge-off negative red as required |
 | m34 | 0 / 1 (control run, REVIEW_REQUIRED) and 0 / 1 (no-sidecar failure path, by design) | the 2-hour release soak is VERIFY's |
-| m35 | 2 / 0 | positive 7/7; withhold red on exactly its six |
+| m35 | 2 / 0 (3 / 0 after the review fixes) | positive 7/7; withhold red on exactly its six (after review: also spawn-position-off 7/7, reasons pinned) |
 | m36 | 6 / 0 | required-strict, required-continue, optional, declined, widened, widened-off |
 | m37 | 3 / 0 | positive, off, guard-off |
 | m38 | 2 / 0 | positive, off |
@@ -119,12 +120,9 @@ plain mode PASS (vanilla vs zero-mod kernel, every score and block equal).
 
 ## Not done / open
 
-- **fluid-parity `--mods` (manual tool) not measured here.** The only native NeoForge image on disk
-  (`/Users/jerry/Documents/Forbric/forbric-kernel/build/native-controls/native/neo`) is 26.2.0.88; the tool (as before
-  this lane) pins 26.2.0.93's `unix_args.txt`, so the native arm did not boot (run kept in `gates/fluid-parity-mods.out`;
-  the Forbric arm alone gave N_place lava, N_neighbour/N_first glowstone, V_* obsidian). A .93 image needs
-  `native-controls.py prepare` (a download D68 allows for native-controls images) — owner SWAP/VERIFY, who own
-  native-controls.py.
+- ~~fluid-parity `--mods` not measured here~~ — wrong: a 26.2.0.93 image was already on disk under the stage worktree's
+  `build/native-controls/native/neo` (installed 2026-10-30); the ".88 only" sentence looked only at the main checkout.
+  Measured in the review fixes: PASS (below). No hand-off to SWAP/VERIFY.
 - **m34 2-hour release soak**: VERIFY (one run). Two things it will meet, both measured here on a 2-minute control:
   JourneyMap 6.0.1's MapRenderer self-deadlock on the full `client-merged-pack` (a mod defect known since 2026-09-24;
   the earlier release soak ran without JourneyMap), and a retention REVIEW_REQUIRED (servers 1 and 5 of 5 still
@@ -160,3 +158,56 @@ test_gate_ports 11/11.
 - 02e4ae0a Bring PROTOCOL.md's rows for the transfer, energy and soak gates and the compat drivers to what they do on NeoForge's base
 - 6cb3cb0f Print a [kernel] PASS/FAIL verdict line from gate-m34, so a soak run's result can be counted like every other gate's
 - (this record)
+
+## G-B2 wave-2 review fixes (2026-11-10)
+
+Reviews: `c5/review-w2-g-b2-A.md` (A-1..A-4), `c5/review-w2-g-b2-B.md` (B-1..B-8). Logs `c5/g-b2/w2/review-fixes/`.
+
+| finding | verdict | what was done |
+|---|---|---|
+| A-1 m35 withhold judged by names only; spawner-nonempty-input red is probe-side | CONFIRMED | cc10eb35: each withhold red's failure text and recorded state pinned; spawner-nonempty-input's failure text in withhold now says "probe-side read-back only" (its game state equals positive's: finalizations 0, inserted, marker 35). It STAYS in the set: removing it changes the set PLAN names under D48, so that item is stopped here and reported to the orchestrator with this evidence (option (a) in the review: make the read-back phase-aware, set becomes five) |
+| A-2 / B-2 "no kernel transformer touches these paths" is false | CONFIRMED | cc10eb35: gate header, canary README and WorldProbe name SpawnPositionCallsInjector (BaseSpawner.serverTick); new phase `spawn-position-off` (`-Dforbric.spawnPositionCalls=off`) must pass 7/7 like positive (a native A/B, not a red control), and the gate asserts the BaseSpawner rewrite line is logged in positive/withhold and absent there. 38f34512's message stays as history; this record carries the correction |
+| A-3 m34 prints a countable PASS for a `--control` CONTROL_PASS | CONFIRMED | 0a4fe3fc: PASS only on `[M34] RELEASE_PASS releaseAccepted=True`; CONTROL_PASS prints `[kernel] CONTROL-ONLY …` (not counted, exit 0); exit 0 without a verdict line is a FAIL |
+| A-4 / B-8 m33 step title names a MinecraftForge canary | CONFIRMED | 4d5a3bc0: "(Fabric and NeoForge)" |
+| B-8 PROTOCOL breath-drown row says NeoForge 26.2.0.88 | CONFIRMED | 076f3a1c: 26.2.0.93, breath-drown.py's pin (the evidence.py row's .88 stays C6's) |
+| B-1 fluid-parity `--mods` was measurable without a download | CONFIRMED | ran it (below): PASS. "Only .88 on disk" corrected here and in handoff/walls/checks |
+| B-3 canary deletion in d20d74d8, credited to f5e5ad33 | CONFIRMED | record corrected (items table); history not rewritten, because the notes, reviews and handoff cite these shas |
+| B-4 first-act XML is the 2-test rerun | CONFIRMED | record corrected: the first act is evidenced by suite-first.log only |
+| B-5 G-B2 m34 lines under G-A's heading in checks.md | CONFIRMED | moved under `## G-B2 (wave 2)` (marked "moved here … review B-5") |
+| B-6 wrappers not shown GREEN in gates-all | CONFIRMED | ran `gates-all.sh -j 1` with every other gate `--skip`ped: m60/m61/m62 GREEN (below) |
+| B-7 m60 fabric-api source described wrong | CONFIRMED | cdae9449: default is `.dev/api/fabric-api-0.155.2+26.2.jar`, else the client-merged-pack copy (build.gradle's order; same sha256 d6518c77…); header and PROTOCOL row name each input's source |
+
+Runs (genuine stage, ports 46760+, heavy.sh, D68):
+- **m35** at cc10eb35's tree: **3 PASS / 0 FAIL**, GREEN. positive 7/7 (BaseSpawner rewrite logged); spawn-position-off
+  7/7, rewrite line absent; withhold red on exactly the six, each for its pinned reason. The first attempt was RED 0/3
+  on "the server never got its port (*:46760)": a server JVM leaked by this lane's own m40 H3 control
+  (`M40_TIMEOUT=1`, 2026-11-09 22:48) still held *:46760; killed, re-run green (`gates/m35-port-held.out`, walls.md).
+- **m35 pins red-checked offline** with the gate's own checker (`m35-check-extracted.py`): the lane's earlier withhold
+  JSON (old "written back" text), spawner-data red for "expected exactly one real candidate mob, got 0", item-result
+  with no consumer, an off-phase log showing the rewrite, and a positive log without it each fail (rc 1); the new
+  evidence passes all three phases.
+- **m34**: the verdict block run with a stand-in soak-run: RELEASE_PASS -> PASS, CONTROL_PASS -> CONTROL-ONLY (rc 0),
+  REVIEW_REQUIRED exit 1 -> FAIL, exit 0 with no verdict -> FAIL; 6cb3cb0f's block printed PASS on CONTROL_PASS. The
+  gate's no-sidecar path end to end: FATAL, `[kernel] FAIL M34 soak-run stopped with exit 1`, no client started
+  (`gates/m34-nosidecar-3.out`). The 2-hour soak is still VERIFY's.
+- **fluid-parity `--mods`** (f5e5ad33's tool, `--native-controls` = the stage worktree's build/native-controls, copied per
+  run, never written; nothing downloaded): **PASS**, exit 0; servers 127.0.0.1:46760 (native NeoForge 26.2.0.93) and
+  :46761 (Forbric); both arms registered ['neoforge']; every cell equal (N_place lava, N_neighbour/N_first glowstone,
+  V_* obsidian, the `_end` cells too); firings equal (N_neighbour 1/1, N_first 1/1, others 0/0)
+  (`fluid-parity-mods-93/summary.json`, consoles kept, server copies deleted).
+- **gates-all** (`-j 1`, every other gate skipped): RESULT m60 GREEN 10/0, m61 GREEN 6/0, m62 GREEN 6/0, exit 0; m60
+  read fabric-api from `.dev/api` (`gates-all-m60-m62/`).
+- python: test_gate_ports 11/11, test_soak 28/28.
+- **Suite** at the review tip (pinned build): 5772 tests, 0 skipped, 5 failed, exactly the five rows of failures-wave1.txt (0 new, 0 gone; `review-fixes/suite-final.log`, `suite-final-xml/`).
+
+Open after the review fixes:
+- **-> orchestrator (D48, A-1):** spawner-nonempty-input's withhold red is the probe's own read-back, not game
+  behaviour. Keep it (as now, labelled) or make the read-back phase-aware so the set becomes five and amend D48.
+- **-> VERIFY:** m34 2-hour release soak (unchanged from above).
+- **wall:** the 1-second timeout recipe for m40's H3 control (and the same `kill_owned_descendants` pattern in m35)
+  can leave the phase's inner shell and its server JVM running: the descendants are snapshotted once and evidence.py is
+  only killed 15 s later, after it may have started them. It only bit under `M40_TIMEOUT=1`; a 240 s timeout finds
+  the tree complete. Not fixed here (no finding asked for it); noted in walls.md.
+
+Review-fix commits: 0a4fe3fc (m34), 4d5a3bc0 (m33 title), 076f3a1c (PROTOCOL breath-drown), cdae9449 (m60 inputs),
+cc10eb35 (m35), and this record update.
