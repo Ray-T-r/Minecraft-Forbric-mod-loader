@@ -213,6 +213,10 @@ class FabricClientMixinAnchorsTest {
   ClassNode same=painter("Ticked",HOST+CALLBACK+"F",null,null,null,null,local("name",List.of("partialTick")));
   assertEquals(1,MixinOperationSeamTransport.adapt(same,name->name.equals(GUI)?gui:CarpetMixinAdapterTest.target(name),natives,loader),
     "NeoForge's Gui hands its gateway the game-time partial tick vanilla hands the draw: the local is the gateway's operand");
+  // Wrapper (this; screen, layers, canvas, x, y, partialTick; Operation; the host's arguments): the local is filled from
+  // the gateway's own float operand, slot 6, and from nothing else.
+  MethodNode tickMoved=named(same,m->m.name.endsWith("$invoke$scope")&&MixinFit.injectorOf(m)!=null);
+  assertEquals(List.of(0,8,9,10,6),handedToTheBridge(tickMoved),"the host's arguments, then the partial tick the host hands its gateway");
   // The same Gui, but the gateway's partial tick computed another way — the carrier's own code, as NeoForge's native
   // class too, so the seam can still prove which operands the carrier changed.
   ClassNode realtime=StagedFabricMixinFixture.game(GUI,false);
