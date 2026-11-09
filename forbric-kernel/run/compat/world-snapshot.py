@@ -7,10 +7,16 @@ controls, and check a snapshot's names against a registry census.
     world-snapshot.py mutate <world-dir> [--chest-count "DIM X Y Z" SLOT COUNT]... [--palette OLD=NEW]...
     world-snapshot.py census <snap.json> <registries.json>... [--drop KIND=NAME]
 
-WHY. gate-m58 asks whether a world Forbric 0.4 wrote (merged base, two carriers) comes back whole under the genuine
-NeoForge base, and gate-m59 whether a world written with a MinecraftForge build of a mod survives the swap to its
-NeoForge build. Both questions are about the save files, so both are answered offline, after a clean stop, from what is
-on disk: the thing that has to survive is the file, not what a running game says about it.
+WHY. gate-m58 asks whether a world a Forbric from before MinecraftForge's removal wrote (merged base, two carriers:
+v0.3.1-beta2 and earlier, and the 0.4.0-dev builds of that line) comes back whole under the genuine NeoForge base, and
+gate-m59 whether a world written with a MinecraftForge build of a mod survives the swap to its NeoForge build. Both
+questions are about the save files, so both are answered offline, after a clean stop, from what is on disk: the thing
+that has to survive is the file, not what a running game says about it.
+
+WHERE IT SITS. Not part of the compatibility sweep (PROTOCOL.md): only gate-m58 and gate-m59 run it. It reads saves
+through world-parity.py's typed reader (`read_typed`), the tree's one NBT parser, so gate-m31 and these gates cannot
+disagree about what a file holds; test_world_snapshot.py checks that reader against bytes the game itself wrote
+(testdata/world-snapshot/, a flat world the old kernel saved) as well as against our own writer.
 
 Snapshots are typed (see world-parity.py `read_typed`): `["int", 5]` and `["byte", 5]` differ, so a field that changes
 type on resave is a difference, not a silent equality. Schema `forbric-world-snapshot/1`, facets (each a JSON object
