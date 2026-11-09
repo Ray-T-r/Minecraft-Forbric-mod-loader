@@ -333,6 +333,29 @@ class Rules(unittest.TestCase):
         found, _ = ws.diff(new, dict(reseeded, players={player: ["compound", dict(reseeded["players"][player][1], XpSeed=I(5))]}), "reopen")
         self.assertEqual([p for _, p, _, _ in found], ["/%s/XpSeed" % player])
 
+    def test_recipe_list_order_is_allowed_only_in_a_players_recipe_book(self):
+        """The recipes/toBeDisplayed order allowance was measured in a player's recipeBook only (review w2 UPG A-6): a
+        list of the same name in a block entity, or at a player's top level, keeps its order."""
+        old, new = copy.deepcopy(self.new), copy.deepcopy(self.new)
+        player, pos = "00000000-0000-0000-0000-000000000000", "minecraft:overworld 3 -64 0"
+        for snap, order in ((old, ["minecraft:book", "minecraft:oak_planks"]), (new, ["minecraft:oak_planks", "minecraft:book"])):
+            snap["block_entities"][pos][1]["recipes"] = ["list", "string", list(order)]
+            snap["players"][player][1]["toBeDisplayed"] = ["list", "string", list(order)]
+        found, rules = ws.diff(old, new, "reopen")
+        self.assertEqual(sorted(p for _, p, _, _ in found),
+                         sorted(["/%s/recipes[0]" % pos, "/%s/recipes[1]" % pos,
+                                 "/%s/toBeDisplayed[0]" % player, "/%s/toBeDisplayed[1]" % player]), found)
+        self.assertNotIn("unordered list recipes", rules.used)
+        self.assertNotIn("unordered list toBeDisplayed", rules.used)
+        # The same reorder inside the player's recipeBook is the measured noise.
+        for snap, order in ((old, ["minecraft:book", "minecraft:oak_planks"]), (new, ["minecraft:oak_planks", "minecraft:book"])):
+            snap["block_entities"][pos][1].pop("recipes")
+            snap["players"][player][1].pop("toBeDisplayed")
+            snap["players"][player][1]["recipeBook"] = C(recipes=["list", "string", list(order)])
+        found, rules = ws.diff(old, new, "reopen")
+        self.assertEqual(found, [])
+        self.assertEqual(rules.used.get("unordered list recipes"), 1)
+
 
 class Mutate(unittest.TestCase):
     def test_a_chest_slot_and_a_palette_name_change_and_nothing_else(self):

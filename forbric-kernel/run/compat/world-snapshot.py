@@ -327,8 +327,10 @@ FORGE_DATA_FILE = re.compile(r"(^|/)data/forge/")
 # chunks of data/minecraft/chunk_tickets.dat came back with four of twenty-five tickets swapped, gate-m58 2026-11-09).
 UNORDERED_LISTS = ("attributes", "modifiers", "tickets")
 # Lists of strings saved from a HashSet (measured: a player's recipeBook recipes/toBeDisplayed came back in another order
-# on every resave, old -> old included).
+# on every resave, old -> old included). Only inside a player's recipeBook: that is where it was measured, and a list of
+# the same name anywhere else (a mod machine's queue) keeps its order.
 UNORDERED_STRING_LISTS = ("recipes", "toBeDisplayed")
+UNORDERED_STRING_LISTS_IN = "recipeBook"
 # A player's own per-tick counter inside a compound (measured: warden_spawn_tracker.ticks_since_last_warning grows by the
 # ticks the player was online, old -> old included).
 PLAYER_TICK_NESTED = (("warden_spawn_tracker", "ticks_since_last_warning"),)
@@ -400,11 +402,6 @@ def _sort_unordered(value, rules):
                 if ordered != v[2]:
                     rules.count("unordered list " + k)
                 v = ["list", "compound", ordered]
-            elif k in UNORDERED_STRING_LISTS and isinstance(v, list) and len(v) == 3 and v[0] == "list" and v[1] == "string":
-                ordered = sorted(v[2])
-                if ordered != v[2]:
-                    rules.count("unordered list " + k)
-                v = ["list", "string", ordered]
             out[k] = v
         return ["compound", out]
     if isinstance(value, list) and len(value) == 3 and value[0] == "list" and value[1] in ("compound", "list"):
@@ -492,6 +489,17 @@ def normalise(snap, rules, side):
             if outer in d and d[outer][0] == "compound" and k in d[outer][1]:
                 d[outer] = ["compound", {n: v for n, v in d[outer][1].items() if n != k}]
                 rules.count("player per-tick %s.%s" % (outer, k))
+        book = d.get(UNORDERED_STRING_LISTS_IN)
+        if isinstance(book, list) and book and book[0] == "compound":
+            book = dict(book[1])
+            for k in UNORDERED_STRING_LISTS:
+                v = book.get(k)
+                if isinstance(v, list) and len(v) == 3 and v[0] == "list" and v[1] == "string":
+                    ordered = sorted(v[2])
+                    if ordered != v[2]:
+                        rules.count("unordered list " + k)
+                    book[k] = ["list", "string", ordered]
+            d[UNORDERED_STRING_LISTS_IN] = ["compound", book]
         for k in ("Pos", "Rotation"):
             if k in d and d[k][0] == "list":
                 d[k] = ["list", d[k][1], [round(v, 6) for v in d[k][2]]]
