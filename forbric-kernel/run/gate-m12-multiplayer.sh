@@ -32,21 +32,24 @@
 #  3. ClientNetworkRegistry.setup() ran on the server too and, once NeoForge's payloads existed, correctly failed
 #     "missing client-side handlers". Fix: client-only, as genuine NeoForge has it.
 #  4. The client died applying NeoForge's frozen-registry snapshot: NullPointerException "holder is null" in
-#     MappedRegistry.registerIdMapping. Seventeen builtin registries are MinecraftForge NamespacedWrappers whose
-#     inherited MappedRegistry fields stay empty; NeoForge remaps through exactly those fields. Fix:
-#     RegistrySyncParityInjector gives the wrapper NeoForge's clear/registerIdMapping contract and applies the staged
-#     ids through Forge's own GameData.injectSnapshot (KernelForgeWrapperSync).
+#     MappedRegistry.registerIdMapping. On the merged base seventeen builtin registries were MinecraftForge
+#     NamespacedWrappers whose inherited MappedRegistry fields stayed empty, and NeoForge remaps through exactly those
+#     fields (fixed then by KernelForgeWrapperSync). Since Stage 4 they are NeoForge's own registries and the wrappers,
+#     the sync and its check are gone; what is asserted is that the client took its pre-connection ids before the
+#     server's replaced them (KernelRegistryRevert, which the disconnect needs) and that every sync applied.
 #
 # Each is pinned below by an assertion that fails on the log line it used to produce. Both ends Forbric is what this
-# gate exercises; a Forbric client against a PURE Fabric server is gate-m14's job, and the wrappers follow that
-# server's ids there too.
+# gate exercises; a Forbric client against a PURE Fabric server is gate-m14's job.
+# Rundirs: M12_SERVER_RUNDIR / M12_CLIENT_RUNDIR (default run/mp-server, run/mp-client, which the gate wipes).
 # GATE-PARALLEL: rundirs=mp-server,mp-client mem=3500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 PORT="${M12_PORT:-25599}"
-SRV="$KERNEL/run/mp-server"
-CLI="$KERNEL/run/mp-client"
+SRV="${M12_SERVER_RUNDIR:-$KERNEL/run/mp-server}"
+CLI="${M12_CLIENT_RUNDIR:-$KERNEL/run/mp-client}"
+refuse_shared_rundir "$SRV"
+refuse_shared_rundir "$CLI"
 SLOG="$BUILD/gate-m12-server.log"
 CLOG="$BUILD/gate-m12-client.log"
 mkdir -p "$BUILD"
@@ -56,15 +59,14 @@ DL="$RUN_OLD/downloads"
 # module under test, mcw-bridges registers 303 blocks/items (a registry payload worth syncing), and collective is
 # a universal jar so multi-loader arbitration runs on both ends. Since Stage 3 of dropping MinecraftForge mcw-bridges
 # is its NeoForge build, same version ($NEO_BUILDS): the MinecraftForge build is refused, and a refusal stops the
-# dedicated server. Its 303 blocks/items still land in the seventeen MinecraftForge-wrapped builtin registries the
-# merged base keeps, so the wrapper sync below still has real work to do.
+# dedicated server.
 MODS=(
   "$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
   "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"
 )
 # M12_MODS replaces that set wholesale (space-separated paths). The reason it exists: when this gate goes red the
-# first question is always "is it the tri-ecosystem combination or the plumbing?", and the only way to answer it
+# first question is always "is it the Fabric + NeoForge combination or the plumbing?", and the only way to answer it
 # is to run the same gate with one ecosystem's jars and compare.
 if [ -n "${M12_MODS:-}" ]; then read -r -a MODS <<< "$M12_MODS"; fi
 for m in "${MODS[@]}"; do
@@ -169,10 +171,13 @@ check_absent "no protocol error"     "Network Protocol Error|Incompatible client
 check_absent "every payload encodes"  "Failed to encode packet"                          "$SLOG"
 check_absent "every payload decodes"  "Failed to decode packet|Failed decoding custom payload" "$CLOG"
 check "NeoForge's own payloads registered on the server" "NeoForge's own included: yes" "$SLOG"
-# The third: seventeen builtin registries are MinecraftForge wrappers, and NeoForge's registry sync remapped them
-# through MappedRegistry fields the wrapper never fills — NPE, "Failed to sync registries from the server". The
-# server's ids now reach them through Forge's own injectSnapshot; this line is that path reporting in.
-check "Forge-wrapped registries followed the server's ids" "Forge-wrapped registr.* followed the server's ids" "$CLOG"
+# The fourth (the header's): NeoForge's registry sync applies the server's ids on the client. The kernel takes the
+# client's own ids first, because it owns the freeze and NeoForge's snapshot of them is never taken, so the disconnect
+# can put them back; the capture line is that path reporting in, and the absence is the sync itself not failing.
+# (The check that stood here read "Forge-wrapped registries followed the server's ids", KernelForgeWrapperSync's line,
+# deleted with the MinecraftForge wrappers in Stage 4.)
+check "the client's pre-connection ids were captured before the sync" \
+  "Forbric/RegistrySync\] captured the pre-connection ids of [1-9][0-9]* synced registr\(ies\)" "$CLOG"
 check_absent "client applied every registry sync" "Failed to sync registries|Failed to handle registry sync"  "$CLOG"
 
 # Fabric declares a client's PLAY receivers during CONFIGURATION, through c:register — not through
