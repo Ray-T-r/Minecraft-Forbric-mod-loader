@@ -1,0 +1,9 @@
+# gate-m58's world script for phase held: run once, as the singleplayer world's integrated server, by forbricupgradeneo in
+# phase write, on a copy of the main save (S2). waystones and sophisticatedbackpacks are in D53's set, but phase main
+# cannot carry them (a new client dies joining a server whose mods register particle types), so they are written here,
+# in singleplayer, until the orchestrator rules on them. Every line must print "[M58Upgrade] OK command" (D53). The
+# chest is the main script's at 0 -60 0; slots 10 and 12 are free there.
+#
+item replace block 0 -60 0 container.10 with sophisticatedbackpacks:backpack 1
+item replace block 0 -60 0 container.12 with waystones:andesite_waystone 1
+setblock 6 -60 4 waystones:andesite_waystone[half=lower]

@@ -1,7 +1,9 @@
 # gate-m58's world script: run once, as the server, by forbricupgradeneo in phase write (UpgradeProbe.SCRIPT_TICK ticks
 # after the start, in the force-loaded chunks -2..2). Every line must print "[M58Upgrade] OK command"; a line that
 # fails is a thing that is not in the world, and the gate goes red on it (D53: a real mod stays in the set only when its
-# population command succeeds). Flat world: grass at y=-61, so y=-60 is the first air block.
+# population command succeeds; waystones and sophisticatedbackpacks populate fine but are written in held.commands instead,
+# because a new client cannot join a server that has them, see the gate). Flat world: grass at y=-61, so y=-60 is the
+# first air block.
 #
 # Noise off: no clock, no weather, no random ticks, no natural spawns. (Game rules are content too: level.dat must keep them.)
 gamerule minecraft:keep_inventory true

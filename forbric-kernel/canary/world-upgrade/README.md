@@ -16,10 +16,14 @@ Scripts (run as the server; every line must print `[M58Upgrade] OK command`, or 
   0 -60 0 with one item class per slot (enchanted/damaged/named/lored sword, custom data, both canaries' stamps, a
   potion, a written book, a shulker box with contents, real NeoForge mods' items); vanilla block entities and
   state-bearing blocks; a NoAI pig with a fixed UUID, an armor stand, an item frame; real NeoForge mods' blocks and a
-  corpse entity (D53: a mod stays in the set only while its population command succeeds); scoreboard, team, command
+  corpse entity (D53: a mod stays in the set only while its population command succeeds; waystones and
+  sophisticatedbackpacks are in `held.commands` instead, for a reason that is not theirs); scoreboard, team, command
   storage and a bossbar.
 - `player.commands` — at each login in phase `write`: inventory, armour, offhand, ender chest, XP, an infinite effect,
   spawn point, a recipe, an advancement, a score.
+- `held.commands`, `held-player.commands` — phase `held`: waystones and sophisticatedbackpacks (D53's set), which phase
+  main cannot carry until a new client can join a server whose mods register particle types, written in a singleplayer
+  copy of the main save, where that remap does not run. Held there until the orchestrator rules on them.
 - `forge.commands` — the save with MinecraftForge-only content (mcw-bridges' MinecraftForge build beside vanilla and
   canary content in one chest).
 

@@ -1,0 +1,6 @@
+# gate-m58's player script for phase held: run by forbricupgradeneo in phase write when the singleplayer host logs in.
+# The host has no player file yet (the gate sets the socket player's files aside), so balm writes its per-player data
+# (ForgeData.PlayerPersisted.BalmData on the old side) at this login. Every line must print "[M58Upgrade] OK command".
+tp @s 3.5 -60 7.5 90 0
+item replace entity @s hotbar.4 with sophisticatedbackpacks:backpack 1
+item replace entity @s hotbar.6 with waystones:andesite_waystone 2

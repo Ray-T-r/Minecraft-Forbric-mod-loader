@@ -27,6 +27,12 @@
 #   bb         the B/B, its counterpart on this tree: the NEW kernel writes the same save (world and player scripts, a new
 #              client over the socket) and reopens it -> S2n, S3n, 0 under `reopen`. A check red here as well as in main is
 #              this tree's own, not the upgrade's.
+#   held       waystones (+ balm, shogi) and sophisticatedbackpacks (+ sophisticatedcore), which D53 names but which
+#              phase main cannot carry (a new client dies joining any server whose mods register particle types, see
+#              REAL_MODS below), in a singleplayer world where that remap does not run: an old client opens a copy of
+#              S2 with them added and writes their content (held.commands, held-player.commands) -> S2h, a new client
+#              twice -> S3h, S4h, the same rules and checks as sp. Held here until the orchestrator rules on them; it
+#              goes, and they return to main, once that join works.
 #   transfer   gate-m33's machines: `prepare` on the old kernel, `reload` on the new one (40 items, 32,417 Fabric fluid
 #              units, both families' block entities deserialized).
 #   energy     gate-m40's cells the same way (Team Reborn Energy and NeoForge, 40,000 E).
@@ -79,7 +85,7 @@ LOGS="$RESULTS/logs"
 WS="$KERNEL/run/compat/world-snapshot.py"
 SCRIPTS="$KERNEL/canary/world-upgrade"
 CANARIES="$BUILD/m58-canary"
-PHASES=" ${M58_PHASES:-main sp aa bb transfer energy forge installed controls} "
+PHASES=" ${M58_PHASES:-main sp held aa bb transfer energy forge installed controls} "
 BOX="-2,-2,2,2"
 rm -rf "$RESULTS"; mkdir -p "$SNAP" "$LOGS"
 want() { case "$PHASES" in *" $1 "*) return 0;; esac; return 1; }
@@ -95,16 +101,30 @@ FORGE_BRIDGES="${M58_FORGE_BRIDGES:-$RUN_OLD/downloads/forge-26.2/mcw-bridges-3.
 # client then dies joining ANY server that has them: fabric-registry-sync remaps minecraft:particle_type on the join and
 # its Int2ObjectMapTracker calls clear() on the kernel's IntKeyedView over ParticleResources' providers, which does not
 # support it (UnsupportedOperationException, "Registry remapping failed!"). That is a defect of its own, not an upgrade
-# loss, and it is reported, not hidden: this gate keeps mods whose content it can carry through a socket join.
+# loss, and it is reported, not hidden: phase main keeps mods whose content it can carry through a socket join, and the
+# two leave D53's set only for that arm (no ruling yet, review w2 UPG A-2/B-4): phase held keeps them in a singleplayer
+# world, where fabric-registry-sync sends nothing to the host and so nothing is remapped.
 REAL_MODS=(
   "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$NEO_MODS/mcw-furniture-3.4.2-mc26.2neoforge.jar"
   "$NEO_MODS/ToolBelt-26.2-2.10.0.jar"
   "$NEO_MODS/corpse-neoforge-1.1.17+26.2.jar"
 )
+# Held out of main for the particle remap (phase held). HELD_POPULATED are the ones the held scripts put in the world;
+# the other three are their libraries.
+HELD_POPULATED=(
+  "$NEO_MODS/waystones-neoforge-26.2-26.2.0.5.jar"
+  "$NEO_MODS/sophisticatedbackpacks-26.2-3.26.2.2154.jar"
+)
+HELD_MODS=("${HELD_POPULATED[@]}"
+  "$NEO_MODS/balm-neoforge-26.2-26.2.0.4.jar"
+  "$NEO_MODS/shogi-neoforge-26.2-26.2.0.3.jar"
+  "$NEO_MODS/sophisticatedcore-26.2-1.5.0.2337.jar"
+)
 for m in "$FAPI" "${REAL_MODS[@]}"; do
   [ -f "$m" ] || { echo "[kernel] SKIP-FATAL: missing mod $m" >&2; exit 3; }
 done
+if want held; then for m in "${HELD_MODS[@]}"; do [ -f "$m" ] || { echo "[kernel] SKIP-FATAL: missing mod $m (phase held)" >&2; exit 3; }; done; fi
 if want forge && [ ! -f "$FORGE_BRIDGES" ]; then echo "[kernel] SKIP-FATAL: missing mcw-bridges' MinecraftForge build $FORGE_BRIDGES" >&2; exit 3; fi
 if want energy && [ ! -f "$REBORN" ]; then echo "[kernel] SKIP-FATAL: missing Team Reborn Energy $REBORN (M40_REBORN_ENERGY)" >&2; exit 3; fi
 
@@ -292,11 +312,18 @@ mod_namespace() {
 # write_checks <log> <who> <player: yes|no> <world-script|-> <player-script> [populated jars...] — the side that wrote
 # this save (<who>: "old server", "new server", "old client") wrote everything it was asked to. Every jar listed must
 # have at least one OK line of the world script naming its namespace (D53: a mod stays in the set only while its
-# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1).
+# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1). WC_BOX_FORCED=yes: the save is a
+# copy of S2, whose writer force-loaded the box, so the canary's forceload must fail with vanilla's "nothing changed" and
+# only that way (phase held).
 write_checks() {
-  local log="$1" who="$2" player="$3" script="$4" pscript="$5" jar ns n; shift 5
+  local log="$1" who="$2" player="$3" script="$4" pscript="$5" jar ns n except=""; shift 5
+  if [ "$script" != - ] && [ "${WC_BOX_FORCED:-}" = yes ]; then
+    check_exactly "the export box was force-loaded already (S2's tickets): the $who's forceload changed nothing" "\[M58Upgrade\] FAIL command \(canary\) forceload" "$log" 1
+    check "vanilla said the forceload changed nothing" "No chunks were marked for force loading" "$log"
+    except='\[M58Upgrade\] FAIL command \(canary\) forceload'
+  fi
   if [ "$script" != - ]; then
-    check "the $who force-loaded the export box" "\[M58Upgrade\] OK command \(canary\) forceload" "$log"
+    [ "${WC_BOX_FORCED:-}" = yes ] || check "the $who force-loaded the export box" "\[M58Upgrade\] OK command \(canary\) forceload" "$log"
     check "the world script $script ran with no failed line" "\[M58Upgrade\] ran [1-9][0-9]* command\(s\) from $script, 0 failed" "$log"
     for jar in "$@"; do
       ns="$(mod_namespace "$jar")"
@@ -313,7 +340,7 @@ write_checks() {
     check "the NeoForge canary wrote the player's values" "\[M58Upgrade\] wrote neo player values" "$log"
     check "the Fabric canary wrote the player's values" "\[M58Upgrade\] wrote fabric player values" "$log"
   fi
-  check_absent "nothing the $who was asked to write failed" "\[M58Upgrade\] (FAIL|DISARMED)" "$log"
+  check_absent "nothing the $who was asked to write failed" "\[M58Upgrade\] (FAIL|DISARMED)" "$log" "$except"
 }
 
 # The load errors a new boot of an upgraded save must not log (raw log; the MinecraftForge carrier's one missing pack is
@@ -486,6 +513,38 @@ if want sp && need_pristine sp; then
   new_boot_checks "$LOGS/s4-sp.client.game.log" no
   export_snap "$ROOT/sp-new/saves/UpgradeSP" S4c
   diff_zero "a second new open changed nothing (singleplayer)" S3c S4c reopen
+fi
+
+# --- held: D53's mods that phase main cannot carry, in singleplayer -----------------------------------------------------
+if want held && need_pristine held; then
+  step "held (D53, no ruling yet): waystones and sophisticatedbackpacks in a singleplayer copy of S2: an old client writes their content (S2h), a new client twice (S3h, S4h)"
+  HELD_ALL=("${MAIN_MODS[@]}" "${HELD_MODS[@]}")
+  fresh_dir "$ROOT/held-old" "${HELD_ALL[@]}"
+  clone_world "$PRISTINE/main" "$ROOT/held-old/saves/UpgradeSP"
+  rm -f "$ROOT/held-old/saves/UpgradeSP"/players/data/*.dat "$ROOT/held-old/saves/UpgradeSP"/players/advancements/*.json \
+    "$ROOT/held-old/saves/UpgradeSP"/players/stats/*.json
+  sp_round old "$ROOT/held-old" s2-held write -Dforbric.worldUpgradeCommands="$SCRIPTS/held.commands" \
+    -Dforbric.worldUpgradePlayerCommands="$SCRIPTS/held-player.commands"
+  WC_BOX_FORCED=yes write_checks "$LOGS/s2-held.client.game.log" "old client" yes held.commands held-player.commands "${HELD_POPULATED[@]}"
+  rm -rf "$PRISTINE/held"; clone_world "$ROOT/held-old/saves/UpgradeSP" "$PRISTINE/held"
+  export_snap "$PRISTINE/held" S2h
+  fresh_dir "$ROOT/held-new" "${HELD_ALL[@]}"
+  clone_world "$PRISTINE/held" "$ROOT/held-new/saves/UpgradeSP"
+  sp_round new "$ROOT/held-new" s3-held read
+  # The premise of this arm: in singleplayer nothing remaps the particle registry, so the new client gets in at all.
+  check_absent "the new client remapped no registry on the singleplayer join (the particle remap is phase main's defect)" \
+    "Registry remapping failed|UnsupportedOperationException" "$LOGS/s3-held.client.game.log"
+  canary_read "$LOGS/s3-held.client.game.log" "$RESULTS/s3-held" yes
+  new_boot_checks "$LOGS/s3-held.client.game.log" yes
+  missing_only_forge "$LOGS/s3-held.client.game.log"
+  export_snap "$ROOT/held-new/saves/UpgradeSP" S3h
+  diff_zero "the upgrade kept the held mods' save (singleplayer)" S2h S3h upgrade
+  census_ok S2h "$RESULTS/s3-held"
+  sp_round new "$ROOT/held-new" s4-held read
+  canary_read "$LOGS/s4-held.client.game.log" "$RESULTS/s4-held" yes
+  new_boot_checks "$LOGS/s4-held.client.game.log" no
+  export_snap "$ROOT/held-new/saves/UpgradeSP" S4h
+  diff_zero "a second new open changed nothing (held, singleplayer)" S3h S4h reopen
 fi
 
 # --- C3: the A/A ------------------------------------------------------------------------------------------------------
@@ -730,6 +789,7 @@ step "manifest: what wrote and what read these saves"
 # old stage's carriers, and the jars of the phases that ran. A path that is not there is recorded as null.
 INPUTS=("$KERNEL/run/gate-m58-world-upgrade.sh" "$SCRIPTS"/*.commands "$OLD_KERNEL_STAGE/run/neoforge-runtime/neoforge-runtime.jar"
   "$OLD_KERNEL_STAGE/run/merged-base/forge-runtime-interop.jar")
+want held && INPUTS+=("${HELD_MODS[@]}")
 want forge && INPUTS+=("$FORGE_BRIDGES")
 want energy && INPUTS+=("$REBORN")
 { want transfer || want energy; } && INPUTS+=("$MACHINES"/*.jar)
