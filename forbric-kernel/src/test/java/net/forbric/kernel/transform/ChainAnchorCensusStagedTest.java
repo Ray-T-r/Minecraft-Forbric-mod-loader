@@ -272,7 +272,8 @@ class ChainAnchorCensusStagedTest {
 	// ------------------------------------------------------------------------------------------------------------
 
 	record Census(EnvType side, int sites, List<String> skipped, List<String> unbuilt, AnchorLedger.Report report,
-			List<String> missingRequired, List<String> errors, List<Rec> recs, Map<String, byte[]> raw, Map<String, byte[]> out) {
+			List<String> missingRequired, List<String> errors, List<Rec> recs, Map<String, byte[]> raw, Map<String, byte[]> out,
+			Map<String, Set<String>> runtimeRefs) {
 		/** The name of the first transformer with a REQUIRED anchor that landed. */
 		String firstWithRequiredHits() {
 			for (Rec rec : recs) {
@@ -366,11 +367,13 @@ class ChainAnchorCensusStagedTest {
 
 			TransformContext ctx = new TransformContext(side, false, "named");
 			Map<String, byte[]> raw = new TreeMap<>(), out = new TreeMap<>();
+			Map<String, Set<String>> runtimeRefs = new TreeMap<>();
 			Set<String> kept = new TreeSet<>();
 			for (NativeCall call : NATIVE_CALLS) kept.add(call.owner());
 			for (String internal : jars.classes()) {
 				byte[] before = jars.bytes(internal);
 				byte[] after = chain.applyBeforeMixin(internal.replace('/', '.'), before, ctx);
+				if (after != null && after != before) runtimeRefs(internal, after, runtimeRefs);
 				if (kept.contains(internal)) {
 					raw.put(internal, before);
 					out.put(internal, after);
@@ -390,10 +393,23 @@ class ChainAnchorCensusStagedTest {
 				}
 				r.errors.forEach((c, e) -> errors.add(r.name() + " on " + c + ": " + e));
 			}
-			return new Census(side, sites.size(), skipped, unbuilt, chain.ledger().report(), missing, errors, recs, raw, out);
+			return new Census(side, sites.size(), skipped, unbuilt, chain.ledger().report(), missing, errors, recs, raw, out, runtimeRefs);
 		} finally {
 			setActive(null);
 		}
+	}
+
+	private static final java.util.regex.Pattern RUNTIME_CLASS =
+			java.util.regex.Pattern.compile("net/forbric/kernel/runtime/[A-Za-z0-9_/$]+");
+
+	/**
+	 * Every kernel game-side class ({@code net/forbric/kernel/runtime/...}) a class the chain changed names in its constant
+	 * pool, by binary name, with the game classes naming it (RuntimeSeamLivenessStagedTest reads it).
+	 */
+	private static void runtimeRefs(String internal, byte[] bytes, Map<String, Set<String>> into) {
+		// Constant-pool strings are stored as (modified) UTF-8, which for a class name is plain ASCII: read the bytes as such.
+		java.util.regex.Matcher m = RUNTIME_CLASS.matcher(new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1));
+		while (m.find()) into.computeIfAbsent(m.group().replace('/', '.'), k -> new TreeSet<>()).add(internal);
 	}
 
 	/** Records what one transformer saw and edited; when silenced, edits nothing. */
