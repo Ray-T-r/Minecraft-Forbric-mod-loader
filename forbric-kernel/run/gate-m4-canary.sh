@@ -1,22 +1,23 @@
 #!/usr/bin/env bash
-# M4-CANARY gate (synthetic) — Fabric + NeoForge mods run SIMULTANEOUSLY in ONE instance on the merged base, with no
-# genuine loader lifecycle for either, and the MinecraftForge carrier still up with no MinecraftForge mod on it.
+# M4-CANARY gate (synthetic) — Fabric + NeoForge mods run SIMULTANEOUSLY in ONE instance on NeoForge's patched game,
+# with no genuine loader lifecycle for either.
 #
 # The proof is two canaries, one per shipping ecosystem, both live at once:
 #   • Fabric      forbricfabriclive — entrypoints run, JiJ nested mod runs, content registered survives the freeze
-#   • NeoForge    forbricneolive    — @Mod constructed, ServerTickEvent fires NATIVELY (Neo won the merged tick hook)
+#   • NeoForge    forbricneolive    — @Mod constructed, ServerTickEvent fires NATIVELY from the game's own tick hook
 #
 # STAGE 3 OF DROPPING MinecraftForge (what changed and why). This gate was TRI-IN-ONE: a third canary, the
 # MinecraftForge forbriclive, was constructed here, registered its @EventBusSubscriber and counted 20 server ticks
-# re-emitted by GameEventMultiplexer. Forbric now refuses a MinecraftForge-only jar, and a dedicated server stops on
-# that refusal, so the canary would stop the boot and take both other families' checks with it. It is no longer
-# staged, and its four checks are gone: "MinecraftForge @Mod constructed", the MinecraftForge tick re-emission (the
-# carrier's tick bridges still run with zero MinecraftForge mods, and gate-m4 still asserts them on real mods), and
-# the @EventBusSubscriber count of 1, which was the MinecraftForge canary's one subscriber. The NeoForge canary
-# declares none, so the count (its line prints only for N > 0) must now come back empty: a
-# subscriber appearing from nowhere is the regression this can still catch. A NeoForge mod's own @EventBusSubscriber is
-# counted by KernelEventSubscribersGenuineBaseTest. What a refused MinecraftForge jar does to a server is gate-m29's.
-# Every Fabric and NeoForge check is unchanged; the gate also asserts that nothing here was refused.
+# re-emitted by GameEventMultiplexer. Forbric refuses a MinecraftForge-only jar, and a dedicated server stops on that
+# refusal, so the canary is no longer staged and its four checks are gone. The @EventBusSubscriber count of 1 was the
+# MinecraftForge canary's one subscriber. The NeoForge canary declares none, so the count (its line prints only for
+# N > 0) must come back empty: a subscriber appearing from nowhere is the regression this can still catch. A NeoForge
+# mod's own @EventBusSubscriber is counted by KernelEventSubscribersGenuineBaseTest. What a refused MinecraftForge jar
+# does to a server is gate-m29's.
+#
+# STAGE 4: the traditional-Forge baseline check went with the MinecraftForge carrier, and "no tick forward failure"
+# with the event multiplexer that printed it (D34: nothing can print it, so the absence proved nothing). Every Fabric
+# and NeoForge check is unchanged.
 # GATE-PARALLEL: rundirs=server-tri mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -30,6 +31,7 @@ step "stage one canary per shipping ecosystem"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m4-canary.log" 2>&1
 [ -f "$FABRIC" ] || { echo "[kernel] FAIL Fabric canary build (see $BUILD/gate-m4-canary.log)"; exit 1; }
 
+refuse_shared_rundir "$RUNDIR"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
@@ -49,8 +51,7 @@ record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 130
 
 step "both shipping ecosystems discovered + brought up in ONE instance (must PASS)"
-check "both Forge-family baselines"           "constructed NeoForge baseline mod" "$LOG"
-check "traditional-Forge baseline"            "constructed traditional-Forge baseline mod ForgeMod" "$LOG"
+check "NeoForge baseline"                     "constructed NeoForge baseline mod" "$LOG"
 check "NeoForge @Mod constructed"             "constructed @Mod forbricneolive" "$LOG"
 
 # A2: NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every @Mod on every side
@@ -99,7 +100,6 @@ check "clean shutdown"                        "Stopping server" "$LOG"
 
 step "nothing quietly broken (must be ABSENT)"
 check_absent "no NoClassDefFound (the old Forge-tick blocker)" "NoClassDefFoundError" "$LOG"
-check_absent "no tick forward failure"        "forward failed" "$LOG"
 check_absent "no entrypoint failed"           "entrypoint of .* failed" "$LOG"
 check_absent "no Tags not bound"              "Tags not bound" "$LOG"
 check_absent "no genuine FancyModLoader"      "gatherAndInitializeMods|dispatchParallelEvent" "$LOG"
@@ -111,7 +111,7 @@ check_absent "no post-Done exception"         "Encountered an unexpected excepti
 
 step "M4 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M4 CANARY GATE GREEN — Fabric + NeoForge run in one instance on the carrier that still holds MinecraftForge"
+  echo "[kernel] ✅ M4 CANARY GATE GREEN — Fabric + NeoForge run in one instance on NeoForge's patched game"
 else
   echo "[kernel] ❌ GATE RED"
 fi

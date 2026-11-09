@@ -1,46 +1,33 @@
 #!/usr/bin/env bash
-# M4 gate — TRI-IN-ONE server with REAL third-party mods (not synthetic canaries): Fabric + traditional
-# MinecraftForge + NeoForge all live SIMULTANEOUSLY in ONE instance on the merged 3-ABI base, with no genuine
-# loader lifecycle for any of them.
-#
-# STAGE 3 OF DROPPING MinecraftForge (what changed and why). Forbric now refuses a jar whose only usable half is
-# MinecraftForge's, and a dedicated server stops on that refusal, so the five Forge-only jars this gate staged would
-# stop the boot it exists to look at. Each was replaced by the same mod's NeoForge 26.2 build, same version, from
-# Modrinth ($NEO_BUILDS, recorded in stage3-fixtures.md): they now construct as NeoForge @Mods, and the catalogue must
-# hold NO MinecraftForge mod at all. The merged base, the MinecraftForge carrier and its bridges are unchanged and still
-# run with zero MinecraftForge mods, so the traditional-Forge baseline mod and the tick-bridge checks below stay as
-# they were: they are what "zero deletion" means, and they go with the carrier in Stage 4. The two universal jars
-# (FallingTree, collective) still declare all three loaders; with MinecraftForge set aside they land on NeoForge, as
-# they did before by preference, and the gate now also asserts that their MinecraftForge half was set aside.
-# Content counts were re-derived from the NeoForge builds' own registrations.
+# M4 gate — Fabric and NeoForge REAL third-party mods (not synthetic canaries) live SIMULTANEOUSLY in ONE dedicated
+# server on NeoForge's patched game, with no genuine loader lifecycle for either.
 #
 # The proof is real mods registering real content, one ecosystem per family, all at once:
-#   • Fabric         fabric-api (38 JiJ modules) + Jade — main entrypoints run, Jade registers content + loads its
-#                    server plugins
-#   • MinecraftForge FIVE Forge-only real mods — mcw-bridges, spark, TerraBlender, GeckoLib, NoChatReports —
-#                    all construct on genuine FMLJavaModLoadingContexts; Macaw's registers 303 blocks/items,
-#                    GeckoLib registers its own content
-#   • NeoForge       the genuine NeoForge baseline (NeoForgeMod, 35 entries + its internal @EventBusSubscribers)
-#                    PLUS real third-party NeoForge @Mods: FallingTree and collective are UNIVERSAL jars (they ship
-#                    fabric.mod.json + mods.toml + neoforge.mods.toml and one glue class per family). All three
-#                    loaders are live here, so MultiLoaderArbiter claims each jar for exactly ONE family — NeoForge
-#                    by default — and suppresses the other two. Without it the same mod initialised THREE times.
-#                    So all three families run real third-party mod code, none of it synthetic, none of it twice.
+#   • Fabric    fabric-api (38 JiJ modules) + Jade — main entrypoints run, Jade registers content + loads its server
+#               plugins
+#   • NeoForge  the genuine NeoForge baseline (NeoForgeMod, 38 entries + its internal @EventBusSubscribers) PLUS seven
+#               real third-party NeoForge @Mods: the NeoForge builds of mcw-bridges, spark, TerraBlender, GeckoLib and
+#               NoChatReports (Macaw's registers 303 blocks/items and its creative tab, GeckoLib its own content), and
+#               FallingTree and collective, UNIVERSAL jars that ship fabric.mod.json + mods.toml + neoforge.mods.toml
+#               and one glue class per family. MultiLoaderArbiter claims each for exactly ONE family — NeoForge, by
+#               preference — sets its MinecraftForge half aside and suppresses its Fabric half: without it the same mod
+#               initialised more than once.
+# So both families run real third-party mod code, none of it synthetic, none of it twice.
 #
-# `collective` is the reason guest-config relaxation had to be generalised: its Forge jar ALSO ships a Fabric mixin
-# config (collective_fabric.mixins.json) whose PlayerMixin descriptor no longer matches the merged base. While the
-# launch scripts relaxed only `fabric-*`, that was a FATAL MixinApplyError that aborted the boot; the kernel now
-# relaxes every discovered guest mod's configs, so it soft-skips with a warning and the mod still loads.
+# `collective` is the reason guest-config relaxation had to be generalised: its jar ALSO ships a Fabric mixin config
+# (collective_fabric.mixins.json) whose PlayerMixin descriptor does not match the game. While the launch scripts relaxed
+# only `fabric-*`, that was a FATAL MixinApplyError that aborted the boot; the kernel now relaxes every discovered guest
+# mod's configs, so it soft-skips with a warning and the mod still loads.
 #
-# Both game-event families ticking in the same loop (the B-5 shape, past all public prior art). On a base whose
-# tickServer posts only NeoForge's tick, the kernel's GameEventMultiplexer subscribes to NeoForge's ServerTickEvent and
-# re-emits MinecraftForge's, logging once at 20 forwards — so 20 forwards means both families ticked 20 times, once each:
-# 1:1, counted here. Real mods don't count ticks, so that proof is kernel-instrumented rather than canary-emitted. On a
-# base whose tickServer calls MinecraftForge's tick hooks itself (one that keeps both families' edits — the edit-splice
-# base does), the bridges stand down for those ticks and say so instead, and this gate proves only that: the game posts
-# MinecraftForge's ticks in the same loop and nothing forwards a second one. It does not count them; M41's breadth run
-# counts every post of ServerTickEvent.Pre/Post on both buses (each NeoForge post answered by MinecraftForge's own
-# dispatch, none forwarded as well), and that is where the 1:1 count lives on such a base.
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). The game is NeoForge's own patched jar and Forbric carries
+# no MinecraftForge runtime, so what this gate asserted about MinecraftForge went with them: the traditional-Forge
+# baseline mod, the tick-bridge step (which read MinecraftServer.tickServer from the merged base with merged_calls and
+# counted 20 ServerTickEvents forwarded 1:1 from NeoForge's to MinecraftForge's bus, or the bridges standing down), the
+# "all N GAME_BUS bridge(s) installed" line and the -Dforbric.unifiedEvents=off control (switch retired with the
+# multiplexer, D29), and two absences whose producers were deleted ("no third-party mod constructed as MinecraftForge",
+# "no tick forward failure"; D34 — the universal jars' "MinecraftForge half is set aside" lines and "nothing was
+# refused" are what stand for them). The boot now stops on "Done (" (stop_when_ready) instead of on the 20th forwarded
+# tick. NeoForge's own server tick is asserted with the NeoForge canary in gate-m3 and gate-m4-canary.
 # GATE-PARALLEL: rundirs=server-tri-real mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -52,8 +39,8 @@ FABRIC_API="$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
 JADE="$DL/fabric-26.2/Jade-mc26.2-Fabric-26.2.9.jar"
 # Seven real mods, all server-side (side="BOTH"): a content mod, a profiler, a worldgen library, an animation
 # library, a chat mod and a gameplay mod — a real cross-section, not one hand-picked easy case. The first five were
-# MinecraftForge-only builds until Stage 3 and are now the same mods' NeoForge builds; the last two are universal
-# tri-loader jars, read from the directory they always came from.
+# MinecraftForge-only builds until Stage 3 of dropping MinecraftForge and are now the same mods' NeoForge builds
+# (stage3-fixtures.md); the last two are universal tri-loader jars, read from the directory they always came from.
 NEO_MODS=(
   "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$NEO_BUILDS/spark-1.10.173-neoforge.jar"
@@ -65,6 +52,7 @@ NEO_MODS=(
 )
 
 step "stage real mods (Fabric: fabric-api + Jade; NeoForge: 5 NeoForge builds + 2 universal + the baseline)"
+refuse_shared_rundir "$RUNDIR"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
@@ -76,47 +64,16 @@ done
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
-# Which way MinecraftForge's server tick reaches it, read from the base this run boots: a merge that keeps both families'
-# edits of MinecraftServer.tickServer calls MinecraftForge's tick hooks itself beside NeoForge's, and the tick bridges
-# then stand down (forwarding as well would tick every MinecraftForge mod twice); a base that kept only NeoForge's
-# leaves the bridges to forward every tick. Each way is asserted exactly below, and the other way's line is absent.
-TICK_NATIVE=no
-merged_calls net.minecraft.server.MinecraftServer tickServer net/minecraftforge/event/ForgeEventFactory.onPreServerTick
-case $? in
-  0) TICK_NATIVE=yes ;;
-  1) ;;
-  *) echo "[kernel] FAIL cannot read MinecraftServer.tickServer from the merged base"; exit 1 ;;
-esac
-merged_calls net.minecraft.server.MinecraftServer tickServer net/minecraftforge/event/ForgeEventFactory.onPostServerTick
-case $? in
-  0) [ "$TICK_NATIVE" = yes ] || { echo "[kernel] FAIL the merged tickServer calls MinecraftForge's Post tick but not its Pre"; exit 1; } ;;
-  1) [ "$TICK_NATIVE" = no ] || { echo "[kernel] FAIL the merged tickServer calls MinecraftForge's Pre tick but not its Post"; exit 1; } ;;
-  *) echo "[kernel] FAIL cannot read MinecraftServer.tickServer from the merged base"; exit 1 ;;
-esac
-echo "[kernel] the merged tickServer calls MinecraftForge's tick hooks itself: $TICK_NATIVE"
-STOOD_PRE='TickEvent.ServerTickEvent.Pre itself on the path of NeoForge.s net.neoforged.neoforge.event.tick.ServerTickEvent.Pre'
-STOOD_POST='TickEvent.ServerTickEvent.Post itself on the path of NeoForge.s net.neoforged.neoforge.event.tick.ServerTickEvent.Post'
-if [ "$TICK_NATIVE" = yes ]; then TICKED="$STOOD_POST"; else TICKED='bridged 20 ServerTickEvent.Post to MinecraftForge'; fi
-
-step "boot all three ecosystems in one instance, run until both families have ticked 20×"
+step "boot both ecosystems in one instance, stop once it is up"
 : > "$LOG"
-# Stop as soon as the 1:1 tick proof lands (real mods boot slower than the old canaries, so a fixed timer would
-# either cut ticking short or waste minutes); fall back to a hard cap so a stuck boot fails loudly instead of hanging.
-(
-  for i in $(seq 1 150); do
-    grep -qE "$TICKED" "$LOG" 2>/dev/null && break
-    grep -qE 'Failed to start the minecraft server|Encountered an unexpected exception' "$LOG" 2>/dev/null && break
-    sleep 1
-  done
-  # Twenty ticks past the first either way: a stand-down line is printed on the first tick, the forward's at the 20th.
-  sleep 3
-  echo stop
-) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+# Real mods boot slower than the canaries: give the server 20 s before looking for "Done (", then stop_when_ready's own
+# cap (150 s more) and stall detection; await_server's limit stays above both.
+( stop_when_ready "$LOG" 20 ) | RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 200
 
-step "one list holds all three ecosystems' mods (must PASS)"
+step "one list holds both ecosystems' mods (must PASS)"
 # Every family's own Mods screen reads its own family's registry and is complete for the loader it was written
 # against -- which on this instance is never the whole answer. Assert the NUMBERS, not the sentence: the line
 # would still print with a zero in it, and a zero for a family is exactly the regression.
@@ -135,17 +92,14 @@ else
   echo "[kernel] FAIL the unified mod catalogue was never published"; FAIL=1
 fi
 
-step "both shipping ecosystems' REAL mods brought up in ONE instance, on the carrier that still holds MinecraftForge (must PASS)"
-check "both Forge-family baselines"            "constructed NeoForge baseline mod" "$LOG"
-# The MinecraftForge carrier's own mod still comes up with zero MinecraftForge mods: Stage 3 deletes nothing.
-check "traditional-Forge baseline"             "constructed traditional-Forge baseline mod ForgeMod" "$LOG"
-check_absent "no third-party mod constructed as MinecraftForge" "constructed @Mod [a-z_]+ \(traditional-Forge," "$LOG"
+step "both shipping ecosystems' REAL mods brought up in ONE instance (must PASS)"
+check "NeoForge baseline"                      "constructed NeoForge baseline mod" "$LOG"
 check_absent "and nothing was refused"         "\[Forbric/Unsupported\] refusing" "$LOG"
 check "real NeoForge @Mod (mcw-bridges)"       "constructed @Mod mcwbridges \(NeoForge," "$LOG"
 check "real NeoForge @Mod (TerraBlender)"      "constructed @Mod terrablender \(NeoForge," "$LOG"
 check "real NeoForge @Mod (GeckoLib)"          "constructed @Mod geckolib \(NeoForge," "$LOG"
 # The two UNIVERSAL jars (FallingTree, collective) are claimed for exactly one family. collective loads at all only
-# because guest-config relaxation is now general (its Fabric-side PlayerMixin cannot apply on the merged base and
+# because guest-config relaxation is now general (its Fabric-side PlayerMixin cannot apply to this game and
 # would otherwise be a fatal MixinApplyError). FallingTree's CLIENT-only @Mod class is not constructed on a
 # DEDICATED SERVER — its own annotation says dist = {CLIENT}; the client half is asserted skipped below. So seven:
 # the five NeoForge builds and the two universal jars.
@@ -174,29 +128,6 @@ check "NeoForge baseline content (38)"         "registered content: neoforge: 38
 check "Fabric mod content (Jade)"              "registered content: jade: [1-9][0-9]* entr" "$LOG"
 check "Jade server plugins load"               "Start loading plugin from Jade" "$LOG"
 
-step "BOTH game-event families tick in the same loop (must PASS — the B-5 shape)"
-if [ "$TICK_NATIVE" = yes ]; then
-  # The merged tickServer posts both families' ticks itself, once each per tick; the bridges stand down for them.
-  check "MinecraftForge's Pre tick comes from the game, the bridge stands down"  "$STOOD_PRE" "$LOG"
-  check "MinecraftForge's Post tick comes from the game, the bridge stands down" "$STOOD_POST" "$LOG"
-  check_absent "and nothing forwards a second Pre tick"  "bridged 20 ServerTickEvent.Pre" "$LOG"
-  check_absent "and nothing forwards a second Post tick" "bridged 20 ServerTickEvent.Post" "$LOG"
-else
-  check "NeoForge+Forge tick 1:1 (Pre)"          "bridged 20 ServerTickEvent.Pre to MinecraftForge — 1:1 from NeoForge" "$LOG"
-  check "NeoForge+Forge tick 1:1 (Post)"         "bridged 20 ServerTickEvent.Post to MinecraftForge — 1:1 from NeoForge" "$LOG"
-  check_absent "and no tick bridge stands down"  "ServerTickEvent.P[a-z]+ itself on the path" "$LOG"
-fi
-# The tick bridges are only two of five. The other three were installed in the same try{} and summed into one
-# unasserted number, so a setup failure in the first one silently skipped the rest -- including the one whose
-# absence leaves MinecraftForge's login gate permanently closed. Assert the whole declared set, by count.
-# By "complete", not by a fixed count. The inventory grows as more merge-lost hooks are bridged, and a hardcoded
-# number turns every such addition into a red gate that says nothing about what actually broke. The kernel prints
-# a MISSING line instead of "all N" when the set is short, so the wording carries the assertion and the
-# check_absent below is what gives it teeth.
-check "every declared Neo→Forge game-event bridge installed" \
-  "EventMux\] all [0-9][0-9]* GAME_BUS bridge\(s\) installed" "$LOG"
-check_absent "and none reported missing"       "bridge\(s\) MISSING" "$LOG"
-
 step "the server works (must PASS)"
 check "vanilla datapack fully loaded"          "Loaded [1-9][0-9]* recipes" "$LOG"
 check "server reached Done"                    "Done \(" "$LOG"
@@ -204,7 +135,6 @@ check "clean shutdown"                         "Stopping server" "$LOG"
 
 step "nothing quietly broken (must be ABSENT)"
 check_absent "no NoClassDefFound (the old Forge-tick blocker)" "NoClassDefFoundError" "$LOG"
-check_absent "no tick forward failure"         "forward failed" "$LOG"
 check_absent "no entrypoint failed"            "entrypoint of .* failed" "$LOG"
 check_absent "no Tags not bound"               "Tags not bound" "$LOG"
 check_absent "no @Mod construction failure"    "failed to construct @Mod" "$LOG"
@@ -215,33 +145,9 @@ check_absent "no genuine Fabric Loader"        "KnotClassLoader|net\.fabricmc\.l
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m4-postdone.log"
 check_absent "no post-Done exception"          "Encountered an unexpected exception" "$BUILD/gate-m4-postdone.log"
 
-step "negative control: the same instance with -Dforbric.unifiedEvents=off"
-# Without this the tick-1:1 assertions above could be passing for a reason that has nothing to do with the
-# multiplexer -- e.g. the merged base firing both families' hooks after all. Turning the bridges off must take the
-# forwarding with it, and must NOT take the server down: a missing bridge is a degraded instance, not a broken one.
-CONTROL="$BUILD/gate-m4-control.log"
-reap_stale_server "$RUNDIR"
-rm -rf "$RUNDIR/world" "$RUNDIR/.forbric-kernel" 2>/dev/null
-( stop_when_ready "$CONTROL" 30 ) | RUNDIR="$RUNDIR" FORBRIC_JVM="-Dforbric.unifiedEvents=off" \
-  "$KERNEL/run/launch-kernel-server.sh" > "$CONTROL" 2>&1 &
-CTLPID=$!
-record_server_pid "$RUNDIR" "$CTLPID"
-await_server "$CTLPID" "$CONTROL" 200
-
-check "the control booted"                     "Done \(" "$CONTROL"
-check "the control says it installed no bridges" "installing no bridges" "$CONTROL"
-check_absent "and MinecraftForge gets no forwarded Pre tick"  "bridged 20 ServerTickEvent.Pre"  "$CONTROL"
-check_absent "and MinecraftForge gets no forwarded Post tick" "bridged 20 ServerTickEvent.Post" "$CONTROL"
-check_absent "and no bridge is there to stand down"           "itself on the path of NeoForge" "$CONTROL"
-
 step "M4 result"
-if [ "$TICK_NATIVE" = yes ]; then
-  TICK_PROVEN="both families tick in one loop (the game posts MinecraftForge's ticks itself, nothing forwards a second; the 1:1 count is M41's)"
-else
-  TICK_PROVEN="both families tick 1:1"
-fi
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M4 TRI-IN-ONE GATE GREEN — REAL third-party Fabric + NeoForge mods run in one instance on the carrier that still holds MinecraftForge, $TICK_PROVEN"
+  echo "[kernel] ✅ M4 GATE GREEN — REAL third-party Fabric + NeoForge mods run in one instance on NeoForge's patched game"
 else
   echo "[kernel] ❌ GATE RED"
 fi

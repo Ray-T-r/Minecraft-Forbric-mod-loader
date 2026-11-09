@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 # M2b gate — the FULL Fabric ecosystem runs on the sovereign kernel: fabric-api (43 modules, 58 mixin configs,
-# 33 access wideners) plus a real third-party Fabric mod, on the merged 3-ABI base, with NO Fabric Loader.
+# 33 access wideners) plus a real third-party Fabric mod, on NeoForge's patched game, with NO Fabric Loader.
 #
 # What this exercises beyond M2a: the kernel IS the Mixin service (ForbricMixinService), MixinExtras is bootstrapped
 # game-side, class tweakers (access wideners) are applied before Mixin, and the MC libraries are owned by the
 # transforming loader so mods can mixin into them (fabric-dimension-api-v1 injects an interface into DataFixerUpper).
 #
-# NO compatibility flags are passed. The merged-base incompatibilities are shipped defaults in
-# MergedBaseMixinCompat, so an installed instance boots as-is. Each entry there costs a real feature and is
+# NO compatibility flags are passed. The game's known Fabric-mixin incompatibilities are shipped defaults in
+# MergedBaseMixinCompat (its name predates Stage 4), so an installed instance boots as-is. Each entry there costs a real feature and is
 # documented at its declaration; `run/mixin-inventory.sh` rediscovers the list from scratch.
 #
 # Optional reproduction of the real nested-library collision (all existing assertions remain enabled):
@@ -38,6 +38,7 @@ step "stage fabric-api + Jade + the Fabric canary"
 "$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m2b-canary.log" 2>&1
 [ -f "$CANARY" ] || { echo "[kernel] FAIL canary build (see $BUILD/gate-m2b-canary.log)"; exit 1; }
 
+refuse_shared_rundir "$RUNDIR"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
@@ -49,7 +50,7 @@ cp "$CANARY" "$RUNDIR/mods/"
 seed_server_properties "$RUNDIR"
 echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
-step "boot the merged base under the kernel"
+step "boot NeoForge's patched game under the kernel"
 : > "$LOG"
 ( stop_when_ready "$LOG" 40 ) | RUNDIR="$RUNDIR" FORBRIC_JVM="${FORBRIC_JVM:-} ${M2B_EXTRA_JVM:-}" \
   "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
@@ -110,8 +111,8 @@ check "server reached Done"                    "Done \(" "$LOG"
 # unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
 # is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
 # the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
-# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
-# lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
+# finished — await_server is what fails a server that cannot finish. The alternation covers a game that lost
+# en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
 # and never the command's, so this pair must not be copied into a client gate.
 check "server ticked (the stop command ran)"   "Stopping the server|commands\.stop\.stopping" "$LOG"
 check "shutdown began"                         "Stopping server" "$LOG"
@@ -131,7 +132,7 @@ check_absent "no genuine FancyModLoader"       "gatherAndInitializeMods|dispatch
 awk '/Done \(/{d=1} d' "$LOG" > "$BUILD/gate-m2b-postdone.log"
 check_absent "no post-Done exception"          "Encountered an unexpected exception" "$BUILD/gate-m2b-postdone.log"
 
-step "the merged-base concessions are EXACTLY the documented ones (must PASS)"
+step "the concessions to the game are EXACTLY the documented ones (must PASS)"
 # These three were printed and asserted on nothing, which made them decoration: anything that suppressed three
 # times as many guest mixins printed a bigger number and the gate still went green. No other check here can see
 # it either — suppression edits the mixin OUT of the config JSON before Mixin ever reads it

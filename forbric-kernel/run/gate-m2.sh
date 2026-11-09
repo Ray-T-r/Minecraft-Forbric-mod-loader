@@ -20,7 +20,8 @@ step "build the Fabric canary"
 if [ ! -f "$CANARY" ]; then echo "[kernel] FAIL canary build (see $BUILD/gate-m2-canary.log)"; exit 1; fi
 echo "[kernel] canary built"
 
-step "boot the merged base under the kernel with ONLY the Fabric canary in mods/"
+step "boot NeoForge's patched game under the kernel with ONLY the Fabric canary in mods/"
+refuse_shared_rundir "$RUNDIR"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" "$RUNDIR/mods" "$RUNDIR/.forbric-kernel" 2>/dev/null
 mkdir -p "$RUNDIR/mods"
@@ -85,8 +86,8 @@ check "server reached Done"                   "Done \(" "$LOG"
 # unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
 # is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
 # the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
-# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
-# lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
+# finished — await_server is what fails a server that cannot finish. The alternation covers a game that lost
+# en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
 # and never the command's, so this pair must not be copied into a client gate.
 check "server ticked (the stop command ran)"  "Stopping the server|commands\.stop\.stopping" "$LOG"
 check "shutdown began"                        "Stopping server" "$LOG"
