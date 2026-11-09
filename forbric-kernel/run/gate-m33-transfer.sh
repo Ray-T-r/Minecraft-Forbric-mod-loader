@@ -69,7 +69,7 @@ PY
   exit "$?"
 fi
 
-step "build the independently declared ecosystem canaries (the MinecraftForge one is not staged)"
+step "build the independently declared ecosystem canaries (Fabric and NeoForge)"
 bash "$KERNEL/run/build-transfer-world-canaries.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 INPUTS="$KERNEL/run/canary/m33-build-inputs.json"
 FAPI="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fabricApi"]["path"])' "$INPUTS")"
