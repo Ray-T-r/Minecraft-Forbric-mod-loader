@@ -69,6 +69,7 @@ class MixinSharedResultTransportTest {
 
     /** A producer that shares something other than its receiver is not a pass-through: nothing is transported. */
     @Test void aProducerSharingAnotherValueIsNotAPassThrough() throws Exception {
+        assertTransportedUnperturbed();
         Inputs input = inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
         MethodNode producer = method(input.mixin, "captureStack");
         for (var instruction : producer.instructions) {
@@ -87,6 +88,7 @@ class MixinSharedResultTransportTest {
     }
 
     @Test void transformedProducerReceiverOrAdditionalGroupSideEffectIsNotAccepted() throws Exception {
+        assertTransportedUnperturbed();
         Inputs input = inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
         MethodNode producer = method(input.mixin, "captureStack");
         producer.instructions.insert(new InsnNode(Opcodes.POP));
@@ -95,6 +97,7 @@ class MixinSharedResultTransportTest {
     }
 
     @Test void closedGroupRequiresTheSameStackSourceAndNoPathBypassingItsProducer() throws Exception {
+        assertTransportedUnperturbed();
         Inputs input = inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
         MethodNode current = method(input.current, "defaultCraftingReminder");
         MethodInsnNode live = resultCall(current);
@@ -133,8 +136,9 @@ class MixinSharedResultTransportTest {
     }
 
     /**
-     * The crafting group, the one the transport still moves on NeoForge's base: each perturbation is checked against an
-     * unperturbed copy of the same inputs that IS transported, so a rejection here is the perturbation's doing.
+     * The crafting group, the one the transport still moves on NeoForge's base: each rejection test first checks that an
+     * unperturbed copy of the same inputs IS transported, so its rejection is the perturbation's doing and the test cannot
+     * pass on an input the transport declines anyway (as the furnace group is declined on NeoForge's base).
      */
     private static Inputs crafting() throws Exception {
         return inputs("net/fabricmc/fabric/mixin/item/CraftingRecipeMixin", "net/minecraft/world/item/crafting/CraftingRecipe");
