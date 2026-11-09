@@ -1,13 +1,23 @@
 #!/usr/bin/env bash
-# M39: the transfer engine suite (required), then real Forge objects, shared rollback graphs, metadata and actual
-# final watchdog replacement proof.
+# M39: the transfer engine suite (required), then the actual final watchdog replacement proof on a real kernel server.
+#
+# STAGE 4 (the game base is NeoForge's own patched game). The game half used to be the MinecraftForge transfer canary
+# (ForgeTransferCanary + ForgeTransferGameScenarios: fourteen storage scenarios over real Forge objects, with the watchdog
+# proof as its fifteenth) on the merged base with the MinecraftForge carrier. Both went with MinecraftForge (D32): there
+# is no MinecraftForge carrier to launch, the launcher refuses MERGED/FORGE_RT, and the scenarios' classes were deleted.
+# Everything they covered between Fabric and NeoForge stays in the transfer engine suite below (native Fabric<->NeoForge
+# nested rollback, provider/notification/rollback failures, re-entry) and in gate-m33/m40's world runs. The watchdog
+# proof had nothing to do with MinecraftForge: fabric-api's ServerWatchdogMixin and the kernel's final-defined native
+# watchdog renderer. It now runs on its own Fabric canary (src/transferTest WatchdogCanary, packed with its
+# watchdog-canary.fabric.mod.json) beside fabric-api on a plain kernel server: the thread dump keeps every frame, and the
+# strict report calls the mixin RESOLVED.
 # GATE-PARALLEL: mem=2000
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
-MERGED="${MERGED:-$RUN_OLD/merged-base/patched-mc-merged-26.2.jar}"
-FORGE_RT="${FORGE_RT:-$RUN_OLD/merged-base/forge-runtime-interop.jar}"
+# The launcher's own inputs and their defaults: NeoForge's patched game and its one carrier.
+BASE="${BASE:-$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar}"
 NEO_RT="${NEO_RT:-$RUN_OLD/neoforge-runtime/neoforge-runtime.jar}"
-export MERGED FORGE_RT NEO_RT
+export BASE NEO_RT
 if [ "${1:-}" = --execute ]; then
   RUNDIR="$2"
   ( stop_when_ready "$RUNDIR/inputs.log" 35 ) | RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY=strict "$KERNEL/run/launch-kernel-server.sh"
@@ -45,18 +55,19 @@ else echo "[kernel] FAIL transfer engine suite — see $TRANSFER_LOG"; FAIL=1
 fi
 # TRANSFER_SUITE_END
 "$KERNEL/gradlew" --offline -q -p "$KERNEL" compileTransferTestJava
-BASE="$BUILD/verification/m39-transfer-core"
-mkdir -p "$BASE"
-RUNDIR="$(mktemp -d "$BASE/run-XXXXXX")"
+# Not BASE: that is the launcher's game jar (exported above).
+RESULTS="$BUILD/verification/m39-transfer-core"
+mkdir -p "$RESULTS"
+RUNDIR="$(mktemp -d "$RESULTS/run-XXXXXX")"
 mkdir -p "$RUNDIR/mods"
 python3 - "$KERNEL" "$RUNDIR" <<'PY'
 import pathlib,sys,zipfile,shutil
 kernel,run=map(pathlib.Path,sys.argv[1:]);classes=kernel/'build/classes/java/transferTest'
-files=sorted(p for p in (classes/'net/forbric/kernel/transfer').glob('*.class') if p.name.startswith(('ForgeTransferCanary','ForgeTransferGameScenarios')))
-assert any(p.name=='ForgeTransferCanary.class' for p in files) and any(p.name=='ForgeTransferGameScenarios.class' for p in files)
-with zipfile.ZipFile(run/'mods/forbric-transfer-core.jar','w') as output:
+files=sorted(p for p in (classes/'net/forbric/kernel/transfer').glob('*.class') if p.name.startswith('WatchdogCanary'))
+assert [p.name for p in files]==['WatchdogCanary.class'],files
+with zipfile.ZipFile(run/'mods/forbric-watchdog-canary.jar','w') as output:
  for file in files:output.write(file,file.relative_to(classes).as_posix())
- output.write(kernel/'src/transferTest/resources/forge-transfer-canary.fabric.mod.json','fabric.mod.json')
+ output.write(kernel/'src/transferTest/resources/watchdog-canary.fabric.mod.json','fabric.mod.json')
 shutil.copy2(kernel/'run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar',run/'mods')
 PY
 seed_server_properties "$RUNDIR"
@@ -65,23 +76,23 @@ LOG="$RUNDIR/inputs.log"
 # set -e ends the gate on this line when the server run fails -- and a server that lost its port fails it, because
 # the feeder's "stop" then lands on a closed pipe -- so name a lost port here, before anything else is read.
 python3 "$KERNEL/run/compat/evidence.py" run --source "$KERNEL/.." \
-  --artifact "merged=$MERGED" --artifact "forge-interop=$FORGE_RT" --artifact "neo-runtime=$NEO_RT" \
+  --artifact "neo-patched=$BASE" --artifact "neo-runtime=$NEO_RT" \
   --artifact "kernel=$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar" \
   --artifact "kernel-runtime=$BUILD/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar" \
   --mods "$RUNDIR/mods" --output "$RUNDIR/inputs.json" \
   -- bash "$KERNEL/run/gate-m39-transfer-core.sh" --execute "$RUNDIR" \
   || { port_was_free "$LOG"; echo "[kernel] FAIL the server run failed — see $LOG"; exit 1; }
-check "all fourteen storage scenarios and the native diagnostic proof ran" 'TransferCanary\] 15/15 passed' "$LOG"
-check_absent "no real carrier scenario failed" 'TransferCanary\] FAIL' "$LOG"
+check "the watchdog diagnostic proof ran on the started server" 'WatchdogCanary\] 1/1 passed' "$LOG"
+check_absent "the watchdog diagnostic proof did not fail" 'WatchdogCanary\] FAIL' "$LOG"
 check "the actual server ticked and accepted stop" 'Stopping the server|commands\.stop\.stopping' "$LOG"
 check "the actual world was saved" 'All dimensions are saved' "$LOG"
-python3 - "$RUNDIR" <<'PY'
+python3 - "$RUNDIR" <<'PY' || { echo "[kernel] FAIL M39 evidence or strict report — see the assertion above"; FAIL=1; }
 import json,pathlib,sys
 run=pathlib.Path(sys.argv[1]);evidence=json.loads((run/'inputs.result.json').read_text());report=json.loads((run/'.forbric-kernel/compatibility-report.json').read_text())
 assert evidence['inputsUnchanged'] and evidence['commandPassed'],evidence
 assert report['policy']=='STRICT' and report['confirmedRequired']==0,report
 assert any('ServerWatchdogMixin#printEntireThreadDump' in f['id'] and f['confidence']=='RESOLVED' for f in report['findings']),report
-print('[M39] final defined watchdog renderer is proven equivalent; strict report has zero required losses')
+print('[kernel] PASS M39 final defined watchdog renderer is proven equivalent; strict report has zero required losses')
 PY
-if [ "$FAIL" -eq 0 ]; then echo '[kernel] ✅ M39 CORE TRANSFER AND DIAGNOSTIC GATE GREEN'; fi
+if [ "$FAIL" -eq 0 ]; then echo '[kernel] ✅ M39 CORE TRANSFER AND DIAGNOSTIC GATE GREEN'; else echo "[kernel] ❌ M39 GATE RED — $RUNDIR"; fi
 exit "$FAIL"
