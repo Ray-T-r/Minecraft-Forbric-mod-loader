@@ -25,15 +25,16 @@ import net.forbric.kernel.mixin.FabricCommonPayloadMixinAdapter;
  * FabricCommonPayloadMixinAdapter through the real weave: fabric-networking-api's configuration-only payload handler, a
  * cancellable HEAD {@code @Inject} of {@code ServerCommonPacketListenerImpl.handleCustomPayload} that throws
  * {@code IllegalStateException("Unknown addon")} for any listener whose addon is not a configuration addon, on NeoForge's
- * listeners, whose play listener hands every payload to that super (where NeoForge's dispatcher lives) and whose vanilla
- * override was empty.
+ * listeners: the play listener hands every payload to that super (where NeoForge's dispatcher lives; vanilla's override
+ * was empty), and the configuration listener answers NeoForge's network query itself and hands every other payload to it.
  *
- * <p>The probe sends the configuration listener a payload a Fabric mod registered and one of NeoForge's, and the play
- * listener a payload fabric-api's play receiver declined. Adapted, the handler returns at its head for a play listener:
- * Fabric's payload is fabric-api's, NeoForge's goes on to NeoForge's dispatcher, and the play payload reaches NeoForge's
- * dispatcher too. With {@code -Dforbric.playPayloadFallThrough=off} the handler is as written and the play payload
- * disconnects the player with "Unknown addon", as measured on the 97-mod pack before the adapter; the configuration
- * listener's two answers do not change.
+ * <p>The probe sends the configuration listener a payload a Fabric mod registered, one NeoForge's common dispatcher
+ * handles and NeoForge's network query, and the play listener a payload fabric-api's play receiver declined. Adapted, the
+ * handler returns at its head for a play listener: Fabric's payload is fabric-api's, NeoForge's goes on to NeoForge's
+ * dispatcher, the query never reaches the common handler, and the play payload reaches NeoForge's dispatcher too. With
+ * {@code -Dforbric.playPayloadFallThrough=off} the handler is as written and the play payload disconnects the player with
+ * "Unknown addon", as measured on the 97-mod pack before the adapter; the configuration listener's three answers do not
+ * change.
  */
 class FabricCommonPayloadMixinAdapterWeaveTest {
 	private static final Path SOURCES = Path.of("src/test/resources/weave/commonpayload");
@@ -41,9 +42,9 @@ class FabricCommonPayloadMixinAdapterWeaveTest {
 	private static final String MOD = "fabric-networking-api-v1";
 	private static final String COMMON = "net/minecraft/server/network/ServerCommonPacketListenerImpl";
 	private static final String GAME = "net/minecraft/server/network/ServerGamePacketListenerImpl";
-	private static final String ADAPTED = WeaveHarnessMain.DONE + " configuration.fabric=fabric configuration.neoforge=neoforge play.neoforge=neoforge";
-	private static final String AS_WRITTEN = WeaveHarnessMain.DONE + " configuration.fabric=fabric configuration.neoforge=neoforge"
-			+ " play.neoforge=disconnect(Unknown addon)";
+	private static final String CONFIGURATION = " configuration.fabric=fabric configuration.neoforge=neoforge configuration.query=neoforge-query";
+	private static final String ADAPTED = WeaveHarnessMain.DONE + CONFIGURATION + " play.neoforge=neoforge";
+	private static final String AS_WRITTEN = WeaveHarnessMain.DONE + CONFIGURATION + " play.neoforge=disconnect(Unknown addon)";
 	private static final String ADAPT_LOG = "net.fabricmc.fabric.mixin.networking.ServerCommonPacketListenerImplMixin's "
 			+ "configuration-phase payload handler on net.minecraft.server.network.ServerCommonPacketListenerImpl lets a play listener's payload go on";
 
@@ -56,7 +57,7 @@ class FabricCommonPayloadMixinAdapterWeaveTest {
 		try (Stream<Path> walk = Files.walk(SOURCES)) {
 			sources = new ArrayList<>(walk.filter(p -> p.toString().endsWith(".java")).sorted().toList());
 		}
-		assertEquals(11, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
+		assertEquals(13, sources.size(), "the fixture's sources changed; update this test with it: " + sources);
 		fixture = WeaveHarness.fixture(work, "commonpayload", sources, Map.of(CONFIG, SOURCES.resolve(CONFIG)));
 		adapted = run("adapted", Map.of());
 		off = run("fall-through-off", Map.of(FabricCommonPayloadMixinAdapter.PROPERTY, "off"));
