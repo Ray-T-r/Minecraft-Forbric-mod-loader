@@ -186,7 +186,7 @@ for set in server-merged client-merged; do
   out="$BUILD/scan/$set.json"; mkdir -p "$BUILD/scan"
   kernel_scan "$dir" "$out" >/dev/null
   # well-formed + non-empty + both loaded ecosystems represented, and no MinecraftForge mod reported
-  # M0_SCAN_JUDGE_BEGIN (the red control runs this exact judge on a scan JSON copy with a FORGE row)
+  # M0_SCAN_JUDGE_BEGIN (GateM0CaptureStepTest, the red control, runs this exact judge on a scan JSON with a FORGE row)
   python3 - "$out" "$set" <<'PY'
 import json,sys
 o=json.loads(open(sys.argv[1]).read()); s=sys.argv[2]

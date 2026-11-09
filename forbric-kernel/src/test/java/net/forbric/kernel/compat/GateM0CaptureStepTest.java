@@ -59,6 +59,55 @@ class GateM0CaptureStepTest {
 				result.output());
 	}
 
+	/**
+	 * Step 3's judge, run as the gate runs it on a scan JSON with a MinecraftForge row: the genuine stage reports Fabric
+	 * and NeoForge and no MinecraftForge mod, so a FORGE row is red even with both other ecosystems present (PLAN C5's
+	 * m0 red control, kept here so it cannot drift from the judge the gate runs).
+	 */
+	@Test
+	void theScanJudgeFailsOnAMinecraftForgeRow() throws Exception {
+		Result result = judge("FABRIC", "NEOFORGE", "FORGE");
+		assertEquals(1, result.exit(), result.output());
+		assertTrue(result.output().contains("[kernel] FAIL scan server-merged: 3 mods, ecosystems=['FABRIC', 'FORGE', 'NEOFORGE']"),
+				result.output());
+	}
+
+	@Test
+	void theScanJudgePassesOnFabricAndNeoForgeAlone() throws Exception {
+		Result result = judge("FABRIC", "NEOFORGE");
+		assertEquals(0, result.exit(), result.output());
+		assertTrue(result.output().contains("[kernel] PASS scan server-merged: 2 mods, ecosystems=['FABRIC', 'NEOFORGE']"),
+				result.output());
+	}
+
+	@Test
+	void theScanJudgeFailsWithoutNeoForge() throws Exception {
+		Result result = judge("FABRIC", "FABRIC");
+		assertEquals(1, result.exit(), result.output());
+		assertTrue(result.output().contains("[kernel] FAIL scan server-merged"), result.output());
+	}
+
+	/** Runs the gate's M0_SCAN_JUDGE fragment over a scan JSON holding one mod per given ecosystem. */
+	private Result judge(String... ecosystems) throws Exception {
+		StringBuilder mods = new StringBuilder();
+		for (int i = 0; i < ecosystems.length; i++) {
+			if (i > 0) mods.append(',');
+			mods.append("{\"id\":\"m").append(i).append("\",\"ecosystem\":\"").append(ecosystems[i]).append("\"}");
+		}
+		Path scan = temp.resolve("scan.json");
+		Files.writeString(scan, "{\"count\":" + ecosystems.length + ",\"mods\":[" + mods + "]}");
+		String program = "out=\"$1\"\nset=server-merged\nFAIL=0\n"
+				+ section(Files.readString(GATE), "M0_SCAN_JUDGE")
+				+ "\nexit \"$FAIL\"\n";
+		Path log = temp.resolve("judge.log");
+		Process process = new ProcessBuilder(List.of("bash", "-c", program, "m0-judge-test", scan.toString()))
+				.redirectErrorStream(true).redirectOutput(log.toFile()).start();
+		boolean ended = process.waitFor(60, TimeUnit.SECONDS);
+		if (!ended) process.destroyForcibly();
+		assertTrue(ended, "the gate fragment timed out");
+		return new Result(process.exitValue(), Files.readString(log));
+	}
+
 	/** Runs the gate's own fragment with lib.sh's server helpers stubbed; the stub server records {@code defined}. */
 	private Result run(boolean fabricApi, String defined, boolean intact) throws Exception {
 		Path kernel = Files.createDirectories(temp.resolve("kernel"));
