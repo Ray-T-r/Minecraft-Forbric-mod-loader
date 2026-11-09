@@ -57,6 +57,7 @@ import net.forbric.kernel.access.ClassTweakerTransformer;
  * against real biomes whose generation settings place known features, before and after the biome list changes — and a
  * NeoForge {@code Lazy} is still only invalidated.
  */
+@ExecutesInjector(FeaturesPerStepRefreshInjector.class)
 class FeaturesPerStepRefreshStagedTest {
 	private static final String OWNER = "net/minecraft/world/level/chunk/ChunkGenerator";
 	private static final String SOURCE = "net/minecraft/world/level/biome/BiomeSource";
