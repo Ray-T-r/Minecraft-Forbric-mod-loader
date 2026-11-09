@@ -27,7 +27,7 @@
 # multiplexer, D29), and two absences whose producers were deleted ("no third-party mod constructed as MinecraftForge",
 # "no tick forward failure"; D34 — the universal jars' "MinecraftForge half is set aside" lines and "nothing was
 # refused" are what stand for them). The boot now stops on "Done (" (stop_when_ready) instead of on the 20th forwarded
-# tick. NeoForge's own server tick is asserted with the NeoForge canary in gate-m3 and gate-m4-canary.
+# tick; that the server ticked with the real mods loaded is now the stop command's own feedback, as in gate-m2/m3.
 # GATE-PARALLEL: rundirs=server-tri-real mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -131,6 +131,11 @@ check "Jade server plugins load"               "Start loading plugin from Jade" 
 step "the server works (must PASS)"
 check "vanilla datapack fully loaded"          "Loaded [1-9][0-9]* recipes" "$LOG"
 check "server reached Done"                    "Done \(" "$LOG"
+# The tick-bridge step that used to prove the real-mod server ticked went with MinecraftForge; this is what m2, m2b and
+# m3 use instead. "Stopping the server" is the /stop command's own feedback, and the console queue is drained only
+# inside tickServer(), so it cannot exist unless the tick loop ran with these mods loaded. Bare "Stopping server" is
+# stopServer(), reached on every exit path (see gate-m2).
+check "server ticked (the stop command ran)"   "Stopping the server|commands\.stop\.stopping" "$LOG"
 check "clean shutdown"                         "Stopping server" "$LOG"
 
 step "nothing quietly broken (must be ABSENT)"
