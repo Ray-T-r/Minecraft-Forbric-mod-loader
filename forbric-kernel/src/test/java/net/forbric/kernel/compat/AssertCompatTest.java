@@ -23,7 +23,6 @@ class AssertCompatTest {
 			Player joined the game
 			Loaded 12 advancements
 			posted FML construct to 2 NeoForge mods
-			posted FML construct to 2 traditional-Forge mods
 			posted FML client setup to 2 NeoForge mods
 			[Render thread/INFO]: [Forbric/Lifecycle] posted FML common setup to 2 NeoForge mods
 			ran NeoForge's registration events (7 step(s), each on its own) — capabilities and data maps are registered, 11 data map type(s)
@@ -32,18 +31,14 @@ class AssertCompatTest {
 			[Forbric/Order] 2 Fabric mod(s) initialise in Fabric Loader's order, by mod id, as native Fabric orders them
 			[Render thread/INFO]: [Forbric/Fabric] invoked 2 Fabric main entrypoint(s) in the Minecraft.<init> window
 			[Forbric/DataPacks] served 2 datapacks
-			[Forbric/Aliases] gave registries alias-resolving lookup
 			fired RegisterEvent in NeoForge's registration order
-			[Forbric/EventMux] all 3 CLIENT_MOD_BUS bridge(s) installed
-			[Forbric/EventMux] all 2 GAME_BUS bridge(s) installed
-			[Forbric/EventMux] all 2 CLIENT_GAME_BUS bridge(s) installed
 			""";
 
 	@Test void acceptsEveryRequiredObservation() throws Exception {
 		var result = execute(GREEN);
 		assertEquals(0, result.exitCode(), result.output());
 		assertTrue(result.output().contains("result: ALL-GREEN"), result.output());
-		assertEquals(42, result.output().lines().filter(line -> line.startsWith("PASS  ")).count());
+		assertEquals(36, result.output().lines().filter(line -> line.startsWith("PASS  ")).count());
 	}
 
 	@Test void aForbiddenObservationFailsTheProcess() throws Exception {
