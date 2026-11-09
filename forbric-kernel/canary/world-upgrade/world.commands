@@ -24,9 +24,7 @@ item replace block 0 -60 0 container.6 with minecraft:shulker_box[minecraft:cont
 item replace block 0 -60 0 container.7 with minecraft:cobblestone 64
 item replace block 0 -60 0 container.8 with mcwbridges:oak_bridge_pier 5
 item replace block 0 -60 0 container.9 with mcwfurnitures:oak_drawer 2
-item replace block 0 -60 0 container.10 with sophisticatedbackpacks:backpack 1
 item replace block 0 -60 0 container.11 with toolbelt:belt 1
-item replace block 0 -60 0 container.12 with waystones:andesite_waystone 1
 #
 # Vanilla block entities and state-bearing blocks.
 setblock 2 -60 0 minecraft:barrel[facing=up]
@@ -52,7 +50,6 @@ setblock 0 -60 4 mcwbridges:oak_bridge_pier
 setblock 2 -60 4 mcwbridges:acacia_bridge_pier
 setblock 4 -60 4 mcwfurnitures:oak_drawer[facing=north]
 item replace block 4 -60 4 container.0 with minecraft:emerald 9
-setblock 6 -60 4 waystones:andesite_waystone[half=lower]
 summon corpse:corpse 9 -60 9
 #
 # Scoreboard, team, command storage, bossbar.

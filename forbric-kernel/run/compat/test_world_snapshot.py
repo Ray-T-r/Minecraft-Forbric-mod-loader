@@ -1,8 +1,11 @@
 """world-snapshot.py: the typed reader/writer, export facets, the upgrade/reopen rules, mutate and the census."""
+import contextlib
 import copy
 import gzip
 import importlib.util
+import io
 import json
+import re
 import struct
 import tempfile
 import unittest
@@ -500,6 +503,35 @@ class FrozenSchema(unittest.TestCase):
             self.assertEqual(ws.main(["diff", str(paths["good"]), str(paths["exporter2"]), "--rules", "reopen"]), 3)
             self.assertEqual(ws.main(["census", str(paths["schema2"]), str(regs)]), 3)
             self.assertEqual(ws.main(["diff", str(paths["good"]), str(paths["good"]), "--rules", "reopen"]), 0)
+
+
+class GateArgv(unittest.TestCase):
+    """gate-m58 calls this script by its CLI: every subcommand and option it spells must be one the parser takes, so a
+    renamed option fails here and not forty minutes into the gate (the gate-m25 REGION_PROBE contract, for this tool)."""
+    GATE = Path(__file__).resolve().parent.parent / "gate-m58-world-upgrade.sh"
+
+    def calls(self):
+        text = self.GATE.read_text(encoding="utf-8").replace("\\\n", " ")  # one line per continued command
+        found = []
+        for line in text.splitlines():
+            if line.lstrip().startswith("#"):
+                continue
+            for m in re.finditer(r'python3 "\$WS" (\w+)([^|;&>]*)', line):
+                found.append((m.group(1), re.findall(r"(--[a-z][a-z-]*)", m.group(2))))
+        return found
+
+    def test_every_call_names_a_subcommand_and_options_it_takes(self):
+        calls = self.calls()
+        self.assertGreaterEqual({c for c, _ in calls}, {"export", "diff", "mutate", "census"}, calls)
+        helps = {}
+        for command, options in calls:
+            if command not in helps:
+                out = io.StringIO()
+                with contextlib.redirect_stdout(out), self.assertRaises(SystemExit):
+                    ws.main([command, "--help"])
+                helps[command] = out.getvalue()
+            for option in options:
+                self.assertIn(option, helps[command], "gate-m58 passes %s to `%s`, which does not take it" % (option, command))
 
 
 if __name__ == "__main__":

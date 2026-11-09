@@ -1,12 +1,10 @@
 # gate-m58's player script: run by forbricupgradeneo in phase write at each login, at the player and with the server's
 # permissions (@s = the player who joined). Every line must print "[M58Upgrade] OK command".
 tp @s 3.5 -60 7.5 90 0
-clear @s
 item replace entity @s hotbar.0 with minecraft:iron_pickaxe[minecraft:damage=5,minecraft:enchantments={"minecraft:efficiency":2}] 1
 item replace entity @s hotbar.1 with minecraft:paper[forbricupgradeneo:stamp=1010] 2
 item replace entity @s hotbar.2 with minecraft:paper[forbricupgradefabric:stamp=2010] 3
 item replace entity @s hotbar.3 with mcwbridges:acacia_bridge_pier 6
-item replace entity @s hotbar.4 with sophisticatedbackpacks:backpack 1
 item replace entity @s hotbar.5 with toolbelt:belt 1
 item replace entity @s inventory.0 with minecraft:bread 12
 item replace entity @s inventory.1 with minecraft:written_book[minecraft:written_book_content={title:"Mine",author:"m58",pages:["mine"]}] 1
@@ -14,7 +12,9 @@ item replace entity @s armor.head with minecraft:iron_helmet 1
 item replace entity @s weapon.offhand with minecraft:shield 1
 item replace entity @s enderchest.0 with minecraft:diamond 3
 item replace entity @s enderchest.1 with mcwfurnitures:oak_drawer 1
-xp set @s 1234 points
+# Points above the current level's bar are refused ("Cannot set experience points above the maximum"): levels, then points.
+xp set @s 12 levels
+xp set @s 7 points
 effect give @s minecraft:luck infinite 1 true
 spawnpoint @s 3 -60 7
 recipe give @s minecraft:oak_planks
