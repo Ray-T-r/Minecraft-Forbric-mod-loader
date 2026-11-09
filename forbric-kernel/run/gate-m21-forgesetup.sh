@@ -210,13 +210,14 @@ check_absent "no NoSuchMethodError on getConditionContext" 'NoSuchMethodError.*g
 
 step "conditions in MinecraftForge's dialect are data NeoForge does not judge, as on native NeoForge (D49)"
 # Every probe's expected answer is native NeoForge 26.2.0.93's, measured with this pack (header). A Forbric answer that
-# differs is a Forbric-only behaviour: dual_forge's is one today. KernelNeoConditions.lenient, which
-# ForbricMergedBaseCompatTransformer.letForeignResourceConditionsThrough puts in front of ICondition.CODEC, reads a
-# condition type NeoForge has not registered as true for EVERY pack, so Forbric keeps a world datapack's file that
-# native NeoForge skips ("Couldn't parse data file ... Unknown registry key ... neoforge:condition_codecs"). The guiding
-# rule keeps that leniency only where the mod's own ecosystem tolerates the case (a Fabric mod's data: gate-m8's
-# terralith:config), not for a world datapack. The check stays red as an open defect in stage4-c5-g-a.md (owner: the
-# kernel lane the orchestrator names), never hidden by matching Forbric's answer here.
+# differs is a Forbric-only behaviour, and dual_forge's was one until lane S's 748f142b (D69): KernelNeoConditions.lenient,
+# which ForbricMergedBaseCompatTransformer.letForeignResourceConditionsThrough puts in front of ICondition.CODEC, read a
+# condition type NeoForge has not registered as true for EVERY pack, so Forbric kept a world datapack's file that native
+# NeoForge skips ("Couldn't parse data file ... Unknown registry key ... neoforge:condition_codecs"). The guiding rule
+# keeps that leniency only where the mod's own ecosystem tolerates the case (a Fabric mod's own pack: gate-m8's
+# terralith:config), and 748f142b narrows it to that, so the probe answers as native NeoForge does. Its red control is
+# lane S's switch: M21_EXTRA_JVM='-Dforbric.neoConditions.fabricPacksOnly=off' turns dual_forge alone red (measured by
+# lane S, stage4-c5-s.md). Never hidden by matching Forbric's answer here.
 check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
 check "the canary pack was loaded" "data pack file/forbricm21" "$LOG"
 check_probe "a true forge:condition keeps a predicate"           "predicate kept"     'Test passed'
@@ -239,8 +240,8 @@ check_probe "and so is one over an empty tag: the guard is not judged" "recipe e
 # The scan index, a server data loader, a mod finding its own container, a mixin config plugin, a per-world SERVER
 # config: until Stage 3 the MinecraftForge canary proved each for its family too; these are the NeoForge twins that stay.
 #
-# RED controls (measured on the genuine base 2026-11-09, stage4-c5-g-a.md, unless marked; dual_forge, the open defect
-# above, is red in each of them as in the default boot and is not counted):
+# RED controls (measured on the genuine base 2026-11-09/10, stage4-c5-g-a.md, unless marked, before lane S's D69 fix:
+# dual_forge, red then in the default boot, was red in each of them too and is not counted):
 #   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
 #                                                its own" lines, both shape lines and both member lines are gone,
 #                                                ModList's count line says 0 annotations and lists the jar 0 times --

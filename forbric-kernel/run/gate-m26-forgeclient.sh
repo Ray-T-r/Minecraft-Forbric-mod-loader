@@ -11,16 +11,16 @@
 #   factory, the drawn gui layer).
 #   The client still reaches its world: the canary subscribes (on the bus its constructor is handed), reaches world tick
 #   100, its block has an id, its plugin sees the client. Those NeoForge checks stay POSITIVE-ONLY, with no switch that
-#   turns them red: '-Dforbric.blockStateIdRefill=off' leaves the NeoForge block's id alone, because a NeoForge block is
-#   registered in the first wave and the map's first fill covers it.
+#   turns them red: a NeoForge block is registered in the first wave, and NeoForge's own block bake maps it.
 # Fabric half (forbricfabriclive rides along, with -Dforbricfabriclive.lateBlock=true): a Fabric client entrypoint
 #   registers in a late wave, after the blockstate→id map's first fill, so the Fabric canary registers a block from
-#   onInitializeClient and reads its id back in the world. POSITIVE-ONLY on the genuine base: NeoForge's own block
-#   callback maps each state as its block is registered, the late wave included, so the kernel's refill
-#   (KernelRegistryContent.rebuildBlockStateIds) finds the map agreeing with the registry and does nothing. Measured
-#   2026-11-09: no genuine boot of G-A's C5 gate runs printed its "rebuilt NeoForge blockstate→id map" line, and with
-#   M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' the late block reads the same id as by default. The check on that
-#   line held on the merged base only and went (D34); the refill's own fate is the kernel's (stage4-c5-g-a.md).
+#   onInitializeClient and reads its id back in the world. POSITIVE-ONLY on the genuine base: NeoForge's own block bake
+#   (BlockCallbacks.onBake, run by every registry freeze) maps each state of the whole block registry, the late wave
+#   included. The kernel's refill of that map (KernelRegistryContent.rebuildBlockStateIds) was there for the merged base;
+#   on this base no boot printed its "rebuilt NeoForge blockstate→id map" line, and with its switch off the late block
+#   read the same id as by default (measured 2026-11-09, stage4-c5-g-a.md). Lane S deleted the refill on that evidence
+#   (35985d32, Stage 4 C5) and -Dforbric.blockStateIdRefill is a retired switch, so nothing in the kernel stands between
+#   NeoForge's bake and this check. The check on the refill's line held on the merged base only and went (D34).
 # Session: the checks every client gate makes, plus the kernel rewrite that runs on every boot with no mod asking for it:
 #   GuiRenderer's orphaned picture-in-picture map given its only writer (Xaero's minimap and malilib read it; the
 #   bridge's writer line is asserted explicitly, D65), and vanilla water placed beside spawn by the NeoForge canary.
@@ -143,8 +143,8 @@ check "NeoForge: its mixin config plugin saw the client" 'ForbricNeoLive/PLUGIN\
 # M26_FABRIC_ASSERTIONS_BEGIN — a block a Fabric client entrypoint registers late gets a real blockstate id.
 step "a block a Fabric client entrypoint registers gets a real blockstate id (must PASS)"
 # Fabric's client entrypoints run inside Minecraft.<init> with the registries reopened, so their blocks are a second
-# wave after the blockstate→id map's first fill. On the genuine base NeoForge's own block callback maps them as they
-# register (the kernel's refill stays silent, header), so what is asserted is the id itself.
+# wave after the blockstate→id map's first fill. On the genuine base NeoForge's own block bake maps them (the kernel's
+# refill is gone, header), so what is asserted is the id itself.
 check "Fabric: the canary registered its block from onInitializeClient" \
   'ForbricFabricLive/LATEBLOCK\] registered forbricfabriclive:late_block from onInitializeClient at raw id [1-9][0-9]*' "$LOG"
 # The id, read in the world on the render thread: 0 is AIR and is what a missing entry answers.
