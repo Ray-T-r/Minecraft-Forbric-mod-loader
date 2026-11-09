@@ -457,7 +457,7 @@ class AdapterPointSpellingTest {
 
 	/**
 	 * The merged class with code and local variable tables, a fresh node each time, with the kernel's own pre-mixin relays; a
-	 * class the merged base does not hold is read from the carriers' runtimes (NeoForge's extension interfaces), as the game's
+	 * class the staged base does not hold is read from the carriers' runtimes (NeoForge's extension interfaces), as the game's
 	 * class loader serves it to the adapters.
 	 */
 	static ClassNode merged(String name) {

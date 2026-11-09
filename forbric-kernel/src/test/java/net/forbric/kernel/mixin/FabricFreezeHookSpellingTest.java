@@ -36,7 +36,7 @@ import net.forbric.kernel.transform.FabricFreezePointInjector;
 
 /**
  * {@link FabricFreezeHookMixinAdapter} reads a freeze observer's selectors and its {@code bootStrap()} point as Mixin reads
- * them, against the staged merged {@code BuiltInRegistries} (hooked, and without code, as the mixin service hands it over)
+ * them, against the staged base's {@code BuiltInRegistries} (hooked, and without code, as the mixin service hands it over)
  * and the vanilla one a Fabric mod is compiled against: Create Fly's released mixin under other names with its selectors
  * written every other way Mixin binds to {@code freeze()}, and an observer of {@code bootStrap()}'s call of
  * {@code freeze()} — not LiquidBounce's: another mod's names, one handler, a CallbackInfo-only body that keeps a value in
@@ -71,11 +71,11 @@ class FabricFreezeHookSpellingTest {
 	private Supplier<java.util.Set<String>> registrySync;
 
 	/**
-	 * Every case reads the staged merged {@code BuiltInRegistries}, and its native classes through the merged base's
+	 * Every case reads the staged base's {@code BuiltInRegistries}, and its native classes through the staged
 	 * native-reference index; Create Fly's mixin is its own third-party fixture.
 	 */
 	@BeforeEach void registrySyncIsInTheGame() {
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedBase());
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged base", TestFixtures.stagedBase());
 		registrySync = FabricFreezeHookMixinAdapter.deferredFreezes;
 		FabricFreezeHookMixinAdapter.deferredFreezes = () -> java.util.Set.of("ledger.mixins.json:org.quarry.ledger.mixin.StartupMixin");
 	}
@@ -282,7 +282,7 @@ class FabricFreezeHookSpellingTest {
 		assertEquals(rows, new TreeSet<>(FabricFreezeHookMixinAdapter.moved()), "no move recorded");
 	}
 
-	/** The staged merged {@code BuiltInRegistries} with the kernel's hooks, without code: what the mixin service hands the adapter. */
+	/** The staged base's {@code BuiltInRegistries} with the kernel's hooks, without code: what the mixin service hands the adapter. */
 	private static Function<String, ClassNode> merged() {
 		return read(ClassReader.SKIP_CODE);
 	}

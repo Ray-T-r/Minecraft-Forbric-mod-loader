@@ -66,11 +66,11 @@ class MergedBaseGateSpellingTest {
 	private static final BiFunction<Ecosystem, String, ClassNode> NATIVES = (asked, owner) -> STAGED.apply(asked != null ? asked : Ecosystem.FABRIC, owner);
 
 	/**
-	 * Every case reads fabric-registry-sync's released mixins and judges them against the staged merged base, with the
+	 * Every case reads fabric-registry-sync's released mixins and judges them against the staged base, with the
 	 * native classes of its native-reference index; the loader cases also against vanilla's own classes.
 	 */
 	@BeforeEach void fixtures() {
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedBase());
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged base", TestFixtures.stagedBase());
 		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "vanilla Minecraft 26.2", TestFixtures.vanillaJar());
 		TestFixtures.requireFiles(Fixture.THIRD_PARTY, "fabric-registry-sync's released mixins", REGISTRY_SYNC);
 	}
@@ -255,7 +255,7 @@ class MergedBaseGateSpellingTest {
 		}
 	}
 
-	/** The staged merged base's classes, as the gate's resources read them. */
+	/** The staged base's classes, as the gate's resources read them. */
 	private static Function<String, byte[]> merged() {
 		return jar(TestFixtures.stagedBase(), Fixture.STAGED);
 	}
@@ -267,7 +267,7 @@ class MergedBaseGateSpellingTest {
 		};
 	}
 
-	/** Vanilla's classes in place of the merged base: a game whose loader still makes the call the wrap names. */
+	/** Vanilla's classes in place of the staged base: a game whose loader still makes the call the wrap names. */
 	private static Function<String, byte[]> vanilla() {
 		return jar(TestFixtures.vanillaJar(), Fixture.MC_LIBRARIES);
 	}
