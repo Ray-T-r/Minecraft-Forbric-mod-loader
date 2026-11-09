@@ -278,6 +278,58 @@ class Rules(unittest.TestCase):
         found, _ = ws.diff(self.old, new, "upgrade")
         self.assertEqual(found, [])
 
+    def test_chunk_ticket_order_is_not_a_difference(self):
+        tickets = ["list", "compound", [{"chunk_pos": ["int_array", [x, 0]], "level": I(31), "type": S("minecraft:forced")}
+                                        for x in range(-2, 3)]]
+        old, new = copy.deepcopy(self.new), copy.deepcopy(self.new)
+        rel = "dimensions/minecraft/overworld/data/minecraft/chunk_tickets.dat"
+        old["saved_data"][rel] = C(data=C(tickets=tickets))
+        swapped = copy.deepcopy(tickets)
+        swapped[2].reverse()
+        new["saved_data"][rel] = C(data=C(tickets=swapped))
+        found, rules = ws.diff(old, new, "reopen")
+        self.assertEqual(found, [])
+        self.assertGreaterEqual(rules.used.get("unordered list tickets", 0), 1)
+        swapped[2][0]["level"] = I(33)
+        found, _ = ws.diff(old, new, "reopen")
+        self.assertEqual(len(found), 1, found)
+
+    def test_session_noise_of_a_player_who_was_online(self):
+        """Measured on gate-m58's A/A (old -> old): what a few seconds online changes in a player's files."""
+        old, new = copy.deepcopy(self.new), copy.deepcopy(self.new)
+        player = "00000000-0000-0000-0000-000000000000"
+        for snap, seed, ticks, order in ((old, 0, 208, ["minecraft:book", "minecraft:oak_planks"]),
+                                         (new, -442425167, 423, ["minecraft:oak_planks", "minecraft:book"])):
+            d = snap["players"][player][1]
+            d["XpSeed"] = I(seed)
+            d["warden_spawn_tracker"] = C(ticks_since_last_warning=I(ticks), warning_level=I(0))
+            d["recipeBook"] = C(recipes=["list", "string", list(order)], toBeDisplayed=["list", "string", list(order)])
+        old["stats"][player] = {"stats": {"minecraft:custom": {"minecraft:play_time": 207, "minecraft:leave_game": 1,
+                                                               "minecraft:jump": 3}}}
+        new["stats"][player] = {"stats": {"minecraft:custom": {"minecraft:play_time": 421, "minecraft:leave_game": 2,
+                                                               "minecraft:jump": 3}}}
+        found, rules = ws.diff(old, new, "reopen")
+        self.assertEqual(found, [])
+        for name in ("player XpSeed first drawn", "player per-tick warden_spawn_tracker.ticks_since_last_warning",
+                     "unordered list recipes", "stats session counter minecraft:play_time",
+                     "stats session counter minecraft:leave_game"):
+            self.assertIn(name, rules.used)
+        # What is not session noise still differs: a drawn seed that changes, a counter that drops, another stat, a
+        # tracker field that is not the tick count, a recipe that is gone.
+        changed = copy.deepcopy(new)
+        d = changed["players"][player][1]
+        d["warden_spawn_tracker"] = C(ticks_since_last_warning=I(423), warning_level=I(2))
+        d["recipeBook"] = C(recipes=["list", "string", ["minecraft:book"]], toBeDisplayed=d["recipeBook"][1]["toBeDisplayed"])
+        changed["stats"][player]["stats"]["minecraft:custom"].update({"minecraft:play_time": 100, "minecraft:jump": 4})
+        found, _ = ws.diff(old, changed, "reopen")
+        self.assertEqual(sorted(p for _, p, _, _ in found),
+                         sorted(["/%s/recipeBook/recipes" % player, "/%s/warden_spawn_tracker/warning_level" % player,
+                                 "/%s/stats/minecraft:custom/minecraft:play_time" % player,
+                                 "/%s/stats/minecraft:custom/minecraft:jump" % player]), found)
+        reseeded = copy.deepcopy(new)
+        found, _ = ws.diff(new, dict(reseeded, players={player: ["compound", dict(reseeded["players"][player][1], XpSeed=I(5))]}), "reopen")
+        self.assertEqual([p for _, p, _, _ in found], ["/%s/XpSeed" % player])
+
 
 class Mutate(unittest.TestCase):
     def test_a_chest_slot_and_a_palette_name_change_and_nothing_else(self):

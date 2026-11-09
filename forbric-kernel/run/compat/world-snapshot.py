@@ -323,8 +323,19 @@ LEVEL_CLOCK_KEYS = ("LastPlayed", "Time")
 NOISE_FILES = re.compile(r"(^|/)data/minecraft/(random_sequences|world_clocks|stopwatches|scheduled_events|weather)\.dat$")
 RAIDS_FILE = re.compile(r"(^|/)data/minecraft/raids\.dat$")
 FORGE_DATA_FILE = re.compile(r"(^|/)data/forge/")
-# Lists of compounds whose order is a HashMap artefact (measured: a pig's attributes came back reordered).
-UNORDERED_LISTS = ("attributes", "modifiers")
+# Lists of compounds whose order is a HashMap artefact (measured: a pig's attributes came back reordered; the forced
+# chunks of data/minecraft/chunk_tickets.dat came back with four of twenty-five tickets swapped, gate-m58 2026-11-09).
+UNORDERED_LISTS = ("attributes", "modifiers", "tickets")
+# Lists of strings saved from a HashSet (measured: a player's recipeBook recipes/toBeDisplayed came back in another order
+# on every resave, old -> old included).
+UNORDERED_STRING_LISTS = ("recipes", "toBeDisplayed")
+# A player's own per-tick counter inside a compound (measured: warden_spawn_tracker.ticks_since_last_warning grows by the
+# ticks the player was online, old -> old included).
+PLAYER_TICK_NESTED = (("warden_spawn_tracker", "ticks_since_last_warning"),)
+# Statistics that only count time online and sessions (minecraft:custom): a resave with the player online may only raise
+# them (measured old -> old, old -> new and new -> new alike). A drop is a difference.
+SESSION_STATS = ("minecraft:play_time", "minecraft:time_since_death", "minecraft:time_since_rest",
+                 "minecraft:total_world_time", "minecraft:leave_game")
 
 
 class Rules:
@@ -389,6 +400,11 @@ def _sort_unordered(value, rules):
                 if ordered != v[2]:
                     rules.count("unordered list " + k)
                 v = ["list", "compound", ordered]
+            elif k in UNORDERED_STRING_LISTS and isinstance(v, list) and len(v) == 3 and v[0] == "list" and v[1] == "string":
+                ordered = sorted(v[2])
+                if ordered != v[2]:
+                    rules.count("unordered list " + k)
+                v = ["list", "string", ordered]
             out[k] = v
         return ["compound", out]
     if isinstance(value, list) and len(value) == 3 and value[0] == "list" and value[1] in ("compound", "list"):
@@ -472,6 +488,10 @@ def normalise(snap, rules, side):
             if k in d:
                 d.pop(k)
                 rules.count("player per-tick " + k)
+        for outer, k in PLAYER_TICK_NESTED:
+            if outer in d and d[outer][0] == "compound" and k in d[outer][1]:
+                d[outer] = ["compound", {n: v for n, v in d[outer][1].items() if n != k}]
+                rules.count("player per-tick %s.%s" % (outer, k))
         for k in ("Pos", "Rotation"):
             if k in d and d[k][0] == "list":
                 d[k] = ["list", d[k][1], [round(v, 6) for v in d[k][2]]]
@@ -587,6 +607,31 @@ def _walk(a, b, path, out):
     out.append((path, a, b))
 
 
+def _pairwise(na, nb, rules):
+    """The allowances that compare the two sides (both modes; measured on the A/A, old -> old):
+    - a player's XpSeed may go from 0 to a drawn value once (the old kernel's first save of a player wrote 0, and its own
+      reopen drew one, exactly as the new kernel does); any other change is a difference;
+    - the session statistics (SESSION_STATS) may only grow."""
+    for key in set(na["players"]) & set(nb["players"]):
+        pa, pb = na["players"][key], nb["players"][key]
+        if not (isinstance(pa, list) and isinstance(pb, list) and pa[0] == pb[0] == "compound"):
+            continue
+        xa, xb = pa[1].get("XpSeed"), pb[1].get("XpSeed")
+        if xa == ["int", 0] and xb and xb[0] == "int" and xb != xa:
+            nb["players"][key] = ["compound", dict(pb[1], XpSeed=xa)]
+            rules.count("player XpSeed first drawn")
+    for key in set(na["stats"]) & set(nb["stats"]):
+        ca = (na["stats"][key].get("stats") or {}).get("minecraft:custom") if isinstance(na["stats"][key], dict) else None
+        cb = (nb["stats"][key].get("stats") or {}).get("minecraft:custom") if isinstance(nb["stats"][key], dict) else None
+        if not (isinstance(ca, dict) and isinstance(cb, dict)):
+            continue
+        for stat in SESSION_STATS:
+            va, vb = ca.get(stat), cb.get(stat)
+            if isinstance(va, int) and isinstance(vb, int) and vb > va:
+                cb[stat] = va
+                rules.count("stats session counter " + stat)
+
+
 FACETS = ("level", "blocks", "biomes", "block_entities", "chunk_extra", "entities", "players", "advancements",
           "stats", "saved_data")
 
@@ -602,6 +647,7 @@ def diff(a, b, mode, ignore=()):
                          "world-snapshot.py" % (ea, eb))
     rules = Rules(mode, ignore)
     na, nb = normalise(a, rules, "a"), normalise(b, rules, "b")
+    _pairwise(na, nb, rules)
     out = []
     for facet in FACETS:
         found = []
