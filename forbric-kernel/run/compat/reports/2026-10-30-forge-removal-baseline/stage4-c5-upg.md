@@ -1,14 +1,19 @@
 # Stage 4 C5, lane UPG: W3 (world-snapshot), F1 (D43 carrier pack id), and the review fixes
 
-Branch `s4-c5-upg` from `cd6d0fe8`, worktree `s4c5-upg`, ports 46740-46759. Logs: `~/Forbric-backups/stage4-notes/c5/upg/`
+Branch `s4-c5-upg` (started from `cd6d0fe8` in wave 1, rebased onto the stage tip `f0cb66b0` in wave 2), worktree `s4c5-upg`, ports 46740-46759. Logs: `~/Forbric-backups/stage4-notes/c5/upg/`
 (D67). This record covers the 2026-11-09 run: the 2026-11-02 work committed, then the findings of the two lane reviews
 (`c5/review-upg-A.md`, `c5/review-upg-B.md`) fixed or refuted. U1 and U2 were reached in wave 2 part 1, the canaries,
-gate-m58, its calibration and the nightly change in wave 2 part 2 (sections at the end); what is still open is under "Open".
+gate-m58, its calibration and the nightly change in wave 2 part 2, and the findings of the two wave-2 reviews (sections at
+the end); what is still open is under the last section's "Open".
 
-## How this was measured (read first)
+## How the wave-1 sections were measured (read first)
 
-`~/.gradle/caches` was recreated on 2026-11-08 and lost the kernel's dependencies. No lane may download, so every Gradle
-run in this record resolves through an init script that adds a file repository of jars already on disk
+This section applies to "Commits", "Results" and "Review findings" (wave 1) only. Every wave-2 section below used the
+pinned build (D68: plain `--offline` with `.stage4/props.txt`, no init script, no private `GRADLE_USER_HOME`), which
+retired this route.
+
+`~/.gradle/caches` was recreated on 2026-11-08 and lost the kernel's dependencies. No lane may download, so every wave-1
+Gradle run in this record resolves through an init script that adds a file repository of jars already on disk
 (`c5/upg/offline-local.init.gradle`, repository `c5/upg/localrepo`, 18 jars, sha1 prefixes in `c5/upg/localrepo.sha1`).
 Two substitutions differ from the real build:
 
@@ -78,7 +83,7 @@ well (its jar is `neoforge-runtime.jar`), so staged gates see no change of id.
 | A-5 "Forbric 0.4" | confirmed, fixed in the lane's new text; older committed lines that say "0.4 and earlier" about the merged base were left alone | `3e33e7c4`, `88943a1a` |
 | A-6 two NeoForge carriers share one id | confirmed, fixed | `6a6d8110` |
 | A-7 test skips without testdata | confirmed, fixed | `89b640b1` |
-| A-8 migrate never ran in a game | confirmed; now runs in a unit test against stand-ins (`24fdbe08`); the in-game proof is still gate-m58's installed-name phase | open |
+| A-8 migrate never ran in a game | confirmed; now runs in a unit test against stand-ins (`24fdbe08`); the in-game proof is gate-m58's installed-name phase: 14/0 at the part-2 tip, 10/4 at `a0eeba07` (wave 2 part 2), with a mod pack after the carrier since the wave-2 review fixes | closed in wave 2 |
 | B-1 Python half was not blocked | confirmed, committed | `cbbd731c`..`96a08593` |
 | B-2 the proposed refill command is not enough | confirmed: the old tag 187143a1 needs `org.joml:joml:1.10.8` (cache has 1.10.9) and JUnit 5.9.2 is not cached | handoff |
 | B-3 "fixing it means downloading" | confirmed wrong: the file-repo route above builds and tests offline; only annotations 23.0.0 is missing, and it is compileOnly | this record |
@@ -192,18 +197,19 @@ CanUpdate on the three entities and the player, `forbric/carrier/1-forge-runtime
 2. **New-kernel client drops the connection on the first chunk packet** with gate-m58's set (fabric-api 0.155.2, the two
    canaries, mcw-bridges, mcw-furniture, ToolBelt, corpse): `No value with id 43766` (block-state id) in `LinearPalette.read`,
    on new -> new too (s4, c1; also in run 3). The old client joined the old server with the same set in every run.
-   Attribution (`63cbaf0e`, gate-m58 phase `bb`, `m58-bb-5.out`, 30 PASS / 2 FAIL): the NEW kernel writing the same save
+   Attribution (`63cbaf0e`, gate-m58 phase `bb`, `m58-bb-5.out`, 28 PASS / 2 FAIL; 30/2 in `2913ae06`'s message and in
+   this record before the wave-2 review was a miscount): the NEW kernel writing the same save
    itself and reopening it hits the same crash on both joins, while S2n -> S3n is 0 differences: this tree's own
    multiplayer defect, not an upgrade loss. gate-m12 with the same mod set on its own fresh world (`m12-repro.sh`):
-   the client joins and leaves cleanly (31/1, the one FAIL a load warning, "server kept up"; without mcw-furniture
-   32/0), so the crash needs the save's placed modded blocks (mcwbridges piers, an mcwfurnitures drawer) in a sent
-   chunk. Not diagnosed further here.
+   the client joins and leaves cleanly (31/1, the one FAIL m12's "server kept up" check: one tick-lag overload warning,
+   2094 ms / 41 ticks behind; without mcw-furniture 32/0). That the crash needs the save's placed modded blocks was
+   inferred from these two runs, which differ in more than the blocks; the wave-2 review fixes measured it (below).
 
-## Open (owner named)
+## Open at the end of part 2 (owner named; superseded by "Wave 2 review fixes" below)
 
 - Done in wave 2 part 2: canaries (W2), gate-m58 (W4) with every phase and control C1-C5, W5 calibration incl. the A/A, the
   installed-name phase green at the tip and red at `a0eeba07`, the nightly SLOW_GATES change, m31 re-run.
-- **gate-m58 is not green at the tip**: run 4 (all phases then) 141/3, and phase `bb` 30/2; every FAIL is the new client's
+- **gate-m58 is not green at the tip**: run 4 (all phases then) 141/3, and phase `bb` 28/2; every FAIL is the new client's
   socket join (defect 2 above), which `bb` shows new -> new. Owner: the kernel (orchestrator to assign; client chunk/block
   state sync on the genuine base). m58 goes green when that join works; nothing in the gate needs to change for it. A full
   default run including `bb` in one go was not made (the two runs together cover every phase). Defect 1 (particle remap `clear()`): same owner; when fixed, waystones and
@@ -212,3 +218,84 @@ CanUpdate on the three entities and the player, `forbric/carrier/1-forge-runtime
   A/A is).
 - world-snapshot.py's rule table grew (6ce60ac9); SWAP imports the module: same schema, but a diff can now report fewer
   differences (handoff.md, "UPG (wave 2, part 2)").
+
+## Wave 2 review fixes (2026-11-10)
+
+The two reviews of parts 1 and 2 (`c5/review-w2-upg-A.md`, lens A; `c5/review-w2-upg-B.md`, lens B), each finding checked
+against the logs and fixed or refuted. Pinned build (D68). Logs, red checks and gate evidence:
+`~/Forbric-backups/stage4-notes/c5/upg/w2/rf/` (each gate run's `<label>.runner.txt` names the tree, HEAD and the sha1 of
+the gate file it ran; `<label>.evidence/` is the gate's own evidence directory).
+
+| finding | verdict | commit / evidence |
+|---|---|---|
+| A-1 D53 population check cannot go red | confirmed (review A's mutated log: FAIL=0) and fixed: each populated jar's modId must have an OK line of the world script, else FAIL. Red: same mutated log -> 2 FAILs naming toolbelt and corpse; unmutated log green (`a1-redcheck.out`) | `188d8d5b` |
+| A-2 / B-4 waystones, sophisticatedbackpacks left D53's set without a ruling | confirmed. Ruling asked of the orchestrator (handoff). Meanwhile they are back in the gate through phase `held` (singleplayer copy of S2: an old client writes them, a new client opens it twice), where fabric-registry-sync sends nothing to the host, so the particle remap that kills the socket join does not run. Their population lines are checked as in A-1; the canary README and world.commands say why they are held | `00f15bd5`; `held-1.out`, `full-rf-1.out` |
+| A-3 installed phase cannot tell an in-place rename from an append | confirmed and fixed: both installed rundirs hold mcw-bridges' NeoForge build, whose `forbric/data/mcwbridges` follows the carrier on the old side; the phase FAILs if no mod pack follows the carrier. Red: a scratch clone whose `migrateCarrierIds` drops the renamed id and appends it -> 14/2, exactly the two order checks (`installed-append-standin-red.out`); green at the tip (`full-rf-1.out`) | `188d8d5b` |
+| A-4 / B-1 counts and labels | confirmed: `m58-bb-5.out` is 28 PASS / 2 FAIL (30/2 in `2913ae06`'s message, this record, handoff and checks); the m12 FAIL is "server kept up", one tick-lag overload warning (2094 ms / 41 ticks behind), not a load warning; bb's write checks said "the old server". Record, handoff and checks corrected; write_checks names the writing side | `188d8d5b`, this commit, notes |
+| A-5 C4 silent in a subset run | confirmed and fixed: FAIL when controls run without main or without its S2 -> S3 diff. `a5-redcheck.out`: `2913ae06`'s block prints nothing for `M58_PHASES="controls"`, this one FAIL=1 | `188d8d5b` |
+| A-6 recipe-list order allowed everywhere | confirmed and fixed: sorted only inside `players/<uuid>/recipeBook`. New test red with 6ce60ac9's everywhere-sort put back (`a6-redcheck.out`); part 2's snapshots re-diffed offline under the narrowed rule: S2->S3, S3->S4, S2c->S3c, S3c->S4c, S2f->S3f (mcwbridges ignored), A/A and S2n->S3n all still 0 (`a6-offline-rediff.txt`) | `ae06560d` |
+| B-2 UPG's 03:52 notes under S's headings | confirmed; moved under "UPG wave-2 review fixes" in handoff.md and checks.md with the corrected counts | notes |
+| B-3 G-B2's PROTOCOL paragraph never landed | confirmed and landed, updated for part 2 (frozen schema, stats, `--json`, `census`, noise only once old -> old shows it); replaces wave 1's three lines only | `a5634afb` |
+| B-5 manifest leaves inputs out | confirmed and fixed: `inputs` now hashes this gate, the command scripts, the old stage's two carriers and, per phase run, the Forge mcw-bridges build, Team Reborn Energy, the machine canaries, the installed-name carriers and mcw-bridges (23 inputs in `full-rf-1`, none missing) | `188d8d5b` |
+| B-6 record opening out of date | confirmed: the read-first section now scopes itself to the wave-1 rows, the branch line names the rebase onto `f0cb66b0`, A-8 is closed | this commit |
+| B-7 "needs placed modded blocks" was inferred; S's block-state fix not mentioned | confirmed, and measured (below): S's fix does not cure it, and the placed blocks are what it needs | this record |
+| B-8 no m58 result from the committed gate | confirmed for part 2 (every part-2 run used the gate before `9c70886b`/`63cbaf0e` committed it; their failure texts match the committed text). `full-rf-1` ran the committed gate of `00f15bd5` (sha1 `9a5bea7bd6e5`, in the runner file and in the manifest) | `188d8d5b` |
+
+### B-7, measured: the new client's chunk crash on a merge preview with lane S
+
+Merge preview = `git merge-tree` of this branch's `2913ae06` and lane S's `0daa5b0b` (clean, tree `5591b5a0`), checked out
+by `git archive` into an APFS clone of this worktree in scratch, kernel jar rebuilt there (contains S's
+`clearBlockStateIds`, `835ec80c`, which makes a client number each block state once). Phase `bb` only (the old-kernel
+resolve was stubbed in the clone's gate copy, which has no `.git`; bb never boots the old kernel). Files: `rf/preview-s-*`.
+
+| run | world script | result | client crash |
+|---|---|---|---|
+| `preview-s-bb-2` | as committed | 28/2 | both joins, `No value with id 43766` |
+| `preview-s-bb-nosetblock-3` | no `setblock … mcwbridges/mcwfurnitures` (items in the chest and the corpse stay) | 28/2, the 2 = the drawer's emerald line, which needs the drawer | **none: both new-client joins pass** |
+| `preview-s-bb-bridgesonly-4` | the two bridge piers placed, no drawer | 28/2 | both joins, id 43766 |
+| `preview-s-bb-draweronly-5` | the drawer placed, no piers | 28/2 | both joins, id 45108 |
+
+So: S's client-side fix does not cure it, and the crash needs a modded block placed in a chunk the server sends, either
+mod's. Both ids are above the 42954 block states both sides report ("initialised 42954 block state cache(s)" in the client
+and the dedicated server's logs), so the dedicated server's palette carries an id the client's id map cannot hold: a
+lead for the kernel lane, not diagnosed further here.
+
+### gate-m58, all default phases at `00f15bd5` (`full-rf-1.out`, committed gate): **211 PASS / 5 FAIL**
+
+The 5 FAILs are the new client's socket joins (s3, s4, bb-write, bb-read, c1), every one `No value with id 43766`. Everything
+else is green: S2 -> S3 / S3 -> S4 0 / 0, census 0 missing, canary reads PASS; sp 0 / 0; **held** S2h -> S3h 0 under
+upgrade (ForgeData dropped 3x after the ForgeData = NeoForgeData check, the host's `BalmData.WaystonesData` now in
+NeoForgeData), S3h -> S4h 0, census 0 missing, waystones and sophisticatedbackpacks population OK, no remap error on the
+singleplayer join; A/A 0 (CanUpdate 8, ForgeData 2 set aside); B/B 0; transfer and energy reloads PASS; forge 0 with
+mcwbridges ignored, C5 4 differences all naming it; installed: `[vanilla, fabric-convention-tags-v2, mod_data,
+forbric/carrier/2-neoforge-runtime, forbric/data/mcwbridges]`, renamed in place with the mod pack still after it; C1
+exactly its two mutations, C2 red on exactly the dropped name, C4 ForgeCaps 0/0, ForgeData 1/1, CanUpdate 4/4, Forge
+carrier pack 1/1. Run time 946 s.
+
+### Suite, gate-m31, python tests (end of the review fixes, at `00f15bd5`)
+
+| check | result |
+|---|---|
+| full suite (pinned, plain `--offline` + `.stage4/props.txt`, `-Pforbric.requireFixtures=all cleanTest test --continue`, no init script) | **5784 tests, 0 skipped, 5 failed, 0 errors: exactly the 5 names of `c5/failures-wave1.txt`** (D58), 0 new; `c5/failures-upg.txt` rewritten, XML `c5/upg/w2/rf/xml/`. No Java file changed in the review fixes and no test was added or deleted in Java, so no TSV row (D47) |
+| gate-m31 / `M31_UNFIXED=1` (`GATE_PORT=46752`) | 13 PASS / 0 FAIL; 12 PASS / 1 FAIL (`every chunk carries vanilla's biomes (want 0 got 11)`), as before |
+| `test_world_snapshot.py` / `test_world_parity.py` / `test_gate_ports.py` / `tools/test_run_nightly.py` | 31/31 / 4/4 / 11/11 / 9/9 |
+| gate-m58 | 211/5 above (all default phases, committed gate) |
+
+The record commit after `00f15bd5` changes only this file, so the suite and gates were not re-run after it.
+
+### Open (owner named)
+
+- **gate-m58 is not green**: 211/5, all five the new client's socket join, `No value with id 43766`. Owner: a kernel lane
+  (orchestrator to assign). Measured lead: a placed mcwbridges or mcwfurnitures block in a sent chunk is what it needs,
+  lane S's `835ec80c` does not cure it, and the ids the dedicated server sends (43766, 45108) are above the 42954 states
+  both sides count. Nothing in the gate needs to change once the join works.
+- **Ruling owed (orchestrator), D53 / A-2 / B-4**: waystones and sophisticatedbackpacks are kept by phase `held`
+  (singleplayer) instead of phase main, because the new client cannot join a server that registers particle types
+  (`KernelParticleProviders.IntKeyedView.clear()`; owner: the same kernel lane). Either accept `held` as their D53 arm, or
+  rule that they return to main once that defect is fixed (then `held` is deleted with the scripts `held*.commands`).
+- For SWAP (imports world-snapshot.py): after `ae06560d` a diff can report MORE differences than under `6ce60ac9` when a
+  string list named `recipes` / `toBeDisplayed` sits outside a player's recipeBook; schema and API unchanged.
+- For the merger: PROTOCOL.md (`a5634afb`) replaces only the three `world-snapshot.py` lines; SWAP has two other hunks
+  in the same file.
+- The old client was exercised (MP and SP) on the tag's kernel; an old -> old A/A in singleplayer is still not run
+  (owner UPG, optional).
