@@ -5,15 +5,22 @@
 #   consumer tables, plus its block's id. NeoForge posts all twelve itself, through ModLoader.postEvent, whose only
 #   fan-out is ModList.forEachModInOrder -- so the one kernel behaviour under them is publishing the canary's container
 #   into NeoForge's ModList, and that has a switch.
-#   RED with M26_EXTRA_JVM='-Dforbric.publishModList=off' (re-measured on the genuine base, Stage 4 C5 record): @PUBLISH@
+#   RED with M26_EXTRA_JVM='-Dforbric.publishModList=off' (measured on the genuine base 2026-11-09, stage4-c5-g-a.md):
+#   exactly the twenty NeoForge checks that read what the twelve events registered (the twelve "received" lines, the
+#   key in Options and its reloaded F9, the baked layer, the granite tint, the reload listener's two, the tooltip
+#   factory, the drawn gui layer).
 #   The client still reaches its world: the canary subscribes (on the bus its constructor is handed), reaches world tick
 #   100, its block has an id, its plugin sees the client. Those NeoForge checks stay POSITIVE-ONLY, with no switch that
 #   turns them red: '-Dforbric.blockStateIdRefill=off' leaves the NeoForge block's id alone, because a NeoForge block is
 #   registered in the first wave and the map's first fill covers it.
-# Fabric half (forbricfabriclive rides along, with -Dforbricfabriclive.lateBlock=true): the blockstate→id refill's own
-#   proof. A Fabric client entrypoint registers in a late wave, after the map's first fill, so the Fabric canary
-#   registers a block from onInitializeClient and reads its id back in the world. RED with
-#   M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' (re-measured, Stage 4 C5 record): @REFILL@
+# Fabric half (forbricfabriclive rides along, with -Dforbricfabriclive.lateBlock=true): a Fabric client entrypoint
+#   registers in a late wave, after the blockstate→id map's first fill, so the Fabric canary registers a block from
+#   onInitializeClient and reads its id back in the world. POSITIVE-ONLY on the genuine base: NeoForge's own block
+#   callback maps each state as its block is registered, the late wave included, so the kernel's refill
+#   (KernelRegistryContent.rebuildBlockStateIds) finds the map agreeing with the registry and does nothing. Measured
+#   2026-11-09: no genuine boot of G-A's C5 gate runs printed its "rebuilt NeoForge blockstate→id map" line, and with
+#   M26_EXTRA_JVM='-Dforbric.blockStateIdRefill=off' the late block reads the same id as by default. The check on that
+#   line held on the merged base only and went (D34); the refill's own fate is the kernel's (stage4-c5-g-a.md).
 # Session: the checks every client gate makes, plus the kernel rewrite that runs on every boot with no mod asking for it:
 #   GuiRenderer's orphaned picture-in-picture map given its only writer (Xaero's minimap and malilib read it; the
 #   bridge's writer line is asserted explicitly, D65), and vanilla water placed beside spawn by the NeoForge canary.
@@ -133,16 +140,14 @@ check "NeoForge: the canary's own block has a real id" \
 check "NeoForge: its mixin config plugin saw the client" 'ForbricNeoLive/PLUGIN\] prepareConfigs saw dist=CLIENT' "$LOG"
 # M26_NEO_ASSERTIONS_END
 
-# M26_FABRIC_ASSERTIONS_BEGIN — the blockstate→id refill's proof on the family that registers late after MinecraftForge.
+# M26_FABRIC_ASSERTIONS_BEGIN — a block a Fabric client entrypoint registers late gets a real blockstate id.
 step "a block a Fabric client entrypoint registers gets a real blockstate id (must PASS)"
-# The kernel fills the blockstate→id map when its registration window closes, before Minecraft.<init>; Fabric's client
-# entrypoints run inside Minecraft.<init> with the registries reopened, so their blocks are a second wave the map has
-# to be rebuilt for. A map that stops at "already non-empty" answers 0 -- AIR -- for every one of them.
+# Fabric's client entrypoints run inside Minecraft.<init> with the registries reopened, so their blocks are a second
+# wave after the blockstate→id map's first fill. On the genuine base NeoForge's own block callback maps them as they
+# register (the kernel's refill stays silent, header), so what is asserted is the id itself.
 check "Fabric: the canary registered its block from onInitializeClient" \
   'ForbricFabricLive/LATEBLOCK\] registered forbricfabriclive:late_block from onInitializeClient at raw id [1-9][0-9]*' "$LOG"
-check "Fabric: the blockstate→id map is rebuilt after the client entrypoints' wave" \
-  '\[Forbric/Lifecycle\] rebuilt NeoForge blockstate→id map \([1-9][0-9]* states, was [1-9][0-9]*\)' "$LOG"
-# The id itself, read in the world on the render thread: 0 is AIR and is what a missing entry answers.
+# The id, read in the world on the render thread: 0 is AIR and is what a missing entry answers.
 check "Fabric: the late block has a real id, read back in the world" \
   'ForbricFabricLive/LATEBLOCK\] forbricfabriclive:late_block id=[1-9][0-9]* roundTrip=Block\{forbricfabriclive:late_block\}' "$LOG"
 check_absent "Fabric: the late-block probe never failed" 'ForbricFabricLive/LATEBLOCK\] (registration|read-back) FAILED' "$LOG"
