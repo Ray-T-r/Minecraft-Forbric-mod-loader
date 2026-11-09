@@ -39,7 +39,8 @@
 # STAGE 4. Phase 2 "refused" staged the MinecraftForge canary (built against stand-ins) beside the NeoForge one and
 # showed it refused by name and taking no part. It passed, and it goes anyway (D32/D51): a refused jar is gate-m26's and
 # gate-m29's subject. The positive phase's absence of "[Forbric/EventMux] ... forward failed" went with the event
-# multiplexer that printed it (D34).
+# multiplexer that printed it (D34). The reference was regenerated on NeoForge 26.2.0.93 (measured on .88 before; all
+# 106 rows identical, only the loader, installation and jar-entry digests changed).
 # GATE-PARALLEL: rundirs=server-breath-m57 mem=2500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
