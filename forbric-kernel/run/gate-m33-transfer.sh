@@ -22,14 +22,21 @@
 # aboard that notification is no longer reached, and that check is dropped. The probe that replaces it is a NeoForge
 # machine, which marks itself changed when its own handlers' contents change, written through public Fabric queries: it
 # proves an aborted Fabric transaction leaves the chunk clean (the bridge does not commit NeoForge's root) and a
-# committed one dirties it and survives save/reload. The MinecraftForge carrier still runs and still composes its
-# generic InvWrapper into every BaseContainerBlockEntity, so the probe now also asks NeoForge for the NeoForge cabinet on
-# the face its owner refuses: the bridge's Forge leg reads that InvWrapper there and must hand NeoForge nothing, and the
-# check that no InvWrapper is ever refused as an unaudited handler keeps a query that reaches it. The kernel's own
+# committed one dirties it and survives save/reload. The probe also asks NeoForge for the NeoForge cabinet on the face
+# its owner refuses, and NeoForge must get nothing there. The kernel's own
 # "initialized cross-ecosystem block transfer" line does not depend on a MinecraftForge mod (it prints when Fabric's and
 # NeoForge's transfer APIs and the kernel's transfer classes are present and -Dforbric.transferBridge is not off), so it
 # is now asserted on both boots and asserted absent with the bridge off. The census is two primary machines now:
 # 40 items, 32,417 Fabric fluid units, 4 item and 4 fluid routes.
+#
+# STAGE 4 (the game base is NeoForge's own patched game). There is no merged base and no MinecraftForge carrier any more,
+# so the gate launches and attests what the fixture build recorded: the base (NeoForge's patched game, evidence role
+# neo-patched) and the NeoForge carrier, exported as the launcher's BASE and NEO_RT. The refused-face query on the
+# NeoForge cabinet now guards Fabric's generic Container view: Fabric API wraps any Container on every face, and the
+# bridge must not hand that wrapper to a NeoForge consumer for a NeoForge owner (BlockTransferBridge.neoFallback asks
+# TransferPrecedence, which admits only Fabric's explicit providers for a NeoForge owner). The check that MinecraftForge's
+# InvWrapper was never refused as an unaudited handler is gone: no net.minecraftforge class is on this base, so it could
+# only pass vacuously, and the cabinet's refused-face query in the probe is what reaches that path now.
 # GATE-PARALLEL: rundirs=server-transfer-m33 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25593}"
@@ -66,11 +73,11 @@ step "build the independently declared ecosystem canaries (the MinecraftForge on
 bash "$KERNEL/run/build-transfer-world-canaries.sh" > "$RESULTS/build.log" 2>&1 || { cat "$RESULTS/build.log"; exit 1; }
 INPUTS="$KERNEL/run/canary/m33-build-inputs.json"
 FAPI="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["fabricApi"]["path"])' "$INPUTS")"
-MERGED="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["merged"]["path"])' "$INPUTS")"
-FORGE_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["forge"]["path"])' "$INPUTS")"
+BASE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["base"]["path"])' "$INPUTS")"
 NEO_RT="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["neo"]["path"])' "$INPUTS")"
 COMPILE_GAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["compileGame"]["path"])' "$INPUTS")"
-export MERGED FORGE_RT NEO_RT
+# The launcher's own inputs: the game base and its carrier the canaries were built and recorded against.
+export BASE NEO_RT
 
 fresh_world() {
   if [ -d "$RUNDIR/world" ] && [ ! -f "$RUNDIR/.m33-owned" ]; then
@@ -112,7 +119,7 @@ run_phase() {
   token="$(cat "$RUNDIR/.m33-owned")"
   rm -f "$RESULTS/$phase-inputs.log"   # port_was_free below must not read an earlier run's log
   python3 "$KERNEL/run/compat/evidence.py" run --source "$KERNEL/.." \
-    --artifact "merged=$MERGED" --artifact "forge-interop=$FORGE_RT" --artifact "neo-runtime=$NEO_RT" \
+    --artifact "neo-patched=$BASE" --artifact "neo-runtime=$NEO_RT" \
     --artifact "kernel=$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar" \
     --artifact "kernel-runtime=$BUILD/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar" \
     --artifact "compile-game=$COMPILE_GAME" \
@@ -168,8 +175,7 @@ check "the kernel connected the bridge after native registration" "\[Forbric/Tra
 check "public API face/null coverage ran" "PASS the Fabric and NeoForge public APIs preserve NORTH/null" "$RESULTS/prepare-inputs.log"
 check "native priority ran" "PASS native providers take priority" "$RESULTS/prepare-inputs.log"
 check "owner providers precede generic Container wrappers" "PASS owner providers precede Fabric's generic Container view" "$RESULTS/prepare-inputs.log"
-check "the carrier's InvWrapper answers no NeoForge consumer" "the carrier's InvWrapper answers no NeoForge consumer" "$RESULTS/prepare-inputs.log"
-check_absent "Forge's own InvWrapper was never refused as an unaudited handler" "FORGE_HANDLER_NOT_ROLLBACK_SAFE: net\.minecraftforge\.items\.wrapper\.InvWrapper" "$RESULTS/prepare-inputs.log"
+check "Fabric's generic Container view answers no NeoForge consumer on the owner's refused face" "Fabric's generic Container view answers no NeoForge consumer on the owner's refused face" "$RESULTS/prepare-inputs.log"
 check "actual fractional return was rolled back and retried" "PASS world fluid quantization retains 17 units" "$RESULTS/prepare-inputs.log"
 check "world replacement invalidation ran" "PASS cached foreign views" "$RESULTS/prepare-inputs.log"
 check "a real chunk unload and reload ran" "PASS chunk unload: cached views refuse" "$RESULTS/prepare-inputs.log"

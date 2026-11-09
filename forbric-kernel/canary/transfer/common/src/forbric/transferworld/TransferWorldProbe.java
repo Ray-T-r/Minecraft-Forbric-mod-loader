@@ -40,9 +40,9 @@ import net.neoforged.neoforge.transfer.item.ItemResource;
  * invalidation, which stood on a Forge machine, now stands on a NeoForge and a Fabric one. The clean-chunk dirty probe
  * used to prove the bridge's own dirty notification on commit, for a Forge host whose handlers never mark it changed;
  * only the Forge adapters reach that notification, so it is no longer exercised, and the probe now stands on a NeoForge
- * machine that marks itself changed. The MinecraftForge carrier still runs: its generic InvWrapper is still composed
- * into every BaseContainerBlockEntity, and the bridge's Forge leg still reads it, so a NeoForge consumer of the
- * NeoForge cabinet's refused face must still get nothing.
+ * machine that marks itself changed. Since Stage 4 the game base is NeoForge's own patched game and there is no
+ * MinecraftForge carrier: the NeoForge cabinet's refused face now guards Fabric's generic Container view, which the
+ * bridge must never hand to a NeoForge consumer for a NeoForge owner.
  */
 public final class TransferWorldProbe {
 	private static final List<String> FAMILIES = List.of(Machines.FABRIC, Machines.NEO);
@@ -295,9 +295,8 @@ public final class TransferWorldProbe {
 	 * Container-shaped NeoForge machines. Fabric API's generic fallback wraps ANY Container as a writable store on every
 	 * face and runs before any bridge; it must not answer for a NeoForge owner. On the permitted face a Fabric consumer
 	 * reaches the owner's own handlers, never the Container slots (which count every write). The cabinet is a
-	 * BaseContainerBlockEntity, into which the MinecraftForge carrier composes its generic InvWrapper over the whole
-	 * Container; the bridge's Forge leg reads that wrapper on the face the owner refuses, and it is no owner's handler,
-	 * so a NeoForge consumer gets nothing there.
+	 * BaseContainerBlockEntity; on the face its owner refuses, the only answer the bridge could hand a NeoForge consumer
+	 * is Fabric's generic wrapper over the whole Container, which is no owner's handler, so NeoForge gets nothing there.
 	 */
 	private static void checkOwnerPrecedence(ServerLevel level) {
 		Machines.Crate neoCrate = place(level, NEO_CRATE, Machines.CRATE_BLOCKS.get(Machines.NEO), Machines.Crate.class);
@@ -309,7 +308,7 @@ public final class TransferWorldProbe {
 		equal(0, neoCrate.containerWrites); yes(neoCrate.isEmpty(), "a foreign consumer wrote into the Container slots of " + neoCrate.getBlockPos());
 		Machines.Cabinet cabinet = place(level, NEO_CABINET, Machines.CABINET_BLOCK.get(), Machines.Cabinet.class);
 		yes(level.getCapability(Capabilities.Item.BLOCK, NEO_CABINET, Direction.SOUTH) == null,
-				"NeoForge was handed the MinecraftForge carrier's whole-Container InvWrapper on the NeoForge cabinet's refused face");
+				"NeoForge was handed Fabric's generic whole-Container view on the NeoForge cabinet's refused face");
 		yes(level.getCapability(Capabilities.Fluid.BLOCK, NEO_CABINET, Direction.SOUTH) == null, "NeoForge got a fluid handler on the cabinet's refused face");
 		Storage<ItemVariant> fabricOnCabinet = ItemStorage.SIDED.find(level, NEO_CABINET, Direction.NORTH);
 		yes(fabricOnCabinet != null, "missing Fabric view of the NeoForge cabinet");
@@ -319,7 +318,7 @@ public final class TransferWorldProbe {
 		try (Transaction tx = Transaction.openOuter()) { equal(6 * 81L, fabricFluidsOnCabinet.insert(FluidVariant.of(Fluids.WATER), 6 * 81L, tx)); tx.commit(); }
 		equal(1, cabinet.neoItems.getAmountAsLong(0)); equal(6, cabinet.neoFluids.getAmountAsLong(0));
 		yes(cabinet.isEmpty(), "a foreign consumer wrote into the cabinet's Container slots instead of its owner's handler");
-		System.out.println("[M33Transfer] PASS owner providers precede Fabric's generic Container view; the carrier's InvWrapper answers no NeoForge consumer");
+		System.out.println("[M33Transfer] PASS owner providers precede Fabric's generic Container view; Fabric's generic Container view answers no NeoForge consumer on the owner's refused face");
 	}
 
 	private static void moveItems(ServerLevel level, String source, String destination, Direction face) {
