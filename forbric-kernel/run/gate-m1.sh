@@ -1,10 +1,10 @@
 #!/usr/bin/env bash
-# M1/M3-server gate — the sovereign kernel boots the merged base to Done with ZERO genuine loader lifecycle.
+# M1/M3-server gate — the sovereign kernel boots NeoForge's patched game to Done with ZERO genuine loader lifecycle.
 #
-# The kernel's own transforming class loader loads the merged base, redirects the genuine FancyModLoader
-# server-loading trigger to the kernel's native lifecycle, seeds only passive genuine-loader identity, natively
-# registers both ecosystems' baseline registries + content (container factory + RegisterEvent dispatch + Forge
-# bake), and drives the vanilla server boot to Done — then ticks and shuts down cleanly.
+# The kernel's own transforming class loader loads the game base (NeoForge's own patched jar), redirects the genuine
+# FancyModLoader server-loading trigger to the kernel's native lifecycle, seeds only passive genuine-loader identity,
+# natively registers the baseline registries + content (container factory + RegisterEvent dispatch), and drives the
+# vanilla server boot to Done — then ticks and shuts down cleanly.
 # GATE-PARALLEL: rundirs=server-kernel mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -12,8 +12,10 @@ set -uo pipefail
 LOG="$BUILD/gate-m1-boot.log"; mkdir -p "$BUILD"
 RUNDIR="$KERNEL/run/server-kernel"
 
-step "boot merged-base server under the kernel (zero mods), tick, clean stop"
-"$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/dev/null 2>&1
+step "boot the game base's server under the kernel (zero mods), tick, clean stop"
+# kernel_jar, not a bare gradlew whose output went to /dev/null: a build that failed left the previous jar in
+# build/libs, and this gate then booted that and could report GREEN on code that is not the tree.
+kernel_jar
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" 2>/dev/null
 rm -rf "$RUNDIR/mods" 2>/dev/null; mkdir -p "$RUNDIR/mods"  # genuinely zero-mod
@@ -40,7 +42,7 @@ record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 90
 
 step "boot achievements (must PASS)"
-check "kernel loaded merged base through its own loader"  "sovereign kernel .* owned jar" "$LOG"
+check "kernel loaded the game base through its own loader" "sovereign kernel .* owned jar" "$LOG"
 # The kernel's OWN game-side half. Asserted with a literal count and not [0-9]+, because [0-9]+ matches 0 and a
 # kernel that delivered nothing would read exactly like one that delivered everything. The right-hand number is
 # how many net.forbric.kernel.runtime classes KernelRuntimeClasses marks COMPILED; when that grows, this grows.
@@ -62,7 +64,7 @@ check "server reached Done"                               "Done \(" "$LOG"
 # unless the tick loop ran and was still running when this gate fed it "stop" on stdin. Bare "Stopping server"
 # is stopServer(), which runServer() reaches on EVERY exit path including ones that never ticked at all (see
 # the GATE_PORT note in lib.sh): evidence that shutdown began, not that the server ticked and not that it
-# finished — await_server is what fails a server that cannot finish. The alternation covers a merged base that
+# finished — await_server is what fails a server that cannot finish. The alternation covers a game base that
 # lost en_us and renders the raw key. Dedicated-server gates only: an integrated server prints the bare line
 # and never the command's, so this pair must not be copied into a client gate.
 check "server ticked (the stop command ran)"              "Stopping the server|commands\.stop\.stopping" "$LOG"
@@ -90,6 +92,6 @@ check_absent "no 'no current FML Loader' crash"           "There is no current F
 check_absent "no Tags not bound"                          "Tags not bound" "$LOG"
 
 step "M1 result"
-if [ "$FAIL" -eq 0 ]; then echo "[kernel] ✅ M1/M3-server GATE GREEN — kernel boots merged base to Done, zero genuine lifecycle";
+if [ "$FAIL" -eq 0 ]; then echo "[kernel] ✅ M1/M3-server GATE GREEN — kernel boots the game base to Done, zero genuine lifecycle";
 else echo "[kernel] ❌ GATE RED"; fi
 exit "$FAIL"
