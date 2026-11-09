@@ -346,13 +346,13 @@ public class ForbricNeoLiveMod {
 	 * NeoForge's documented way to register a JSON data loader: {@code AddServerReloadListenersEvent} on the game
 	 * bus, then a listener over {@code data/<ns>/forbricneolive_probe/*.json}.
 	 *
-	 * <p>On the merged base the game's own NeoForge hook posts it. The merged {@code ReloadableServerResources} calls
-	 * NeoForge's {@code EventHooks.onResourceReload}, as the genuine base does; the kernel only redirects that one
-	 * call to {@code KernelForgeReload}, which calls NeoForge's hook first and then MinecraftForge's. With that
-	 * routing off ({@code -Dforbric.forgeReloadListeners=off}) the merged class calls NeoForge's hook directly and
-	 * this probe stays green, which gate-m21 records: it rests on NeoForge's hook, not on the MinecraftForge
-	 * bridge, and no kernel switch takes the event out. So it is the probe that says a NeoForge mod's data loader
-	 * still runs when the MinecraftForge half of that route goes away. What the loader READS is the kernel's: this
+	 * <p>The game's own NeoForge hook posts it: the genuine base's {@code ReloadableServerResources} calls NeoForge's
+	 * {@code EventHooks.onResourceReload} itself. Until Stage 4 of dropping MinecraftForge the merged base routed that
+	 * one call through the kernel's {@code KernelForgeReload} (NeoForge's hook first, then MinecraftForge's), and this
+	 * probe stayed green with that routing off; the routing, its {@code -Dforbric.forgeReloadListeners} switch and
+	 * gate-m21's record of it went with the MinecraftForge carrier. The probe rests on NeoForge's hook alone, and no
+	 * kernel switch takes the event out, so it is the probe that says a NeoForge mod's data loader runs on the game
+	 * NeoForge ships, with nothing of the kernel's between them. What the loader READS is the kernel's: this
 	 * jar's {@code data/} reaches the server only through {@code KernelDataPacks}, so with
 	 * {@code -Dforbric.modDataPacks=off} the listener runs over 0 files, gate-m21's one red control for these lines.
 	 */

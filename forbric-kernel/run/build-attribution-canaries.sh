@@ -2,10 +2,10 @@
 # Builds three of the four jars gate-m30 stages: a Fabric mod with two mixins that go wrong (one unfit, one failing at
 # apply on a class first loaded at world creation), a NeoForge mod with a subscriber whose <clinit> throws, and a NeoForge
 # mod compiled against a class this instance does not carry, touched from a deferred setup task. Each is ONE defect, so
-# the gate can assert ONE attribution each. The fourth, the MinecraftForge mod waiting on a dead event
-# (canary/attribution/forbricforgecanary), is refused since Stage 3 of dropping MinecraftForge and the gate stages it only
-# in a boot of its own that asserts the refusal; build-forge-refusal-fixtures.sh builds it, against stand-ins for
-# MinecraftForge, into run/canary/forge-refused/.
+# the gate can assert ONE attribution each. A fourth, the MinecraftForge mod waiting on a dead event
+# (canary/attribution/forbricforgecanary), was refused from Stage 3 of dropping MinecraftForge and rode only in a boot
+# of its own that asserted the refusal; Stage 4 C5 deleted that boot, the fixture's sources and its step in
+# build-forge-refusal-fixtures.sh (D51: gate-m26 and gate-m29 cover the refusal), so these three are all gate-m30 stages.
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
