@@ -109,11 +109,13 @@ public final class KernelClientSmoke {
 	 * World tick at which to open a container screen and drive one press, one drag, one release and one wheel
 	 * notch through the game's OWN {@code MouseHandler}. 0 (the default) leaves it alone.
 	 *
-	 * <p>It exists because the screen-mouse bridges cannot be judged from anything the kernel says. A forward
-	 * counter proves the kernel forwarded; what is in doubt is whether a mod's own listener runs, and the only
-	 * witness to that is the mod itself. Driving {@code MouseHandler.onButton}, {@code handleAccumulatedMovement} and
-	 * {@code onScroll} — the three private methods the base's own GLFW callbacks call, and the three that hold
-	 * NeoForge's hooks — makes a listening mod speak, or stay silent, with nothing in between.
+	 * <p>It exists because whether a mod's screen-mouse listener runs cannot be judged from anything the kernel says;
+	 * the only witness to that is the mod itself. Driving {@code MouseHandler.onButton}, {@code handleAccumulatedMovement}
+	 * and {@code onScroll} — the three private methods the base's own GLFW callbacks call, and the three that hold
+	 * NeoForge's screen-mouse hooks — makes a listening mod speak, or stay silent, with nothing in between. No gate arms
+	 * it since gate-m41 (the one that did, for the MinecraftForge screen-mouse forwards) was deleted with those forwards;
+	 * the drill itself names no ecosystem, and a NeoForge or Fabric mod that logs its own mouse handling (MouseTweaks,
+	 * in client-merged-pack and client-neo-pack) is the witness a gate re-arming it would read.
 	 */
 	public static final String SCREEN_MOUSE = "forbric.clientSmokeScreenMouse";
 
@@ -464,9 +466,9 @@ public final class KernelClientSmoke {
 	 * Opens the player's inventory and produces real mouse input inside it.
 	 *
 	 * <p>Everything goes through {@code MouseHandler}'s own methods — the ones GLFW calls — rather than through
-	 * either family's hook. That is the whole point: calling a hook would prove only that the hook posts, which
-	 * was never in doubt. What is being asked is whether the base, on its real input path, reaches a
-	 * traditional-Forge mod's listener; so the drill starts where a mouse starts and lets the game do the rest.
+	 * a hook. That is the whole point: calling a hook would prove only that the hook posts, which was never in
+	 * doubt. What is being asked is whether the base, on its real input path, reaches a mod's screen-mouse
+	 * listener; so the drill starts where a mouse starts and lets the game do the rest.
 	 *
 	 * <p>One step per {@link #STEP_TICKS} ticks, never several in a tick. A screen opened and clicked in the same
 	 * tick is clicked before {@code init()} has laid out a single slot, so the click lands on nothing and a
@@ -584,7 +586,7 @@ public final class KernelClientSmoke {
 	/**
 	 * Every non-empty slot of the open container menu, as {@code index=item*count}.
 	 *
-	 * <p>Read twice, side by side, because the question the drill is really asking is whether a MinecraftForge
+	 * <p>Read twice, side by side, because the question the drill is really asking is whether a listening
 	 * mod MOVED something — and a mod that is never called and a mod that was called and declined produce the
 	 * same silence. Two censuses that differ do not.
 	 */
@@ -693,7 +695,7 @@ public final class KernelClientSmoke {
 	/**
 	 * One press, one drag and one release, at the same place.
 	 *
-	 * <p>These three are here for the log, not for the census: their MinecraftForge listeners are what the run is
+	 * <p>These three are here for the log, not for the census: a mod's listeners on them are what the run is
 	 * asking about, and a mod that is called prints that it was called. What they do to the container is not a
 	 * differential, for the reason {@link #driveTheWheel} gives.
 	 *
