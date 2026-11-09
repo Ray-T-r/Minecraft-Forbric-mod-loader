@@ -19,10 +19,9 @@
 # installed game is NeoForge's own patched game with one runtime, NeoForge's; the profile is checked for exactly that,
 # and a kernel handed the arguments of an install made by Forbric 0.4 or earlier refuses them (control N, below).
 #
-# Two phases print an explicit "[kernel] SKIP (C6: ...)" line under D64 until C6 (the installer clean-up of Stage 4)
-# rewrites or deletes them: the merge-tool phase and the offline-reinstall phase. Both were written around the merge,
-# which no install runs since C1, but each guards something an install still does, so each SKIP line says what is left
-# for C6 to re-point it at (the link checker's tools jar; a reinstall over a full cache).
+# The last two phases were written around the merge, which no install runs since C1, and both now assert what an install
+# still does (D70): every install runs the link check from the bundled tools jar, unpacked over whatever an earlier install
+# left in .forbric-build/tools, and a reinstall over a full cache goes to the network for nothing.
 #
 # Rundir: M17_DEST (default run/installed, which the gate wipes). M17_SEED_CACHE=<an earlier install's directory> copies
 # that install's download caches (.forbric-build/dl and tools) and NeoForm's patched game (.forbric-build/out/
@@ -144,9 +143,8 @@ else
 fi
 
 step "give the directory the vanilla libraries a launcher would have downloaded"
-# The base version's own libraries are the launcher's job. The installer fetches them too, but only when it has to
-# merge (the merge reads them) -- which from this empty directory it did, so this normally copies none. It stays so
-# the simulated launcher always has its full set, whatever the installer happened to need.
+# The base version's own libraries are the launcher's job. The installer fetches none of them since C1 (only the merge
+# read them, D13), so this copies every one the base version lists for this OS from the real Minecraft install.
 COPIED=$(python3 - "$DEST" "$MC" <<'LIBS'
 import json, os, platform, shutil, sys
 dest, mc = sys.argv[1:3]
@@ -471,25 +469,54 @@ else
   check "the others still hit" "^\[neoform\] up-to-date"                        "$BUILD/gate-m17-install-3.log"
 fi
 
-step "the merge tool itself is not served from the previous install"
-# SKIP until C6 (D64). This phase checked that a reinstall re-unpacked the installer's bundled tools jar instead of
-# running the previous install's, and it made the install ask for the tool by forcing a MERGE, which no install runs
-# since C1. The hazard itself is still live: the installer still bundles forbric/tools/forbric-merge-tools.jar for its
-# link checker, and LinkCheckTool.unpackTools overwrites .forbric-build/tools/forbric-merge-tools.jar on every install
-# (ArtifactBuilder runs the link check on every build path, cached reinstalls included) -- "a stale checker passes jars
-# the current one would refuse". So the phase's subject did not go with the merge: re-pointed, it is tamper with that
-# file, reinstall, and compare its SHA-1 with the bundled one. G-C reported that against D64 (C5); until the
-# orchestrator rules, it stays a SKIP with this reason.
-echo "[kernel] SKIP (C6: the phase forced a merge to make the install unpack its tools jar, and nothing merges since C1; the link checker still runs from that jar on every install, so C6 re-points the phase at it)"
+step "the link checker's tools jar is not served from the previous install (must PASS)"
+# The layer below the artifact cache. The installer carries forbric/tools/forbric-merge-tools.jar for its link checker
+# (LinkCheckTool) and runs the link check on every install, a reinstall served wholly from the cache included
+# (ArtifactBuilder.build). LinkCheckTool.unpackTools overwrites .forbric-build/tools/forbric-merge-tools.jar each time; it
+# used to keep a copy that was already there, and a rebuild then ran the PREVIOUS installer's tool -- a stale checker
+# passes jars the current one would refuse. So: spoil that copy, reinstall over the full cache, and the install must still
+# pass the link check (it cannot, from a file that is not a jar) and leave the bundled jar's bytes there.
+# (On the merged base this phase forced a merge to make the install ask for the tool; since C1 the link check asks.)
+TOOLS="$DEST/.forbric-build/tools/forbric-merge-tools.jar"
+WANT="$BUILD/gate-m17-tools-bundled.jar"
+unzip -p "$JAR" forbric/tools/forbric-merge-tools.jar > "$WANT" 2>/dev/null
+if [ ! -s "$WANT" ]; then
+  echo "[kernel] FAIL the installer carries no bundled tools jar"; FAIL=$((FAIL+1))
+elif [ ! -s "$TOOLS" ]; then
+  echo "[kernel] FAIL the earlier installs left no tools jar in .forbric-build/tools"; FAIL=$((FAIL+1))
+else
+  printf 'not a jar at all' > "$TOOLS"
+  java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
+  assert_eq "the reinstall over a spoiled tools jar exited cleanly" "0" "$?"
+  REUSED=$(grep -acE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-4.log")
+  assert_eq "it was served from the cache (both built artifacts up to date)" "2" "$REUSED"
+  check_exactly "and still ran the link check, in both orders" \
+    "^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$" "$BUILD/gate-m17-install-4.log" 2
+  assert_eq "the spoiled tool is replaced by the bundled one" \
+    "$(shasum -a 1 "$WANT" | cut -d' ' -f1)" "$(shasum -a 1 "$TOOLS" | cut -d' ' -f1)"
+fi
 
-step "an offline reinstall over that cache needs no network"
-# SKIP until C6 (D64). This phase removed one library the base version lists and reinstalled behind a dead proxy, to
-# prove the libraries the MERGE read were fetched only once the merge found its output stale. Since C1 nothing merges
-# and the installer fetches no Minecraft library at all (D13), so that sub-step proves nothing about the installer. The
-# rest of the claim still has a subject: a reinstall over a full cache serves the NeoForge runtime, NeoForm's game and
-# the vanilla reference from the cache (NfrtRunner never starts NFRT then), so behind the dead proxy it should exit 0
-# with every artifact up to date. G-C reported that against D64 (C5); until the orchestrator rules, it stays a SKIP.
-echo "[kernel] SKIP (C6: the removed-library step was written for the libraries the merge read, and the installer fetches no library since C1, D13; the cached-reinstall-behind-a-dead-proxy half is still checkable and C6 keeps it)"
+step "an offline reinstall over that cache needs no network (must PASS)"
+# A reinstall whose every artifact is cached must not need the network: the NeoForge runtime and NeoForm's game are served
+# by their stamps before anything is fetched (NfrtRunner hashes or downloads the server jar only once NFRT is about to
+# run), the vanilla reference by the SHA-1s it records, and the link checker from the installer's own jar. "Offline" is a
+# proxy on a port nothing listens on, for http and https alike, so any fetch the install attempted would fail it.
+# The port is one the system just handed out and took back, so nothing listens there; it is not a knob, because no
+# server binds it (gates-parallel.py hands out the ports servers bind).
+# (On the merged base this phase also removed one library the base version lists first, because the merge read the
+# base's libraries and they were fetched ahead of its cache check. The installer has fetched no Minecraft library since
+# C1 -- MojangDownloader.downloadLibraries went with the merge, D13 -- so that step had nothing left to catch, D34; any
+# other fetch is caught by the dead proxy below, and the launcher-side library copy is the step above.)
+DEAD_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
+echo "[kernel] proxy 127.0.0.1:$DEAD_PORT (nothing listening)"
+java -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort="$DEAD_PORT" -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort="$DEAD_PORT" \
+  -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-5.log" 2>&1
+assert_eq "the offline reinstall exited cleanly" "0" "$?"
+REUSED=$(grep -acE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-5.log")
+assert_eq "every built artifact came from the cache" "2" "$REUSED"
+check "and it measured no new vanilla reference" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-5.log"
+check_exactly "the link check ran offline, in both orders" \
+  "^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$" "$BUILD/gate-m17-install-5.log" 2
 
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then
