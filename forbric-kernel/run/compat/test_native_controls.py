@@ -197,14 +197,17 @@ class ForbricStage(unittest.TestCase):
             world = tmp / "old-world"; world.mkdir(); (world / "level.dat").write_bytes(b"x")
             neo = tmp / "neo.jar"; neo.write_bytes(b"neo")
             checks = tmp / "checks.txt"; checks.write_text("# a comment\nsetblock 0 80 0 example:block\n\nwait 2\n")
+            config = tmp / "old-config"; config.mkdir(); (config / "mod-common.toml").write_text("mark = 3\n")
             with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(stage)}), mock.patch.object(nc, "swap_session", session), \
                     mock.patch.object(nc, "_snapshot_module", FakeSnapshots), mock.patch("sys.stdout", new_callable=io.StringIO):
-                result = nc.swap("forbric", [], [neo], tmp / "out", checks=checks, old_world=world)
+                result = nc.swap("forbric", [], [neo], tmp / "out", checks=checks, old_world=world, old_config=config)
             self.assertNotIn("error", result)
             self.assertEqual([(str(stage.resolve()), str(tmp / "out/neo-instance"), ["setblock 0 80 0 example:block", "wait 2"]),
                               (str(stage.resolve()), str(tmp / "out/neo-instance"), [])], seen)
             self.assertTrue((tmp / "out/neo-instance/world/level.dat").is_file())
             self.assertTrue((world / "level.dat").is_file())
+            # The player swaps jars, not the instance: the NeoForge instance starts from the old config/.
+            self.assertEqual("mark = 3\n", (tmp / "out/neo-instance/config/mod-common.toml").read_text())
             self.assertEqual(["swap", "reopen"], list(result["diffs"]))
 
 
