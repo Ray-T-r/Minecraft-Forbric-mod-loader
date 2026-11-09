@@ -197,6 +197,9 @@ check "the NeoForge carrier's access transformer is applied" \
 step "nothing quietly broken by the extra posts (must be ABSENT)"
 check_absent "no NoClassDefFound"        "NoClassDefFoundError"                          "$LOG"
 check_absent "no deferred queue failure" "its deferred work did not run"                  "$LOG"
+# The NeoForge side of the absence that went with the MinecraftForge carrier ("could not post traditional-Forge"): a
+# post that throws after the canary heard it passes every DELIVERED check above, and KernelLifecycle says so only here.
+check_absent "no phase failed to post"  "Forbric/Lifecycle\] could not post (FML|NeoForge)" "$LOG"
 check "server still reached Done"        "Done \("                                        "$LOG"
 
 step "the old H1/H2 link errors stay gone (must be ABSENT)"
