@@ -55,10 +55,16 @@ arguments = sys.argv[1:]
 with open(os.environ['FAKE_NIGHT_LOG'], 'a') as log:
     log.write(json.dumps(dict(tool='gates', argv=arguments)) + '\n')
 red = os.environ.get('FAKE_RED_GATE', '')
-skipped = arguments[arguments.index('--skip') + 1] if '--skip' in arguments else None
+gates = ('gate-m0.sh', 'gate-m9-client.sh', 'gate-m34-soak.sh')
+skipped = [arguments[i + 1] for i, a in enumerate(arguments) if a == '--skip']
+for name in skipped:
+    if name not in gates:
+        # As gates-parallel.py does: an unknown --skip name stops the run before any gate starts.
+        print(f'Unknown --skip gate: {name}', file=sys.stderr)
+        sys.exit(2)
 lines = []
-for gate in ('gate-m0.sh', 'gate-m9-client.sh', 'gate-m34-soak.sh'):
-    if gate == skipped:
+for gate in gates:
+    if gate in skipped:
         lines.append(f'RESULT {gate} SKIP (explicit --skip)')
     elif gate == red:
         lines.append(f'RESULT {gate} RED (exit=1)')
@@ -324,6 +330,16 @@ class ScheduleAndSummaryTest(unittest.TestCase):
         self.assertFalse(any(nightly.soak_tonight(day, 'never') for day in week))
         self.assertEqual(['-j', '4', '--skip', 'gate-m34-soak.sh'], nightly.gates_arguments(False, 4))
         self.assertEqual(['-j', 'auto', '--release'], nightly.gates_arguments(True, 'auto'))
+
+    def test_every_gate_a_weekday_skips_is_a_gate_in_this_tree(self):
+        # gates-parallel.py exits 2 on a --skip naming no gate, before running any: a weekday night naming a gate that
+        # is not in the tree yet would fail every gate step while the stand-in above, which knows only its own names,
+        # could not tell.
+        arguments = nightly.gates_arguments(False, 1)
+        named = [arguments[i + 1] for i, a in enumerate(arguments) if a == '--skip']
+        self.assertTrue(named)
+        for gate in named:
+            self.assertTrue((ROOT / 'forbric-kernel/run' / gate).is_file(), gate + ' is not a gate in this tree')
 
     def test_summary_from_junit_xml_and_gate_results(self):
         work = Path(tempfile.mkdtemp(prefix='forbric nightly summary '))
