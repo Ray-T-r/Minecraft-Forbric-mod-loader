@@ -89,13 +89,43 @@ well (its jar is `neoforge-runtime.jar`), so staged gates see no change of id.
 | B-8 recovery partly measurable | confirmed: the recovered copies of files that also survive in the worktree were byte-identical; both recovered shell scripts pass `bash -n` | handoff |
 | B-9 checks.md missing | fixed: `c5/checks.md` has a Lane UPG section | notes |
 
+## Wave 2, part 1 (2026-11-09): rebase, pinned-build re-check, U1, U2
+
+Rebased onto the stage tip `f0cb66b0` (wave 1 merged) without conflicts; the 13 commits above changed sha (old -> new:
+cbbd731c 778c9aae, 89b640b1 e133f256, 1142e1ee f8c3bee5, 88943a1a 2e7216ac, 96a08593 a0eeba07, 001dcfdb 44ff933c,
+a26e297a c58030b6, 3e33e7c4 d5fad1ad, 6a6d8110 6b3dcde2, 66640804 3db686a0, 24fdbe08 43cf5347, fa1503dc 932f9a6b,
+93f6be55 1ac8011d). Everything below is the PINNED build (D68): plain `--offline` with `.stage4/props.txt`, no init
+script, no private Gradle home. Logs `~/Forbric-backups/stage4-notes/c5/upg/w2/`.
+
+| sha | milestone | subject |
+|---|---|---|
+| `01168925` | U2 | world-snapshot.py's file, diff output and import API frozen as `forbric-world-snapshot/1`; `diff --json`; exporter check |
+| `c8588083` | U1 | `run/old-kernel.sh` (build / boot-flat / server / client; checked `.built`; offline-first) + OldKernelScriptTest |
+
+| check | result |
+|---|---|
+| full suite at `c8588083` (`cleanTest test --continue`, `-Pforbric.requireFixtures=all`, pinned) | **5784 tests, 0 skipped, 5 failed: exactly the 5 names of `c5/failures-wave1.txt`** (LiquidBounce x3, SharedFinalSourceActualTest x2, D58). 5772 + 8 (D43 tests) + 4 (OldKernelScriptTest) = 5784 |
+| gate-m31 (`GATE_PORT=46740`, pinned) | 13 PASS / 0 FAIL |
+| gate-m31 `M31_UNFIXED=1` (pinned) | 12 PASS / 1 FAIL: `every chunk carries vanilla's biomes (want 0 got 11)`, the recorded teeth |
+| `test_world_snapshot.py` | 27/27 (22 + FrozenSchema 5) |
+| `test_world_parity.py` / `tools/test_run_nightly.py` | 4/4 / 9/9 |
+| U1 `old-kernel.sh build`, offline, fresh archive | stops: `SKIP-FATAL: … needs Gradle dependencies this machine's cache does not hold; resolve them once with FORBRIC_OLD_KERNEL_ONLINE=1` (org.joml:joml:1.10.8 not cached) |
+| U1 `FORBRIC_OLD_KERNEL_ONLINE=1 old-kernel.sh build` | built in 12 s; old kernel jar sha1 `aae280b5b3d76a0abe4af0550db16e7a9bf869a2`, merged base sha1 `ca98f14791645a512013ed97a7482d42b473a4a4` (tarball stage); a second `build` reuses the tree with no build |
+| U1 `heavy.sh old-kernel.sh boot-flat build/old-kernel-smoke/u1-flat` | **5 PASS / 0 FAIL**: tag's merged base booted, both carriers owned (`forge-runtime-interop.jar, neoforge-runtime.jar`), `Done (0.588s)`, `All dimensions are saved`, world exported by world-snapshot.py (blocks=25600 … saved_data=25) with `minecraft:flat` in `data/minecraft/world_gen_settings.dat`. First run 4/1: the check read level.dat, where 26.2 no longer keeps the generator |
+
+Red checks: FrozenSchema red on four mutated copies of world-snapshot.py (extra meta key, renamed report key, exporter
+check removed, Heightmaps no longer skipped); OldKernelScriptTest with `_old_built_ok` trusting any existing marker ->
+exactly `aMarkerNamingAVanishedDependencyIsRebuilt` and `theEmptyMarkerOfTheFirstVersionIsRebuilt` red (2 of 4).
+
+The 2026-11-02 cache tree (`build/old-kernel/187143a1…`, empty `.built`, classpath into the wiped cache) was moved aside
+and deleted; the tree above is a fresh archive. The commands SWAP uses, the cache path, the schema version and the known
+limits are in `c5/handoff.md`, section "UPG U1/U2 (wave 2)".
+
 ## Open (owner UPG unless named)
 
-- Real-build re-check of the suite and of m31 once the Gradle cache is restored (owner: restore; UPG: re-run).
-- U1: boot the old kernel (187143a1); its `old-kernel.sh` build runs `gradlew --offline` and needs joml 1.10.8 and the
-  rest of that tag's classpath, which the cache lacks; the recovered `old-kernel.sh`, `build-world-upgrade-canary.sh` and
-  the three canary sources are not in the tree yet and not proven beyond `bash -n`.
-- U2: freeze the export/diff CLI and the snapshot schema and announce them to SWAP.
+- Done in wave 2 part 1: the pinned-build re-check of the suite and m31, U1, U2 (above).
+- The old client launcher is not exercised yet (U1 is a server boot); gate-m58's SP arm is the first client use.
+- `build-world-upgrade-canary.sh` and the three canary sources are still only the D67 recovery copies, not proven.
 - gate-m58 with: `refuse_shared_rundir` and an env override for its rundir (D46); no-trailing-slash `.gitignore` entries
   (D66); its evidence in its own manifest and each NeoForge mod kept only if its population command prints a success
   line (D53); the installed-name phase green with D43 and red on a tree without it (D43, A-8); W5 calibration incl. the
