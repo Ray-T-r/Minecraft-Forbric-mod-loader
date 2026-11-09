@@ -78,13 +78,16 @@ import net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes;
  * NeoForge mod must not land on one. Where it shows is {@code ModList.getAllScanData()}, which natively streams
  * {@code sortedList → getOwningFile → getFile → distinct → getScanResult}: the {@code distinct()} is by identity, so
  * the jar is listed once, and a mod that walks the index — JEI collecting {@code @JeiPlugin}s, Jade its providers —
- * meets each class of the jar once (gate-m21 counts the NeoForge canary's two-{@code @Mod} jar: 1 entry).
+ * meets each class of the jar once (gate-m21 counts the NeoForge canary's two-{@code @Mod} jar: 1 entry; its second
+ * {@code @Mod} has no {@code [[mods]]} entry, which native NeoForge refuses, so that pair shows the shared file through a
+ * mod the kernel publishes leniently, see the gate's comment).
  *
  * <p>{@code -Dforbric.modFilePerJar=off} gives back the shape Forbric built until Stage 4 of the MinecraftForge
  * removal (the merged base, and Stage 2, which kept it): one file per MOD, so such a jar is two entries of the index —
  * the same index object ({@code ModFileScanner.scanShared}), so nothing is scanned twice, only walked twice. The
- * default was flipped on NeoForge's own base after an on/off A/B on gate-m21, gate-m9 and the client-merged-pack boot
- * (stage4-c5-g-a.md).
+ * default was flipped on NeoForge's own base after an on/off A/B on gate-m21 and gate-m9 (the client-merged-pack boot),
+ * and a server boot of a jar that declares two {@code [[mods]]} entries (wthit + waila) was measured both ways after
+ * it: 3 index entries for its three jars by default, 5 with the switch off (stage4-c5-g-a.md).
  */
 public final class KernelModFile implements IModFile {
 	/**

@@ -286,6 +286,15 @@ check "NeoForge: ModList's index holds annotations at all" \
 # and so can the reader line counted exactly. Until Stage 4 the kernel built a file per mod and these two were asserted
 # in a second boot with -Dforbric.modFilePerJar=on; Stage 4 made the jar's one file the default (stage4-c5-g-a.md, the
 # A/B), so the default boot asserts it and the switch is the red control above.
+# WHAT THIS PAIR MEASURES, AND WHAT IT DOES NOT. The canary's neoforge.mods.toml declares one [[mods]] entry,
+# forbricneolive; forbricneoclientonly is an @Mod class the file does not declare. Native NeoForge refuses such a jar:
+# FMLJavaModLanguageProvider.validate reports fml.modloadingissue.javafml.dangling_entrypoint for every @Mod whose id the
+# file does not declare, whatever its dist (javap of the carrier, stage4-c5-g-a.md). The kernel publishes the class as a
+# second mod of the jar instead (not constructed on this server: its annotation asks for CLIENT). So the 2-to-1 is the
+# flip seen through a mod native NeoForge would not have: it shows that the kernel's mods of one jar share the jar's one
+# file. A jar declaring two [[mods]] entries is pinned by KernelModFilePerJarTest's synthetic jars and was booted once,
+# A/B, as wthit-26.2-neo-20.0.0.jar (wthit + waila; stage4-c5-g-a.md); no gate boots one. The canary declaring its
+# second mod is the canary owner's call (Phase 0a); the leniency that publishes an undeclared @Mod is the kernel lane's.
 check "NeoForge: the index lists the canary's jar once, as one IModFile" \
   "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 1 time\(s\)" "$LOG"
 check_exactly "NeoForge (ModList): its own annotation is found in one entry, not one per mod" \

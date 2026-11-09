@@ -31,11 +31,17 @@
 #   3. control: the NeoForge canary alone, strict — reaches Done with zero confirmed required findings and a clean save,
 #      so the stop in 1 and 2 is the refusal's and nothing else's.
 #
-# RED, measured 2026-10-30. M29_POLICY=continue (boot 1 only) turns exactly boot 1's four stop checks red — "the report
-# says strict decided" (CONTINUE), "strict stopped the launch with the typed policy stop" (exit 0), "and said so", "it
-# never came up" (Done reached) — while its refusal, machine-report and load-report checks stay green: a refused jar is
-# refused and reported whether or not anything stops the launch. M29_REFUSED='' (only the NeoForge canary staged in
-# boots 1 and 2) turns every refusal, report and stop check of both boots red, and the control stays green.
+# RED, measured 2026-10-30 and again 2026-11-10 on the genuine base (stage4-c5-g-a.md). M29_POLICY=continue (boot 1
+# only) turns exactly boot 1's four stop checks red — "the report says strict decided" (CONTINUE), "strict stopped the
+# launch with the typed policy stop" (exit 0), "and said so", "it never came up" (Done reached) — while its refusal,
+# machine-report and load-report checks stay green: a refused jar is refused and reported whether or not anything stops
+# the launch (34/4). M29_REFUSED='' (only the NeoForge canary staged in boots 1 and 2) turns 11 checks of each of those
+# boots red: the three refusal checks, the machine report, three of the four stop checks ("strict stopped the launch",
+# "and said so", "it never came up") and the four load-report checks (en: why, the file, the owl build, what to do; zh:
+# why, the file, what to do, no English wording). Five checks of each boot stay green, because nothing is refused and
+# the policy is still strict: "the report says strict decided", "nothing of the refused jars ran", "the Forge-family
+# mixin configs registered are NeoForge's alone", "and not the refused canary's under another name" and "no crash
+# report". The control boot's six stay green: 16/22 in all.
 # GATE-PARALLEL: rundirs=server-forgecaps mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
