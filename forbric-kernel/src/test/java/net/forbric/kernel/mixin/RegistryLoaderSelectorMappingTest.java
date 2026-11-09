@@ -76,9 +76,10 @@ class RegistryLoaderSelectorMappingTest {
 		MethodNode vanillaBinds = MixinTargetSelectors.one(hand, StagedFabricMixinFixture.game(LOADER, true)), currentBinds = MixinTargetSelectors.one(hand, loader);
 		assertEquals(RESOURCES, vanillaBinds.name + vanillaBinds.desc, "premise: vanilla binds it to its resource-manager entry");
 		assertEquals(RESOURCES, currentBinds.name + currentBinds.desc, "premise: and so does NeoForge's class");
+		byte[] before = StagedFabricMixinFixture.bytes(alone(hand));
 		assertEquals(1, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> loader), "the wrap alone moves");
-		assertEquals(List.of("load"), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin, "handOverMark")), "method")),
-				"the companion is left as written");
+		assertArrayEquals(before, StagedFabricMixinFixture.bytes(alone(StagedFabricMixinFixture.method(mixin, "handOverMark"))),
+				"the companion is left as written, its injector, its point and its body");
 		assertEquals("L" + LOADER + ";" + LIVE, MixinFit.value(MixinFit.atNodes(MixinFit.injectorOf(StagedFabricMixinFixture.method(mixin, "markNetworked"))).getFirst(), "target"));
 	}
 
@@ -139,6 +140,19 @@ class RegistryLoaderSelectorMappingTest {
 		hand.visibleAnnotations = new ArrayList<>(List.of(modify));
 		mixin.methods.add(hand);
 		return mixin;
+	}
+
+	/** A one-method class holding a copy of {@code method} (annotations and body), so two states of it compare byte for byte. */
+	private static ClassNode alone(MethodNode method) {
+		ClassNode holder = new ClassNode();
+		holder.version = Opcodes.V21;
+		holder.access = Opcodes.ACC_PUBLIC;
+		holder.name = "org/example/Holder";
+		holder.superName = "java/lang/Object";
+		MethodNode copy = new MethodNode(method.access, method.name, method.desc, method.signature, null);
+		method.accept(copy);
+		holder.methods.add(copy);
+		return holder;
 	}
 
 	private static AnnotationNode injector(String desc, String method, String point) {
