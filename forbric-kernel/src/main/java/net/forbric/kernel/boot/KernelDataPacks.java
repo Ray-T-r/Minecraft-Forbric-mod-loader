@@ -187,9 +187,48 @@ public final class KernelDataPacks {
 	 * A carrier's pack id. The {@code carrier} segment puts every carrier below every mod pack (c &lt; d), and the
 	 * rank digit orders the carriers against each other — both by string comparison, which is the only ordering
 	 * {@link #addTo} actually gets to control.
+	 *
+	 * <p><b>NeoForge's carrier is {@link #NEO_CARRIER_ID} whatever its jar is called</b> (D43). The id used to end in
+	 * the jar's file name, which is {@code neoforge-runtime.jar} on a staged tree but the library file name on an
+	 * installed profile: {@code neoforge-runtime-26.2.jar} up to Forbric 0.4, {@code neoforge-runtime-26.2.0.93.jar}
+	 * since the carrier is versioned by its NeoForge build. So every world an installed Forbric had written named a pack
+	 * the next install no longer served, and vanilla enabled the "new" one at the end of the list, above every mod
+	 * pack. Keyed on rank and family, the id no longer moves with the file; {@link #migrateCarrierIds} renames what old
+	 * worlds recorded. A carrier that is not NeoForge's has no family to name and keeps its file name.
 	 */
 	static String carrierPackId(Path jar) {
-		return "forbric/carrier/" + carrierRank(jar) + "-" + stripExtension(jar.getFileName().toString());
+		int rank = carrierRank(jar);
+		if (rank == 2) return NEO_CARRIER_ID;
+		return "forbric/carrier/" + rank + "-" + stripExtension(jar.getFileName().toString());
+	}
+
+	/** The NeoForge carrier's datapack id: rank 2 (D2), family NeoForge (D43). Worlds record it in {@code level.dat}. */
+	public static final String NEO_CARRIER_ID = "forbric/carrier/2-neoforge-runtime";
+
+	/**
+	 * {@code ids} — a world's enabled or disabled pack list — with every id an installed Forbric 0.4 or earlier gave the
+	 * NeoForge carrier ({@link #NEO_CARRIER_ID} + {@code "-"} + the jar's version, e.g.
+	 * {@code forbric/carrier/2-neoforge-runtime-26.2}) renamed to {@link #NEO_CARRIER_ID} where it stands, so the
+	 * world keeps the order it was saved with. Should a list end up naming the carrier twice (an old id and the current
+	 * one), the first keeps its place and the later one goes. Returns null when nothing needed renaming.
+	 *
+	 * <p>MinecraftForge's carrier ids ({@code forbric/carrier/1-forge-runtime-interop…}) are left alone: nothing serves
+	 * that pack any more, and vanilla's one "Missing data pack" line per upgraded world is the honest answer.
+	 */
+	public static List<String> migrateCarrierIds(List<String> ids) {
+		if (ids == null || ids.isEmpty()) return null;
+		boolean renamed = false;
+		List<String> out = new ArrayList<>(ids.size());
+		for (String id : ids) {
+			String now = id != null && id.startsWith(NEO_CARRIER_ID + "-") ? NEO_CARRIER_ID : id;
+			renamed |= !java.util.Objects.equals(now, id);
+			if (NEO_CARRIER_ID.equals(now) && out.contains(NEO_CARRIER_ID)) {
+				renamed = true;
+				continue;
+			}
+			out.add(now);
+		}
+		return renamed ? out : null;
 	}
 
 	/**
@@ -294,7 +333,7 @@ public final class KernelDataPacks {
 	/**
 	 * Higher rank = later in the sorted order = wins a last-wins collision. NeoForge's carrier keeps rank 2, the number
 	 * worlds have recorded in {@code level.dat} since MinecraftForge's carrier (rank 1) was beside it (D2); a carrier
-	 * without NeoForge's data ranks 0.
+	 * without NeoForge's data ranks 0. The rank is read off the jar, never off its name, and so is the id it gives.
 	 */
 	static int carrierRank(Path jar) {
 		if (hasNamespace(jar, "neoforge")) return 2;

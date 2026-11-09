@@ -242,6 +242,42 @@ class KernelDataPacksTest {
 		}
 	}
 
+	/**
+	 * D43: the NeoForge carrier's id is the same under every name its jar has had — the staged {@code neoforge-runtime.jar},
+	 * the library file an installed Forbric 0.4 wrote ({@code neoforge-runtime-26.2.jar}) and the one this installer
+	 * writes ({@code neoforge-runtime-26.2.0.93.jar}, InstalledCarrierPackIdTest derives it from the installer). With the
+	 * file name in the id, an upgrade renamed the pack under every world an installed Forbric had written.
+	 */
+	@Test
+	void theNeoForgeCarriersIdDoesNotFollowItsFileName() throws Exception {
+		for (String name : List.of("neoforge-runtime.jar", "neoforge-runtime-26.2.jar", "neoforge-runtime-26.2.0.93.jar")) {
+			Path neo = jar(name, null, "data/neoforge/damage_type/thing.json");
+			assertEquals("forbric/carrier/2-neoforge-runtime", KernelDataPacks.carrierPackId(neo), name);
+		}
+		assertEquals("forbric/carrier/0-something-else",
+				KernelDataPacks.carrierPackId(jar("something-else.jar", null, "data/whatever/x.json")),
+				"a carrier with no family keeps its file name");
+	}
+
+	/**
+	 * What old worlds recorded is renamed where it stands: the carrier keeps its place below the mod packs, MinecraftForge's
+	 * carrier id is left for vanilla to report missing, and a list naming the carrier twice keeps the first.
+	 */
+	@Test
+	void anOldWorldsCarrierIdIsRenamedInPlace() {
+		assertEquals(List.of("vanilla", "forbric/carrier/1-forge-runtime-interop", "forbric/carrier/2-neoforge-runtime",
+				"forbric/data/mcwbridges"), KernelDataPacks.migrateCarrierIds(List.of("vanilla",
+						"forbric/carrier/1-forge-runtime-interop", "forbric/carrier/2-neoforge-runtime-26.2",
+						"forbric/data/mcwbridges")));
+		assertEquals(List.of("vanilla", "forbric/carrier/2-neoforge-runtime", "forbric/data/a"),
+				KernelDataPacks.migrateCarrierIds(List.of("vanilla", "forbric/carrier/2-neoforge-runtime-26.2",
+						"forbric/data/a", "forbric/carrier/2-neoforge-runtime")), "the later duplicate goes");
+		assertNull(KernelDataPacks.migrateCarrierIds(List.of("vanilla", "forbric/carrier/2-neoforge-runtime",
+				"forbric/carrier/1-forge-runtime-interop-26.2")), "nothing to rename");
+		assertNull(KernelDataPacks.migrateCarrierIds(List.of()));
+		assertNull(KernelDataPacks.migrateCarrierIds(null));
+	}
+
 	@Test
 	void aCarrierWithNoDataIsNotServed() throws Exception {
 		Path empty = jar("carrier-no-data.jar", null, "net/neoforged/Thing.class");
