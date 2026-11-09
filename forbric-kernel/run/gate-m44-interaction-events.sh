@@ -2,8 +2,9 @@
 # M44 — using an item on a block and picking a block, as Fabric's and NeoForge's events see them on NeoForge's patched
 # game.
 #
-# NeoForge's ItemStack.useOn posts UseItemOnBlockEvent (ITEM_BEFORE_BLOCK, ITEM_AFTER_BLOCK) itself, but its Item.useOn
-# calls live in CommonHooks.onPlaceItemIntoWorld and a lambda, where fabric-api's ItemEvents.USE_ON wrap of vanilla's
+# NeoForge posts UseItemOnBlockEvent itself (ITEM_BEFORE_BLOCK from ItemStack.onItemUseFirst, ITEM_AFTER_BLOCK from
+# ItemStack.useOn, which calls CommonHooks.onPlaceItemIntoWorld at bci 46 on the server side: javap of the genuine
+# base, sha1 67bbf24f), but its Item.useOn calls live in CommonHooks.onPlaceItemIntoWorld and a lambda, where fabric-api's ItemEvents.USE_ON wrap of vanilla's
 # call in useOn could not reach them (ItemUseOnInjector routes both calls through one ItemStack relay; MixinRelocatedCall
 # moves the wrap there). NeoForge's pick-block handler calls its own getCloneItemStack(BlockPos, LevelReader, boolean,
 # Player), so fabric-api's PlayerPickItemEvents.BLOCK wrap of vanilla's three-argument call matched nothing

@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds gate-m46's canaries: run/canary/forbricstubmixins.jar, a Fabric mod whose mixin is compiled against vanilla
 # (a name-only getDestroySpeed injection, the shape architectury and Collective ship; malilib's language @ModifyArgs), and run/canary/forbricstubdriver.jar,
-# a NeoForge mod that calls those methods the way the merged game does and listens through fabric-entity-events-v1.
+# a NeoForge mod that calls those methods the way the game itself does and listens through fabric-entity-events-v1.
 # Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build.
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"

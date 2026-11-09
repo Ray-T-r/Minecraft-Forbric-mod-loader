@@ -14,14 +14,16 @@ bucket round trip, each family's listeners alone and both in one pack.
 
 What the gate judges, per row: the air and health sampled at the end of every tick (or a liquid row's result), and what
 the NeoForge canary's listeners saw, against native NeoForge running the same jar. Since Stage 3 of dropping
-MinecraftForge, Forbric refuses the MinecraftForge canary (a MinecraftForge-only jar), so the NeoForge canary is the
-only one that runs: its listeners, vanilla, and the kernel's repairs of the merged game make every row, and a row's
+MinecraftForge the MinecraftForge canary does not run on Forbric (refused as a MinecraftForge-only jar, and not staged
+at all since Stage 4), so the NeoForge canary is the only one that runs: its listeners, vanilla, NeoForge's game and
+the kernel's repairs on it make every row, and a row's
 f-* tags do nothing, as they do on native NeoForge. What only the MinecraftForge canary produced is no longer judged:
 its listeners' views, the answering order against NeoForge's, its bubble count's random draws, its liquids' rows, and
 the comparison with native MinecraftForge (the reference still holds it: a native loader runs its own jar). Instead,
 no row may carry a view of a MinecraftForge listener, and the rows in its liquids must be skipped because the block or
 item is not registered, as on native NeoForge. Two rows are a documented deliberate difference ('vanilla-refill': the
-owner's vanilla refill, which the merged breathing hook gives a body that breathes with its eye in water, where native
+owner's vanilla refill, which the kernel adds to NeoForge's breathing hook (VanillaAirRefillInjector) for a body that
+breathes with its eye in water, where native
 NeoForge holds the air; NeoForge's breathe listener is handed vanilla's refill, and the reference must still show
 native NeoForge handing it nothing, and where the body keeps that refill its air must be what native MinecraftForge's
 hook, which refills as vanilla does, gives the same row, and not native NeoForge's). The random draws and the entity
@@ -54,9 +56,9 @@ PROPERTIES = ['level-seed=forbrickernel', 'level-name=world', 'level-type=minecr
               'view-distance=3', 'simulation-distance=3', 'spawn-protection=0', 'sync-chunk-writes=false']
 
 F, N = 'forge', 'neo'
-# Row -> checks, every row judged against native NeoForge running the same jar (STAGE 3 OF DROPPING MinecraftForge: the
-# MinecraftForge canary is refused, so its f-* tags do nothing on Forbric, as on native NeoForge), and no row may carry a
-# view of a MinecraftForge listener (nothing of the refused jar runs). On a native loader every row is what that loader's
+# Row -> checks, every row judged against native NeoForge running the same jar (since STAGE 3 OF DROPPING MinecraftForge
+# the MinecraftForge canary does not run on Forbric: refused then, not staged since Stage 4; so its f-* tags do nothing,
+# as on native NeoForge), and no row may carry a view of a MinecraftForge listener (nothing of that jar runs). On a native loader every row is what that loader's
 # own canary's listeners do alone, so the native NeoForge run is the expectation of every row, the mixed ones included.
 #   ('none', family, kind)   that family's listener was never asked for this body
 #   ('vanilla-refill', air)  a deliberate difference (the owner's vanilla refill, VanillaAirRefillInjector, introduction
@@ -72,7 +74,7 @@ F, N = 'forge', 'neo'
 EXPECT = {
     'drown-read': [],
     'drown-late': [],
-    # The f-* rows: the MinecraftForge canary's listeners would cancel, change or count here; with it refused, the body
+    # The f-* rows: the MinecraftForge canary's listeners would cancel, change or count here; without it, the body
     # drowns as on native NeoForge, where those tags do nothing either.
     'drown-f-cancel': [],
     'drown-f-notdrowning': [],
@@ -82,7 +84,7 @@ EXPECT = {
     'drown-f-bubbles50': [],
     'drown-f-ann-cancel': [],
     # Water breathing: nobody drowns. Native NeoForge holds the air (its hook refills nothing where the eye is in water);
-    # the merged hook refills as vanilla does, the owner's choice.
+    # Forbric's hook (VanillaAirRefillInjector on NeoForge's) refills as vanilla does, the owner's choice.
     'drown-read-waterbreathing': [('none', N, 'drown'), ('vanilla-refill', True)],
     'drown-n-cancel': [],
     'drown-n-notdrowning': [],

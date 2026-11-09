@@ -5,8 +5,8 @@
 # The MinecraftForge canary (forge/src, the same Core under package forge) is built by build-forge-refusal-fixtures.sh,
 # against stand-ins for MinecraftForge, into run/canary/forge-refused/forbricbreathforge.jar: no stage carries
 # MinecraftForge any more, and that build is entry-for-entry the jar the real MinecraftForge carrier gave (measured in
-# Stage 4 against the last merged stage). The gate stages it as the refused jar; run/compat/breath-drown.py reference
-# runs it on native MinecraftForge.
+# Stage 4 against the last merged stage). The gate no longer stages it (its refused phase went in Stage 4, D51); only
+# run/compat/breath-drown.py reference runs it, on native MinecraftForge (D32).
 # Only javac/jar; no kernel Gradle. The gate owns the separately scheduled kernel build. The same jar runs unchanged on
 # native NeoForge (run/compat/breath-drown.py reference).
 set -euo pipefail
