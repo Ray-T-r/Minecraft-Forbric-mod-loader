@@ -38,18 +38,22 @@
 #              booted with neoforge-runtime-26.2.jar / forge-runtime-interop-26.2.jar and the new one with
 #              neoforge-runtime-26.2.0.93.jar. The new boot must rename the old carrier pack id in place: no "Missing
 #              data pack forbric/carrier/2-neoforge-runtime-26.2", the kernel's rename line, and the carrier still before
-#              every mod pack. Red at the commit before D43 (a0eeba07), green after it.
+#              every mod pack, which mcw-bridges' data pack (after the carrier on the old side) makes a real
+#              question: an "append the new id" stand-in is red on it. Red at the commit before D43 (a0eeba07), green
+#              after it.
 #   controls   reverse controls C1 (a mutated chest slot and a renamed palette entry on a copy of S2, one new boot: the
 #              diff shows exactly those two and the log names the renamed block), C2 (one name dropped from the census:
 #              the census goes red naming it) and C4 (no vacuous allowance: every merged-only rule an old save needs
-#              fired on S2 -> S3). C3 is `aa`, C5 is part of `forge`.
+#              fired on S2 -> S3). C3 is `aa`, C5 is part of `forge`. C4 reads phase main's S2 -> S3 diff and C2
+#              its census, so each is red in a run without main.
 #
 # The old side runs the archived tag's own launchers on the tag's merged stage (run/old-kernel.sh); the new side runs this
 # tree's launchers on FORBRIC_OLD's genuine stage. Same mod and canary jar bytes on both sides.
 #
 # EVIDENCE stays outside evidence.py (D53): $BUILD/verification/m58-world-upgrade/ holds every log, snapshot, diff
 # (text and forbric-world-snapshot-diff/1 JSON) and m58-manifest.json (old kernel commit and jar sha1, old merged base
-# sha1, new kernel jar, genuine base and carrier sha1, canary and mod jar hashes, snapshot hashes).
+# and old carrier sha1s, new kernel jar, genuine base and carrier sha1, this gate's own sha1, canary, script and mod jar
+# hashes for every phase that ran, snapshot hashes).
 #
 # SLOW: about twenty JVMs, old and new, server and client, one after another (never two game JVMs of one side at once
 # except a server and the client joining it). Weekday nightlies skip it like the soak (tools/nightly, D53); the Stage 4
@@ -98,8 +102,6 @@ REAL_MODS=(
   "$NEO_MODS/ToolBelt-26.2-2.10.0.jar"
   "$NEO_MODS/corpse-neoforge-1.1.17+26.2.jar"
 )
-# Namespaces whose population lines are reported one by one.
-REAL_NAMESPACES="mcwbridges mcwfurnitures toolbelt corpse"
 for m in "$FAPI" "${REAL_MODS[@]}"; do
   [ -f "$m" ] || { echo "[kernel] SKIP-FATAL: missing mod $m" >&2; exit 3; }
 done
@@ -281,26 +283,37 @@ PY
   done
 }
 
-# write_checks <log> <player: yes|no> <script-name> — the old side wrote everything it was asked to.
+# mod_namespace <jar> — the first modId a NeoForge/MinecraftForge jar declares: the namespace its content is named by.
+mod_namespace() {
+  unzip -p "$1" META-INF/neoforge.mods.toml META-INF/mods.toml 2>/dev/null \
+    | sed -nE 's/^[[:space:]]*modId[[:space:]]*=[[:space:]]*"([^"]+)".*/\1/p' | head -n 1
+}
+
+# write_checks <log> <who> <player: yes|no> <world-script|-> <player-script> [populated jars...] — the side that wrote
+# this save (<who>: "old server", "new server", "old client") wrote everything it was asked to. Every jar listed must
+# have at least one OK line of the world script naming its namespace (D53: a mod stays in the set only while its
+# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1).
 write_checks() {
-  local log="$1" player="$2" script="${3:-}" ns
-  if [ -n "$script" ]; then
-    check "the old server force-loaded the export box" "\[M58Upgrade\] OK command \(canary\) forceload" "$log"
-    check "the world script ran with no failed line" "\[M58Upgrade\] ran [1-9][0-9]* command\(s\) from $script, 0 failed" "$log"
-    for ns in $REAL_NAMESPACES; do
-      [ "$script" = forge.commands ] && [ "$ns" != mcwbridges ] && continue
-      grep -aqE "\[M58Upgrade\] OK command $script:[0-9]+ .*$ns:" "$log" || continue
-      check "the $ns population commands succeeded (D53)" "\[M58Upgrade\] OK command [a-z.]+:[0-9]+ .*$ns:" "$log"
+  local log="$1" who="$2" player="$3" script="$4" pscript="$5" jar ns n; shift 5
+  if [ "$script" != - ]; then
+    check "the $who force-loaded the export box" "\[M58Upgrade\] OK command \(canary\) forceload" "$log"
+    check "the world script $script ran with no failed line" "\[M58Upgrade\] ran [1-9][0-9]* command\(s\) from $script, 0 failed" "$log"
+    for jar in "$@"; do
+      ns="$(mod_namespace "$jar")"
+      if [ -z "$ns" ]; then echo "[kernel] FAIL $(basename "$jar") declares no modId to check its population line by"; FAIL=1; continue; fi
+      n=$(grep -acE "\[M58Upgrade\] OK command $script:[0-9]+ .*[ \[{\"]$ns:" "$log" 2>/dev/null || true)
+      if [ "${n:-0}" -ge 1 ]; then echo "[kernel] PASS the $ns population commands of $script succeeded (D53) ($n)"
+      else echo "[kernel] FAIL no OK line of $script puts $ns content in the world (D53: $(basename "$jar") stays only while one does)"; FAIL=1; fi
     done
   fi
   check "the NeoForge canary wrote its world values" "\[M58Upgrade\] wrote neo world values" "$log"
   check "the Fabric canary wrote its world values" "\[M58Upgrade\] wrote fabric world values" "$log"
   if [ "$player" = yes ]; then
-    check "the player script ran with no failed line" "\[M58Upgrade\] ran [1-9][0-9]* command\(s\) from player.commands, 0 failed" "$log"
+    check "the player script $pscript ran with no failed line" "\[M58Upgrade\] ran [1-9][0-9]* command\(s\) from $pscript, 0 failed" "$log"
     check "the NeoForge canary wrote the player's values" "\[M58Upgrade\] wrote neo player values" "$log"
     check "the Fabric canary wrote the player's values" "\[M58Upgrade\] wrote fabric player values" "$log"
   fi
-  check_absent "nothing the old side was asked to write failed" "\[M58Upgrade\] (FAIL|DISARMED)" "$log"
+  check_absent "nothing the $who was asked to write failed" "\[M58Upgrade\] (FAIL|DISARMED)" "$log"
 }
 
 # The load errors a new boot of an upgraded save must not log (raw log; the MinecraftForge carrier's one missing pack is
@@ -377,7 +390,7 @@ if want main; then
   fresh_dir "$ROOT/main-old" "${MAIN_MODS[@]}"
   fresh_dir "$ROOT/cli-old" "${MAIN_MODS[@]}"
   server_round old "$ROOT/main-old" s2-server write "$ROOT/cli-old" "${WRITE_SCRIPTS[@]}"
-  write_checks "$LOGS/s2-server.server.log" yes world.commands
+  write_checks "$LOGS/s2-server.server.log" "old server" yes world.commands player.commands "${REAL_MODS[@]}"
   rm -rf "$PRISTINE/main"; mkdir -p "$PRISTINE"; clone_world "$ROOT/main-old/world" "$PRISTINE/main"
   export_snap "$PRISTINE/main" S2
 
@@ -406,7 +419,11 @@ need_pristine() {
 }
 
 # --- C4: no vacuous allowance -----------------------------------------------------------------------------------------
-if want controls && need_pristine controls && [ -f "$SNAP/S2-S3.upgrade.diff.json" ]; then
+if want controls && ! want main; then
+  echo "[kernel] FAIL reverse control C4 needs phase main's S2 -> S3 diff of this run (M58_PHASES has controls without main)"; FAIL=1
+elif want controls && ! [ -f "$SNAP/S2-S3.upgrade.diff.json" ]; then
+  echo "[kernel] FAIL reverse control C4 has no S2 -> S3 diff to read ($SNAP/S2-S3.upgrade.diff.json): phase main did not get that far"; FAIL=1
+elif want controls && need_pristine controls; then
   step "reverse control C4: every merged-only allowance an old save needs fired on S2 -> S3, and none fired on S3 -> S4"
   python3 - "$SNAP/S2.json" "$SNAP/S2-S3.upgrade.diff.json" "$SNAP/S3-S4.reopen.diff.json" <<'PY' || FAIL=1
 import json, re, sys
@@ -452,7 +469,7 @@ if want sp && need_pristine sp; then
   rm -f "$ROOT/sp-old/saves/UpgradeSP"/players/data/*.dat "$ROOT/sp-old/saves/UpgradeSP"/players/advancements/*.json \
     "$ROOT/sp-old/saves/UpgradeSP"/players/stats/*.json
   sp_round old "$ROOT/sp-old" s2-sp write -Dforbric.worldUpgradePlayerCommands="$SCRIPTS/player.commands"
-  write_checks "$LOGS/s2-sp.client.game.log" yes
+  write_checks "$LOGS/s2-sp.client.game.log" "old client" yes - player.commands
   rm -rf "$PRISTINE/sp"; clone_world "$ROOT/sp-old/saves/UpgradeSP" "$PRISTINE/sp"
   export_snap "$PRISTINE/sp" S2c
   fresh_dir "$ROOT/sp-new" "${MAIN_MODS[@]}"
@@ -516,7 +533,7 @@ if want bb; then
   fresh_dir "$ROOT/bb-new" "${MAIN_MODS[@]}"
   fresh_dir "$ROOT/cli-bb" "${MAIN_MODS[@]}"
   server_round new "$ROOT/bb-new" bb-write write "$ROOT/cli-bb" "${WRITE_SCRIPTS[@]}"
-  write_checks "$LOGS/bb-write.server.log" yes world.commands
+  write_checks "$LOGS/bb-write.server.log" "new server" yes world.commands player.commands "${REAL_MODS[@]}"
   export_snap "$ROOT/bb-new/world" S2n
   server_round new "$ROOT/bb-new" bb-read read "$ROOT/cli-bb"
   canary_read "$LOGS/bb-read.server.log" "$RESULTS/bb-read" yes
@@ -574,7 +591,7 @@ if want forge; then
   FORGE_MODS=("$FAPI" "${UPGRADE_JARS[@]}" "$FORGE_BRIDGES")
   fresh_dir "$ROOT/forge-old" "${FORGE_MODS[@]}"
   server_round old "$ROOT/forge-old" s2-forge write - -Dforbric.worldUpgradeCommands="$SCRIPTS/forge.commands"
-  write_checks "$LOGS/s2-forge.server.log" no forge.commands
+  write_checks "$LOGS/s2-forge.server.log" "old server" no forge.commands - "$FORGE_BRIDGES"
   rm -rf "$PRISTINE/forge"; clone_world "$ROOT/forge-old/world" "$PRISTINE/forge"
   export_snap "$PRISTINE/forge" S2f
   fresh_dir "$ROOT/forge-new" "${FORGE_MODS[@]}"
@@ -616,7 +633,10 @@ if want installed; then
   cp -c "$OLD_KERNEL_STAGE/run/neoforge-runtime/neoforge-runtime.jar" "$JARS/neoforge-runtime-26.2.jar" 2>/dev/null || cp "$OLD_KERNEL_STAGE/run/neoforge-runtime/neoforge-runtime.jar" "$JARS/neoforge-runtime-26.2.jar"
   cp -c "$OLD_KERNEL_STAGE/run/merged-base/forge-runtime-interop.jar" "$JARS/forge-runtime-interop-26.2.jar" 2>/dev/null || cp "$OLD_KERNEL_STAGE/run/merged-base/forge-runtime-interop.jar" "$JARS/forge-runtime-interop-26.2.jar"
   cp -c "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" "$JARS/neoforge-runtime-26.2.0.93.jar" 2>/dev/null || cp "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" "$JARS/neoforge-runtime-26.2.0.93.jar"
-  fresh_dir "$ROOT/installed-old" "$FAPI"
+  # mcw-bridges (NeoForge build) gives both worlds a mod data pack after the carrier, so an in-place rename and a
+  # "drop the old id, append the new one" give different lists (review w2 UPG A-3).
+  INSTALLED_MODS=("$FAPI" "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar")
+  fresh_dir "$ROOT/installed-old" "${INSTALLED_MODS[@]}"
   ILOG="$LOGS/installed-old.server.log"; NLOG="$LOGS/installed-new.server.log"
   start_server old "$ROOT/installed-old" "$ILOG" "" NEO_RT="$JARS/neoforge-runtime-26.2.jar" FORGE_RT="$JARS/forge-runtime-interop-26.2.jar"
   wait_log "$ILOG" 480 'Done \(' && sleep 5
@@ -624,7 +644,7 @@ if want installed; then
   boot_checks "$ILOG" old
   check "the old launcher owned the carriers under their installed names" "owned carriers: forge-runtime-interop-26\.2\.jar, neoforge-runtime-26\.2\.jar" "$ILOG"
   export_snap "$ROOT/installed-old/world" S2i
-  fresh_dir "$ROOT/installed-new" "$FAPI"
+  fresh_dir "$ROOT/installed-new" "${INSTALLED_MODS[@]}"
   clone_world "$ROOT/installed-old/world" "$ROOT/installed-new/world"
   start_server new "$ROOT/installed-new" "$NLOG" "" NEO_RT="$JARS/neoforge-runtime-26.2.0.93.jar"
   wait_log "$NLOG" 480 'Done \(' && sleep 5
@@ -643,6 +663,10 @@ if "forbric/carrier/2-neoforge-runtime-26.2" not in old:
     print("[kernel] FAIL the old world does not name the installed carrier id forbric/carrier/2-neoforge-runtime-26.2 (the phase did not write what an installed profile writes): %s" % old); sys.exit(1)
 print("[kernel] PASS the old world names the installed carrier id: %s" % old)
 i = old.index("forbric/carrier/2-neoforge-runtime-26.2")
+after = [p for p in old[i + 1:] if p.startswith("forbric/data/")]
+if not after:
+    print("[kernel] FAIL the old world has no mod data pack after the carrier, so an in-place rename and an append would look the same: %s" % old); sys.exit(1)
+print("[kernel] PASS the old world has mod data pack(s) after the carrier, so the order tells a rename from an append: %s" % after)
 stale = [p for p in new if p.startswith("forbric/carrier/2-neoforge-runtime-")]
 if stale or "forbric/carrier/2-neoforge-runtime" not in new:
     print("[kernel] FAIL the new world does not enable the NeoForge carrier as forbric/carrier/2-neoforge-runtime only: %s" % new); bad = 1
@@ -702,21 +726,34 @@ fi
 
 # --- manifest ---------------------------------------------------------------------------------------------------------
 step "manifest: what wrote and what read these saves"
+# Every input a phase of this run read, by sha1 (review w2 UPG B-5/B-8): this gate's own file, the command scripts, the
+# old stage's carriers, and the jars of the phases that ran. A path that is not there is recorded as null.
+INPUTS=("$KERNEL/run/gate-m58-world-upgrade.sh" "$SCRIPTS"/*.commands "$OLD_KERNEL_STAGE/run/neoforge-runtime/neoforge-runtime.jar"
+  "$OLD_KERNEL_STAGE/run/merged-base/forge-runtime-interop.jar")
+want forge && INPUTS+=("$FORGE_BRIDGES")
+want energy && INPUTS+=("$REBORN")
+{ want transfer || want energy; } && INPUTS+=("$MACHINES"/*.jar)
+want installed && INPUTS+=("$ROOT/installed-jars"/*.jar "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar")
 python3 - "$RESULTS/m58-manifest.json" "$OLD_KERNEL_COMMIT" "$OLD_KERNEL_JAR" "$OLD_KERNEL_STAGE/run/merged-base/patched-mc-merged-26.2.jar" \
   "$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar" "$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar" \
-  "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" "$CANARIES/m58-build-inputs.json" "$SNAP" "$PHASES" "${MAIN_MODS[@]}" <<'PY'
+  "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" "$CANARIES/m58-build-inputs.json" "$SNAP" "$PHASES" "${MAIN_MODS[@]}" -- "${INPUTS[@]}" <<'PY'
 import hashlib, json, pathlib, sys
-out, commit, old_jar, merged, new_jar, base, carrier, inputs, snaps, phases, *mods = sys.argv[1:]
+out, commit, old_jar, merged, new_jar, base, carrier, inputs, snaps, phases, *rest = sys.argv[1:]
+cut = rest.index("--")
+mods, extra = rest[:cut], rest[cut + 1:]
 sha1 = lambda p: hashlib.sha1(pathlib.Path(p).read_bytes()).hexdigest() if pathlib.Path(p).is_file() else None
 manifest = {"schema": "forbric-m58-manifest/1", "phases": phases.split(),
             "old": {"ref": "tri-eco-26.2-final", "commit": commit, "kernelJarSha1": sha1(old_jar), "mergedBaseSha1": sha1(merged)},
             "new": {"kernelJarSha1": sha1(new_jar), "baseSha1": sha1(base), "carrierSha1": sha1(carrier)},
             "canaries": json.loads(pathlib.Path(inputs).read_text()) if pathlib.Path(inputs).is_file() else None,
             "mods": {pathlib.Path(m).name: sha1(m) for m in mods},
+            "inputs": {str(pathlib.Path(p).resolve()): sha1(p) for p in extra},
             "snapshots": {p.name: sha1(p) for p in sorted(pathlib.Path(snaps).glob("*.json"))}}
 pathlib.Path(out).write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n")
-print("[kernel] manifest %s: old %s (jar %s, merged base %s), new jar %s" % (out, commit[:12], (manifest["old"]["kernelJarSha1"] or "?")[:12],
-      (manifest["old"]["mergedBaseSha1"] or "?")[:12], (manifest["new"]["kernelJarSha1"] or "?")[:12]))
+gate = next((v for k, v in manifest["inputs"].items() if k.endswith("gate-m58-world-upgrade.sh")), None)
+print("[kernel] manifest %s: old %s (jar %s, merged base %s), new jar %s, gate %s, %d input(s)" % (out, commit[:12],
+      (manifest["old"]["kernelJarSha1"] or "?")[:12], (manifest["old"]["mergedBaseSha1"] or "?")[:12],
+      (manifest["new"]["kernelJarSha1"] or "?")[:12], (gate or "?")[:12], len(manifest["inputs"])))
 PY
 
 step "M58 result"
