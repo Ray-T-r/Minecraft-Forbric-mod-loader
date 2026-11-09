@@ -17,7 +17,8 @@
 #                   tombstone's knowledge/alignment and effect) after a death that leaves a tombstone grave. THE ONE
 #                   MANUAL STEP of the plan -- a player opening a packedup backpack and putting items in it -- is done
 #                   with key presses posted to the client's window (keyboard reaches a background window, mouse clicks
-#                   do not): O opens the first backpack in the inventory (packedup's own open-bag key), and with the
+#                   do not): packedup's own open-bag key (rebound from O, which journeymap's fullscreen-options key also uses, to
+#                   keypad 7 in options.txt) opens the first backpack in the inventory, and with the
 #                   container open the cursor sits at the window centre, so 2 and 3 move hotbar slots 2-3 into the slot
 #                   under it. Whether the items landed in the backpack is read back from the backpack's own file, not
 #                   assumed. The client saves and quits by itself (KernelClientSmoke's clean disconnect).
@@ -111,14 +112,15 @@ cp -c -R "$S1/config" "$OUT/work/old-config"
 if [ $CLIENT = 1 ]; then
   C="$OUT/work/old-client"; mkdir -p "$C/saves" "$C/mods"; cp "$OUT"/mods-forge/*.jar "$C/mods/"
   cp -c -R "$OUT/work/old-config" "$C/config"
-  printf 'onboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nskipMultiplayerWarning:true\njoinedFirstServer:true\nsoundCategory_master:0.0\nrenderDistance:4\nsimulationDistance:5\nguiScale:2\nnarrator:0\n' > "$C/options.txt"
+  printf 'onboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nskipMultiplayerWarning:true\njoinedFirstServer:true\nsoundCategory_master:0.0\nrenderDistance:4\nsimulationDistance:5\nguiScale:2\nnarrator:0\n%s\n' \
+    "$(python3 -c 'import importlib.util,sys;s=importlib.util.spec_from_file_location("f",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(m.PACKEDUP_OPEN_BAG_OPTION)' "$HERE/forge-swap.py")" > "$C/options.txt"
   cp -c -R "$OUT/work/old-world" "$C/saves/$WORLD"
   $FS datapack "$C/saves/$WORLD" >> "$LOG"
   mkdir -p "$C/quickPlay"
   say "[forge-swap] old player: $C"
   $FS client --log "$OUT/logs/old-player.log" --rundir "$C" "${OLD_ENV[@]}" --env "RUNDIR=$C" \
     --env "FORBRIC_JVM=-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=${FORGE_SWAP_CLIENT_TICKS:-900}" \
-    --on 'forge-swap\] kit given=+3,o,+3,2,+1,3,+1,escape' --timeout 900 \
+    --on 'forge-swap\] kit given=+3,kp7,+3,2,+1,3,+1,escape' --timeout 900 \
     -- "$OLD_CLIENT" --quickPlayPath "$C/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" | tee "$OUT/logs/old-player.result.json" | tee -a "$LOG"
   grep -aq '"cleanDisconnect": true' "$OUT/logs/old-player.result.json" || { say "[kernel] FAIL the old client did not save and quit cleanly (logs/old-player.log)"; exit 1; }
   grep -aq 'forge-swap\] kit given' "$OUT/logs/old-player.log" || { say "[kernel] FAIL the player kit never ran (logs/old-player.log)"; exit 1; }

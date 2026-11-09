@@ -346,7 +346,11 @@ def census(snapshot):
 # --- key presses -----------------------------------------------------------------------------------------------------
 
 # macOS virtual key codes (Carbon kVK_ANSI_*) for the keys the client drill uses.
-KEYCODES = {"o": 31, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "escape": 53, "e": 14, "return": 36}
+KEYCODES = {"o": 31, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "escape": 53, "e": 14, "return": 36, "f2": 120,
+            "kp7": 89}
+# packedup's open-bag key (default O, GLFW 79) shares O with journeymap's key.journeymap.fullscreen_options: on the old
+# client the O press opened a pause screen ("Saving and pausing game...") and no backpack. The client options rebind it to keypad 7.
+PACKEDUP_OPEN_BAG_OPTION = "key_packedup.keys.openbag:key.keyboard.keypad.7"
 
 
 def post_keys(pid, keys, gap=0.6):
