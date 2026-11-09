@@ -184,7 +184,7 @@ Forbric refuses the MinecraftForge canary, so on Forbric the NeoForge one plays 
 loaders for the reference.
 
 - `breath-drown.py reference [--runs 3] [--port N]` rebuilds the canaries and runs native MinecraftForge 26.2-65.0.1
-  and NeoForge 26.2.0.88 (the images `native-controls.py prepare` installs; `M57_NATIVE` points elsewhere) `--runs`
+  and NeoForge 26.2.0.93 (the images `native-controls.py prepare` installs; `M57_NATIVE` points elsewhere) `--runs`
   times each, in fresh instances under `build/m57-reference/`. Every run of one loader must agree with its first on
   every stored field — what is judged, and the random draws — or it stops and names the differences; nothing is
   filtered. It then writes `canary/forge-breath-drown/native-reference.json` with the canary sources' digest. Run it
