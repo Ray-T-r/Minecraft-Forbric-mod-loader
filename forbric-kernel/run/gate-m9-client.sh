@@ -39,11 +39,13 @@ fi
 # gates-parallel.py expects when it leaves the rundir variable unset; nothing above writes into the rundir.)
 refuse_shared_rundir "$RUNDIR"
 
-# SEED A MODIFIER BINDING, every run. MinecraftForge writes a modified key as
-# `key_key.jei.toggleOverlay:key.keyboard.o:CONTROL_OR_COMMAND` and reads it back through vanilla's
-# InputConstants.getKey, which throws on the suffix; Options.load wraps the whole file, so the player loses every
-# setting AND the client then SAVES the defaults over the file. That last part is why this has to be re-seeded:
-# this fixture carried three of JEI's and lost them exactly that way, taking the evidence with them.
+# SEED A MODIFIER BINDING, every run. A modified key is saved as
+# `key_key.jei.toggleOverlay:key.keyboard.o:CONTROL_OR_COMMAND`. On the merged base MinecraftForge's loader handed that
+# whole value to vanilla's InputConstants.getKey, which throws on the suffix; Options.load wraps the whole file, so the
+# player lost every setting AND the client then SAVED the defaults over the file (this fixture lost three of JEI's that
+# way). On NeoForge's base its own Options.processOptions splits ":<modifier>" off before getKey (javap, C5 wave 2), so
+# with -Dforbric.keyModifierSuffix=off the load below stays green; whether the repair stays waits on the D25 ruling.
+# The binding is still seeded every run so the load and the JEI comparison below always have a modified key to read.
 # M9_KEY_MODIFIER_SEED_BEGIN — the contract test runs this exact step against a fixture options.txt.
 python3 - "$RUNDIR/options.txt" <<'PY_SEED' || exit 3
 from pathlib import Path
@@ -102,8 +104,9 @@ rm -rf "$RUNDIR/.mixin.out"
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
 # M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Every recipe below was
 # re-measured on NeoForge's base in one batch (C5 wave 2, 2026-11-09; each on a fresh clone of the fixture; the same gate
-# without a switch was 163 PASS / 0 FAIL). "STRICT stop" means a required mixin was lost, so this STRICT client stopped
-# at ~60 s before any world: every in-world check went red with the named ones, which is the switch working.
+# without a switch was 163 PASS / 0 FAIL). "STRICT stop" means a required mixin (or, for fabricMainInConstructor, a
+# required entrypoint) was lost, so this STRICT client stopped at ~60 s before any world: every in-world check went red
+# with the named ones, which is the switch working.
 #   -Dforbric.keyModifierSuffix=off -> 1 red, the repair's own line ("the key-modifier suffix is dropped before the name
 #                                      is parsed"). "options.txt loads with modded modifier bindings in it" stays green:
 #                                      NeoForge's Options.processOptions splits ":<modifier>" off before InputConstants.getKey
@@ -144,10 +147,13 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                      probe withholds its own NeoForge ItemTooltipEvent listener, so nothing adds the
 #                                      line the check counts. The control for the check, not for a repair: the game's
 #                                      getTooltipLines posts the event itself.
-#   -Dforbric.fabricMainInConstructor=off -> 43 red: "Fabric main entrypoints run where Fabric runs them", "and not in
-#                                      the pre-Minecraft window", the datapack-declaration pair below, and the world:
-#                                      a Fabric mod that caches Minecraft.getInstance() from onInitialize caches null,
-#                                      and the client exits at ~65 s (ClickCrystals killed it inside Minecraft.<init>).
+#   -Dforbric.fabricMainInConstructor=off -> 43 red, a STRICT stop at ~65 s: "Fabric main entrypoints run where Fabric
+#                                      runs them", "and not in the pre-Minecraft window", the datapack-declaration pair
+#                                      below, "strict compatibility acceptance" and every in-world check. The mains run
+#                                      before Minecraft exists, voxy-extra's main reads Minecraft.getInstance().gameDirectory
+#                                      and throws a NullPointerException (the gate's CAUGHT line), and STRICT counts
+#                                      initialization:entrypoint:main as a required loss. No crash report. (On the merged
+#                                      base ClickCrystals killed the client inside Minecraft.<init>; it is not in this pack.)
 #   The recipes written beside their checks below, measured in the same batch:
 #     guestInjectorPruner=off 3 red; "mixinRetarget=off mixinStubRebind=off" 49 red (STRICT stop; the two rebound lines,
 #     the two half-applied absences, the isAir pair); mixinRetarget=off 44 red (STRICT stop; the isAir rebound pair and
@@ -234,10 +240,12 @@ check "the block atlas was uploaded at the lowered mip level after the reload" \
   'Created: [0-9]+x[0-9]+x3 minecraft:textures/atlas/blocks.png-atlas' "$LOG"
 check_absent "no resource reload was abandoned" 'Caught error loading resourcepacks' "$LOG"
 check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG"
-# MinecraftForge writes a modified binding as key.keyboard.o:CONTROL_OR_COMMAND and then hands that whole string
-# to InputConstants.getKey before splitting the modifier off, so vanilla's Integer.parseInt throws. Options.load
-# wraps the WHOLE file in one try/catch: one modded binding costs the player every setting. This gate's own
-# fixture has had three of them (JEI's) and lost its options on every run, silently, for as long as it existed.
+# On the merged base MinecraftForge handed a modified binding's whole value (key.keyboard.o:CONTROL_OR_COMMAND) to
+# InputConstants.getKey before splitting the modifier off, vanilla's Integer.parseInt threw, and Options.load (one
+# try/catch around the WHOLE file) cost the player every setting; this fixture lost three of JEI's that way. On
+# NeoForge's base the game splits the modifier off first (see the seed step above), so with the repair switched off
+# only its own line goes red (C5 wave 2) and the load check below is not that repair's control. Both checks stay as
+# they are until the D25 ruling: delete the repair, or name a path that still reaches getKey with a suffix.
 check "the key-modifier suffix is dropped before the name is parsed" \
   'Forbric/MergedBaseCompat\] InputConstants.getKey now drops' "$LOG"
 check_absent "options.txt loads with modded modifier bindings in it" 'Failed to load options' "$LOG"
