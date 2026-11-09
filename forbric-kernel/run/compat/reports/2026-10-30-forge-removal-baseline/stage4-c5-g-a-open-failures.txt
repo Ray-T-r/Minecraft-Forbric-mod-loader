@@ -2,8 +2,10 @@
 #
 # Run: heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test --continue
 #      first act: in s4c5-g-a/forbric-kernel at f0cb66b0 (rebased, = stage tip): 5772 tests, 0 skipped, 5 failed (c5/g-a/w2/suite-first.log, XML w2/suite-first-xml/)
-#      final: in an APFS clone of s4c5-g-a holding the lane's final code (flip commit's tree; later commits change only
-#      comments and the record): 5773 tests, 0 skipped, 5 failed (c5/g-a/w2/suite-final.log, XML w2/suite-final-xml/).
+#      wave 2: in an APFS clone of s4c5-g-a made ~00:15, before the flip was committed (01:40, d7f80b9a; equality with the
+#      commit not shown, review B-6): 5773 tests, 0 skipped, 5 failed (c5/g-a/w2/suite-final.log, XML w2/suite-final-xml/).
+#      final (review fixes): in an APFS clone of s4c5-g-a at the code tip baa8373d: 5773 tests, 0 skipped, 5 failed, same 5
+#      names, every message's first 240 chars equal (c5/g-a/w2r/suite-final.log, XML w2r/suite-final-xml/).
 #   Plain ~/.gradle, --offline, pinned JUnit 5.9.2 / annotations 23.0.0; no init script, no GRADLE_USER_HOME. Nothing downloaded.
 #
 # Name-for-name against c5/failures-wave1.txt (5): 0 new, 0 gone, 5 kept; every kept row's first 240 message chars equal.

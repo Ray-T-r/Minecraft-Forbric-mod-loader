@@ -129,7 +129,8 @@ measured the same the same day (`c5/review-g-a-A/native-d49.log`). The lane's 20
 
 ## Open defects and items for other owners
 
-1. **m21 dual_forge (owner: lane S, D69; still red at G-A's wave-2 tip, see "Wave 2").** Forbric keeps
+1. **m21 dual_forge (owner: lane S, D69: fixed by S's `748f142b`; green on the merged tree G-A + S, 54/0, see "G-A
+   wave-2 review fixes"; still red on G-A's branch alone, which carries no S commit).** Forbric kept
    `forbricm21:predicate/dual_forge.json`, whose `neoforge:conditions` name `forbricm21:no_such_condition`; native
    NeoForge skips it. Cause: `ForbricMergedBaseCompatTransformer.letForeignResourceConditionsThrough` puts
    `KernelNeoConditions.lenient` before `ICondition.CODEC`, and `lenient` reads every unregistered condition type as true
@@ -138,16 +139,18 @@ measured the same the same day (`c5/review-g-a-A/native-d49.log`). The lane's 20
    `terralith:config` condition is what m8 asserts the leniency for. So narrowing the leniency to packs of Fabric-arbitrated
    mods (keeping the overlay veto, with its own switch) would make m21 and m8 green together; review B-2's "no kernel
    behaviour lets both go green" does not hold. G-A owns neither file, so the check stays red and recorded here.
-2. **Kernel blockstate refill (owner: the kernel lane; C3-style three checks).** On the genuine base
+2. **Kernel blockstate refill: closed by lane S's `35985d32` (deleted, switch retired), on the evidence below; G-A's
+   m26 header follows it in `0ebe1b99`.** On the genuine base
    `KernelRegistryContent.rebuildBlockStateIds` never prints: none of the 26 genuine boots of these runs (servers and
    clients) has "rebuilt NeoForge blockstate→id map", and with `-Dforbric.blockStateIdRefill=off` the late Fabric block
    still reads id 64735, as by default. NeoForge's own block callback maps each state as it registers. The refill looks
    merged-base-only; whether it goes is not G-A's call. m26 no longer asserts its line (`5b761e62`).
-3. **m0 step 2** is red for as long as the 41 known failures stand (their owners are in failures-close).
-4. **Gradle cache (orchestrator; resolved by D68, wave 2 builds on the pinned versions).** Every other lane's canonical suite needs the cache back or a ruled stand-in; this
-   lane's substitution and its limits are above. Ruling also needed on the wrapper download.
-5. **Done in wave 2 (`d7f80b9a`, see "Wave 2"):** the perJar flip (D42/D55) with its A/B on m21, m9 and a
-   client-merged-pack boot, `KernelModFile*` javadocs, `KernelModFilePerJarTest:67`, m21 `:280-365` (the per-jar block)
+3. **m0 step 2** is red on the pinned build because of the three LiquidBounce tests, which skip without their jars (m0
+   runs without `requireFixtures`; D58, owner P1). Wave 1's 41 known failures are gone with the pinned build.
+4. **Gradle cache: resolved by D68** (the cache is restored and wave 2 builds on the pinned versions); D68 also settles
+   the wrapper download asked about in wave 1.
+5. **Done in wave 2 (`d7f80b9a`, see "Wave 2"):** the perJar flip (D42/D55) with its A/B on gate-m21 and gate-m9 (the
+   client-merged-pack boot), `KernelModFile*` javadocs, `KernelModFilePerJarTest:67`, m21 `:280-365` (the per-jar block)
    and `GateNeoCanaryContractTest:54-61,97`; the m21 `modFilePerJar` controls after the flip.
 
 ## Review findings (lens A and B, 2026-11-09)
@@ -206,12 +209,14 @@ build, genuine stage, fresh APFS clones of `client-merged-pack` by real path for
 | run | A (one file per mod) | B (one file per jar) | what differs |
 |---|---|---|---|
 | gate-m21 | 57 / 1 | 53 / 1 | FAIL in both = dual_forge (D69, lane S). 57→53: the second boot's Done check, its two per-jar checks and its "neither reader failed" went; the default's two checks now ask for 1. Default-boot log, as a multiset of normalised lines (`w2/norm.py`): only the canary's scan lines differ (A: "2 file(s), 10 annotation(s)", "lists forbricneolive's jar 2 time(s)" and the ModList reader's three lines twice; B: "1 file(s), 5", "1 time(s)", the reader lines once), besides the port and a night-config instance id. |
-| gate-m9 | 163 / 0 | 163 / 0 | none in the gate. Client `latest.log` (`w2/m9-ab-diff.txt`): JEI's lines are the same set (timings differ), Jade 96/96 lines, "JEI's 35 saved key binding(s) ... unchanged" PASS in both. ERROR 17/13 and "Exception" 38/27 lines differ only by network answers (A: SSL/read timeouts to Mojang auth, Realms, update checkers; B: 401s and an expired mod-data cache), splash/chat text, Mods-screen frame counts (37/29) and the order of the 10 datapack registries in "posted datapack-registry declaration" (same set). That order follows `KernelModLoader.publishedNeoMods()`, a `Map.copyOf` whose iteration order is randomised per JVM — not the flip. |
+| gate-m9 | 163 / 0 | 163 / 0 | none in the gate. Client `latest.log` (`w2/m9-ab-diff.txt`): JEI's lines are the same set (timings differ), Jade 96/96 lines, "JEI's 35 saved key binding(s) ... unchanged" PASS in both. The ERROR 17/13 and "Exception" 38/27 lines differ by network answers (A: SSL/read timeouts to Mojang auth, Realms, update checkers; B: 401s and an expired mod-data cache). The other differences, none from the flip (review B-4 listed the ones this row first left out): splash/chat text; Mods-screen frame counts (37/29); two orders that change per JVM, the 10 datapack registries in "posted datapack-registry declaration" (same set; it follows `KernelModLoader.publishedNeoMods()`, a `Map.copyOf`) and pride's two `[modproperties]` keys; the Tick line's "at twice the budget or worse" count (5 / 8); and two B-only lines, "Mod 'xaeroworldmap' took Ns to run a deferred task" and "Preparing spawn area: 100%". |
 
 Why m9 shows no difference: no NeoForge jar of `client-merged-pack` declares two mod ids (all 97 jars: at most one
 `[[mods]]` in `neoforge.mods.toml`; the 12 jars with two `@Mod` classes are main+client pairs of one id each, read from
 the annotations with `javap -v`), so one file per mod is already one per jar there. The canary is the only measured
-multi-mod jar. Nothing regressed, so the flip stays on (D42).
+multi-mod jar in these two runs; it is one only because the kernel publishes an `@Mod` its file does not declare, which
+native NeoForge refuses (review A-1). A real two-`[[mods]]` jar was booted A/B after the review ("G-A wave-2 review
+fixes": wthit + waila). Nothing regressed, so the flip stays on (D42).
 
 **Red controls of the flip** (`w2/mutant-*.log`, `w2/runs/B-m21-*`):
 
@@ -252,32 +257,91 @@ four controls ran before its header comments got the measured counts, a comment-
 | m29 | 38 | 0 | 0 | |
 | m30 | 28 | 0 | 0 | |
 
-Every count equals wave 1's on the substituted harness except m21 (the flip, above) and m0 (step 2 now fails on 3
-skips instead of 36 failures).
+Every count equals wave 1's on the substituted harness except m21 (the flip, above). m0's count is wave 1's too (13/1/1);
+only the cause of its step-2 FAIL changed: 3 skips instead of 36 failures.
 
 ### Red controls wave 1 had not shown
 
 | control | result |
 |---|---|
 | m29 `M29_POLICY=continue` | 34 / 4: exactly boot 1's four stop checks ("the report says strict decided" got CONTINUE, "strict stopped the launch with the typed policy stop" got exit 0, "and said so", "it never came up"), every refusal and report check green — as the header says |
-| m29 `M29_REFUSED=` (only the NeoForge canary in boots 1 and 2) | 16 / 22: every refusal, machine-report, load-report and stop check of both boots (en 11, zh 11) red; the control boot's 6 checks green |
+| m29 `M29_REFUSED=` (only the NeoForge canary in boots 1 and 2) | 16 / 22: 11 red in each of boots 1 and 2 (the three refusal checks, the machine report, three stop checks, the four load-report checks); 5 green in each ("the report says strict decided", "nothing of the refused jars ran", the two Forge-family mixin-config checks, "no crash report"), because nothing is refused and the policy is still strict; the control boot's 6 green. (This row first said "every refusal, report and stop check" red: review B-3; the gate header now has the measured list, `baa8373d`.) |
 | m29 default | strict exit 78 and both refusal languages green (38/0): the typed stop, the en and zh load reports |
 | m18 control boot (in the gate, `-Dforbric.crossEcosystemPresence=off`) | the switch-off boot answers false where the default boot answers true: "a NeoForge mod is told the Fabric mod is absent", "a Fabric mod is told the NeoForge mod is absent", LoadingModList modFile=false, "0 Fabric for presence", no presence registration — all PASS, while the default boot's "sees" checks PASS |
 | m19 control boot (in the gate, arbitration off) | "the control really disabled arbitration" and "the library was then claimed twice, or tried to be" (3) PASS; the presence control ("does NOT hang on ModPresence") PASS |
 
 ### Final suite
 
-The same command in an APFS clone of the worktree holding the flip commit's tree (later commits change only this
-record): **5773 tests, 0 skipped, 5 failed** — the 5 names of `c5/failures-wave1.txt`, 0 new, 0 gone, every kept row's
+The same command in an APFS clone of the worktree made around 00:15, before the flip was committed at 01:40 (`d7f80b9a`;
+that the clone's tree equals the commit is not shown, review B-6: the saved gate script and `KernelModFile` match it
+except m21's header counts). The review-fix suite at the tip `baa8373d` supersedes it ("G-A wave-2 review fixes").
+Result: **5773 tests, 0 skipped, 5 failed** — the 5 names of `c5/failures-wave1.txt`, 0 new, 0 gone, every kept row's
 first 240 message characters equal (`w2/suite-final.log`, XML `w2/suite-final-xml/`). 5772 → 5773 is
 `KernelModFilePerJarTest`'s new default test. List: `stage4-c5-g-a-open-failures.txt` beside this file and
 `c5/failures-g-a-w2.txt`.
 
-### Open after wave 2
+### Open after wave 2 (as corrected by the review fixes below)
 
-1. m21 dual_forge: lane S (D69); the merge must show m21 green after G-A rebases onto S.
+1. m21 dual_forge: fixed by lane S's `748f142b` (D69). On the merged tree G-A + S gate-m21 is **54 / 0** (not 53/0: the
+   wave-2 run was 53 PASS + 1 FAIL = 54 checks; reviews A-2/B-1), and gate-m8 20 / 0. The merger re-runs both after
+   G-A lands on S.
 2. m0 step 2: the three LiquidBounce fixture reds (D58, P1).
-3. `KernelRegistryContent.rebuildBlockStateIds` (item 2 above): still the kernel lane's.
+3. `KernelRegistryContent.rebuildBlockStateIds`: closed, deleted by lane S in `35985d32`; G-A's m26 header follows in
+   `0ebe1b99`.
 4. Observation, not a G-A item: `KernelModLoader.publishedNeoMods()` is a `Map.copyOf`, so the order the kernel posts
-   per-mod events in (the datapack-registry declaration, the setup phases) changes from JVM to JVM; native FML posts in
-   its sorted mod order. No gate reads that order today. Owner: kernel lane, if it matters.
+   per-mod events in changes from JVM to JVM. Native FML's sequential posts (`ModLoader.postEvent`, e.g. the
+   datapack-registry declaration) go in its sorted mod order; its setup phases go through `dispatchParallelEvent`
+   (javap of the carrier's `ModLoader`), so their native order is not fixed either. No gate reads the order. Owner: the
+   orchestrator, to give it to a kernel lane or close it.
+
+## G-A wave-2 review fixes (2026-11-10)
+
+Reviews `c5/review-w2-g-a-A.md` (lens A) and `c5/review-w2-g-a-B.md` (lens B) of `d7f80b9a` + `b5283cba`. Every finding
+was re-checked against the logs, the carrier and the S branch before it was acted on. Logs:
+`~/Forbric-backups/stage4-notes/c5/g-a/w2r/` (below `w2r/`), runner `w2r/run-gate.sh` (a copy of `w2/run-gate.sh`
+writing under `w2r/`). Pinned build (D68), genuine stage, bash, `MC_DIR` unset, nothing downloaded.
+
+### Commits
+
+| sha | subject |
+|---|---|
+| `0ebe1b99` | Reword m21's dual_forge comments and m26's refill header for lane S's D69 fix and refill deletion, which merge before this branch |
+| `baa8373d` | Say that m21's per-jar pair is seen through an @Mod native NeoForge refuses, and give m29's empty-refusal control its measured 11 red checks per boot |
+| (this record) | Record lane G-A's wave-2 review fixes |
+
+`0ebe1b99` describes the tree after lane S: on G-A's branch alone the refill still exists and dual_forge is still red.
+Both lanes' notes already require S to merge first.
+
+### Per finding
+
+| finding | verdict | what was done / evidence |
+|---|---|---|
+| A-1 m21's per-jar pair rests on an `@Mod` native NeoForge refuses | confirmed | The canary's `neoforge.mods.toml` has one `[[mods]]` (`forbricneolive`); `ForbricNeoClientOnlyMod` is `@Mod(value="forbricneoclientonly", dist=CLIENT)`. javap of the staged carrier's `FMLJavaModLanguageProvider.validate` (`w2r/FMLJavaModLanguageProvider.javap.txt`): it collects the file's javafml mod ids and reports `fml.modloadingissue.javafml.dangling_entrypoint` for every `@Mod` not among them, with no dist filter. The kernel publishes it ("published 2 NeoForge mod(s) into ModList [forbricneolive, forbricneoclientonly]", not constructed on the server). m21's comment and the `KernelModFile` javadoc now say what the pair measures (`baa8373d`). A real two-`[[mods]]` jar booted A/B (B-5 below). Not done by G-A (not its files): the canary declaring its second mod (canary owner, Phase 0a redo) and the leniency's guiding-rule check (kernel lane): both for the orchestrator. |
+| A-2 / B-1 expected m21 count after S is 54/0 | confirmed | B-m21 = 53 PASS + 1 FAIL. Measured: an APFS clone holding `git merge-tree --write-tree s4-c5-g-a s4-c5-s1` (G-A `b5283cba` + S `f333f1f6`, tree `927dda90`): **gate-m21 54 / 0**, the dual_forge probe PASS ("Can't find element 'forbricm21:dual_forge'") (`w2r/runs/M-m21/`), and **gate-m8 20 / 0**, run unconditionally (B-1: D69 names m8) (`w2r/runs/M-m8/`). Handoff and this record say 54/0. |
+| A-3 / B-2 S's follow-ups for G-A | confirmed | refill item closed citing S's `35985d32`; m26 header (`:13-23`, `:147`) and m21's D49 comment and RED-controls note reworded (`0ebe1b99`); m0 "41 known failures" corrected (Open defects item 3). |
+| B-3 m29 `M29_REFUSED=''` overclaimed | confirmed | `w2/runs/F-m29-refused-none/gate.out`: per refusal boot 11 FAIL, 5 PASS ("the report says strict decided", "nothing of the refused jars ran", the two Forge-family mixin-config checks, "no crash report"); control 6 PASS; 16/22. Header rewritten with the list, dated 2026-11-10 (`baa8373d`); the wave-2 table row corrected. |
+| B-4 A/B "differs only" lists incomplete; three A/B runs claimed | confirmed | `w2/m9-ab-diff.txt` also has pride's `[modproperties]` key order (A/B lines 133/218), the Tick count 5/8, and the B-only xaeroworldmap deferred-task and "Preparing spawn area" lines. The m9 row lists them; the javadoc and Open defects item 5 say "gate-m21 and gate-m9 (the client-merged-pack boot)" (`baa8373d`). `d7f80b9a`'s commit message keeps its shorter list (history is not rewritten); this record is the corrected account. |
+| B-5 no real multi-mod jar exercised | confirmed, fixed by measurement | `wthit-26.2-neo-20.0.0.jar` (client-popular, on disk: `[[mods]]` wthit + waila) with its dependency `badpackets-neo-0.12.2.jar` and the canary, one dedicated-server boot each way (`w2r/wthit-ab.sh`, port 46628, through `heavy.sh`). Default: `ModList.getAllScanData(): 3 file(s), 405 annotation(s)`; `-Dforbric.modFilePerJar=off`: `5 file(s), 732 annotation(s)` (the wthit jar and the canary jar each listed twice: 732 = 405 + 322 + 5). Both constructed waila and wthit, reached Done and stopped cleanly. Normalised multiset diff (`w2/norm.py`, `w2r/wthit-ab-diff.txt`): only the canary's scan lines, the switch-off line and one config-watcher/night-config pair with instance ids differ. Both boots list waila and wthit in the load report as "partly did not run — compiled against a different MinecraftForge — net.minecraftforge.fluids.FluidStack" (`w2r/wthit-*.load-report.txt`): the same in both modes, so not the flip; a static ABI-audit finding for the kernel lane to judge (not measured whether native NeoForge loads the jar). |
+| B-6 stale or soft text | confirmed | Open defects 3 (m0) and 4 (the wrapper download, D68) updated; m0 wording ("count unchanged, cause changed"); the final-suite wording (the clone predates the commit) and the superseding suite below; the `Map.copyOf` owner is now the orchestrator, and the note says native setup phases are parallel (`ModLoader.dispatchParallelEvent`, javap) as review A noted. README.md:586 (RECORD's file) still says the flip is not done: handed to RECORD in `handoff.md`. |
+
+### Re-runs at the tip `baa8373d` (code tip; this record commit changes only this file)
+
+| run | result | note |
+|---|---|---|
+| compileJava compileRuntimeJava compileTestJava | green | `w2r/compile.log` (compileRuntimeJava executed) |
+| full suite (`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test --continue`, APFS clone of the worktree at `baa8373d`) | **5773 tests, 0 skipped, 5 failed** | the 5 names of `c5/failures-wave1.txt`: 0 new, 0 gone; every message's first 240 characters equal to wave 2's (`w2r/suite-final.log`, `w2r/suite-final-xml/`, `w2r/suite-final-failures.txt`) |
+| gate-m21 (worktree) | 53 / 1 | FAIL = dual_forge, as expected without S; 54 / 0 on the merged tree (above) |
+| gate-m29 (worktree) | 38 / 0 | |
+| gate-m26 (worktree, client, `client.sh` first) | 45 / 0 | as in wave 2 |
+| gate-m21, gate-m8 (merged G-A + S clone) | 54 / 0, 20 / 0 | above |
+
+A first compile in this round ran from zsh, which passed `.stage4/props.txt` to Gradle as one argument, so
+compileRuntimeJava was skipped ("staged game jars absent"); it was re-run from bash (the result above). Nothing else
+ran from zsh.
+
+### Open after the review fixes
+
+1. Merger: G-A lands after S; re-run gate-m21 (expect 54 / 0) and gate-m8 (20 / 0).
+2. Orchestrator: the canary's undeclared second `@Mod` (Phase 0a owner) and the kernel's leniency that publishes an
+   undeclared `@Mod` (kernel lane, guiding rule); the `Map.copyOf` post order; the wthit ABI-audit label.
+3. m0 step 2 (D58, P1).
