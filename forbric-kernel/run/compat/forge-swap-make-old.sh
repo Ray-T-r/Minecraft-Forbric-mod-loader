@@ -15,13 +15,17 @@
 #   2. old player   (skipped by --no-client) a singleplayer client of the old kernel on that world. A datapack
 #                   (forge-swap.py datapack) gives the player a kit once (inventory, armour, offhand, ender chest, xp,
 #                   tombstone's knowledge/alignment and effect) after a death that leaves a tombstone grave. THE ONE
-#                   MANUAL STEP of the plan -- a player opening a packedup backpack and putting items in it -- is done
-#                   with key presses posted to the client's window (keyboard reaches a background window, mouse clicks
-#                   do not): packedup's own open-bag key (rebound from O, which journeymap's fullscreen-options key also uses, to
-#                   keypad 7 in options.txt) opens the first backpack in the inventory, and with the
-#                   container open the cursor sits at the window centre, so 2 and 3 move hotbar slots 2-3 into the slot
-#                   under it. Whether the items landed in the backpack is read back from the backpack's own file, not
-#                   assumed. The client saves and quits by itself (KernelClientSmoke's clean disconnect).
+#                   MANUAL STEP of the plan -- a player opening a packedup backpack and putting items in it -- is
+#                   ATTEMPTED with key presses posted to the client's window (keyboard reaches a background window,
+#                   mouse clicks do not): packedup's own open-bag key (rebound from O, which journeymap's
+#                   fullscreen-options key also uses, to keypad 7 in options.txt) is meant to open the first backpack
+#                   in the inventory, and with the container open the cursor sits at the window centre, so 2 and 3
+#                   would move hotbar slots 2-3 into the slot under it. NOT YET SHOWN TO WORK: in the run of record
+#                   (old2) O opened journeymap's screen, and the keypad-7 run (old3) stalled on the title screen. The
+#                   backpack inventory files that exist afterwards are listed and written to MANIFEST as
+#                   `packedup-bag` (`none` when no bag was ever opened), so a fixture says whether it has a bag
+#                   inventory at all; what a bag holds is read from those files (forge-swap.py files), never assumed.
+#                   The client saves and quits by itself (KernelClientSmoke's clean disconnect).
 #   3. old A/A      the datapack is removed and the world reopened once on the old server and saved: the export of
 #                   THAT world is S0, so a loss that happened before the swap (an old bridge that never saved a
 #                   mod's file, a capability that does not round-trip) shows in old-aa.diff and not as a swap loss.
@@ -126,7 +130,12 @@ if [ $CLIENT = 1 ]; then
   grep -aq 'forge-swap\] kit given' "$OUT/logs/old-player.log" || { say "[kernel] FAIL the player kit never ran (logs/old-player.log)"; exit 1; }
   rm -rf "$OUT/work/old-world"; cp -c -R "$C/saves/$WORLD" "$OUT/work/old-world"
   rm -rf "$OUT/work/old-world/datapacks/forge-swap"
-  ls "$OUT/work/old-world/packedup/backpacks/" 2>/dev/null | sed 's/^/[forge-swap] packedup backpack file: /' | tee -a "$LOG"
+  BAGS="$(ls "$OUT/work/old-world/packedup/backpacks/" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+  if [ -n "$BAGS" ]; then
+    say "[forge-swap] packedup backpack file(s): $BAGS"
+  else
+    say "[forge-swap] WARN no packedup backpack inventory was written (nothing under packedup/backpacks/: no bag was opened), MANIFEST says packedup-bag none"
+  fi
 fi
 $WS export "$OUT/work/old-world" --out "$OUT/old-player.snapshot.json" --chunks "$BOX" --label "old before A/A" | tee -a "$LOG"
 
@@ -150,6 +159,8 @@ say "[forge-swap] old A/A $(tail -n 1 "$OUT/logs/old-aa.diff.txt")"
   echo "old-kernel-jar-sha1 $(shasum -a 1 "$OLD_KERNEL_JAR" | cut -d' ' -f1)"
   echo "old-merged-base-sha1 $(shasum -a 1 "$OLD_KERNEL_STAGE/run/merged-base/patched-mc-merged-26.2.jar" | cut -d' ' -f1)"
   echo "seed $SEED"; echo "box $BOX"; echo "client $CLIENT"
+  # Whether the one manual packedup step filled a bag: its files, `none`, or `not-run` without a client.
+  if [ $CLIENT = 1 ]; then echo "packedup-bag ${BAGS:-none}"; else echo "packedup-bag not-run"; fi
   echo "tree $(git -C "$KERNEL" rev-parse HEAD)"
   echo "drill $(tail -n 1 "$OUT/logs/old-create.drill.txt")"
   for d in mods-forge mods-neo; do for j in "$OUT/$d"/*.jar; do echo "$d $(shasum -a 1 "$j" | cut -d' ' -f1) $(basename "$j")"; done; done
