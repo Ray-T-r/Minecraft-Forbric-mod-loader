@@ -1,0 +1,18 @@
+# gate-m58's world script for the save with MinecraftForge-only content: the old kernel writes it with mcw-bridges'
+# MinecraftForge build (refused by the new kernel, which runs it under the continue policy). Same chest and pig as the main
+# script, so the canaries attach to the same holders; mcwbridges blocks and items sit beside vanilla and canary ones, in
+# the same chest, so a loss is told apart from everything kept.
+gamerule minecraft:advance_time false
+gamerule minecraft:advance_weather false
+gamerule minecraft:random_tick_speed 0
+gamerule minecraft:spawn_mobs false
+setblock 0 -60 0 minecraft:chest[facing=north]
+item replace block 0 -60 0 container.0 with minecraft:diamond_sword[minecraft:damage=10,minecraft:custom_name="Upgrade sword"] 1
+item replace block 0 -60 0 container.1 with mcwbridges:oak_bridge_pier 5
+item replace block 0 -60 0 container.2 with minecraft:paper[forbricupgradeneo:stamp=1009] 3
+item replace block 0 -60 0 container.3 with minecraft:paper[forbricupgradefabric:stamp=2009] 4
+item replace block 0 -60 0 container.4 with mcwbridges:acacia_bridge_pier 2
+summon minecraft:pig 3 -60 3 {UUID:[I;88,1,0,88],NoAI:1b,PersistenceRequired:1b,Silent:1b,CustomName:"m58 pig"}
+setblock 0 -60 4 mcwbridges:oak_bridge_pier
+setblock 2 -60 4 mcwbridges:acacia_bridge_pier
+setblock 4 -60 4 minecraft:oak_stairs[facing=east,half=top]

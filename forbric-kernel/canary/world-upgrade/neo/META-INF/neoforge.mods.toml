@@ -1,0 +1,15 @@
+modLoader="javafml"
+loaderVersion="[3,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbricupgradeneo"
+version="1.0.0"
+displayName="Forbric M58 world-upgrade canary (NeoForge)"
+description="gate-m58 only: NeoForge attachments, persistent data, a component type and SavedData, and the world and player scripts. Acts only in a world the gate owns."
+# The shared classes (forbric.worldupgrade.UpgradeProbe) live in the Fabric canary's jar.
+[[dependencies.forbricupgradeneo]]
+modId="forbricupgradefabric"
+type="required"
+versionRange="[1,)"
+ordering="AFTER"
+side="BOTH"

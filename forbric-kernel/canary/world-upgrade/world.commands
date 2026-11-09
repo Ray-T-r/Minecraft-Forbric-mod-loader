@@ -1,0 +1,63 @@
+# gate-m58's world script: run once, as the server, by forbricupgradeneo in phase write (UpgradeProbe.SCRIPT_TICK ticks
+# after the start, in the force-loaded chunks -2..2). Every line must print "[M58Upgrade] OK command"; a line that
+# fails is a thing that is not in the world, and the gate goes red on it (D53: a real mod stays in the set only when its
+# population command succeeds). Flat world: grass at y=-61, so y=-60 is the first air block.
+#
+# Noise off: no clock, no weather, no random ticks, no natural spawns. (Game rules are content too: level.dat must keep them.)
+gamerule minecraft:keep_inventory true
+gamerule minecraft:advance_time false
+gamerule minecraft:advance_weather false
+gamerule minecraft:random_tick_speed 0
+gamerule minecraft:spawn_mobs false
+gamerule minecraft:spawn_patrols false
+gamerule minecraft:spawn_wandering_traders false
+#
+# The chest both canaries attach to (UpgradeProbe.CHEST_*), one item class per slot.
+setblock 0 -60 0 minecraft:chest[facing=north]
+item replace block 0 -60 0 container.0 with minecraft:diamond_sword[minecraft:damage=10,minecraft:enchantments={"minecraft:sharpness":3},minecraft:custom_name="Upgrade sword",minecraft:lore=["kept across the upgrade"]] 1
+item replace block 0 -60 0 container.1 with minecraft:paper[minecraft:custom_data={upgrade:58b,name:"m58"}] 7
+item replace block 0 -60 0 container.2 with minecraft:paper[forbricupgradeneo:stamp=1009] 3
+item replace block 0 -60 0 container.3 with minecraft:paper[forbricupgradefabric:stamp=2009] 4
+item replace block 0 -60 0 container.4 with minecraft:potion[minecraft:potion_contents={potion:"minecraft:swiftness"}] 1
+item replace block 0 -60 0 container.5 with minecraft:written_book[minecraft:written_book_content={title:"Upgrade",author:"m58",pages:["page one"]}] 1
+item replace block 0 -60 0 container.6 with minecraft:shulker_box[minecraft:container=[{slot:0,item:{id:"minecraft:diamond",count:5}}]] 1
+item replace block 0 -60 0 container.7 with minecraft:cobblestone 64
+item replace block 0 -60 0 container.8 with mcwbridges:oak_bridge_pier 5
+item replace block 0 -60 0 container.9 with mcwfurnitures:oak_drawer 2
+item replace block 0 -60 0 container.10 with sophisticatedbackpacks:backpack 1
+item replace block 0 -60 0 container.11 with toolbelt:belt 1
+item replace block 0 -60 0 container.12 with waystones:andesite_waystone 1
+#
+# Vanilla block entities and state-bearing blocks.
+setblock 2 -60 0 minecraft:barrel[facing=up]
+item replace block 2 -60 0 container.0 with minecraft:cobblestone 40
+setblock 4 -60 0 minecraft:furnace[facing=north]
+item replace block 4 -60 0 container.0 with minecraft:raw_iron 5
+setblock 6 -60 0 minecraft:oak_sign{front_text:{messages:["m58","sign","",""]}}
+setblock 8 -60 0 minecraft:oak_stairs[facing=east,half=top]
+setblock 10 -60 0 minecraft:note_block[note=7]
+setblock 12 -60 0 minecraft:white_banner{patterns:[{color:"red",pattern:"minecraft:stripe_top"}]}
+setblock 14 -60 0 minecraft:decorated_pot
+setblock 0 -60 -2 minecraft:redstone_wire[power=0]
+# A spawner far from where the player stands (more than 16 blocks), so it never spawns.
+setblock 40 -60 40 minecraft:spawner{SpawnData:{entity:{id:"minecraft:zombie"}}}
+#
+# Entities: no AI, persistent, silent, so nothing moves between saves.
+summon minecraft:pig 3 -60 3 {UUID:[I;88,1,0,88],NoAI:1b,PersistenceRequired:1b,Silent:1b,CustomName:"m58 pig"}
+summon minecraft:armor_stand 7 -60 5 {NoGravity:1b,Invulnerable:1b,equipment:{head:{id:"minecraft:iron_helmet",count:1}}}
+summon minecraft:item_frame 5 -60 5 {Facing:1b,Fixed:1b,Invulnerable:1b,Item:{id:"minecraft:diamond",count:1}}
+#
+# Real NeoForge mods (D53), each in the world through its own block or entity.
+setblock 0 -60 4 mcwbridges:oak_bridge_pier
+setblock 2 -60 4 mcwbridges:acacia_bridge_pier
+setblock 4 -60 4 mcwfurnitures:oak_drawer[facing=north]
+item replace block 4 -60 4 container.0 with minecraft:emerald 9
+setblock 6 -60 4 waystones:andesite_waystone[half=lower]
+summon corpse:corpse 9 -60 9
+#
+# Scoreboard, team, command storage, bossbar.
+scoreboard objectives add m58 dummy
+scoreboard players set m58holder m58 58
+team add m58team
+data modify storage forbric:m58 value set value 58
+bossbar add forbric:m58 "m58"

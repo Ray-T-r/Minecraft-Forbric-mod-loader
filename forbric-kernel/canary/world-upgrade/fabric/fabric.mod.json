@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "id": "forbricupgradefabric",
+  "version": "1.0.0",
+  "name": "Forbric M58 world-upgrade canary (Fabric)",
+  "description": "gate-m58 only: Fabric attachments, a component type and SavedData written by the old kernel and read by the new one. Acts only in a world the gate owns.",
+  "environment": "*",
+  "entrypoints": {"main": ["forbric.worldupgrade.ForbricUpgradeFabric"]},
+  "depends": {"fabricloader": ">=0.18.4", "fabric-data-attachment-api-v1": "*", "fabric-lifecycle-events-v1": "*", "fabric-networking-api-v1": "*"}
+}
