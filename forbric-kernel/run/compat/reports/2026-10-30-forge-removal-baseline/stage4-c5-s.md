@@ -1,0 +1,206 @@
+# Stage 4 C5, lane S (wave 2): what S1 left open, plus the kernel items handed to S
+
+Lane S of the C5 plan (`~/Forbric-backups/stage4-notes/c5/PLAN.md` §2 "Lane S", D63 split; this is wave 2 after S1's
+`stage4-c5-s1.md`), branch `s4-c5-s1`, rebased (fast-forward) onto the stage tip `f0cb66b0`. Ports 46720-46739. Pinned
+build (D68: plain `--offline`, JUnit 5.9.2, no init script). Logs and tools: `~/Forbric-backups/stage4-notes/c5/s/w2/`.
+
+## Commits
+
+| sha | subject | item |
+|---|---|---|
+| `29787aa8` | Count only NeoForge's package as an ecosystem re-typing in AccessCensus, since neither the base nor the carrier names a MinecraftForge class any more | 9 |
+| `d536fc07` | Pin the registry-loader adapter's dead-loader binding clause with a constructed mixin, since no test reached it and NeoForge's class never does | 8 |
+| `be68e288` | Measure NeoForge's payload lookup with no protocol and no flow, so -Dforbric.customPayloadInteropSeam=off stays offered on its base | 5 |
+| `7d506522` | Check that every game-side kernel class has a live caller on NeoForge's base, by reading the chain's own output for the calls it writes | 2 |
+| `35985d32` | Delete the kernel's blockstate-id refill, since NeoForge's own block bake maps every registered block at each freeze and the refill never ran | 7 |
+| `748f142b` | Tolerate an unregistered NeoForge condition type only in a Fabric mod's own pack, so a world datapack's file is skipped as native NeoForge skips it | 6 (D69) |
+| (this file) | the record | |
+
+Items 1, 3 and 4 are measurements with no code change (below).
+
+## First act
+
+Full suite at `f0cb66b0` in this worktree (`suite-first.log`, XML `suite-first-xml/`): **5772 tests / 0 skipped / 5 failed**,
+exactly the 5 names of `c5/failures-wave1.txt` (LiquidBounce x3, SharedFinalSourceActualTest x2; D58 fixture reds).
+
+## Per item
+
+### 1. featuresPerStep (D52, 64695aef): the server-boot symptom run
+
+Fixture found on disk (no download): `build/purefabric-2026-10-03/mods/BetterSpringToLife-1.3-Fabric.jar` (sha1
+`4c7bac26`), whose `BSTLBiomeFeatures` calls `BiomeModifications.addFeature` for forest, taiga, jungle and birch biomes
+from its main entrypoint (javap). Scanned candidates (`tools/findbiome.py`): also oreoverhaul (needs terrablender),
+kaleidoscope_end (needs kaleidoscope_cookery), naturalist, andonium, survivalistessentials. Boot: a dedicated server with
+fabric-api 0.155.2, BetterSpringToLife and the lane's `forbricneolive.jar` (2 biome modifiers, 1 structure modifier),
+fixed seed (`tools/fps-boot.sh`, logs `item1/`):
+
+| boot | `did not apply` WARN | what the log says |
+|---|---|---|
+| default | **0** | `a mod replaced a chunk generator's feature list with its own supplier (com.google.common.base.Suppliers$NonSerializableMemoizingSupplier; ...); NeoForge's modifier pass rebuilt it`, then `applied NeoForge's 2 biome modifier(s) and 1 structure modifier(s)` |
+| `-Dforbric.featuresPerStepRefresh=off` | **1** | `NeoForge's biome/structure modifiers did not apply — 2 biome and 1 structure modifier(s) ...` with `ClassCastException: Suppliers$NonSerializableMemoizingSupplier cannot be cast to ... Lazy at ChunkGenerator.refreshFeaturesPerStep(ChunkGenerator.java:104)` |
+
+Both boots reached Done and stopped cleanly (`exit 0`). So the adaptation is needed on a real Fabric feature mod, and its
+switch reproduces the symptom.
+
+### 2. KernelRuntimeClasses liveness (70 entries; 71 after D69)
+
+`RuntimeSeamLivenessStagedTest` (new; ChainAnchorCensusStagedTest's replay now also records the
+`net/forbric/kernel/runtime/` classes each changed class names). Every registry entry must be a chain target on the
+server or client side, or listed with the caller it has. Result (table `runtime-seams.tsv`, one row per entry, 0 NONE):
+
+| kind | n | entries |
+|---|---|---|
+| CHAIN (the chain writes the call into a class of NeoForge's base or carrier) | 37 | measured; the TSV names the calling classes |
+| BOOT (reflective, boot-side) | 11 | KernelContainers, KernelDataPackSource, KernelClientPackSource, KernelRegistryContent, KernelForeignShimKeys, KernelConfigLoad, KernelNeoSetup, KernelNeoRegistries, KernelScanData, KernelNeoDataMapWatch, KernelModConfigScreens |
+| GUEST (an adapter writes the call into a guest mod's class) | 15 | KernelWrapOperations, KernelDispatch, KernelShears, KernelMobShears, KernelFluidReactions, KernelItemDamage, KernelFabricTagViews, KernelTagFacadeSources, KernelFluidPredicateSeams, KernelFluidPredicateIslands, KernelSourceDecodeScopes, KernelBlockStateModelFormats, KernelConfigApiBridge, KernelDeclarationReaders, KernelFmlTransformerView |
+| MOD_INSTALLED | 5 | ClientSoakController (soak launch), TransferIssues (transfer bridge), RebornEnergyBridge (Team Reborn Energy), KernelCreativePager + KernelCreativePagerScreen (fabric-creative-tab-api, client) |
+| GENERATED / PACKED | 1 / 1 | LootCallbacks$ / KernelModMenuPlugin |
+
+The table is the 70 entries at `7d506522`. At the item-7 deletion the registry dropped one call (not an entry); at D69 it gained `KernelConditionSources`, a CHAIN target (`Resource.open()`); the final suite runs the test over 71 and it passes.
+Runtime evidence for the boot-side rows on a server: the item-1 default boot ran with `-Xlog:class+init`; 58 runtime
+classes were initialised (`item1/initialised-server-default.txt`), every server-side BOOT row among them
+(KernelContainers, KernelDataPackSource, KernelRegistryContent, KernelConfigLoad, KernelNeoSetup, KernelNeoRegistries,
+KernelScanData, KernelNeoDataMapWatch). The client-side BOOT rows (KernelClientPackSource, KernelForeignShimKeys,
+KernelModConfigScreens) were not class-init measured in this lane (no client boot with -Xlog).
+Red checks: a registry name nothing calls is named (constructed); the replay with FeaturesPerStepRefreshInjector silenced
+leaves exactly KernelFeaturesPerStep unexplained; a fake `CLASSES.put` added to KernelRuntimeClasses made
+`everyRegisteredGameSideClassHasALiveCaller` red (`item2-red.log`), restored green. No dead entry found: nothing deleted.
+
+### 3. AbiLinkAudit D21/D23 re-measure
+
+`tools/AbiRemeasure.java` runs the kernel's own `AbiLinkAudit.audit` (built classes at the tip) over the 160 universal
+jars of `stage3-sweep.tsv` that declare both NEOFORGE and FORGE and are not refused (all 160 opened, the two nested
+shogi-api jars included), each against base + carrier + the jar + its nested jars (`abi-remeasure.out`):
+- all 160 carry `META-INF/mods.toml`, so the boot's per-jar set-aside applies to each; **0 jars have findings** as at boot;
+- judging every reference (no set-aside), 31 jars would have findings: what D21's set-aside exists for;
+- classes naming an in-scope `net/minecraftforge/` class: 144, **all on a Forge-named path** (path heuristic: a class path
+  containing `neoforge` → NeoForge half, else containing `forge` → Forge half, `fabric` → Fabric, else common); no
+  NeoForge-, Fabric- or common-path class names one. So the per-jar skip hides no NeoForge/Fabric-half reference in the
+  corpus; AbiLinkAudit is not changed (it does not judge a set-aside half; the D21 edit is in place).
+
+### 4. D23 record (review B-7: re-run before stating a count)
+
+`tools/d23.py` re-run, output saved FIRST at `c5/s/w2/d23.out`: over the same 160 jars (all opened), **0 classes carry
+both** `Lnet/minecraftforge/fml/common/Mod$EventBusSubscriber;` and `Lnet/neoforged/fml/common/EventBusSubscriber;`;
+2 classes carry MinecraftForge's alone, 7 NeoForge's alone. D23 (accept native NeoForge behaviour) has no instance in the
+corpus; no boot needed.
+
+### 5. D63: `customPayloadInteropSeam=off` null tolerance
+
+Measured on the staged carrier (`item5/probe.out`, and now `NeoForgeLookupWithoutContextStagedTest`):
+`NetworkRegistry.getCodec(id, null, null)` does not throw. `minecraft:register` and `neoforge:register` (built-in
+payloads) return their codec; an unregistered id returns null after NeoForge's own `ERROR A packet was received while
+not in the configuration or play phase.` and a stack dump (javap: `PAYLOAD_REGISTRATIONS` is an `ImmutableMap`, whose
+`containsKey(null)` is false; the `flow` comparison is by identity). NeoForge's `$1.findCodec` then asks the caller's
+fallback. **The switch stays offered**; its cost off is the cross-ecosystem choice the seam makes plus one ERROR per
+unregistered-id lookup, never a crash. (stage2-measurements.md's "not measured" is answered here.)
+
+### 6. D69: the condition leniency narrowed to Fabric mods' packs
+
+Root cause (G-A): `KernelNeoConditions.lenient`, put before `ICondition.CODEC` by
+`ForbricMergedBaseCompatTransformer.letForeignResourceConditionsThrough`, read an unregistered condition type as true
+for every pack, so Forbric kept gate-m21's world-datapack file `dual_forge.json` that native NeoForge 26.2.0.93 skips
+(G-A's native run, `c5/g-a/d49/native-d49.log`: `Couldn't parse data file ... Unknown registry key ...
+neoforge:condition_codecs`).
+Fix: a new repair `tellTheConditionsWhichPackAFileIsReadFrom` puts `aload_0; getfield source; invokestatic
+KernelConditionSources.reading(Object)V` at the head of `Resource.open()`; every reader the base runs NeoForge's
+evaluator in opens the file through it and decodes on the same thread. `lenient` now tolerates an unregistered type in a
+data file only when that pack implements fabric-resource-loader's `ModPackResources` (or v0's `ModResourcePack`), i.e. a
+Fabric mod's own pack; otherwise it hands the input to NeoForge's strict codec (native: the file is skipped) and logs
+`[Forbric/Conditions] resource condition '<type>' in pack '<id>' is not in NeoForge's condition registry, and that pack
+is not a Fabric mod's: NeoForge's evaluator decides ...` once per type and pack. Overlay entries (pack.mcmeta) are
+unchanged: still vetoed in every pack (`forbric.overlayConditions`). Switch `-Dforbric.neoConditions.fabricPacksOnly=off`
+restores the leniency for every pack (D69's red control).
+Measurements: gate-m21 **58 PASS / 0 FAIL** (was 57/1 at the stage tip): the dual_forge probe answers `Can't find element
+'forbricm21:dual_forge'`, after the kernel's `resource condition 'forbricm21:no_such_condition' in pack 'file/forbricm21' ...
+NeoForge's evaluator decides` line and NeoForge's own `Couldn't parse data file 'forbricm21:dual_forge' ... Unknown registry
+key in ResourceKey[minecraft:root / neoforge:condition_codecs]: forbricm21:no_such_condition` — the same line native NeoForge
+prints for it (G-A's `c5/g-a/d49/native-d49.log`: the native A/B). gate-m8 **20 / 0** (Terralith's `terralith:config` still
+tolerated: its data files come from fabric-resource-loader packs; no "in pack" strict line in its boot). Red control
+`M21_EXTRA_JVM=-Dforbric.neoConditions.fabricPacksOnly=off`: m21 **57 / 1**, exactly "a file whose neoforge:conditions name
+an unknown type is skipped, as native NeoForge does" (answered `Test passed`). Unit: KernelConditionKillSwitchesTest
+`outsideAFabricModsPackTheStrictCodecDecides` (no file opened → strict; world pack → strict; Fabric pack → tolerated; switch
+off → tolerated), MergedBaseForeignConditionsTest `resourceOpenTellsTheLeniencyWhichPackTheFileIsFrom`; the two existing
+fixtures (kill-switch, overlay) now record a Fabric pack first. G-A's m21 is not edited (the check already expects native's
+answer); only its comment still calls dual_forge an open defect (Open). Logs `gates/m21-d69*.out`, `gates/m8-d69*`.
+
+### 7. KernelRegistryContent.rebuildBlockStateIds: deleted after the three C3 checks
+
+- symptom with the repair gone: gate-m26 on the deletion tree 45 PASS / 0 FAIL; the late Fabric block reads
+  `id=64735` and NeoForge's `id=64733`, the late block's id equal to G-A's default (repair-present) run; gate-m12 (multiplayer over a socket, the path a missing state id breaks with "Can't find id for Block{...}" at the first block_update) at the lane tip 32 / 0 (alone, `--exclusive`, `gates/m12-final.out`). Before the deletion no boot
+  printed the rebuild line or either of its warnings (G-A's 26 genuine boots; this lane's 2 item-1 server boots, with 55
+  mod blocks);
+- whole-jar search: the base and carrier fill `BlockCallbacks.BLOCKSTATE_TO_ID_MAP` only in `BlockCallbacks.onBake`,
+  which iterates the whole block registry (javap: `Registry.iterator`, every state `add`), after `onClear`;
+  `GameData.freezeData` freezes every `MappedRegistry`, and `MappedRegistry.freeze` runs the bake callbacks. The merged
+  base's cause (MinecraftForge's `GameData$BlockCallbacks` and its second registration wave in `Minecraft.<init>`) has
+  no class here: 0 classes of base + carrier name `net/minecraftforge` (`item9-minecraftforge-in-base.out`);
+- caller check: the only caller was `KernelLifecycle`, at `closeRegistrationWindow` and `closeClientEntrypointWindow`,
+  each directly after `freeze(cl)`.
+The rest of that step stays as `completeBlockStateBookkeeping` (state caches, whole-registry passes); switch
+`forbric.blockStateIdRefill` → `ForbricSwitches.RETIRED` (still in released-switches.txt, as a released name).
+D34: no gate checks the line any more (G-A removed m26's check, 5b761e62); m26's header still describes the refill and
+`-Dforbric.blockStateIdRefill=off` as a control — G-A's file, see Open.
+
+### 8. FabricRegistryLoaderMixinAdapter `deadCallees.contains(bound)`: kept, now reached
+
+`RegistryLoaderDeadBindingTest` constructs the shape (compiled against `w(String)`, `w(String,boolean)`; current class
+`w(String,boolean)` uncalled and `w(String,boolean,boolean)` called by `host()`; a wrap of host's call plus a bare-name
+`"w"` companion). The companion's binding passes the widened-twin rule but lands on the dead loader; the clause leaves
+the whole mixin alone (adapt 0, bytes unchanged). Positive: without the companion the wrap moves (adapt 1). Red check:
+clause removed → exactly `aCompanionTheCurrentClassBindsToADeadLoaderLeavesTheWholeMixinAlone` red ("expected 0 but
+was 1"; `item8-red.log`), the other RegistryLoader tests green; restored green.
+
+### 9. AccessCensus.CARRIER_TYPES and VanillaDamageReadInjector's javadoc
+
+`Lnet/minecraftforge/` removed from CARRIER_TYPES: 0 classes of the base + carrier mention `net/minecraftforge`, so it
+could never match. New `AccessCensusTest.onlyNeoForgesOwnPackageCountsAsAnEcosystemReTyping`; red with the prefix put
+back (`item9-red.log`). The javadoc's ForgeHooks parenthesis is gone. AbiLinkAudit's and DelegationPolicy's
+`net/minecraftforge` rules stay (plan KEEP).
+
+## Skip TSVs (D47)
+
+ci-unstaged.tsv gains rows for the new staged tests (measured with `-Pforbric.stagedRoot=/nonexistent-s/run`,
+`unstaged-measure.log`): NeoForgeLookupWithoutContextStagedTest (1, `[fixture:staged] the staged game is absent`),
+RuntimeSeamLivenessStagedTest (4, class-level abort). RegistryLoaderDeadBindingTest runs unstaged (pure). KernelConditionKillSwitchesTest `outsideAFabricModsPackTheStrictCodecDecides` and MergedBaseForeignConditionsTest `resourceOpenTellsTheLeniencyWhichPackTheFileIsFrom` get ci-unstaged rows too (measured, `unstaged-measure-d69.log`). ci-prepared: no row (every new staged test runs with the stage present; S1 precedent).
+No test deleted or renamed by this lane.
+
+## Suite and gates at the end
+
+Full suite at the lane tip `748f142b` (pinned build, `suite-final.log`, XML `suite-final-xml/`): **5782 tests / 0 skipped
+/ 5 failed** — the 5 names of `c5/failures-wave1.txt`, every message's first 240 characters equal the pinned wave-1 XML's;
+0 new, 0 gone. +10 tests (AccessCensusTest +1, RegistryLoaderDeadBindingTest +2, NeoForgeLookupWithoutContextStagedTest +1,
+RuntimeSeamLivenessStagedTest +4, KernelConditionKillSwitchesTest +1, MergedBaseForeignConditionsTest +1).
+`c5/failures-s-w2.txt`.
+
+Gates on the genuine stage (lane env, ports 46720-46739; S owns no gate file; these are the gates its changes reach):
+
+| gate | tree | PASS / FAIL | why run |
+|---|---|---|---|
+| m26 | `35985d32` (item 7) | 45 / 0 | item 7 symptom check (late block ids) |
+| m21 | `748f142b` | 58 / 0 | D69 (dual_forge green) |
+| m8 | `748f142b` | 20 / 0 | D69 (Fabric pack still tolerated) |
+| m21 red, `-Dforbric.neoConditions.fabricPacksOnly=off` | `748f142b` | 57 / 1 | D69 red control: exactly dual_forge |
+| m25 | `748f142b` | 16 / 0 | worldgen (featuresPerStep, conditions) |
+| m12 (exclusive, client lock) | `748f142b` | 32 / 0 | item 7 symptom check (block_update over a socket) |
+
+No SKIP line, no FAIL left. Item-1 boots are not a gate: default 0 / off 1 "did not apply" WARN (above).
+
+Red controls shown (mutation or switch off → red; restored → green): item 2 (fake registry entry; silenced injector),
+item 6 (switch off → m21 dual_forge only; unit no-file/world-pack cases), item 8 (clause removed → its case only),
+item 9 (prefix restored → its case only), item 1 (switch off → the WARN).
+
+## Open
+
+- **G-A (merges after S):** gate-m21's comment above the D49 block (`:211-219`) and its RED-controls note (`:257-258`)
+  still call dual_forge "red as an open defect"; m21 is now 58/0 with no edit by S. m26's header (`:13-22`) still describes
+  `KernelRegistryContent.rebuildBlockStateIds` and `-Dforbric.blockStateIdRefill=off` as a control: the refill is deleted
+  (`35985d32`) and the switch is RETIRED (the kernel now warns it does nothing). Both are wording in G-A's files.
+- The client-side BOOT rows of item 2 (KernelClientPackSource, KernelForeignShimKeys, KernelModConfigScreens) have no
+  class-init evidence from this lane (no client boot run with `-Xlog:class+init`); their callers are on the client launch
+  path (KernelClientPacks, KernelForeignShimContext, KernelClientSmoke) — VERIFY/owner if wanted.
+- Item 3's half classification is by class path name (heuristic); a common-path class naming `net/minecraftforge/` would
+  have been listed, none was.
+- PLAN S item 5 owner-gated items (O2/O3) are S2's, not run (D62/D63).
+- ci-prepared-noforge.tsv untouched (C6). stage2-measurements.md still says the seam-off null question is unmeasured; this
+  record answers it (RECORD may cross-reference).
