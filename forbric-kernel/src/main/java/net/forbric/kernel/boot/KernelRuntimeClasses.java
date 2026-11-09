@@ -115,9 +115,10 @@ public final class KernelRuntimeClasses {
 				new Call("buildPack", Object.class, String.class, Path.class, Object.class),
 				new Call("buildPack", Object.class, String.class, Path.class, Object.class, String.class, String.class, String.class),
 				new Call("addSource", void.class, Object.class, List.class, String.class))));
-		// Renaming, in a world's saved pack lists, the NeoForge carrier's pack id an installed Forbric 0.4 or earlier wrote
-		// (D43). Called from the head of MinecraftServer.configurePackRepository with its WorldDataConfiguration, a game
-		// type no JDK type stands for; the rule itself is boot-side (KernelDataPacks.migrateCarrierIds).
+		// Renaming, in a world's saved pack lists, the NeoForge carrier's pack id an earlier install wrote (D43;
+		// v0.3.1-beta2 or older, or a 0.4.0-dev build that still had MinecraftForge). Called from the head of
+		// MinecraftServer.configurePackRepository with its WorldDataConfiguration, a game type no JDK type stands for;
+		// the rule itself is boot-side (KernelDataPacks.migrateCarrierIds).
 		CLASSES.put("net.forbric.kernel.runtime.KernelCarrierPackIds", new Entry(Origin.COMPILED, List.of()));
 		// Serving an ecosystem jar's assets/ to the CLIENT resource repository: every Pack, the visible parent
 		// that lets a player's own pack sit above mod textures, the overlay count and the RepositorySource. The

@@ -644,8 +644,9 @@ public final class KernelBoot {
 		// A Forge-family mod's own data/ reaches the server datapack repository ONLY through this hook: the kernel
 		// leaves ModList.modFiles empty, so NeoForge's own mod-pack finder walks an empty list and adds nothing.
 		chain.register(TransformPhase.COREMOD, new DataPackHookInjector());
-		// The NeoForge carrier's pack id no longer ends in its jar's file name (D43). A world an installed Forbric 0.4 or
-		// earlier wrote still names it forbric/carrier/2-neoforge-runtime-<version>; renamed in place on load, so the
+		// The NeoForge carrier's pack id no longer ends in its jar's file name (D43). A world an earlier install wrote
+		// (v0.3.1-beta2 or older, or a 0.4.0-dev build that still had MinecraftForge) still names it
+		// forbric/carrier/2-neoforge-runtime-<version>; renamed in place on load, so the
 		// carrier keeps its place below the mod packs. See CarrierPackIdMigrationInjector.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CarrierPackIdMigrationInjector());
 

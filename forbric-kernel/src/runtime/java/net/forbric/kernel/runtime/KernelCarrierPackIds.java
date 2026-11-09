@@ -25,8 +25,8 @@ import net.minecraft.world.level.DataPackConfig;
 import net.minecraft.world.level.WorldDataConfiguration;
 
 /**
- * Renames, in a world's own pack lists, the NeoForge carrier's datapack from the id an installed Forbric 0.4 or
- * earlier gave it to the id it has now.
+ * Renames, in a world's own pack lists, the NeoForge carrier's datapack from the id an earlier install gave it
+ * (v0.3.1-beta2 or older, or a 0.4.0-dev build that still had MinecraftForge) to the id it has now.
  *
  * <p>An installed profile hands the kernel the carrier under its library file name, and the id used to be built from
  * that name: {@code neoforge-runtime-26.2.jar} became {@code forbric/carrier/2-neoforge-runtime-26.2}, and every world

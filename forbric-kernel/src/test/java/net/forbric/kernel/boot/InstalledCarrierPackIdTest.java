@@ -37,9 +37,10 @@ import org.junit.jupiter.api.io.TempDir;
  * <p>A staged tree runs the carrier as {@code neoforge-runtime.jar}; an installed profile runs it under its library file
  * name, which the installer derives from a coordinate. Every gate runs staged, so none of them can see what an installed
  * world records: this test reads the file name the installer gives the jar ({@code --runtimeJar} =
- * {@code libraryRef(coordinate(NEOFORGE_RUNTIME, …))}, versioned by {@code Pins.NEOFORGE}) and the one Forbric 0.4 gave
- * it (v0.3.1-beta2: {@code net.forbric:neoforge-runtime:<mcVersion>}, i.e. {@code neoforge-runtime-26.2.jar},
- * {@code NeoForgeArtifacts.java:68} at that tag), and requires the kernel to give all three names one id.
+ * {@code libraryRef(coordinate(NEOFORGE_RUNTIME, …))}, versioned by {@code Pins.NEOFORGE}) and the one earlier
+ * installs gave it (v0.3.1-beta2, and 0.4.0-dev builds before 4da13f7f: {@code net.forbric:neoforge-runtime:<mcVersion>},
+ * i.e. {@code neoforge-runtime-26.2.jar}, {@code NeoForgeArtifacts.java:68} at that tag), and requires the kernel to
+ * give all three names one id.
  *
  * <p>The installer module does not compile against the kernel (it builds the kernel jar as a subprocess), so its
  * source is read as text, like InstallerLoaderBrandTest.

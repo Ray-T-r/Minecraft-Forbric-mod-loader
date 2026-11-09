@@ -190,8 +190,9 @@ public final class KernelDataPacks {
 	 *
 	 * <p><b>NeoForge's carrier is {@link #NEO_CARRIER_ID} whatever its jar is called</b> (D43). The id used to end in
 	 * the jar's file name, which is {@code neoforge-runtime.jar} on a staged tree but the library file name on an
-	 * installed profile: {@code neoforge-runtime-26.2.jar} up to Forbric 0.4, {@code neoforge-runtime-26.2.0.93.jar}
-	 * since the carrier is versioned by its NeoForge build. So every world an installed Forbric had written named a pack
+	 * installed profile: {@code neoforge-runtime-26.2.jar} up to v0.3.1-beta2 and in the 0.4.0-dev builds
+	 * that still had MinecraftForge, {@code neoforge-runtime-26.2.0.93.jar} since the carrier is versioned by its NeoForge
+	 * build (4da13f7f). So every world an installed Forbric had written named a pack
 	 * the next install no longer served, and vanilla enabled the "new" one at the end of the list, above every mod
 	 * pack. Keyed on rank and family, the id no longer moves with the file; {@link #migrateCarrierIds} renames what old
 	 * worlds recorded. A carrier that is not NeoForge's has no family to name and keeps its file name.
@@ -206,7 +207,7 @@ public final class KernelDataPacks {
 	public static final String NEO_CARRIER_ID = "forbric/carrier/2-neoforge-runtime";
 
 	/**
-	 * {@code ids} — a world's enabled or disabled pack list — with every id an installed Forbric 0.4 or earlier gave the
+	 * {@code ids} — a world's enabled or disabled pack list — with every id an earlier install gave the
 	 * NeoForge carrier ({@link #NEO_CARRIER_ID} + {@code "-"} + the jar's version, e.g.
 	 * {@code forbric/carrier/2-neoforge-runtime-26.2}) renamed to {@link #NEO_CARRIER_ID} where it stands, so the
 	 * world keeps the order it was saved with. Should a list end up naming the carrier twice (an old id and the current

@@ -29,8 +29,9 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Rewrites, before vanilla reads it, the pack selection a world saved: the NeoForge carrier's pack under an id an
- * installed Forbric 0.4 or earlier wrote ({@code forbric/carrier/2-neoforge-runtime-<version>}) becomes the id it has
- * now, in place. See {@code KernelCarrierPackIds} for why, and {@code KernelDataPacks.migrateCarrierIds} for the rule.
+ * earlier install wrote ({@code forbric/carrier/2-neoforge-runtime-<version>}; v0.3.1-beta2 or older, or a 0.4.0-dev
+ * build that still had MinecraftForge) becomes the id it has now, in place. See {@code KernelCarrierPackIds} for why,
+ * and {@code KernelDataPacks.migrateCarrierIds} for the rule.
  *
  * <p>The anchor is the head of {@code MinecraftServer.configurePackRepository(PackRepository, WorldDataConfiguration,
  * boolean, boolean)}: its only caller is {@code WorldLoader.PackConfig.createResourceManager}, which a dedicated server
@@ -55,8 +56,9 @@ public final class CarrierPackIdMigrationInjector implements ClassTransformer {
 	@Override
 	public AnchorSet anchors() {
 		return AnchorSet.of(new AnchorSet.Anchor(TARGET, AnchorSet.Severity.REQUIRED,
-				"a world an installed Forbric 0.4 or earlier wrote would lose its NeoForge carrier pack's place: vanilla "
-						+ "re-adds it at the end of the list, above every mod pack"));
+				"a world an earlier install wrote (v0.3.1-beta2 or older, or a 0.4.0-dev build that still had "
+						+ "MinecraftForge) would lose its NeoForge carrier pack's place: vanilla re-adds it at the end of "
+						+ "the list, above every mod pack"));
 	}
 
 	@Override
@@ -76,8 +78,9 @@ public final class CarrierPackIdMigrationInjector implements ClassTransformer {
 			changed = true;
 		}
 		if (!changed) {
-			ForbricLog.warn("[Forbric/DataPacks] %s.%s%s no longer exists — a world an installed Forbric 0.4 or earlier "
-					+ "wrote keeps its old NeoForge carrier pack id; re-derive CarrierPackIdMigrationInjector's target",
+			ForbricLog.warn("[Forbric/DataPacks] %s.%s%s no longer exists — a world an earlier install wrote "
+					+ "(v0.3.1-beta2 or older, or a 0.4.0-dev build that still had MinecraftForge) keeps its old NeoForge "
+					+ "carrier pack id; re-derive CarrierPackIdMigrationInjector's target",
 					TARGET, METHOD, DESC);
 			return classBytes;
 		}

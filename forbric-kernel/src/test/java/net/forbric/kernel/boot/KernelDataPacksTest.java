@@ -244,7 +244,7 @@ class KernelDataPacksTest {
 
 	/**
 	 * D43: the NeoForge carrier's id is the same under every name its jar has had — the staged {@code neoforge-runtime.jar},
-	 * the library file an installed Forbric 0.4 wrote ({@code neoforge-runtime-26.2.jar}) and the one this installer
+	 * the library file earlier installs wrote ({@code neoforge-runtime-26.2.jar}) and the one this installer
 	 * writes ({@code neoforge-runtime-26.2.0.93.jar}, InstalledCarrierPackIdTest derives it from the installer). With the
 	 * file name in the id, an upgrade renamed the pack under every world an installed Forbric had written.
 	 */
