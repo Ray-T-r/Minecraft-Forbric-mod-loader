@@ -1,6 +1,8 @@
-"""native-controls.py run-set: how one server console is classified, and what identifies a mod set."""
+"""native-controls.py: how one server console is classified, what identifies a mod set, and which stage the Forbric
+arm boots."""
 import importlib.util
 import io
+import os
 import sys
 import tempfile
 import unittest
@@ -109,6 +111,50 @@ class ModSet(unittest.TestCase):
             self.assertEqual(first, nc.mod_set([tmp / "renamed.jar", tmp / "b.jar"])[1])
             self.assertNotEqual(first, nc.mod_set([tmp / "a.jar", tmp / "c.jar"])[1])
             self.assertTrue(all("path" not in row for row in rows))
+
+
+
+class ForbricStage(unittest.TestCase):
+    """The Forbric arm boots FORBRIC_OLD as the caller set it (map-misc 4.1: it used to replace it with
+    ORIGINAL/forbric-loader, which in a Stage 4 worktree links into the main checkout's stage)."""
+
+    def test_the_callers_forbric_old_is_the_stage(self):
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"FORBRIC_OLD": tmp}):
+            self.assertEqual(Path(tmp).resolve(), nc.forbric_stage())
+
+    def test_without_forbric_old_the_reference_checkouts_loader_is_the_stage(self):
+        env = {k: v for k, v in os.environ.items() if k != "FORBRIC_OLD"}
+        with mock.patch.dict(os.environ, env, clear=True):
+            self.assertEqual(nc.ORIGINAL / "forbric-loader", nc.forbric_stage())
+
+    def _stage(self, root):
+        for rel in ("run/neoforge-patched/patched-mc-neoforge-26.2.jar", "run/neoforge-runtime/neoforge-runtime.jar"):
+            (root / rel).parent.mkdir(parents=True, exist_ok=True); (root / rel).write_bytes(rel.encode())
+        return root
+
+    def test_run_set_hands_the_forbric_arm_the_callers_stage(self):
+        seen = {}
+
+        class Exited:
+            def __init__(self, command, cwd=None, env=None, **kw):
+                seen["env"] = env; self.pid = os.getpid(); self.returncode = 1; self.stdin = io.StringIO()
+
+            def poll(self):
+                return 1
+
+            def wait(self, *a):
+                return 1
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            stage = self._stage(tmp / "stage4")
+            jar = tmp / "forbric-kernel-0.1.0-SNAPSHOT.jar"; jar.write_bytes(b"kernel")
+            mod = tmp / "mod.jar"; mod.write_bytes(b"mod")
+            with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(stage)}), mock.patch.object(nc, "BASE", tmp / "nc"), \
+                    mock.patch.object(nc, "kernel_jar", lambda: jar), mock.patch.object(nc.subprocess, "Popen", Exited), \
+                    mock.patch.object(nc.subprocess, "check_output", return_value="java 25"):
+                result = nc.run_set("forbric", "fabric", [mod], ticks=0, timeout=5)
+        self.assertEqual(str(stage.resolve()), seen["env"]["FORBRIC_OLD"])
+        self.assertEqual(nc.FAILED_TO_START, result["outcome"])
 
 
 if __name__ == "__main__":

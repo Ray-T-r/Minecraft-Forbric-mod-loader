@@ -526,7 +526,8 @@ kernel and merge-tools jars it is about to publish.
 `run --engine forbric` execute the same jar hashes, seed and world actions, each in a fresh owned instance.
 `compare <native-result.json> <forbric-result.json>` rejects mismatched inputs before comparing behavior.
 `NATIVE_CONTROL_CACHE` selects the read-only reference checkout; its default is the parent of `FORBRIC_OLD`,
-or this checkout when that variable is absent. All generated files remain under this kernel's `build/`.
+or this checkout when that variable is absent. The Forbric arm boots `FORBRIC_OLD` itself when it is set, and the
+cache's `forbric-loader` only when it is not. All generated files remain under this kernel's `build/`.
 
 `native-controls.py run-set --engine native|forbric --family fabric --mods JAR... [--ticks 200] [--timeout 900]
 [--xmx 3G] [--level-type minecraft:normal] [--policy strict] [--keep]` boots one fresh server under `build/native-controls/instances/`

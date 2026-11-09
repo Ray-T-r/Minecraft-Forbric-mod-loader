@@ -24,6 +24,21 @@ BASE = KERNEL / "build/native-controls"
 SOURCE = KERNEL / "canary/native-controls"
 ORIGINAL = Path(os.environ.get("NATIVE_CONTROL_CACHE", Path(os.environ["FORBRIC_OLD"]).resolve().parent
                               if os.environ.get("FORBRIC_OLD") else KERNEL.parent))
+
+
+def forbric_stage():
+    """The staged tree the Forbric arm boots: FORBRIC_OLD as the caller set it, like every gate and launcher reads it.
+
+    Only without FORBRIC_OLD does it fall back to the reference checkout's forbric-loader/. The arm used to replace
+    FORBRIC_OLD with ORIGINAL/forbric-loader whatever the caller had set: with the Stage 4 harness (FORBRIC_OLD=<wt>/.stage4)
+    ORIGINAL is the worktree, whose forbric-loader/run/neoforge-* are links into the main checkout's stage, so a Forbric
+    arm silently booted another carrier than the one the caller named (map-misc 4.1: carrier dd54e73f instead of
+    .stage4's 0e3ce8d9). NATIVE_CONTROL_CACHE still names the read-only reference workspace for the native caches.
+    """
+    given = os.environ.get("FORBRIC_OLD")
+    return Path(given).resolve() if given else ORIGINAL / "forbric-loader"
+
+
 MC = Path(os.environ.get("MC_DIR", Path.home() / "Library/Application Support/minecraft"))
 VERSIONS = {"fabric": "0.19.5", "forge": "65.0.1", "neo": "26.2.0.93"}
 INSTALLERS = {
@@ -240,10 +255,11 @@ def run_control(family, engine, timeout):
         # This arm is explicitly Forbric. Caller owns Gradle scheduling; never run it as a "native" control.
         command = [str(KERNEL / "run/launch-kernel-server.sh")]
         env["RUNDIR"] = str(instance)
-        env["FORBRIC_OLD"] = str(ORIGINAL / "forbric-loader")
+        stage = forbric_stage()
+        env["FORBRIC_OLD"] = str(stage)
         env["FORBRIC_COMPAT_POLICY"] = "strict"
         env["FORBRIC_JVM"] = " ".join(java_args) + " " + env.get("FORBRIC_JVM", "")
-        old = ORIGINAL / "forbric-loader/run"
+        old = stage / "run"
         # What launch-kernel-server.sh runs: NeoForge's patched game (BASE) and its one carrier (NEO_RT), the same
         # defaults. MERGED/FORGE_RT are retired with MinecraftForge; the launcher refuses a caller that still sets them.
         carrier_paths = [Path(env.get("BASE", old / "neoforge-patched/patched-mc-neoforge-26.2.jar")),
@@ -456,11 +472,12 @@ def run_set(engine, family, mods, ticks=200, timeout=900, xmx="3G", level_type="
         jar = kernel_jar()
         command = [str(KERNEL / "run/launch-kernel-server.sh")]
         env["RUNDIR"] = str(instance)
-        env["FORBRIC_OLD"] = str(ORIGINAL / "forbric-loader")
+        stage = forbric_stage()
+        env["FORBRIC_OLD"] = str(stage)
         # A dedicated server has no window to ask on, so the product default (ask) refuses exactly like strict.
         env["FORBRIC_COMPAT_POLICY"] = policy
         env["FORBRIC_JVM"] = " ".join(java_args) + " " + env.get("FORBRIC_JVM", "")
-        old = ORIGINAL / "forbric-loader/run"
+        old = stage / "run"
         # The launcher's two inputs, with launch-kernel-server.sh's BASE and NEO_RT defaults (as run_control records them).
         carriers = {"base": Path(env.get("BASE", old / "neoforge-patched/patched-mc-neoforge-26.2.jar")),
                     "neoRuntime": Path(env.get("NEO_RT", old / "neoforge-runtime/neoforge-runtime.jar"))}

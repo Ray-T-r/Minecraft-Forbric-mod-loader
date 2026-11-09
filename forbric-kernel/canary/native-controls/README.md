@@ -8,7 +8,8 @@ Pinned native distributions:
 
 - Fabric Loader `0.19.5`, server launcher `1.1.2`, full Fabric API `0.155.2+26.2`.
 - Forge `26.2-65.0.1`, installed using its official installer and native shim/server.
-- NeoForge `26.2.0.88`, installed using its official installer and native FML server entrypoint.
+- NeoForge `26.2.0.93`, installed using its official installer and native FML server entrypoint (the version
+  `native-controls.py` pins in `VERSIONS`; an image prepared before that pin, such as a main checkout's `.88`, is not it).
 
 The declared behavior denominator is one mod initialization, one ServerStarted event, one command
 registration, at least 20 real server ticks, and three command actions: registered block identity,
@@ -31,7 +32,8 @@ python3 forbric-kernel/run/compat/native-controls.py compare NATIVE_RESULT.json 
 `--family fabric|forge|neo` selects an arm of prepare/run. Each attempt is retained below
 `forbric-kernel/build/native-controls/{instances,results}`; the runner never deletes/reuses worlds.
 `NATIVE_CONTROL_CACHE` points to the read-only existing download/cache workspace, defaulting to the
-original Forbric workspace. Only exact upstream-checksummed libraries seed Forge/Neo installations.
+original Forbric workspace. The Forbric arm boots the stage `FORBRIC_OLD` names, exactly as set; only without it
+does it fall back to the cache's `forbric-loader`. Only exact upstream-checksummed libraries seed Forge/Neo installations.
 The official installer produces and validates their own game jars; no welded Forbric loader/carrier is
 used by the native arms or by compilation. Fabric copies only native distribution cache directories,
 never a cache instance's mods, configs, transformed mod cache, or world.
