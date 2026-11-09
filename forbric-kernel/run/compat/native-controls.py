@@ -7,6 +7,7 @@ build uses installed native API jars, never a Forbric carrier. run preserves eac
 """
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -577,6 +578,231 @@ def run_set(engine, family, mods, ticks=200, timeout=900, xmx="3G", level_type="
     return result
 
 
+# --- swap: a world written with a mod's MinecraftForge build, opened with its NeoForge build (C5c) -------------------
+#
+# The native oracle for "does the swap lose it natively too?" (D32: the swap oracle keeps native-controls' MinecraftForge
+# install). Native: create a world on the MinecraftForge 26.2-65.0.1 image with the Forge builds and a console script,
+# reopen it once there (old A/A), then open it on the NeoForge 26.2.0.93 image with the NeoForge builds and reopen.
+# Forbric: open a world the old kernel wrote (forge-swap-make-old.sh) with the NeoForge builds on this checkout's kernel,
+# then reopen. Every phase is one server session (Done, the phase's console lines, save-all flush, stop) and every
+# phase's world is exported with world-snapshot.py; the swap's diffs are written beside them. Instances are APFS clones
+# of the prepared images (`cp -c -R`), never a byte copy of their libraries and never `prepare` (which downloads).
+
+SWAP_PHASES = {"native": ("forge-create", "forge-reopen", "neo-open", "neo-reopen"), "forbric": ("neo-open", "neo-reopen")}
+SAVED = re.compile(r"Saved the game|All dimensions are saved")
+
+
+def clone_tree(source, destination):
+    """An APFS clone of a directory (cp -c -R) where the filesystem has one; a plain copy otherwise."""
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    if subprocess.run(["cp", "-c", "-R", str(source), str(destination)], capture_output=True).returncode == 0 \
+            and destination.is_dir() and not destination.is_symlink():
+        return destination
+    if destination.exists():
+        shutil.rmtree(destination)
+    shutil.copytree(source, destination, symlinks=True)
+    return destination
+
+
+def console_lines(path):
+    """The console script: one server command per line; blank lines and #-comments skipped; `wait <seconds>` pauses."""
+    if not path:
+        return []
+    lines = []
+    for raw in Path(path).read_text().splitlines():
+        line = raw.strip()
+        if line and not line.startswith("#"):
+            lines.append(line)
+    return lines
+
+
+def _snapshot_module():
+    spec = importlib.util.spec_from_file_location("world_snapshot", Path(__file__).resolve().with_name("world-snapshot.py"))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def server_properties(port, level_type="minecraft:flat"):
+    return (f"server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nlevel-seed={SEED}\n"
+            f"level-type={level_type.replace(':', chr(92) + ':')}\ngenerate-structures=false\nmax-tick-time=-1\n"
+            "view-distance=4\nsimulation-distance=4\npause-when-empty-seconds=0\nspawn-protection=0\nsync-chunk-writes=true\n")
+
+
+def swap_session(command, cwd, env, log, lines, timeout=900, settle=3.0, save_wait=60):
+    """One server session: wait for Done, send `lines` (a `wait N` line sleeps N seconds), save-all flush, stop.
+
+    Returns {"outcome", "saved", "exitCode", "timedOut", "seconds"}: outcome is server_outcome(log, 0, exit_code), and
+    saved says the server answered the final save-all flush (a later "Saved the game" than the one it was sent after);
+    a save not answered within save_wait seconds is not waited for further, the stop is sent anyway."""
+    started = time.monotonic(); killed = timed_out = False
+    done_at = failed_at = save_sent = stop_sent = None
+    save_from = 0
+    queue = list(lines)
+    pause_until = 0.0
+    with Path(log).open("w") as output:
+        process = subprocess.Popen(command, cwd=cwd, env=env, stdin=subprocess.PIPE, stdout=output, stderr=subprocess.STDOUT,
+                                   text=True, start_new_session=True)
+
+        def send(line):
+            try:
+                process.stdin.write(line + "\n"); process.stdin.flush()
+            except (BrokenPipeError, ValueError, OSError):
+                pass
+        try:
+            while process.poll() is None:
+                now = time.monotonic()
+                text = Path(log).read_text(errors="replace")
+                done = _DONE.search(text)
+                if not done and _START_FAILED.search(text) and failed_at is None:
+                    failed_at = now
+                if failed_at and now - failed_at > 20:
+                    terminate_owned(process); killed = True; break
+                if done and done_at is None:
+                    done_at = now; pause_until = now + settle
+                if done_at and now >= pause_until and queue:
+                    line = queue.pop(0)
+                    wait = re.fullmatch(r"wait\s+(\d+(?:\.\d+)?)", line)
+                    if wait:
+                        pause_until = now + float(wait.group(1))
+                    else:
+                        send(line); pause_until = now + 0.25
+                elif done_at and not queue and now >= pause_until and save_sent is None:
+                    save_from = len(text); send("save-all flush"); save_sent = now
+                elif save_sent and stop_sent is None and (SAVED.search(text, save_from) or now - save_sent > save_wait):
+                    send("stop"); stop_sent = now
+                if stop_sent and now - stop_sent > 120:
+                    terminate_owned(process); killed = True; break
+                if now - started > timeout:
+                    timed_out = True; send("stop")
+                    try:
+                        process.wait(30)
+                    except subprocess.TimeoutExpired:
+                        terminate_owned(process); killed = True
+                    break
+                time.sleep(0.25)
+        except BaseException:
+            terminate_owned(process); killed = True
+            raise
+        finally:
+            try:
+                process.stdin.close()
+            except (BrokenPipeError, OSError):
+                pass
+            process.wait()
+    text = Path(log).read_text(errors="replace")
+    exit_code = None if killed or timed_out else process.returncode
+    return {"outcome": server_outcome(text, 0, exit_code), "saved": bool(save_sent and SAVED.search(text, save_from)),
+            "exitCode": process.returncode, "timedOut": timed_out, "seconds": round(time.monotonic() - started, 1)}
+
+
+def _native_instance(family, run_dir, mods, port):
+    image = BASE / "native" / family
+    if not (image / "installation.json").is_file():
+        raise RuntimeError(f"no prepared native {family} image at {image} (clone one there with cp -c -R; prepare downloads)")
+    instance = clone_tree(image, run_dir / f"{family}-instance")
+    for mod in mods:
+        copy_file(mod, instance / "mods" / Path(mod).name)
+    (instance / "eula.txt").write_text("eula=true\n")
+    (instance / "server.properties").write_text(server_properties(port))
+    return instance
+
+
+def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world=None, chunks=None, xmx="3G", timeout=900):
+    """Run the swap's phases for one engine; returns the result written to <out>/result.json."""
+    ws = _snapshot_module()
+    out = Path(out).resolve(); out.mkdir(parents=True, exist_ok=True)
+    forge_mods = [Path(m).resolve() for m in forge_mods]; neo_mods = [Path(m).resolve() for m in neo_mods]
+    for m in forge_mods + neo_mods:
+        if not m.is_file():
+            raise RuntimeError(f"missing mod jar: {m}")
+    box = tuple(int(v) for v in chunks.split(",")) if chunks else None
+    java_args = ["-Xms256M", f"-Xmx{xmx}", "-Djava.awt.headless=true"]
+    port = free_port()
+    phases, snapshots = [], {}
+    inputs = {"engine": engine, "seed": SEED, "chunks": box, "port": port,
+              "forgeMods": mod_set(forge_mods)[0] if forge_mods else [], "neoMods": mod_set(neo_mods)[0],
+              "console": record(console) if console else None, "checks": record(checks) if checks else None,
+              "java": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).strip()}
+
+    def export(instance, name):
+        snap = ws.export(instance / "world", box, label=f"{engine} {name}")
+        (out / f"{name}.snapshot.json").write_text(json.dumps(snap, sort_keys=True))
+        snapshots[name] = snap
+
+    def run(phase, instance, command, env, lines):
+        result = swap_session(command, instance, env, out / f"{phase}.log", lines, timeout)
+        result["phase"] = phase
+        phases.append(result)
+        if result["outcome"] != DONE or not result["saved"]:
+            raise RuntimeError(f"{engine} {phase}: {result['outcome']}, saved={result['saved']} (log {out / (phase + '.log')})")
+
+    try:
+        if engine == "native":
+            if not forge_mods:
+                raise RuntimeError("the native arm needs the MinecraftForge builds (--forge-mods)")
+            forge = _native_instance("forge", out, forge_mods, port)
+            inputs["forgeImage"] = json.loads((BASE / "native/forge/installation.json").read_text())
+            command = native_command("forge", forge, java_args)
+            run("forge-create", forge, command, os.environ.copy(), console_lines(console))
+            export(forge, "forge-create")
+            run("forge-reopen", forge, command, os.environ.copy(), [])
+            export(forge, "forge-reopen")
+            neo = _native_instance("neo", out, neo_mods, port)
+            inputs["neoImage"] = json.loads((BASE / "native/neo/installation.json").read_text())
+            clone_tree(forge / "world", neo / "world")
+            neo_command, neo_env = native_command("neo", neo, java_args), os.environ.copy()
+            before = "forge-reopen"
+        else:
+            if not old_world or not (Path(old_world) / "level.dat").is_file():
+                raise RuntimeError("the Forbric arm opens a world the old kernel wrote: --old-world <dir with level.dat>")
+            neo = out / "neo-instance"
+            neo.mkdir(parents=True, exist_ok=True)
+            for mod in neo_mods:
+                copy_file(mod, neo / "mods" / mod.name)
+            (neo / "eula.txt").write_text("eula=true\n")
+            (neo / "server.properties").write_text(server_properties(port))
+            clone_tree(Path(old_world).resolve(), neo / "world")
+            snapshots["old"] = ws.export(neo / "world", box, label="forbric old (as given)")
+            (out / "old.snapshot.json").write_text(json.dumps(snapshots["old"], sort_keys=True))
+            stage = forbric_stage()
+            neo_env = os.environ.copy()
+            neo_env.update({"RUNDIR": str(neo), "FORBRIC_OLD": str(stage), "FORBRIC_COMPAT_POLICY": "strict",
+                            "FORBRIC_JVM": " ".join(java_args) + " " + os.environ.get("FORBRIC_JVM", "")})
+            neo_command = [str(KERNEL / "run/launch-kernel-server.sh")]
+            inputs["stage"] = {"FORBRIC_OLD": str(stage),
+                               "base": record(Path(neo_env.get("BASE", stage / "run/neoforge-patched/patched-mc-neoforge-26.2.jar"))),
+                               "neoRuntime": record(Path(neo_env.get("NEO_RT", stage / "run/neoforge-runtime/neoforge-runtime.jar")))}
+            inputs["oldWorld"] = str(Path(old_world).resolve())
+            before = "old"
+        run("neo-open", neo, neo_command, neo_env, console_lines(checks))
+        export(neo, "neo-open")
+        run("neo-reopen", neo, neo_command, neo_env, [])
+        export(neo, "neo-reopen")
+    except RuntimeError as failure:
+        # Every phase that ran keeps its log, instance and snapshot; nothing is compared past the failure.
+        result = {"schemaVersion": 1, "engine": engine, "phases": phases, "diffs": {}, "error": str(failure), "out": str(out),
+                  "instances": sorted(str(p) for p in out.glob("*-instance"))}
+        write_json(out / "result.json", result)
+        return result
+    finally:
+        write_json(out / "inputs.json", inputs)
+    diffs = {}
+    pairs = [("swap", before, "neo-open", "upgrade"), ("reopen", "neo-open", "neo-reopen", "reopen")]
+    if engine == "native":
+        pairs.insert(0, ("forge-aa", "forge-create", "forge-reopen", "reopen"))
+    for name, a, b, mode in pairs:
+        found, rules = ws.diff(snapshots[a], snapshots[b], mode)
+        report = ws.diff_report(found, rules)
+        write_json(out / f"diff-{name}.json", report)
+        diffs[name] = {"a": a, "b": b, "rules": mode, "count": report["count"], "byFacet": report["by_facet"],
+                       "rulesUsed": report["rules_used"]}
+    result = {"schemaVersion": 1, "engine": engine, "phases": phases, "diffs": diffs, "out": str(out),
+              "instances": sorted(str(p) for p in out.glob("*-instance"))}
+    write_json(out / "result.json", result)
+    return result
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
@@ -595,6 +821,17 @@ def main():
     run_set_parser.add_argument("--keep", action="store_true", help="keep the instance directory")
     run_set_parser.add_argument("--policy", choices=["strict", "continue", "ask"], default="strict",
                                 help="Forbric arm only: -Dforbric.compatibilityPolicy (continue shows what a refused launch would do)")
+    swap_parser = sub.add_parser("swap", help="a world written with mods' MinecraftForge builds, opened with their NeoForge builds")
+    swap_parser.add_argument("--engine", choices=["native", "forbric"], required=True)
+    swap_parser.add_argument("--forge-mods", nargs="*", default=[], help="native: the MinecraftForge builds the world is created with")
+    swap_parser.add_argument("--neo-mods", nargs="+", required=True, help="the NeoForge builds the world is opened with")
+    swap_parser.add_argument("--console", help="native: console lines run once after Done on the MinecraftForge create")
+    swap_parser.add_argument("--checks", help="console lines run once after Done on the NeoForge open (in-game checks)")
+    swap_parser.add_argument("--old-world", help="forbric: the world the old kernel wrote (it is cloned, never written)")
+    swap_parser.add_argument("--chunks", help="export box X0,Z0,X1,Z1 in chunk coordinates (world-snapshot.py --chunks)")
+    swap_parser.add_argument("--out", required=True, help="result directory (instances, logs, snapshots, diffs)")
+    swap_parser.add_argument("--xmx", default="3G")
+    swap_parser.add_argument("--timeout", type=int, default=900, help="seconds per phase")
     args = parser.parse_args(); BASE.mkdir(parents=True, exist_ok=True)
     if args.action == "prepare":
         for family in VERSIONS if args.family == "all" else [args.family]:
@@ -623,6 +860,11 @@ def main():
         result = run_set(args.engine, args.family, args.mods, args.ticks, args.timeout, args.xmx, args.level_type, args.policy, args.keep)
         print(json.dumps({k: result[k] for k in ("engine", "outcome", "signature", "modSetSha256", "jars", "seconds", "result")}))
         return 0 if result["outcome"] == DONE else 1
+    elif args.action == "swap":
+        result = swap(args.engine, args.forge_mods, args.neo_mods, args.out, args.console, args.checks, args.old_world,
+                      args.chunks, args.xmx, args.timeout)
+        print(json.dumps({k: result.get(k) for k in ("engine", "error", "diffs", "out")}, indent=2))
+        return 1 if result.get("error") else 0
     return 0
 
 

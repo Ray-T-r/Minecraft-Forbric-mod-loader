@@ -1,7 +1,8 @@
-"""native-controls.py: how one server console is classified, what identifies a mod set, and which stage the Forbric
-arm boots."""
+"""native-controls.py: how one server console is classified, what identifies a mod set, which stage the Forbric arm
+boots, and the swap subcommand's server session."""
 import importlib.util
 import io
+import json
 import os
 import sys
 import tempfile
@@ -113,6 +114,24 @@ class ModSet(unittest.TestCase):
             self.assertTrue(all("path" not in row for row in rows))
 
 
+FAKE_SERVER = r"""
+import sys, time
+mode = sys.argv[1]
+print("Starting minecraft server version 26.2", flush=True)
+if mode == "fail":
+    print("Failed to start the minecraft server", flush=True); sys.exit(1)
+print('Done (1.000s)! For help, type "help"', flush=True)
+for line in sys.stdin:
+    line = line.strip()
+    print("> " + line, flush=True)
+    if line == "save-all flush":
+        print("Saving the game (this may take a moment!)", flush=True)
+        if mode != "nosave":
+            print("Saved the game", flush=True)
+    elif line == "stop":
+        print("Stopping the server", flush=True); sys.exit(0)
+"""
+
 
 class ForbricStage(unittest.TestCase):
     """The Forbric arm boots FORBRIC_OLD as the caller set it (map-misc 4.1: it used to replace it with
@@ -155,6 +174,76 @@ class ForbricStage(unittest.TestCase):
                 result = nc.run_set("forbric", "fabric", [mod], ticks=0, timeout=5)
         self.assertEqual(str(stage.resolve()), seen["env"]["FORBRIC_OLD"])
         self.assertEqual(nc.FAILED_TO_START, result["outcome"])
+
+    def test_the_swap_forbric_arm_boots_the_callers_stage(self):
+        seen = []
+
+        class FakeSnapshots:
+            def export(self, world, box=None, label=""):
+                return {"schema": "s", "label": label}
+
+            def diff(self, a, b, mode, ignore=()):
+                return [], mock.Mock(used={}, violations=[], mode=mode, ignore=())
+
+            def diff_report(self, found, rules):
+                return {"count": 0, "by_facet": {}, "rules_used": {}}
+
+        def session(command, cwd, env, log, lines, timeout=900, settle=3.0):
+            seen.append((env["FORBRIC_OLD"], env["RUNDIR"], list(lines)))
+            return {"outcome": nc.DONE, "saved": True, "exitCode": 0, "timedOut": False, "seconds": 1.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            stage = self._stage(tmp / "stage4")
+            world = tmp / "old-world"; world.mkdir(); (world / "level.dat").write_bytes(b"x")
+            neo = tmp / "neo.jar"; neo.write_bytes(b"neo")
+            checks = tmp / "checks.txt"; checks.write_text("# a comment\nsetblock 0 80 0 example:block\n\nwait 2\n")
+            with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(stage)}), mock.patch.object(nc, "swap_session", session), \
+                    mock.patch.object(nc, "_snapshot_module", FakeSnapshots), mock.patch("sys.stdout", new_callable=io.StringIO):
+                result = nc.swap("forbric", [], [neo], tmp / "out", checks=checks, old_world=world)
+            self.assertNotIn("error", result)
+            self.assertEqual([(str(stage.resolve()), str(tmp / "out/neo-instance"), ["setblock 0 80 0 example:block", "wait 2"]),
+                              (str(stage.resolve()), str(tmp / "out/neo-instance"), [])], seen)
+            self.assertTrue((tmp / "out/neo-instance/world/level.dat").is_file())
+            self.assertTrue((world / "level.dat").is_file())
+            self.assertEqual(["swap", "reopen"], list(result["diffs"]))
+
+
+class SwapSession(unittest.TestCase):
+    def _run(self, mode, lines):
+        with tempfile.TemporaryDirectory() as tmp:
+            server = Path(tmp) / "server.py"; server.write_text(FAKE_SERVER)
+            log = Path(tmp) / "console.log"
+            result = nc.swap_session([sys.executable, str(server), mode], tmp, os.environ.copy(), log, lines, timeout=60, settle=0,
+                                     save_wait=2)
+            return result, log.read_text()
+
+    def test_lines_then_save_then_stop_in_that_order(self):
+        result, log = self._run("ok", ["say one", "wait 0.5", "say two"])
+        self.assertEqual((nc.DONE, True), (result["outcome"], result["saved"]))
+        sent = [l[2:] for l in log.splitlines() if l.startswith("> ")]
+        self.assertEqual(["say one", "say two", "save-all flush", "stop"], sent)
+
+    def test_a_save_the_server_never_answers_is_not_saved(self):
+        result, _ = self._run("nosave", [])
+        self.assertFalse(result["saved"])
+
+    def test_a_server_that_never_reached_done_failed_to_start(self):
+        result, _ = self._run("fail", ["say never"])
+        self.assertEqual((nc.FAILED_TO_START, False), (result["outcome"], result["saved"]))
+
+    def test_console_lines_skip_comments_and_blanks(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            script = Path(tmp) / "c.txt"; script.write_text("# head\n\n  forceload add 0 0  \nwait 1\n")
+            self.assertEqual(["forceload add 0 0", "wait 1"], nc.console_lines(script))
+        self.assertEqual([], nc.console_lines(None))
+
+    def test_clone_tree_is_an_independent_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            src = Path(tmp) / "image"; (src / "libraries").mkdir(parents=True); (src / "libraries/a.jar").write_bytes(b"a")
+            dst = nc.clone_tree(src, Path(tmp) / "out/instance")
+            (dst / "libraries/a.jar").write_bytes(b"changed")
+            self.assertEqual(b"a", (src / "libraries/a.jar").read_bytes())
+            self.assertTrue(dst.is_dir() and not dst.is_symlink())
 
 
 if __name__ == "__main__":

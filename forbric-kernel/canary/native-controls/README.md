@@ -44,3 +44,19 @@ and action/event denominators, exit status, freshness token, and input-drift che
 failed; the runner still attempts the other predeclared arms without changing any mod set. Comparison
 requires identical mod hashes, seed and actions. A native startup failure is inconclusive for attributing
 a missing action to Forbric, never a passing control.
+
+## The swap oracle (Stage 4 C5c)
+
+`native-controls.py swap --engine native --forge-mods F.jar... --neo-mods N.jar... --console C.txt --checks K.txt
+--chunks X0,Z0,X1,Z1 --out DIR` asks what a world written with mods' MinecraftForge builds keeps when they are
+replaced by the same mods' NeoForge builds, on the native loaders and with nothing of Forbric: it creates a flat world
+from the fixed seed on an APFS clone (`cp -c -R`) of the prepared MinecraftForge `26.2-65.0.1` image with the Forge
+builds and runs the console script once, reopens it once there (the old side's own A/A), then opens the same world on a
+clone of the NeoForge `26.2.0.93` image with the NeoForge builds, runs the check lines, and reopens it. Every phase is
+one server session (Done, its lines, `save-all flush`, stop) and every phase's world is exported with
+`world-snapshot.py` (`<phase>.snapshot.json`); `diff-forge-aa.json`, `diff-swap.json` (upgrade rules) and
+`diff-reopen.json` are written beside them. `--engine forbric --old-world DIR` runs the same open and reopen on this
+checkout's kernel for a world the old kernel wrote (`forge-swap-make-old.sh`). The images are never prepared here
+(that downloads); clone the prepared ones into `build/native-controls/native/{forge,neo}`. `forge-swap.py console` and
+`forge-swap.py checks` print the lines both arms use, and `forge-swap.py classify` turns the two arms into the per-key
+loss table.
