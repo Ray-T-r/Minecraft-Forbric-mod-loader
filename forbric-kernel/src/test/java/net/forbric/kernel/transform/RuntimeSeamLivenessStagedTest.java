@@ -50,6 +50,16 @@ class RuntimeSeamLivenessStagedTest {
 		GUEST,
 		/** Only when a particular mod is installed (named in the reason); its loader names it as a string. */
 		MOD_INSTALLED,
+		/**
+		 * Only on a test launch: a drill switch ({@code -Dforbric.clientSoak}, {@code -Dforbric.clientSmoke}) that a player's
+		 * game never sets, named in the reason.
+		 */
+		DRILL,
+		/**
+		 * From another registered game-side class that is itself called from the chain's output (site: a
+		 * {@code src/runtime/java} path), checked by {@code aRuntimeCallerIsItselfLive}.
+		 */
+		RUNTIME,
 		/** Emitted at run time by a boot-side ClassWriter; not in the runtime jar at all. */
 		GENERATED,
 		/** Packed, never loaded by the kernel: constructed by a mod through that mod's own API. */
@@ -73,7 +83,8 @@ class RuntimeSeamLivenessStagedTest {
 			boot("KernelNeoRegistries", "boot/KernelLifecycle.java", "NewRegistryEvent and RegisterEvent"),
 			boot("KernelScanData", "discovery/ModFileScanner.java", "NeoForge's ModFileScanData from the kernel's scan"),
 			boot("KernelNeoDataMapWatch", "boot/KernelServerDutiesInstaller.java", "the data-map watch the server duties install"),
-			boot("KernelModConfigScreens", "boot/KernelClientSmoke.java", "the client smoke's config-screen walk"),
+			entry(RT + "KernelModConfigScreens", Kind.RUNTIME, "runtime/KernelModListScreen.java",
+					"the mod list's config buttons (the client smoke's config-screen walk is a drill)"),
 			guest("KernelWrapOperations", "mixin/MixinWrapOperationShim.java", "the outer handler written into a guest's @WrapOperation"),
 			guest("KernelDispatch", "mixin/CarrierDefaultChains.java", "redirect handlers written into a guest mixin"),
 			guest("KernelShears", "mixin/MixinShearsRelay.java", "a Fabric shears wrap at the carrier's canPerformAction"),
@@ -89,7 +100,7 @@ class RuntimeSeamLivenessStagedTest {
 			guest("KernelConfigApiBridge", "transform/ConfigApiAbiInjector.java", "ForgeConfigAPIPort's registrations, re-aimed"),
 			guest("KernelDeclarationReaders", "transform/DeclarationReaderModListInjector.java", "a NeoForge mod reading [modproperties] from ModList"),
 			guest("KernelFmlTransformerView", "transform/FmlContextLoaderRewriter.java", "a NeoForge mod casting its context loader to FML's"),
-			entry(RT + "soak.ClientSoakController", Kind.MOD_INSTALLED, "boot/KernelSoakHooks.java",
+			entry(RT + "soak.ClientSoakController", Kind.DRILL, "boot/KernelSoakHooks.java",
 					"only on a soak launch (-Dforbric.clientSoak), gate-m34"),
 			entry("net.forbric.kernel.runtime.transfer.TransferIssues", Kind.MOD_INSTALLED, "boot/KernelTransferInterop.java",
 					"installed with the transfer bridge"),
@@ -148,12 +159,29 @@ class RuntimeSeamLivenessStagedTest {
 		assertEquals(Set.of(), unknown, "listed, but not in KernelRuntimeClasses");
 		List<String> unspelled = new ArrayList<>();
 		Path main = Path.of(System.getProperty("user.dir"), "src", "main", "java", "net", "forbric", "kernel");
+		Path runtime = Path.of(System.getProperty("user.dir"), "src", "runtime", "java", "net", "forbric", "kernel");
 		for (Map.Entry<String, Elsewhere> row : ELSEWHERE.entrySet()) {
 			String simple = row.getKey().substring(row.getKey().lastIndexOf('.') + 1);
-			Path site = main.resolve(row.getValue().site());
+			Path site = (row.getValue().kind() == Kind.RUNTIME ? runtime : main).resolve(row.getValue().site());
 			if (!Files.isRegularFile(site) || !Files.readString(site).contains(simple)) unspelled.add(row.getKey() + " @ " + site);
 		}
 		assertEquals(List.of(), unspelled, "the named site does not spell the class it is said to call");
+	}
+
+	/**
+	 * A {@link Kind#RUNTIME} row is live only through its caller, so that caller must be one the chain's output calls, not
+	 * another row (lens A of lane S's wave-2 review: {@code KernelModConfigScreens} was filed under the client smoke, a
+	 * drill, while its real caller is the mod list the carrier's {@code ModsButton} opens).
+	 */
+	@Test void aRuntimeCallerIsItselfLive() {
+		List<String> notLive = new ArrayList<>();
+		for (Map.Entry<String, Elsewhere> row : ELSEWHERE.entrySet()) {
+			if (row.getValue().kind() != Kind.RUNTIME) continue;
+			String site = row.getValue().site();
+			String caller = "net.forbric.kernel." + site.substring(0, site.length() - ".java".length()).replace('/', '.');
+			if (!CHAIN.contains(caller)) notLive.add(row.getKey() + " <- " + caller);
+		}
+		assertEquals(List.of(), notLive, "a RUNTIME row's caller is not itself called from the chain's output");
 	}
 
 	/** Red check: a name nothing calls, added to the registry's, is the one thing reported. */
