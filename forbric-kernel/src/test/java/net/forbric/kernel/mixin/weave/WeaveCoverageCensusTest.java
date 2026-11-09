@@ -141,8 +141,8 @@ class WeaveCoverageCensusTest {
 			Map.entry("FabricCreativePagerMixinAdapter", Switch.own("forbric.fabricCreativeKeyboard")),
 			Map.entry("FabricRegistryLoaderMixinAdapter", Switch.own("forbric.fabricRegistryLoader")),
 			Map.entry("FabricBlockStateCodecMixinAdapter", Switch.own("forbric.blockStateModelFormats")),
-			Map.entry("FabricCommonPayloadMixinAdapter", Switch.own("forbric.playPayloadFallThrough")), // FabricCommonPayloadMixinAdapterTest
-			Map.entry("MixinPrivateDefaultCollision", Switch.own("forbric.mixinPrivateDefaults")), // MixinPrivateDefaultCollisionTest
+			Map.entry("FabricCommonPayloadMixinAdapter", Switch.own("forbric.playPayloadFallThrough")), // FabricCommonPayloadMixinAdapterWeaveTest
+			Map.entry("MixinPrivateDefaultCollision", Switch.own("forbric.mixinPrivateDefaults")), // MixinPrivateDefaultCollisionWeaveTest
 			Map.entry("FabricItemDamageMixinAdapter", Switch.own("forbric.itemDamageHandler")), // FabricItemDamageMixinAdapterWeaveTest
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
 			Map.entry("CarrierHelperResults", Switch.own("forbric.carrierHelperResults")), // CarrierHelperResultsWeaveTest
