@@ -38,7 +38,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * The repair for fabric-api's half-applied condition mixin, and the premise that makes it necessary.
  *
- * <p>The producer half of {@code SimpleJsonResourceReloadListenerMixin} applies on the merged base and the
+ * <p>The producer half of {@code SimpleJsonResourceReloadListenerMixin} applies on NeoForge's base and the
  * consumer half does not, so a bare {@code Object} sentinel reaches a reader that casts to {@code Optional}.
  * Unrepaired, one condition-gated data file whose condition is false stops the server starting.
  */
@@ -87,23 +87,26 @@ class MergedBaseSkipMarkerTest {
 	}
 
 	@Test
-	void theMergedClassStillHasTheTwoLambdasThatMakeThisNecessary() throws Exception {
-		// The premise, asserted so the repair retires itself rather than quietly becoming dead weight. fabric's
-		// @Inject targets the (…,Object) overload; the live invokedynamic binds the (…,Optional) one. If a future
-		// merged base or fabric-api ever makes those agree, the mixin applies whole and this test says so.
-		ClassNode node = original();
+	void theBasesOnlyScanDirectoryLambdaIsNotTheShapeFabricsHandlerWasWrittenFor() throws Exception {
+		// The premise, asserted so the repair retires itself rather than quietly becoming dead weight. fabric's skipData
+		// @Inject names the bare "lambda$scanDirectory$0" with a handler written for vanilla's (Map, Identifier, Object)
+		// lambda; NeoForge's base has exactly one lambda of that name, of another shape, so the consumer half does not apply
+		// while the producer half does. If a future base or fabric-api ever makes those agree, the mixin applies whole and
+		// this test says so.
+		List<String> base = lambdas(original());
+		Path vanilla = TestFixtures.vanillaJar();
+		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "stock 26.2", vanilla);
+		List<String> stock = lambdas(node(TestFixtures.requireEntry(Fixture.MC_LIBRARIES, vanilla, ENTRY)));
+		assertEquals(List.of("(Ljava/util/Map;Lnet/minecraft/resources/Identifier;Ljava/lang/Object;)V"), stock,
+				"vanilla's lambda, the shape fabric's handler (Map, Identifier, Object, CallbackInfo) was written for");
+		assertEquals(1, base.size(), "the base carries one lambda$scanDirectory$0: " + base);
+		assertTrue(!stock.contains(base.getFirst()),
+				"the base's only lambda$scanDirectory$0 is vanilla's shape again — re-derive whether fabric-api's condition "
+						+ "mixin now applies whole, and delete this repair if it does");
+	}
 
-		boolean optionalForm = false;
-		boolean objectForm = false;
-		for (MethodNode method : node.methods) {
-			if (!"lambda$scanDirectory$0".equals(method.name)) continue;
-			if (method.desc.endsWith("Ljava/util/Optional;)V")) optionalForm = true;
-			if (method.desc.endsWith("Ljava/lang/Object;)V")) objectForm = true;
-		}
-
-		assertTrue(optionalForm && objectForm,
-				"the merged base no longer carries BOTH lambda$scanDirectory$0 overloads — re-derive whether "
-						+ "fabric-api's condition mixin now applies whole, and delete this repair if it does");
+	private static List<String> lambdas(ClassNode node) {
+		return node.methods.stream().filter(m -> "lambda$scanDirectory$0".equals(m.name)).map(m -> m.desc).toList();
 	}
 
 	@Test
@@ -120,8 +123,12 @@ class MergedBaseSkipMarkerTest {
 	}
 
 	private static ClassNode original() throws Exception {
+		return node(bytes());
+	}
+
+	private static ClassNode node(byte[] bytes) {
 		ClassNode node = new ClassNode();
-		new ClassReader(bytes()).accept(node, 0);
+		new ClassReader(bytes).accept(node, 0);
 		return node;
 	}
 

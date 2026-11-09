@@ -51,7 +51,7 @@ class KernelClientPacksReaderTest {
 	}
 
 	@Test
-	void aMinecraftForgeModsPackIsReadTheWayMinecraftForgeReadsIt() throws IOException {
+	void aJarNeoForgeDoesNotOwnIsReadTheVanillaWay() throws IOException {
 		assertTrue(KernelClientPacks.readsItsMetadataTheVanillaWay(jar("antiblocksrechiseled.jar",
 				"META-INF/mods.toml", PACK_MCMETA), false));
 	}

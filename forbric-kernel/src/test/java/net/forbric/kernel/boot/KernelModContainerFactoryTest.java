@@ -38,10 +38,9 @@ import org.objectweb.asm.tree.MethodNode;
 /**
  * Pins the reflective contract {@link KernelModContainerFactory} depends on, against the real NeoForge carrier.
  *
- * <p>That factory is 371 lines of {@code Class.forName}, a {@code Proxy}, {@code UnsafeHacks} field-poking and
- * ASM generation, and it has NOT ONE warn or error path. Every name in it is a string the compiler never sees:
- * four class names, five field names on two classes, and two methods on Forge's {@code UnsafeHacks}. If a carrier
- * upgrade renames any of them the factory does not fail loudly — it throws deep inside mod construction, or
+ * <p>The factory's game side ({@code KernelContainers}) allocates a genuine {@code FMLModContainer} without running
+ * its constructor and writes its fields by name with reflection; those names are strings the compiler never sees. If a
+ * carrier upgrade renames one of them the factory does not fail loudly — it throws deep inside mod construction, or
  * silently builds a container with a null where a mod expects its event bus.
  *
  * <p>The carrier has already been re-pinned once (NeoForge .7-beta to .38-beta), so "a field moved" is a live
@@ -77,8 +76,8 @@ class KernelModContainerFactoryTest {
 
 		for (String field : new String[] {"modId", "namespace", "modInfo", "extensionPoints"}) {
 			assertNotNull(field(modContainer, field),
-					"ModContainer." + field + " is gone — KernelModContainerFactory sets it by name through "
-							+ "UnsafeHacks, and a missing field there surfaces as a container that is subtly wrong "
+					"ModContainer." + field + " is gone — KernelContainers sets it by name with reflection, "
+							+ "and a missing field there surfaces as a container that is subtly wrong "
 							+ "rather than as a failure");
 		}
 	}

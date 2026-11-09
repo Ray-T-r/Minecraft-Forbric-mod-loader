@@ -39,7 +39,6 @@ import org.junit.jupiter.api.Test;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
-import net.forbric.kernel.runtime.StagedGameClassLoader;
 
 /**
  * The duties lane 2.3 moved out of MinecraftForge-gated code, run on the GENUINE NeoForge base: the NFRT-patched game jar
@@ -76,11 +75,6 @@ class KernelServerDutiesGenuineBaseTest {
 			if (Files.isRegularFile(jar)) urls.add(jar.toUri().toURL());
 		}
 		return new URLClassLoader(urls.toArray(new URL[0]), ClassLoader.getPlatformClassLoader());
-	}
-
-	/** The compiled kernel over today's merged base and both carriers. */
-	private static URLClassLoader merged() throws Exception {
-		return StagedGameClassLoader.create(List.of(MAIN_CLASSES.toUri().toURL(), mixin()));
 	}
 
 	/**
@@ -201,14 +195,6 @@ class KernelServerDutiesGenuineBaseTest {
 		}
 	}
 
-	/** And on today's merged base with its carriers, where nothing but the duties is installed by the pass either. */
-	@Test
-	void onTheMergedBaseTheProductionPassInstallsEveryDuty() throws Exception {
-		try (URLClassLoader cl = merged()) {
-			assertEveryDutyListens(cl, startGameBuses(cl), "merged");
-		}
-	}
-
 	@Test
 	void theServerStartedWorkRunsOnceWhenNeoForgeAnnouncesTheStart() throws Exception {
 		try (URLClassLoader cl = genuine()) {
@@ -220,22 +206,19 @@ class KernelServerDutiesGenuineBaseTest {
 		}
 	}
 
-	/** A NeoForge mod's container is NeoForge's own FMLModContainer on both bases, filled the same way. */
+	/** A NeoForge mod's container is NeoForge's own FMLModContainer, filled the way FancyModLoader fills it. */
 	@Test
 	void aNeoForgeModGetsTheGenuineFmlContainerWithoutMinecraftForge() throws Exception {
-		for (boolean genuineBase : List.of(true, false)) {
-			try (URLClassLoader cl = genuineBase ? genuine() : merged()) {
-				Object bus = neoBus(cl);
-				Object container = Class.forName("net.forbric.kernel.runtime.KernelContainers", true, cl)
-						.getMethod("container", String.class, Object.class, Path.class).invoke(null, "probe", bus, null);
-				Class<?> fml = Class.forName("net.neoforged.fml.javafmlmod.FMLModContainer", false, cl);
-				String base = genuineBase ? "genuine" : "merged";
-				assertTrue(fml.isInstance(container), base + ": instanceof FMLModContainer, as Bookshelf and every library asks: "
-						+ container.getClass());
-				assertSame(bus, fml.getMethod("getEventBus").invoke(container), base + ": its bus");
-				assertEquals("probe", fml.getMethod("getModId").invoke(container), base + ": its id");
-				assertEquals("probe", fml.getMethod("getNamespace").invoke(container), base + ": its namespace");
-			}
+		try (URLClassLoader cl = genuine()) {
+			Object bus = neoBus(cl);
+			Object container = Class.forName("net.forbric.kernel.runtime.KernelContainers", true, cl)
+					.getMethod("container", String.class, Object.class, Path.class).invoke(null, "probe", bus, null);
+			Class<?> fml = Class.forName("net.neoforged.fml.javafmlmod.FMLModContainer", false, cl);
+			assertTrue(fml.isInstance(container), "instanceof FMLModContainer, as Bookshelf and every library asks: "
+					+ container.getClass());
+			assertSame(bus, fml.getMethod("getEventBus").invoke(container), "its bus");
+			assertEquals("probe", fml.getMethod("getModId").invoke(container), "its id");
+			assertEquals("probe", fml.getMethod("getNamespace").invoke(container), "its namespace");
 		}
 		assertFalse(names(RUNTIME_CLASSES.resolve("net/forbric/kernel/runtime/KernelContainers.class"), "net/minecraftforge/"),
 				"KernelContainers names nothing of MinecraftForge");

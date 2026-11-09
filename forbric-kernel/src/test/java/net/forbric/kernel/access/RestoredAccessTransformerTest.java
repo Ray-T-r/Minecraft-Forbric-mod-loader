@@ -18,12 +18,17 @@ import static org.junit.jupiter.api.Assertions.*;
 class RestoredAccessTransformerTest {
 	private static final String OWNER = "sample/Restored";
 	private static final String SUPPLIER = "Ljava/util/function/Supplier;";
+	/**
+	 * The descriptor the base declares the field with before a repair restores the widener's: any other than the one the
+	 * widener names (NeoForge re-types WeightedList$Builder#result to List the same way).
+	 */
+	private static final String UNREPAIRED = "Ljava/util/List;";
 	private static final TransformContext CONTEXT = new TransformContext(EnvType.CLIENT, false, "named");
 	@BeforeEach @AfterEach void reset() { AccessCensus.reset(); }
 
 	@Test void restoredDescriptorReceivesRealAccessAndAllowsAnExternalWrite() throws Exception {
 		var aw = widener();
-		aw.transform(OWNER, sample("Lnet/minecraftforge/common/util/ClearableLazy;", false), CONTEXT);
+		aw.transform(OWNER, sample(UNREPAIRED, false), CONTEXT);
 		assertEquals(1, AccessCensus.entries().size());
 		byte[] repaired = sample(SUPPLIER, false); // COREMOD restored the descriptor, not the flags.
 		Class<?> negative = define(repaired);
@@ -44,7 +49,7 @@ class RestoredAccessTransformerTest {
 
 	@Test void anUnrepairedDescriptorIsStillUnmatched() {
 		var aw = widener();
-		byte[] original = sample("Lnet/minecraftforge/common/util/ClearableLazy;", false);
+		byte[] original = sample(UNREPAIRED, false);
 		aw.transform(OWNER, original, CONTEXT);
 		assertSame(original, new RestoredAccessTransformer(aw, null).transform(OWNER, original, CONTEXT));
 		assertEquals(1, AccessCensus.entries().size());

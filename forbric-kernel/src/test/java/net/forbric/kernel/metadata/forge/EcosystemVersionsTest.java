@@ -51,15 +51,16 @@ class EcosystemVersionsTest {
 	}
 
 	/**
-	 * The MinecraftForge carrier ships {@code version="${global.forgeVersion}"} — a placeholder its build never
-	 * substituted. Recording it made the audit accuse an honest mod of requiring a newer Forge than we provide.
+	 * A carrier whose build never substituted its version placeholder (the old MinecraftForge carrier shipped
+	 * {@code version="${global.forgeVersion}"} verbatim; the rule is the same for any carrier). Recording it made the
+	 * audit accuse an honest mod of requiring a newer version than we provide.
 	 * An unresolved placeholder is an ABSENT version, not a low one.
 	 */
 	@Test
 	void anUnresolvedPlaceholderIsNotAVersion() throws Exception {
-		EcosystemVersions.record(List.of(carrier("forge-runtime.jar", "META-INF/mods.toml",
-				"forge", "${global.forgeVersion}")));
-		assertNull(EcosystemVersions.provided("forge"),
+		EcosystemVersions.record(List.of(carrier("neoforge-runtime.jar", "META-INF/neoforge.mods.toml",
+				"neoforge", "${global.neoForgeVersion}")));
+		assertNull(EcosystemVersions.provided("neoforge"),
 				"declining to judge beats judging confidently on a placeholder");
 	}
 

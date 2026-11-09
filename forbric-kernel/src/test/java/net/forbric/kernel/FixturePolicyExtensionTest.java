@@ -80,7 +80,7 @@ class FixturePolicyExtensionTest {
 	@Test
 	void withNoPolicyEverySkipIsLeftASkip() {
 		policy("");
-		TestAbortedException tagged = abort(() -> TestFixtures.require(Fixture.STAGED, false, "merged base"));
+		TestAbortedException tagged = abort(() -> TestFixtures.require(Fixture.STAGED, false, "staged base"));
 		TestAbortedException raw = abort(() -> Assumptions.assumeTrue(false, "anything"));
 		if (LEGACY_ALL) {
 			assertInstanceOf(AssertionFailedError.class, FixturePolicyExtension.judge(raw),
@@ -100,20 +100,20 @@ class FixturePolicyExtensionTest {
 		if (!LEGACY_ALL) assertSame(gameSide, FixturePolicyExtension.judge(gameSide), "game-side is not required here");
 
 		TestAbortedException staged = abort(() -> {
-			throw new TestAbortedException(TestFixtures.tag(Fixture.STAGED) + "merged base");
+			throw new TestAbortedException(TestFixtures.tag(Fixture.STAGED) + "staged base");
 		});
 		AssertionFailedError failure = assertInstanceOf(AssertionFailedError.class, FixturePolicyExtension.judge(staged));
 		assertTrue(failure.getMessage().contains("fixture 'staged'"), failure.getMessage());
 		assertTrue(failure.getMessage().contains("-Dforbric.requireFixtures=staged"),
 				"the failure must name the policy that turned the skip into it: " + failure.getMessage());
-		assertTrue(failure.getMessage().endsWith("[fixture:staged] merged base"), failure.getMessage());
+		assertTrue(failure.getMessage().endsWith("[fixture:staged] staged base"), failure.getMessage());
 		assertSame(staged, failure.getCause(), "the original skip stays attached, with its stack");
 	}
 
 	@Test
 	void theTagIsFoundBehindJUnitsOwnPrefix() {
 		policy("staged");
-		TestAbortedException raw = abort(() -> Assumptions.assumeTrue(false, "[fixture:staged] merged base"));
+		TestAbortedException raw = abort(() -> Assumptions.assumeTrue(false, "[fixture:staged] staged base"));
 		assertTrue(raw.getMessage().startsWith("Assumption failed: "), "the shape this has to see through: " + raw.getMessage());
 		assertInstanceOf(AssertionFailedError.class, FixturePolicyExtension.judge(raw));
 		// And it is read as THAT kind, not as untagged: under this policy a game-side skip stays a skip.
@@ -124,11 +124,11 @@ class FixturePolicyExtensionTest {
 	@Test
 	void anUntaggedSkipFailsUnderAnyPolicyAtAll() {
 		policy("opt-in");
-		TestAbortedException untagged = abort(() -> Assumptions.assumeTrue(false, "staged merged base absent"));
+		TestAbortedException untagged = abort(() -> Assumptions.assumeTrue(false, "staged base absent"));
 		AssertionFailedError failure = assertInstanceOf(AssertionFailedError.class, FixturePolicyExtension.judge(untagged));
 		assertTrue(failure.getMessage().contains("untagged"), failure.getMessage());
 
-		TestAbortedException misspelt = abort(() -> Assumptions.assumeTrue(false, "[fixture:stagd] merged base"));
+		TestAbortedException misspelt = abort(() -> Assumptions.assumeTrue(false, "[fixture:stagd] staged base"));
 		assertInstanceOf(AssertionFailedError.class, FixturePolicyExtension.judge(misspelt),
 				"a tag naming no fixture is untagged: a typo must not be what lets a required run skip");
 	}

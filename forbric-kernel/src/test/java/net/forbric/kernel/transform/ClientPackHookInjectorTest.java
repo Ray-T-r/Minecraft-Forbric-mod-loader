@@ -63,14 +63,9 @@ class ClientPackHookInjectorTest {
 	private final ClientPackHookInjector injector = new ClientPackHookInjector();
 
 	/**
-	 * The premise of {@code ALOAD 0}, and a correction to what the class javadoc claims.
-	 *
-	 * <p>It says the injector redirects "each ecosystem's" {@code setupModResourcePacks}. On the staged carriers
-	 * that is only true of NeoForge: MinecraftForge's {@code ClientModLoader} has no such method at all — it takes
-	 * the repository in {@code begin(Minecraft, PackRepository, ReloadableResourceManager)} instead — so the
-	 * MinecraftForge entry in {@code OWNERS} matches nothing and is a hedge, not a live path. Asserting that
-	 * explicitly means a carrier that later ADDS the method makes this test fail, which is the moment to check
-	 * whether the hedge has become a second live rewrite.
+	 * The premise of {@code ALOAD 0}: NeoForge's {@code ClientModLoader} declares {@code setupModResourcePacks} as a
+	 * static method taking the repository, the one seam {@code OWNERS} names. (MinecraftForge's {@code ClientModLoader}
+	 * had no such method, so its entry there was an inert hedge; it went with MinecraftForge.)
 	 */
 	@Test
 	void neoForgeDeclaresTheMethodStatically() throws Exception {

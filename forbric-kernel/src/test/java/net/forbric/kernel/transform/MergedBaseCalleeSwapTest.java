@@ -117,7 +117,13 @@ class MergedBaseCalleeSwapTest {
 	static final Map<String, String> ADMITTED_NOT_REWRITTEN = Map.of(
 			"net/minecraft/client/data/models/EquipmentAssetProvider.run(Lnet/minecraft/data/CachedOutput;)Ljava/util/concurrent/CompletableFuture; | net/minecraft/client/data/models/EquipmentAssetProvider.bootstrap→registerModels (Ljava/util/function/BiConsumer;)V",
 			"client data generation only; NeoForge's registerModels is its mod-datagen extension point and no staged mixin anchors "
-					+ "on bootstrap — nothing to gain, and the extension point would be lost");
+					+ "on bootstrap — nothing to gain, and the extension point would be lost",
+			"net/minecraft/server/level/ServerPlayer.teleport(Lnet/minecraft/world/level/portal/TeleportTransition;)Lnet/minecraft/server/level/ServerPlayer; | net/minecraft/server/level/ServerPlayer.unsetRemoved→revive ()V",
+			"NeoForge's Entity.revive() (called at bci 203, where vanilla calls unsetRemoved() at bci 187) implements "
+					+ "IEntityExtension.revive(), NeoForge's extension point: rewriting the call back to unsetRemoved would skip "
+					+ "any override, and native NeoForge makes this same call; no mixin in the C4 corpus scan (1,002 jars, 2,689 "
+					+ "with nested) names unsetRemoved or revive, and the 11 injectors on teleport are HEAD/RETURN/TAIL, which "
+					+ "a callee swap does not move");
 
 	@Test
 	void theCensusOfCalleeSwapsIsExactlyThePinnedSet() throws Exception {

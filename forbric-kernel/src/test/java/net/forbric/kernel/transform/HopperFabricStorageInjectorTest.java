@@ -23,7 +23,7 @@ import org.objectweb.asm.tree.*;
 import org.objectweb.asm.tree.analysis.Analyzer;
 import org.objectweb.asm.tree.analysis.BasicVerifier;
 
-/** NeoForge's hopper asking Fabric's item storage lookup, on the real merged HopperBlockEntity. */
+/** NeoForge's hopper asking Fabric's item storage lookup, on the staged base's real HopperBlockEntity. */
 @ResourceLock("system-properties")
 class HopperFabricStorageInjectorTest {
 	private static final Path STAGED = TestFixtures.stagedRoot();
@@ -34,10 +34,10 @@ class HopperFabricStorageInjectorTest {
 
 	@AfterEach void reset() { System.clearProperty(HopperFabricStorageInjector.PROPERTY); }
 
-	/** What Fabric's mixin anchors on is exactly what NeoForge's body no longer calls. */
+	/** What Fabric's mixin anchors on is exactly what NeoForge's bodies, the base's own, no longer call. */
 	@Test void premiseMergedBodiesAreNeoForgesAndFabricsAnchorsAreAbsent() throws Exception {
-		ClassNode merged = node(NativeCoremodParityTest.read(MERGED, HOPPER));
-		MethodNode eject = method(merged, "ejectItems"), suck = method(merged, "suckInItems");
+		ClassNode base = node(NativeCoremodParityTest.read(MERGED, HOPPER));
+		MethodNode eject = method(base, "ejectItems"), suck = method(base, "suckInItems");
 		assertEquals(1, calls(eject, HOPPER, "getContainerOrHandlerAt"));
 		assertEquals(0, calls(eject, HOPPER, "getAttachedContainer"));
 		assertEquals(1, calls(suck, HOPPER, "getSourceContainerOrHandler"));

@@ -15,7 +15,7 @@ import org.objectweb.asm.tree.analysis.*;
 
 @ResourceLock("system-properties")
 class UntrackedFluidEyeQueryInjectorTest {
-    private static final Path MERGED = Path.of(System.getProperty("forbric.stagedRoot", "../forbric-loader/run"), net.forbric.kernel.TestFixtures.BASE_JAR);
+    private static final Path MERGED = net.forbric.kernel.TestFixtures.stagedRoot().resolve(net.forbric.kernel.TestFixtures.BASE_JAR);
     @AfterEach void reset() { System.clearProperty(UntrackedFluidEyeQueryInjector.PROPERTY); }
     @Test void eyeQueriesUseTheInteractionAndKeepNativeQueriesBehindTheUntrackedGuard() throws Exception {
         var repair = new UntrackedFluidEyeQueryInjector();

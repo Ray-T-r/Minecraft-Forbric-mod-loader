@@ -29,7 +29,6 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
-import net.forbric.api.Ecosystem;
 import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.classloading.ForbricClassLoader;
@@ -132,8 +131,8 @@ class LambdaShapeEvidenceStagedTest {
 		List<ClassNode> mixins = new ArrayList<>(List.of(skySkipFixture()));
 		Path origins = Path.of("run/client-popular/mods/Origins-Legacy-1.12.18+26.2.jar");
 		if (Files.isRegularFile(origins)) {
-			for (Guest guest : guests(Files.readAllBytes(origins), origins.getFileName().toString(), null)) {
-				if (guest.mixin().name.equals("io/github/apace100/apoli/mixin/WorldRendererMixin")) mixins.add(onlySkyHandlers(guest.mixin()));
+			for (ClassNode guest : guests(Files.readAllBytes(origins))) {
+				if (guest.name.equals("io/github/apace100/apoli/mixin/WorldRendererMixin")) mixins.add(onlySkyHandlers(guest));
 			}
 			assertEquals(2, mixins.size(), "Origins-Legacy carries Apoli's WorldRendererMixin");
 		}
@@ -174,19 +173,8 @@ class LambdaShapeEvidenceStagedTest {
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
-	// The decisions
+	// Helpers
 	// ---------------------------------------------------------------------------------------------------------------
-
-	/** One guest mixin: its class, its class file as the jar holds it, the jar it came from, the platform it was built for. */
-	record Guest(ClassNode mixin, byte[] raw, String jar, Ecosystem ecosystem) {
-		List<String> targets() {
-			return MixinOverloadPin.targetsOf(mixin);
-		}
-
-		@Override public String toString() {
-			return mixin.name + " (" + jar + ")";
-		}
-	}
 
 	private static AnnotationNode injected(MethodNode method) {
 		AnnotationNode injector = MixinFit.injectorOf(method);
@@ -219,18 +207,15 @@ class LambdaShapeEvidenceStagedTest {
 	 * The guest mixins of one jar and of every jar nested in it whose injectors select a lambda by name, or that target
 	 * {@code LevelRenderer}.
 	 */
-	private static List<Guest> guests(byte[] jar, String name, Ecosystem inherited) throws IOException {
+	private static List<ClassNode> guests(byte[] jar) throws IOException {
 		Map<String, byte[]> entries = new LinkedHashMap<>();
 		try (ZipInputStream zip = new ZipInputStream(new ByteArrayInputStream(jar))) {
 			for (ZipEntry e; (e = zip.getNextEntry()) != null;) if (!e.isDirectory()) entries.put(e.getName(), zip.readAllBytes());
 		}
-		// A mods.toml-only jar is refused (MinecraftForge is no ecosystem): it inherits, as a jar with no manifest does.
-		Ecosystem ecosystem = entries.containsKey("fabric.mod.json") ? Ecosystem.FABRIC
-				: entries.containsKey("META-INF/neoforge.mods.toml") ? Ecosystem.NEOFORGE : inherited;
-		List<Guest> out = new ArrayList<>();
+		List<ClassNode> out = new ArrayList<>();
 		for (Map.Entry<String, byte[]> entry : entries.entrySet()) {
 			if (entry.getKey().endsWith(".jar")) {
-				out.addAll(guests(entry.getValue(), name + "!" + entry.getKey(), ecosystem));
+				out.addAll(guests(entry.getValue()));
 				continue;
 			}
 			if (!entry.getKey().endsWith(".class")) continue;
@@ -243,7 +228,7 @@ class LambdaShapeEvidenceStagedTest {
 			if (!isMixin(node)) continue;
 			boolean lambda = node.methods.stream().anyMatch(m -> injected(m) != null
 					&& MixinFit.stringList(MixinFit.value(injected(m), "method")).stream().anyMatch(s -> s.trim().startsWith("lambda$")));
-			if (lambda || MixinOverloadPin.targetsOf(node).contains(LEVEL_RENDERER)) out.add(new Guest(node, entry.getValue(), name, ecosystem));
+			if (lambda || MixinOverloadPin.targetsOf(node).contains(LEVEL_RENDERER)) out.add(node);
 		}
 		return out;
 	}

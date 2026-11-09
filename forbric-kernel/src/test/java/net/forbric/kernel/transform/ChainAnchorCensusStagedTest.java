@@ -78,6 +78,9 @@ import net.forbric.kernel.mixin.NativeGameReferences;
  *
  * <p>The red check: the same census with one transformer silenced (it hands every class back unchanged) names that
  * transformer's REQUIRED anchors as declined, and only its, so the assertion can fail.
+ *
+ * <p>The same replay also pins what the chain must NOT do: the four NeoForge hook calls the merged base had lost and the
+ * genuine base restored ({@link #NATIVE_CALLS}) come out of it exactly as NeoForge's base makes them.
  */
 @ResourceLock("native-game-references")
 class ChainAnchorCensusStagedTest {
@@ -144,11 +147,98 @@ class ChainAnchorCensusStagedTest {
 	}
 
 	// ------------------------------------------------------------------------------------------------------------
+	// NeoForge's own call sites that the merged base had lost, which the chain must leave as they are
+	// ------------------------------------------------------------------------------------------------------------
+
+	/** One NeoForge-owned static call in a base method: {@code owner.method} calls {@code hookOwner.hook hookDesc}. */
+	record NativeCall(String owner, String method, String hookOwner, String hook, String hookDesc) {
+		String line() {
+			return owner + "." + method + " -> " + hookOwner + "." + hook + hookDesc;
+		}
+	}
+
+	private static final String CLIENT_HOOKS = "net/neoforged/neoforge/client/ClientHooks";
+	private static final String EVENT_HOOKS = "net/neoforged/neoforge/event/EventHooks";
+
+	/**
+	 * The four NeoForge hook calls the merged base had lost and the genuine base restored (Stage 4 C2): raw NeoForge 26.2.0.93
+	 * makes each once — Minecraft's constructor at bci 2371 and 2881, ReloadableServerResources' reload lambda at bci 38,
+	 * BaseFireBlock.onPlace at bci 33. No kernel transformer rewrites them today; nothing else would notice one that did.
+	 */
+	static final List<NativeCall> NATIVE_CALLS = List.of(
+			new NativeCall("net/minecraft/client/Minecraft", "<init>", CLIENT_HOOKS, "onRegisterParticleProviders",
+					"(Lnet/minecraft/client/particle/ParticleResources;)V"),
+			new NativeCall("net/minecraft/client/Minecraft", "<init>", CLIENT_HOOKS, "initClientHooks",
+					"(Lnet/minecraft/client/Minecraft;Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V"),
+			new NativeCall("net/minecraft/server/ReloadableServerResources", "lambda$loadResources$2", EVENT_HOOKS, "onResourceReload",
+					"(Lnet/minecraft/server/ReloadableServerResources;Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;"),
+			new NativeCall("net/minecraft/world/level/block/BaseFireBlock", "onPlace", EVENT_HOOKS, "onTrySpawnPortal",
+					"(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;Ljava/util/Optional;)Ljava/util/Optional;"));
+
+	/** Each call NeoForge's base makes once, still made once, as the same INVOKESTATIC, after the whole chain on both sides. */
+	@Test void theRestoredNeoForgeCallSitesSurviveTheChain() {
+		for (Census census : censuses.values()) {
+			assertEquals(List.of(), notExactlyOnce(census.raw(), NATIVE_CALLS), census.side() + ": premise, NeoForge's own base");
+			assertEquals(List.of(), notExactlyOnce(census.out(), NATIVE_CALLS), census.side() + ": a NeoForge hook call the chain took away");
+		}
+	}
+
+	/** The red check: the chain's output with one of the calls taken out names that call, and only it. */
+	@Test void aCopyMissingOneRestoredCallSiteIsNamed() {
+		Census client = censuses.get(EnvType.CLIENT);
+		NativeCall removed = NATIVE_CALLS.getLast();
+		Map<String, byte[]> copy = new TreeMap<>(client.out());
+		ClassNode node = new ClassNode();
+		new ClassReader(copy.get(removed.owner())).accept(node, 0);
+		int taken = 0;
+		for (MethodNode m : node.methods) {
+			if (!m.name.equals(removed.method())) continue;
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (calls(insn, removed)) {
+					m.instructions.remove(insn);
+					taken++;
+				}
+			}
+		}
+		assertEquals(1, taken, "the copy lost exactly one call");
+		org.objectweb.asm.ClassWriter writer = new org.objectweb.asm.ClassWriter(0);
+		node.accept(writer);
+		copy.put(removed.owner(), writer.toByteArray());
+		assertEquals(List.of(removed.line() + ": 0 calls"), notExactlyOnce(copy, NATIVE_CALLS));
+	}
+
+	/** The calls of {@code expected} that {@code classes} does not make exactly once in the named method, with their count. */
+	static List<String> notExactlyOnce(Map<String, byte[]> classes, List<NativeCall> expected) {
+		List<String> out = new ArrayList<>();
+		for (NativeCall call : expected) {
+			byte[] bytes = classes.get(call.owner());
+			if (bytes == null) {
+				out.add(call.line() + ": class absent");
+				continue;
+			}
+			ClassNode node = new ClassNode();
+			new ClassReader(bytes).accept(node, 0);
+			int count = 0;
+			for (MethodNode m : node.methods) {
+				if (!m.name.equals(call.method())) continue;
+				for (AbstractInsnNode insn : m.instructions) if (calls(insn, call)) count++;
+			}
+			if (count != 1) out.add(call.line() + ": " + count + " calls");
+		}
+		return out;
+	}
+
+	private static boolean calls(AbstractInsnNode insn, NativeCall call) {
+		return insn instanceof MethodInsnNode m && m.getOpcode() == Opcodes.INVOKESTATIC && m.owner.equals(call.hookOwner())
+				&& m.name.equals(call.hook()) && m.desc.equals(call.hookDesc());
+	}
+
+	// ------------------------------------------------------------------------------------------------------------
 	// One census
 	// ------------------------------------------------------------------------------------------------------------
 
 	record Census(EnvType side, int sites, List<String> skipped, List<String> unbuilt, AnchorLedger.Report report,
-			List<String> missingRequired, List<String> errors, List<Rec> recs) {
+			List<String> missingRequired, List<String> errors, List<Rec> recs, Map<String, byte[]> raw, Map<String, byte[]> out) {
 		/** The name of the first transformer with a REQUIRED anchor that landed. */
 		String firstWithRequiredHits() {
 			for (Rec rec : recs) {
@@ -241,7 +331,17 @@ class ChainAnchorCensusStagedTest {
 					.registerTransformers(net.forbric.kernel.interop.protocol.ProtocolTransformAdapters.registry(chain));
 
 			TransformContext ctx = new TransformContext(side, false, "named");
-			for (String internal : jars.classes()) chain.applyBeforeMixin(internal.replace('/', '.'), jars.bytes(internal), ctx);
+			Map<String, byte[]> raw = new TreeMap<>(), out = new TreeMap<>();
+			Set<String> kept = new TreeSet<>();
+			for (NativeCall call : NATIVE_CALLS) kept.add(call.owner());
+			for (String internal : jars.classes()) {
+				byte[] before = jars.bytes(internal);
+				byte[] after = chain.applyBeforeMixin(internal.replace('/', '.'), before, ctx);
+				if (kept.contains(internal)) {
+					raw.put(internal, before);
+					out.put(internal, after);
+				}
+			}
 
 			List<String> missing = new ArrayList<>(), errors = new ArrayList<>();
 			for (Rec r : recs) {
@@ -256,7 +356,7 @@ class ChainAnchorCensusStagedTest {
 				}
 				r.errors.forEach((c, e) -> errors.add(r.name() + " on " + c + ": " + e));
 			}
-			return new Census(side, sites.size(), skipped, unbuilt, chain.ledger().report(), missing, errors, recs);
+			return new Census(side, sites.size(), skipped, unbuilt, chain.ledger().report(), missing, errors, recs, raw, out);
 		} finally {
 			setActive(null);
 		}

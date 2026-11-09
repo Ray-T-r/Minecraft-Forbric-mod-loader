@@ -25,8 +25,8 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The merged actuallyHurt reads its damage before armour again, ahead of MinecraftForge's Hurt seam — on the real
- * LivingEntity and Player, with the seams applied first as the chain applies them.
+ * NeoForge's actuallyHurt reads its damage parameter before armour again, as vanilla's does — on the real LivingEntity
+ * and Player of the staged base, and on synthetic bodies for the rule that decides it.
  */
 @ResourceLock("system-properties")
 class VanillaDamageReadInjectorTest {
@@ -77,24 +77,28 @@ class VanillaDamageReadInjectorTest {
 
 	/**
 	 * What decides it is what the armour call takes, not whether the parameter is read before it: vanilla's flow
-	 * (armour takes {@code fload 3}) needs nothing; a container-armouring body does, also when MinecraftForge's own
-	 * Hurt hook reads the parameter first (the edit-splicing merge's shape), and the read then lands ahead of it.
+	 * (armour takes {@code fload 3}) needs nothing, also when an earlier hook rewrites the parameter first; a
+	 * container-armouring body does, also when an earlier hook reads the parameter first (the shape the old merged base
+	 * had, with MinecraftForge's Hurt hook there), and the read then lands ahead of that hook.
 	 */
 	@Test void theArmourCallsArgumentDecidesNotAnEarlierRead() {
 		assertFalse(VanillaDamageReadInjector.repair(body(false, false)), "vanilla's flow: armour takes the parameter");
-		assertFalse(VanillaDamageReadInjector.repair(body(false, true)), "MinecraftForge's flow: the hook's result is armoured");
+		assertFalse(VanillaDamageReadInjector.repair(body(false, true)), "an earlier hook's result is what gets armoured");
 		MethodNode neo = body(true, false);
 		assertTrue(VanillaDamageReadInjector.repair(neo), "NeoForge's flow: armour takes the container's amount");
-		MethodNode spliced = body(true, true);
-		assertTrue(VanillaDamageReadInjector.repair(spliced), "a pre-armour read that feeds only Forge's hook is not vanilla's");
-		List<AbstractInsnNode> code = code(spliced);
+		MethodNode hooked = body(true, true);
+		assertTrue(VanillaDamageReadInjector.repair(hooked), "a pre-armour read that feeds only another hook is not vanilla's");
+		List<AbstractInsnNode> code = code(hooked);
 		assertTrue(firstIndex(code, i -> i instanceof MethodInsnNode c && c.name.equals("vanillaRead"))
-				< firstIndex(code, i -> i instanceof MethodInsnNode c && c.name.equals("onLivingHurt")), "the read precedes Forge's Hurt");
-		assertFalse(VanillaDamageReadInjector.repair(spliced), "a second pass adds nothing");
+				< firstIndex(code, i -> i instanceof MethodInsnNode c && c.name.equals(EARLIER_HOOK)), "the read precedes the earlier hook");
+		assertFalse(VanillaDamageReadInjector.repair(hooked), "a second pass adds nothing");
 	}
 
-	/** {@code actuallyHurt}'s opening: the invulnerability check, optionally Forge's Hurt, then the armour call. */
-	private static MethodNode body(boolean containerArmour, boolean forgeHurt) {
+	/** A static hook ahead of armour that takes the damage and answers a new amount; no ecosystem's, any would do. */
+	private static final String EARLIER_HOOK_OWNER = "org/example/damage/EarlierHooks", EARLIER_HOOK = "onHurt";
+
+	/** {@code actuallyHurt}'s opening: the invulnerability check, optionally an earlier hook, then the armour call. */
+	private static MethodNode body(boolean containerArmour, boolean earlierHook) {
 		String living = VanillaDamageReadInjector.LIVING, source = "Lnet/minecraft/world/damagesource/DamageSource;";
 		MethodNode m = new MethodNode(Opcodes.ACC_PROTECTED, "actuallyHurt", VanillaDamageReadInjector.HURT_DESC, null, null);
 		org.objectweb.asm.tree.LabelNode end = new org.objectweb.asm.tree.LabelNode();
@@ -103,11 +107,11 @@ class VanillaDamageReadInjectorTest {
 		m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
 		m.instructions.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, living, "isInvulnerableTo", "(Lnet/minecraft/server/level/ServerLevel;" + source + ")Z", false));
 		m.instructions.add(new org.objectweb.asm.tree.JumpInsnNode(Opcodes.IFNE, end));
-		if (forgeHurt) {
+		if (earlierHook) {
 			m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));
 			m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 2));
 			m.instructions.add(new VarInsnNode(Opcodes.FLOAD, 3));
-			m.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, "net/minecraftforge/common/ForgeHooks", "onLivingHurt", "(L" + living + ";" + source + "F)F", false));
+			m.instructions.add(new MethodInsnNode(Opcodes.INVOKESTATIC, EARLIER_HOOK_OWNER, EARLIER_HOOK, "(L" + living + ";" + source + "F)F", false));
 			m.instructions.add(new VarInsnNode(Opcodes.FSTORE, 3));
 		}
 		m.instructions.add(new VarInsnNode(Opcodes.ALOAD, 0));

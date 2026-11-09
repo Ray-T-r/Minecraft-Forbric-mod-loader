@@ -59,6 +59,30 @@ class MergedBaseFrameShapeExecutionTest {
             assertSame(repaired,repair.transform("future.protocol.Reader",repaired,null));
         }
     }
+    /**
+     * {@code new ClassWriter(reader, COMPUTE_FRAMES)} is a SILENT no-op: ASM copies each method's bytes verbatim, original
+     * StackMapTable included. It is faster, it looks right, and the class still fails to verify. The recomputed bytes must
+     * differ from the original, and the join frame must name the common superclass the hierarchy gives, not the stale one.
+     */
+    @Test void theConstantPoolSharingWriterIsNotUsed()throws Exception{
+        for(boolean array:List.of(false,true)){
+            Map<String,byte[]> types=types();byte[] original=choose(array,PREFIX+"Old");
+            byte[] repaired=recomputer(types).transform("future.protocol.Reader",original,null);
+            assertFalse(Arrays.equals(original,repaired),"byte-identical output means the frames were copied, not recomputed");
+            String expected=array?"[L"+PREFIX+"Current;":PREFIX+"Current",stale=array?"[L"+PREFIX+"Old;":PREFIX+"Old";
+            List<Object> joined=joinStack(repaired);
+            assertEquals(List.of(expected),joined,"the join frame names what the hierarchy says");
+            assertNotEquals(List.of(stale),joined);
+        }
+    }
+    /** The operand stack of the last frame in {@code choose}: the join of the two branches. */
+    private static List<Object> joinStack(byte[] bytes){
+        ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,ClassReader.EXPAND_FRAMES);
+        List<Object> last=null;
+        for(MethodNode method:node.methods)if(method.name.equals("choose"))for(AbstractInsnNode instruction:method.instructions)
+            if(instruction instanceof FrameNode frame)last=frame.stack==null?List.of():frame.stack;
+        return last;
+    }
     @ExpectCaught("cannot prove a frame repair for future.protocol.Reader")
     @Test void validUnknownFramesAndUnresolvedHierarchiesRetainTheOriginalBytes(){
         Map<String,byte[]> types=types();for(boolean array:List.of(false,true)){
