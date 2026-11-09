@@ -79,6 +79,37 @@ class MergedBaseForeignConditionsTest {
 						+ "neoforge:conditions is a LIST, and an unwrapped list codec is the whole failure back");
 	}
 
+	/**
+	 * D69: the leniency is for a Fabric mod's own pack, and only the reader knows the pack. NeoForge's base
+	 * {@code Resource.open()} starts by handing its {@code source} pack to {@code KernelConditionSources.reading}; nothing
+	 * else of the method moves, and a second pass leaves it alone.
+	 */
+	@Test
+	void resourceOpenTellsTheLeniencyWhichPackTheFileIsFrom() throws Exception {
+		String entry = ForbricMergedBaseCompatTransformer.RESOURCE + ".class", binary = ForbricMergedBaseCompatTransformer.RESOURCE.replace('/', '.');
+		byte[] raw = TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedBase(), entry);
+		byte[] once = new ForbricMergedBaseCompatTransformer().transform(binary, raw, null);
+		MethodNode open = null;
+		ClassNode node = new ClassNode();
+		new ClassReader(once).accept(node, 0);
+		for (MethodNode m : node.methods) if (m.name.equals("open") && m.desc.equals("()Ljava/io/InputStream;")) open = m;
+		assertTrue(open != null, "Resource.open() is not there");
+		java.util.List<AbstractInsnNode> code = new java.util.ArrayList<>();
+		for (AbstractInsnNode insn : open.instructions) if (insn.getOpcode() >= 0) code.add(insn);
+		assertEquals(Opcodes.ALOAD, code.get(0).getOpcode());
+		assertTrue(code.get(1) instanceof FieldInsnNode f && f.name.equals("source") && f.getOpcode() == Opcodes.GETFIELD,
+				"the second instruction reads the resource's own pack");
+		assertTrue(code.get(2) instanceof MethodInsnNode call && call.owner.equals(ForbricMergedBaseCompatTransformer.KERNEL_CONDITION_SOURCES)
+				&& call.name.equals("reading") && call.desc.equals("(Ljava/lang/Object;)V"), "then hands it over");
+		ClassNode before = new ClassNode();
+		new ClassReader(raw).accept(before, 0);
+		for (MethodNode m : before.methods) {
+			if (!m.name.equals("open")) continue;
+			assertEquals(m.instructions.size() + 3, open.instructions.size(), "three instructions added, nothing else");
+		}
+		assertSame(once, new ForbricMergedBaseCompatTransformer().transform(binary, once, null), "a second pass stands down");
+	}
+
 	@Test
 	void aSecondPassDoesNotWrapItTwice() throws Exception {
 		byte[] once = new ForbricMergedBaseCompatTransformer().transform(BINARY, original(), null);

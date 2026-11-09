@@ -260,6 +260,9 @@ public final class KernelRuntimeClasses {
 		// a Fabric mod's own condition id failed the whole registry load. This wraps ICondition.CODEC; the call
 		// site is an inserted instruction in that class's <clinit>, in Codec, which no JDK type can stand for.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoConditions", new Entry(Origin.COMPILED, List.of()));
+		// Which pack the data file being decoded came from, so that leniency applies to a Fabric mod's pack only (D69);
+		// called from the instruction the compat transformer puts at the head of Resource.open().
+		CLASSES.put("net.forbric.kernel.runtime.KernelConditionSources", new Entry(Origin.COMPILED, List.of()));
 		// The reordering Operation a wrapped @WrapOperation handler receives; called from the outer handler
 		// MixinWrapOperationShim writes into a guest mixin, so there is no boot-side entry point.
 		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));

@@ -84,7 +84,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -135,6 +135,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"NeoForge's biome/structure modifier pass is neutered — every neoforge:biome_modifier does nothing"));
 		out.add(fixed("letForeignResourceConditionsThrough", ICONDITION,
 				"another ecosystem's condition type fails NeoForge's evaluator and the whole registry load with it"));
+		out.add(fixed("tellTheConditionsWhichPackAFileIsReadFrom", RESOURCE,
+				"no data file is known to be a Fabric mod's, so the condition leniency never applies — a Fabric mod's own "
+						+ "condition type in its neoforge:conditions (Terralith's terralith:config) skips its data file"));
 		out.add(fixed("letFabricResourceConditionsDecide", CONDITIONAL_OPS,
 				"fabric:load_conditions has no evaluator — a Fabric mod's conditional data files all load"));
 		out.add(fixed("translateAGuestsPrivateSkipMarker", JSON_RELOAD_LISTENER,
@@ -208,6 +211,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "saveTheHeightmapsVanillaSaves", saveTheHeightmapsVanillaSaves(node));
 			changed |= claim(reporter, "guardNeoForgesWorldModifierPass", guardNeoForgesWorldModifierPass(node));
 			changed |= claim(reporter, "letForeignResourceConditionsThrough", letForeignResourceConditionsThrough(node));
+			changed |= claim(reporter, "tellTheConditionsWhichPackAFileIsReadFrom", tellTheConditionsWhichPackAFileIsReadFrom(node));
 			changed |= claim(reporter, "letFabricResourceConditionsDecide", letFabricResourceConditionsDecide(node));
 			changed |= claim(reporter, "translateAGuestsPrivateSkipMarker", translateAGuestsPrivateSkipMarker(node));
 			changed |= claim(reporter, "nameTheReloadListenersNeoForgeRefusesToName", nameTheReloadListenersNeoForgeRefusesToName(node));
@@ -250,6 +254,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	private static final String ICONDITION = ForeignType.ICONDITION.internal(Ecosystem.NEOFORGE);
 	private static final String CODEC_DESC = "Lcom/mojang/serialization/Codec;";
 	private static final String KERNEL_NEO_CONDITIONS = "net/forbric/kernel/runtime/KernelNeoConditions";
+	static final String RESOURCE = "net/minecraft/server/packs/resources/Resource";
+	private static final String PACK_RESOURCES_DESC = "Lnet/minecraft/server/packs/PackResources;";
+	static final String KERNEL_CONDITION_SOURCES = "net/forbric/kernel/runtime/KernelConditionSources";
 	static final String CODEC_TO_CODEC = "(Lcom/mojang/serialization/Codec;)Lcom/mojang/serialization/Codec;";
 	private static final String BOOTSTRAP = "net/minecraft/server/Bootstrap";
 	private static final String JSON_RELOAD_LISTENER = "net/minecraft/server/packs/resources/SimpleJsonResourceReloadListener";
@@ -646,6 +653,43 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				+ "type it does not own — NeoForge's base runs that evaluator over EVERY datapack element from "
 				+ "every pack, so a Fabric mod's own condition used to fail the whole registry load and the world "
 				+ "with it");
+		return true;
+	}
+
+	/**
+	 * Tells the condition leniency which pack the data file about to be read comes from: {@code Resource.open()} hands its
+	 * {@code source} pack to {@code KernelConditionSources.reading} first.
+	 *
+	 * <p>The leniency {@link #letForeignResourceConditionsThrough} installs is for a Fabric mod's data: a multi-loader mod's
+	 * Fabric build ships {@code neoforge:conditions} naming a condition type it registers on the Fabric side only, and on
+	 * Fabric nothing reads that key. Native NeoForge skips any other file whose {@code neoforge:conditions} name an
+	 * unregistered type ("Couldn't parse data file … Unknown registry key … neoforge:condition_codecs"), and so must
+	 * Forbric for a world datapack, a NeoForge mod's pack or vanilla's (decision D69, gate-m21's {@code dual_forge}). The
+	 * codec cannot see the file it decodes; the reader that opened it can. Every reader the base runs NeoForge's evaluator
+	 * in opens the file through {@code Resource.open()} (directly or through {@code openAsReader()}) and decodes it on the
+	 * same thread before it opens the next, so the pack recorded at the open is the decoded file's.
+	 *
+	 * <p>Three instructions at the head of {@code open()}, nothing moved: {@code aload_0; getfield source;
+	 * invokestatic reading(Object)V}. Stands down when the call is already there.
+	 */
+	private static boolean tellTheConditionsWhichPackAFileIsReadFrom(ClassNode node) {
+		if (!RESOURCE.equals(node.name)) return false;
+		MethodNode open = findMethod(node, "open", "()Ljava/io/InputStream;");
+		boolean hasSource = node.fields.stream().anyMatch(f -> f.name.equals("source") && f.desc.equals(PACK_RESOURCES_DESC)
+				&& (f.access & Opcodes.ACC_STATIC) == 0);
+		if (open == null || !hasSource || (open.access & (Opcodes.ACC_STATIC | Opcodes.ACC_ABSTRACT)) != 0) return false;
+		for (AbstractInsnNode insn = open.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && KERNEL_CONDITION_SOURCES.equals(call.owner)) return false;
+		}
+		InsnList head = new InsnList();
+		head.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		head.add(new FieldInsnNode(Opcodes.GETFIELD, RESOURCE, "source", PACK_RESOURCES_DESC));
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_CONDITION_SOURCES, "reading", "(Ljava/lang/Object;)V", false));
+		open.instructions.insert(head);
+		open.maxStack = Math.max(open.maxStack, 1);
+		ForbricLog.info("[Forbric/MergedBaseCompat] Resource.open() tells the condition leniency which pack a data file comes "
+				+ "from, so an unregistered condition type is tolerated only in a Fabric mod's own pack (-D%s=off: every pack)",
+				"forbric.neoConditions.fabricPacksOnly");
 		return true;
 	}
 

@@ -46,11 +46,88 @@ class KernelConditionKillSwitchesTest {
 	@AfterEach
 	void reset() {
 		System.clearProperty("forbric.neoConditions");
+		System.clearProperty("forbric.neoConditions.fabricPacksOnly");
 	}
 
 	@Test
 	void neoForgeLeniencyIgnoresAForeignTypeUnlessSwitchedOff() throws Exception {
 		run("net.forbric.kernel.runtime.KernelNeoConditions", "net.neoforged.neoforge.common.conditions.ICondition", "forbric.neoConditions");
+	}
+
+	/**
+	 * D69: the leniency is a Fabric mod's pack's. A data file opened from any other pack — a world datapack, a NeoForge mod's,
+	 * vanilla's — or decoded with no file opened on its thread gets NeoForge's own codec, as on native NeoForge, which skips
+	 * it; {@code -Dforbric.neoConditions.fabricPacksOnly=off} puts back the leniency for every pack (gate-m21's red control).
+	 */
+	@Test
+	void outsideAFabricModsPackTheStrictCodecDecides() throws Exception {
+		try (URLClassLoader cl = gameSideLoader()) {
+			Decoding d = new Decoding(cl, "net.forbric.kernel.runtime.KernelNeoConditions");
+			Class<?> sources = Class.forName("net.forbric.kernel.runtime.KernelConditionSources", true, cl);
+			Method bindPacks = sources.getDeclaredMethod("bindFabricModPacksForTest", Predicate.class);
+			bindPacks.setAccessible(true);
+			Object fabricPack = new Object(), worldPack = new Object();
+			bindPacks.invoke(null, (Predicate<Object>) pack -> pack == fabricPack);
+			Method reading = sources.getMethod("reading", Object.class), forget = sources.getDeclaredMethod("forgetForTest");
+			forget.setAccessible(true);
+			try {
+				forget.invoke(null);
+				d.decode();
+				assertEquals(1, d.strictCalls.get(), "no file opened on this thread: NeoForge's verdict");
+				reading.invoke(null, worldPack);
+				d.decode();
+				assertEquals(2, d.strictCalls.get(), "a world datapack's file: NeoForge's verdict");
+				reading.invoke(null, fabricPack);
+				assertEquals("forbric:foreign-condition", d.decodedName(), "a Fabric mod's file: tolerated");
+				assertEquals(2, d.strictCalls.get());
+				reading.invoke(null, worldPack);
+				System.setProperty("forbric.neoConditions.fabricPacksOnly", "off");
+				assertEquals("forbric:foreign-condition", d.decodedName(), "switched off, every pack is tolerated again");
+				assertEquals(2, d.strictCalls.get());
+			} finally {
+				forget.invoke(null);
+			}
+		}
+	}
+
+	/** One lenient codec over a strict stand-in that counts its calls, decoding {"type":"x:foreign"}. */
+	private static final class Decoding {
+		final AtomicInteger strictCalls = new AtomicInteger();
+		final Object lenient, ops, input;
+		final Method decode, result;
+
+		Decoding(URLClassLoader cl, String helperName) throws Exception {
+			Class<?> helper = Class.forName(helperName, true, cl);
+			Class<?> codecClass = Class.forName("com.mojang.serialization.Codec", true, cl);
+			Class<?> dataResult = Class.forName("com.mojang.serialization.DataResult", true, cl);
+			ops = Class.forName("com.mojang.serialization.JsonOps", true, cl).getField("INSTANCE").get(null);
+			input = Class.forName("com.google.gson.JsonParser", true, cl).getMethod("parseString", String.class)
+					.invoke(null, "{\"type\":\"x:foreign\"}");
+			Method bind = helper.getDeclaredMethod("bindKnownTypesForTest", Predicate.class);
+			bind.setAccessible(true);
+			bind.invoke(null, (Predicate<String>) id -> false);
+			Method error = dataResult.getMethod("error", java.util.function.Supplier.class);
+			Object strict = Proxy.newProxyInstance(cl, new Class<?>[] { codecClass }, (proxy, method, args) -> {
+				if ("decode".equals(method.getName())) {
+					strictCalls.incrementAndGet();
+					return error.invoke(null, (java.util.function.Supplier<String>) () -> "strict");
+				}
+				if ("toString".equals(method.getName())) return "strict";
+				throw new UnsupportedOperationException(method.getName());
+			});
+			lenient = helper.getMethod("lenient", codecClass).invoke(null, strict);
+			decode = codecClass.getMethod("decode", Class.forName("com.mojang.serialization.DynamicOps", true, cl), Object.class);
+			result = dataResult.getMethod("result");
+		}
+
+		Object decode() throws Exception {
+			return decode.invoke(lenient, ops, input);
+		}
+
+		String decodedName() throws Exception {
+			Optional<?> pair = (Optional<?>) result.invoke(decode());
+			return String.valueOf(pair.orElseThrow().getClass().getMethod("getFirst").invoke(pair.orElseThrow()));
+		}
 	}
 
 	private static void run(String helperName, String conditionName, String property) throws Exception {
@@ -74,6 +151,13 @@ class KernelConditionKillSwitchesTest {
 				owned.setAccessible(true);
 				owned.invoke(null, (Predicate<String>) id -> true);
 			}
+
+			// D69: the leniency is for a Fabric mod's pack, so the file is decoded as one opened from such a pack.
+			Class<?> sources = Class.forName("net.forbric.kernel.runtime.KernelConditionSources", true, cl);
+			Method bindPacks = sources.getDeclaredMethod("bindFabricModPacksForTest", Predicate.class);
+			bindPacks.setAccessible(true);
+			bindPacks.invoke(null, (Predicate<Object>) pack -> true);
+			sources.getMethod("reading", Object.class).invoke(null, new Object());
 
 			AtomicInteger strictCalls = new AtomicInteger();
 			Method error = dataResult.getMethod("error", java.util.function.Supplier.class);

@@ -88,6 +88,13 @@ class KernelNeoConditionsOverlayTest {
 			Method bind = helper.getDeclaredMethod("bindKnownTypesForTest", Predicate.class);
 			bind.setAccessible(true);
 			bind.invoke(null, (Predicate<String>) id -> false);
+			// Outside an overlay scope the condition is a data file's, tolerated only in a Fabric mod's own pack (D69): the
+			// decodes here read as from one.
+			Class<?> sources = Class.forName("net.forbric.kernel.runtime.KernelConditionSources", true, cl);
+			Method bindPacks = sources.getDeclaredMethod("bindFabricModPacksForTest", Predicate.class);
+			bindPacks.setAccessible(true);
+			bindPacks.invoke(null, (Predicate<Object>) pack -> true);
+			sources.getMethod("reading", Object.class).invoke(null, new Object());
 			Method error = dataResult.getMethod("error", java.util.function.Supplier.class);
 			strict = Proxy.newProxyInstance(cl, new Class<?>[] { codecClass }, (proxy, method, args) -> {
 				if ("decode".equals(method.getName())) return error.invoke(null, (java.util.function.Supplier<String>) () -> "strict");

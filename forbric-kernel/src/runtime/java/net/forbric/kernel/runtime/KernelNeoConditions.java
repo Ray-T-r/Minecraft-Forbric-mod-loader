@@ -59,8 +59,10 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <h2>What this does instead</h2>
  *
- * <p>A condition type NeoForge does not know is not NeoForge's to judge. It is decoded as a condition that does
- * not veto, so the element loads and the OTHER ecosystem's evaluator — which owns that id — decides. Failing
+ * <p>A condition type NeoForge does not know is not NeoForge's to judge — in a Fabric mod's own pack. There it is decoded
+ * as a condition that does not veto, so the element loads and the OTHER ecosystem's evaluator — which owns that id —
+ * decides. In any other pack (a NeoForge mod's, vanilla's, a world datapack) NeoForge's own codec decides, as on native
+ * NeoForge: the file is skipped ({@link KernelConditionSources}, decision D69). Failing
  * the parse instead loses the element, the registry and the world; ignoring one condition's opinion loses one
  * condition's opinion.
  *
@@ -126,6 +128,8 @@ public final class KernelNeoConditions {
 
 	private static final Set<String> REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
 
+	private static final Set<String> NATIVE_REPORTED = Collections.newSetFromMap(new ConcurrentHashMap<>());
+
 	/** {@code -Dforbric.neoConditions=off}: decode strictly, exactly as the carrier's own codec would. Read per decode. */
 	public static final String PROPERTY = "forbric.neoConditions";
 
@@ -163,8 +167,14 @@ public final class KernelNeoConditions {
 				if (!enabled()) return strict.decode(ops, input);
 				String foreign = foreignType(ops, input);
 				if (foreign != null) {
-					report(foreign);
 					Set<String> overlay = OVERLAY.get();
+					if (overlay == null && !KernelConditionSources.foreignConditionsTolerated()) {
+						// A data file of a pack that is not a Fabric mod's: NeoForge's own verdict, as on native NeoForge
+						// (the file fails to parse and is skipped). D69.
+						reportNative(foreign, KernelConditionSources.currentPackId());
+						return strict.decode(ops, input);
+					}
+					report(foreign);
 					if (overlay != null && overlayVetoEnabled()) {
 						overlay.add(foreign);
 						return DataResult.success(Pair.of(VETO, ops.empty()));
@@ -311,6 +321,13 @@ public final class KernelNeoConditions {
 					+ "registry — the strict codec decides this one");
 			return null;
 		}
+	}
+
+	private static void reportNative(String type, String pack) {
+		if (!NATIVE_REPORTED.add(type + "|" + pack)) return;
+		ForbricLog.info("[Forbric/Conditions] resource condition '%s' in pack '%s' is not in NeoForge's condition registry, "
+				+ "and that pack is not a Fabric mod's: NeoForge's evaluator decides, as on native NeoForge — the data file is "
+				+ "skipped (-D%s=off keeps it, as Forbric 0.4 did)", type, pack, KernelConditionSources.PROPERTY);
 	}
 
 	private static void report(String type) {
