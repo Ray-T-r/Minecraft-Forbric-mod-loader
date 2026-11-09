@@ -60,7 +60,7 @@ import net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes;
  * from them: a mod filtering the file list by type dropped every kernel-loaded mod, and a mod walking from a
  * file back to its info — the direction NeoForge's own error path takes — dereferenced null.
  *
- * <h2>One per jar, behind a switch</h2>
+ * <h2>One per jar, as FML builds them</h2>
  *
  * <p>FML builds ONE {@code ModFile} per jar, however many {@code [[mods]]} it declares, and every one of those mods'
  * {@code getOwningFile().getFile()} is that object. The carrier's own bytecode says what that object answers
@@ -71,42 +71,46 @@ import net.neoforged.neoforgespi.locating.ModFileDiscoveryAttributes;
  * the FIRST entry, whichever mod asks; and {@code getModInfos()} is {@code modFileInfo.getMods()}. There is one file
  * info per jar too, so two mods of one jar have the same {@code getOwningFile()}.
  *
- * <p>By default the kernel builds one file per MOD, and the place that shows is {@code ModList.getAllScanData()},
- * which natively streams {@code sortedList → getOwningFile → getFile → distinct → getScanResult} — the
- * {@code distinct()} is by identity, and two file objects for one jar are two entries. The NeoForge canary has a
- * second {@code @Mod} in its jar, and the index lists that jar twice (gate-m21 prints "2 file(s)" with one jar
- * staged), so a mod that walks the index — JEI collecting {@code @JeiPlugin}s, Jade its providers — meets every class
- * of such a jar twice. The two entries are the same index object ({@code ModFileScanner.scanShared}), so nothing is
- * scanned twice; the walk is.
+ * <p>The kernel builds that shape: {@link #sharedFor} hands every NeoForge declaration of a jar the same file, which
+ * owns one {@link KernelModFileInfo} listing all of them in {@code [[mods]]} order and is named after the first. Only
+ * NeoForge's: a universal jar whose Fabric half the kernel also describes as a mod ({@code KernelDeclarationReaders})
+ * keeps that Fabric mod on a file of its own — natively no NeoForge file lists a Fabric mod, and the walk up from a
+ * NeoForge mod must not land on one. Where it shows is {@code ModList.getAllScanData()}, which natively streams
+ * {@code sortedList → getOwningFile → getFile → distinct → getScanResult}: the {@code distinct()} is by identity, so
+ * the jar is listed once, and a mod that walks the index — JEI collecting {@code @JeiPlugin}s, Jade its providers —
+ * meets each class of the jar once (gate-m21 counts the NeoForge canary's two-{@code @Mod} jar: 1 entry).
  *
- * <p>{@code -Dforbric.modFilePerJar=on} gives the native shape: {@link #sharedFor} hands every NeoForge declaration
- * of a jar the same file, which owns one {@link KernelModFileInfo} listing all of them in {@code [[mods]]} order and
- * is named after the first. Only NeoForge's: a universal jar whose Fabric half the kernel also describes as a mod
- * ({@code KernelDeclarationReaders}) keeps that Fabric mod on a file of its own — natively no NeoForge file lists a
- * Fabric mod, and the walk up from a NeoForge mod must not land on one. The switch is OFF by default: Stage 2 of the
- * MinecraftForge removal kept the merged base's behaviour, and what a mod walking the index meets changes with it;
- * turning it on on NeoForge's base is listed as a Stage 4 obligation (stage2-measurements.md) and has not been done.
+ * <p>{@code -Dforbric.modFilePerJar=off} gives back the shape Forbric built until Stage 4 of the MinecraftForge
+ * removal (the merged base, and Stage 2, which kept it): one file per MOD, so such a jar is two entries of the index —
+ * the same index object ({@code ModFileScanner.scanShared}), so nothing is scanned twice, only walked twice. The
+ * default was flipped on NeoForge's own base after an on/off A/B on gate-m21, gate-m9 and the client-merged-pack boot
+ * (stage4-c5-g-a.md).
  */
 public final class KernelModFile implements IModFile {
 	/**
 	 * Every shared jar's file, by the real path {@code ModFileScanner} keys its shared index on, so a symlink or
-	 * {@code /tmp} for {@code /private/tmp} cannot make one jar two files. Filled only with the switch on, and never
-	 * with a jar-less presence alias, which has no file to share.
+	 * {@code /tmp} for {@code /private/tmp} cannot make one jar two files. Empty with {@code -Dforbric.modFilePerJar=off},
+	 * and never holds a jar-less presence alias, which has no file to share.
 	 */
 	private static final Map<Path, KernelModFile> BY_JAR = new ConcurrentHashMap<>();
 
-	/** The switch {@link #sharedFor} is behind; off unless set to {@code on}. */
+	/** The switch {@link #sharedFor} is behind; on unless set to {@code off}. */
 	static final String PER_JAR_SWITCH = "forbric.modFilePerJar";
 
 	private static final AtomicBoolean ANNOUNCED = new AtomicBoolean();
 
 	/**
-	 * Whether a NeoForge declaration with a jar gets that jar's one shared file. Off by default: a file per mod is what
-	 * Forbric has always given (the old merged base too), and Stage 2 kept it. {@code -Dforbric.modFilePerJar=on} is the native shape,
-	 * which gate-m21 measures in a boot of its own.
+	 * Whether a NeoForge declaration with a jar gets that jar's one shared file: yes, the native shape, unless
+	 * {@code -Dforbric.modFilePerJar=off}, which gives every mod a file of its own as Forbric did before Stage 4 (and
+	 * says so once). gate-m21 asserts the default and has this switch as its red control.
 	 */
 	static boolean perJar() {
-		return "on".equalsIgnoreCase(System.getProperty(PER_JAR_SWITCH, "off"));
+		if (!"off".equalsIgnoreCase(System.getProperty(PER_JAR_SWITCH, "on"))) return true;
+		if (ANNOUNCED.compareAndSet(false, true)) {
+			ForbricLog.info("[Forbric/Container] every NeoForge mod keeps an IModFile and file info of its own, "
+					+ "so a jar of several mods is listed once per mod in the scan index (-D%s=off)", PER_JAR_SWITCH);
+		}
+		return false;
 	}
 
 	/**
@@ -114,10 +118,6 @@ public final class KernelModFile implements IModFile {
 	 * only caller, and it has already checked the switch and that the declaration is NeoForge's.
 	 */
 	static KernelModFile sharedFor(String modId, Path jar) {
-		if (ANNOUNCED.compareAndSet(false, true)) {
-			ForbricLog.info("[Forbric/Container] every NeoForge mod of one jar now shares that jar's IModFile and file "
-					+ "info, as FML builds them (-D%s=on)", PER_JAR_SWITCH);
-		}
 		return BY_JAR.computeIfAbsent(ModFileScanner.cacheKey(jar), key -> new KernelModFile(modId, jar, true));
 	}
 

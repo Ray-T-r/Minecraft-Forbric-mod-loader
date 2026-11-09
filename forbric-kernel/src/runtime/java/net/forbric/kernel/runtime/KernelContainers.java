@@ -55,8 +55,8 @@ public final class KernelContainers {
 	 * <p>Returns {@code Object} because the caller is boot-side and cannot name the type. This is the only cast
 	 * in the chain, and it sits exactly at the boundary that is untyped by construction.
 	 *
-	 * <p>Every mod this class describes is a NeoForge mod, so with {@code -Dforbric.modFilePerJar=on} it shares its jar's one file with the
-	 * jar's other NeoForge mods ({@link KernelModInfo#neoForge}).
+	 * <p>Every mod this class describes is a NeoForge mod, so it shares its jar's one file with the jar's other NeoForge
+	 * mods ({@link KernelModInfo#neoForge}), unless {@code -Dforbric.modFilePerJar=off}.
 	 */
 	public static Object modInfo(String modId, Path jar) {
 		return KernelModInfo.neoForge(modId, jar, null);

@@ -30,15 +30,16 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 /**
- * What the walk from a NeoForge mod to its file and back answers, with one file per mod (the default) and with
- * {@code -Dforbric.modFilePerJar=on}, which builds them the way FML does.
+ * What the walk from a NeoForge mod to its file and back answers: by default one file per jar, the way FML builds
+ * them, and with {@code -Dforbric.modFilePerJar=off} one file per mod, the shape Forbric built before Stage 4.
  *
  * <p>Natively FML builds one {@code ModFile} and one {@code ModFileInfo} per jar: the file info lists every
  * {@code [[mods]]} entry of the jar's {@code neoforge.mods.toml} in file order, the file's id is the first entry's, and
  * {@code ModList.getAllScanData()} streams {@code sortedList → getOwningFile → getFile → distinct → getScanResult} —
  * the {@code distinct()} is by identity — so such a jar is listed once (javap on the carrier's {@code ModFile},
- * {@code ModFileInfo} and {@code ModList}). The kernel builds one file per MOD, and Stage 2 of the MinecraftForge
- * removal keeps it that way, so the switch is off by default and the first test pins that. The rest run with it on.
+ * {@code ModFileInfo} and {@code ModList}). Stage 4 of the MinecraftForge removal turned that shape on by default on
+ * NeoForge's own base (the A/B is in stage4-c5-g-a.md); the first test pins the default, the second the switch-off
+ * shape, and the rest run with the default.
  * The index counts run the carrier's own {@code getAllScanData()} over kernel-built infos, so the dedupe judged is
  * NeoForge's, not a copy of it.
  *
@@ -57,14 +58,27 @@ class KernelModFilePerJarTest {
 		System.clearProperty(PER_JAR_SWITCH);
 	}
 
+	/** The default, with no switch set: two mods of one jar share one file, and the index lists the jar once. */
+	@Test
+	void byDefaultTwoModsOfOneJarShareOneFileAndTheIndexListsTheJarOnce() throws Exception {
+		Path both = neoJar("both.jar", "firstmod", "secondmod");
+		try (URLClassLoader runtime = runtimeLoader()) {
+			Object first = neo(runtime, "firstmod", both);
+			Object second = neo(runtime, "secondmod", both);
+			assertSame(file(first), file(second), "one jar is one IModFile without any switch set");
+			assertEquals(1, allScanData(runtime, List.of(first, second)).size(), "the index lists the jar once");
+		}
+	}
+
 	/**
-	 * Stage 2 changes nothing on the merged base: without the switch two mods of one jar keep a file each, each
-	 * file's walk up lists its own mod alone, and NeoForge's own {@code distinct()} keeps both entries — the very same
-	 * index object, which is why nothing was ever scanned twice, only walked twice. This is also gate-m21's default
-	 * boot, measured here first.
+	 * {@code -Dforbric.modFilePerJar=off} gives back the shape the kernel built before Stage 4 (the merged base, and
+	 * Stage 2, which kept it): two mods of one jar keep a file each, each file's walk up lists its own mod alone, and
+	 * NeoForge's own {@code distinct()} keeps both entries — the very same index object, which is why nothing was ever
+	 * scanned twice, only walked twice. This is gate-m21's red control, measured here first.
 	 */
 	@Test
-	void byDefaultEveryModKeepsAFileOfItsOwnAndTheIndexListsTheJarOncePerMod() throws Exception {
+	void withTheSwitchOffEveryModKeepsAFileOfItsOwnAndTheIndexListsTheJarOncePerMod() throws Exception {
+		System.setProperty(PER_JAR_SWITCH, "off");
 		Path both = neoJar("both.jar", "firstmod", "secondmod");
 		try (URLClassLoader runtime = runtimeLoader()) {
 			Object first = neo(runtime, "firstmod", both);
@@ -80,8 +94,7 @@ class KernelModFilePerJarTest {
 	}
 
 	@Test
-	void withTheSwitchOnTwoModsOfOneJarShareOneFileAndTheIndexListsTheJarOnce() throws Exception {
-		System.setProperty(PER_JAR_SWITCH, "on");
+	void twoModsOfOneJarShareOneFileAndOneFileInfoAndTwoJarsStayTwoFiles() throws Exception {
 		Path both = neoJar("both.jar", "firstmod", "secondmod");
 		Path other = neoJar("other.jar", "othermod");
 		try (URLClassLoader runtime = runtimeLoader()) {
@@ -107,7 +120,6 @@ class KernelModFilePerJarTest {
 	 */
 	@Test
 	void theWalkUpFromEveryModOfAJarListsAllOfThemInManifestOrder() throws Exception {
-		System.setProperty(PER_JAR_SWITCH, "on");
 		Path both = neoJar("both.jar", "firstmod", "secondmod");
 		try (URLClassLoader runtime = runtimeLoader()) {
 			Object second = neo(runtime, "secondmod", both);
@@ -128,7 +140,6 @@ class KernelModFilePerJarTest {
 	/** {@code ModFile}'s constructor sets {@code id = modFileInfo.getMods().getFirst().getModId()}: the first entry. */
 	@Test
 	void theSharedFileIsNamedAfterTheJarsFirstModsEntryWhicheverModIsBuiltFirst() throws Exception {
-		System.setProperty(PER_JAR_SWITCH, "on");
 		Path both = neoJar("both.jar", "firstmod", "secondmod");
 		try (URLClassLoader runtime = runtimeLoader()) {
 			Object second = neo(runtime, "secondmod", both);
@@ -146,7 +157,6 @@ class KernelModFilePerJarTest {
 	 */
 	@Test
 	void aUniversalJarsFabricModNeverJoinsItsNeoForgeModsFile() throws Exception {
-		System.setProperty(PER_JAR_SWITCH, "on");
 		Path universal = universalJar("universal.jar", "fabricmod", "neomod");
 		DiscoveredMod fabricDeclared = discovered(universal, Ecosystem.FABRIC);
 		try (URLClassLoader runtime = runtimeLoader()) {

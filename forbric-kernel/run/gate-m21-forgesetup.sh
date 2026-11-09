@@ -234,21 +234,6 @@ check_probe "and keeps a datapack-registry element"          "feature unowned" '
 check_probe "a recipe guarded by forge:not(forge:tag_empty) over a full tag is there" "recipe full_tag" 'Test passed'
 check_probe "and so is one over an empty tag: the guard is not judged" "recipe empty_tag" 'Test passed'
 
-step "boot the same instance again with -Dforbric.modFilePerJar=on, the scan index's native shape"
-# The one-IModFile-per-jar shape is behind a switch that was OFF through Stage 2 of the MinecraftForge removal (the merged
-# base must not change behaviour, and what a mod walking the scan index meets changes with it); Stage 4 turns it on.
-# Every check above and below reads the default boot. This second boot exists for the two checks that count the
-# canary's jar in the index with the switch on, in the NeoForge block below. It needs nothing but Done: the canary
-# prints its scan lines from its constructor. M21_PERJAR_JVM replaces the switch for this boot only (its RED control).
-LOG_PERJAR="$BUILD/gate-m21-forgesetup-perjar.log"
-: > "$LOG_PERJAR"
-( stop_when_ready "$LOG_PERJAR" 20 ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M21_EXTRA_JVM:-} ${M21_PERJAR_JVM:--Dforbric.modFilePerJar=on}" \
-  RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG_PERJAR" 2>&1 &
-BOOTPID=$!
-record_server_pid "$RUNDIR" "$BOOTPID"
-await_server "$BOOTPID" "$LOG_PERJAR" 130
-check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
-
 # M21_NEO_CONTRACTS_BEGIN — the contracts the kernel gives a NeoForge mod, read out of NeoForge's own API by forbricneolive.
 #
 # The scan index, a server data loader, a mod finding its own container, a mixin config plugin, a per-world SERVER
@@ -259,20 +244,21 @@ check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
 #   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
 #                                                its own" lines, both shape lines and both member lines are gone,
 #                                                ModList's count line says 0 annotations and lists the jar 0 times --
-#                                                11 checks red, the per-jar boot's two among them, since that boot carries
-#                                                M21_EXTRA_JVM too -- and the kernel names the switch ("NeoForge scan index
-#                                                DISABLED (-Dforbric.neoScanData=off)")
-#   M21_PERJAR_JVM='-Dforbric.modFilePerJar=off' the second boot keeps one IModFile per MOD, the default: the canary's
-#                                                jar holds two @Mod classes, NeoForge's own distinct() keeps both
-#                                                entries, and the index lists the jar twice -- exactly the two per-jar
-#                                                checks go red ("lists the canary's jar once", 2 for 1; "found in one
-#                                                entry", exactly 1 got 2) (measured 2026-10-30)
-#   M21_EXTRA_JVM='-Dforbric.modFilePerJar=on'   the switch on in the default boot too: exactly the two checks of the
-#                                                default go red (1 for 2; exactly 2 got 1) (measured 2026-10-30)
+#                                                9 checks red (11 before the per-jar flip, when a second
+#                                                boot repeated two of them) -- and the kernel names the switch
+#                                                ("NeoForge scan index DISABLED (-Dforbric.neoScanData=off)")
+#   M21_EXTRA_JVM='-Dforbric.modFilePerJar=off'  one IModFile per MOD again, the shape before the Stage 4 flip: the
+#                                                canary's jar holds two @Mod classes, NeoForge's own distinct() keeps
+#                                                both entries, and the index lists the jar twice -- exactly the two
+#                                                per-jar checks go red ("lists the canary's jar once", 2 for 1; "found in
+#                                                one entry", exactly 1 got 2), and the kernel says so once ("every
+#                                                NeoForge mod keeps an IModFile and file info of its own ...")
+#                                                (measured 2026-11-09, stage4-c5-g-a.md)
 #   M21_EXTRA_JVM='-Dforbric.seededScanData=off' the seeded LoadingModList's ModFile has no index again, so its reader
 #                                                throws FML's "Scanning of this mod file has not started yet." and the
-#                                                LoadingModList lines are gone; ModList's reader is untouched: 5 checks red,
-#                                                the three LoadingModList lines and both boots' "neither reader failed"
+#                                                LoadingModList lines are gone; ModList's reader is untouched: 4 checks red,
+#                                                the three LoadingModList lines and "neither reader failed" (measured
+#                                                2026-11-09 after the flip; 5 before it, the second boot's absence too)
 #   M21_EXTRA_JVM='-Dforbric.modDataPacks=off'   the kernel serves no NeoForge mod's own data/ (ModList.modFiles is
 #                                                empty, so NeoForge's own pack finder finds none; KernelDataPacks is the
 #                                                only server of it): the canary's listener still runs, over 0 files --
@@ -295,21 +281,15 @@ check "NeoForge: ModList's index holds annotations at all" \
   "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\): [1-9][0-9]* file\(s\), [1-9][0-9]* annotation\(s\)" "$LOG"
 # One jar holding two mods (forbricneolive and its client-only forbricneoclientonly) is ONE file to NeoForge:
 # getAllScanData() streams each mod's owning file through distinct(), so the jar is listed once. The count line above
-# cannot tell 1 from 2 (it says "2 file(s)" with this one jar staged while the kernel builds a file per mod); these can,
-# and so can the reader line counted exactly. With -Dforbric.modFilePerJar=on (the second boot) the kernel builds the
-# jar's one file, as FML does:
-check "NeoForge, per jar: the index lists the canary's jar once, as one IModFile" \
-  "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 1 time\(s\)" "$LOG_PERJAR"
-check_exactly "NeoForge (ModList), per jar: its own annotation is found in one entry, not one per mod" \
-  "ForbricNeoLive/SCAN\] ModList found its own @NeoLiveScanned" "$LOG_PERJAR" 1
-# and by default (until the Stage 4 flip) one file per mod, as the merged base always had it: the jar twice, as two
-# entries over the same index object. Stage 4 turns the switch on and moves these two to "1" (stage2-measurements.md).
-check "NeoForge, default: the index still lists the canary's jar once per mod (Stage 2 keeps the file per mod)" \
-  "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 2 time\(s\)" "$LOG"
-check_exactly "NeoForge (ModList), default: its own annotation is found in both of the jar's entries" \
-  "ForbricNeoLive/SCAN\] ModList found its own @NeoLiveScanned" "$LOG" 2
+# cannot tell 1 from 2 (it said "2 file(s)" with this one jar staged while the kernel built a file per mod); these can,
+# and so can the reader line counted exactly. Until Stage 4 the kernel built a file per mod and these two were asserted
+# in a second boot with -Dforbric.modFilePerJar=on; Stage 4 made the jar's one file the default (stage4-c5-g-a.md, the
+# A/B), so the default boot asserts it and the switch is the red control above.
+check "NeoForge: the index lists the canary's jar once, as one IModFile" \
+  "ForbricNeoLive/SCAN\] ModList.getAllScanData\(\) lists forbricneolive's jar 1 time\(s\)" "$LOG"
+check_exactly "NeoForge (ModList): its own annotation is found in one entry, not one per mod" \
+  "ForbricNeoLive/SCAN\] ModList found its own @NeoLiveScanned" "$LOG" 1
 check_absent "NeoForge: neither reader failed" "ForbricNeoLive/SCAN\] (could not read|LoadingModList has no file)" "$LOG"
-check_absent "NeoForge, per jar: neither reader failed" "ForbricNeoLive/SCAN\] (could not read|LoadingModList has no file)" "$LOG_PERJAR"
 
 step "a NeoForge mod's server data loader is registered and runs (must PASS)"
 # NeoForge's AddServerReloadListenersEvent, posted by NeoForge's own EventHooks.onResourceReload, which the game base's

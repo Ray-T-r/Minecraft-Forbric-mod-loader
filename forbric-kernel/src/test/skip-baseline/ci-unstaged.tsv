@@ -1515,10 +1515,11 @@ test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	missingVersionKeeps
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	neoDeclaredVersionWinsOverAnUnrelatedManifestVersion()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFileInfoVersionTest	presenceAliasesHaveAnEmptyNativeResourceViewAndRealFilesKeepTheirResources()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFilePerJarTest	aUniversalJarsFabricModNeverJoinsItsNeoForgeModsFile()	[fixture:staged] staged carrier absent
-test	net.forbric.kernel.runtime.KernelModFilePerJarTest	byDefaultEveryModKeepsAFileOfItsOwnAndTheIndexListsTheJarOncePerMod()	[fixture:staged] staged carrier absent
+test	net.forbric.kernel.runtime.KernelModFilePerJarTest	byDefaultTwoModsOfOneJarShareOneFileAndTheIndexListsTheJarOnce()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFilePerJarTest	theSharedFileIsNamedAfterTheJarsFirstModsEntryWhicheverModIsBuiltFirst()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModFilePerJarTest	theWalkUpFromEveryModOfAJarListsAllOfThemInManifestOrder()	[fixture:staged] staged carrier absent
-test	net.forbric.kernel.runtime.KernelModFilePerJarTest	withTheSwitchOnTwoModsOfOneJarShareOneFileAndTheIndexListsTheJarOnce()	[fixture:staged] staged carrier absent
+test	net.forbric.kernel.runtime.KernelModFilePerJarTest	twoModsOfOneJarShareOneFileAndOneFileInfoAndTwoJarsStayTwoFiles()	[fixture:staged] staged carrier absent
+test	net.forbric.kernel.runtime.KernelModFilePerJarTest	withTheSwitchOffEveryModKeepsAFileOfItsOwnAndTheIndexListsTheJarOncePerMod()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModInfoConfigTest	everyKeyAnswersAsNeoForgesWrapperDoes()	[fixture:staged] staged carrier absent
 test	net.forbric.kernel.runtime.KernelModInfoConfigTest	notEnoughCrashesDescribesAKernelModAsNeoForgeLetsIt()	[fixture:third-party] the sweep's Not Enough Crashes jar is not here
 test	net.forbric.kernel.runtime.KernelModInfoConfigTest	puzzlesLibReadsItsAuthorsAndHomepage()	[fixture:third-party] the popular pack's Puzzles Lib jar is not here

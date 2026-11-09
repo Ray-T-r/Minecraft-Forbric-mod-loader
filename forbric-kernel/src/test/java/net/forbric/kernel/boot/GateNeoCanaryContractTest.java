@@ -31,16 +31,15 @@ class GateNeoCanaryContractTest {
 	private static final String SCAN_OWN =
 			"[ForbricNeoLive/SCAN] ModList found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod";
 	/**
-	 * The default boot's lines (Stage 2: one file per mod). The canary's jar holds two {@code @Mod} classes, so the index
-	 * lists it twice and ModList finds the canary's own annotation in both entries.
+	 * The boot's lines. The canary's jar holds two {@code @Mod} classes and is one file, as FML builds it (the Stage 4
+	 * default), so the index lists it once and ModList finds the canary's own annotation in that one entry.
 	 */
 	private static final List<String> M21_GREEN = List.of(
 			SCAN_OWN,
-			SCAN_OWN,
 			"[ForbricNeoLive/SCAN] ModList enum member kind is " + SCAN_HOLDER + " with value SECOND",
 			"[ForbricNeoLive/SCAN] ModList string member note is probe",
-			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 2 file(s), 10 annotation(s)",
-			"[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar 2 time(s)",
+			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 1 file(s), 5 annotation(s)",
+			"[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar 1 time(s)",
 			"[ForbricNeoLive/SCAN] LoadingModList found its own @NeoLiveScanned on FIELD PROBE of forbric.live.neoforge.ForbricNeoLiveMod",
 			"[ForbricNeoLive/SCAN] LoadingModList enum member kind is " + SCAN_HOLDER + " with value SECOND",
 			"[ForbricNeoLive/SCAN] LoadingModList string member note is probe",
@@ -51,29 +50,15 @@ class GateNeoCanaryContractTest {
 			"[ForbricNeoLive/PLUGIN] prepareConfigs saw dist=DEDICATED_SERVER",
 			"[ForbricNeoLive/CFG] LOADING forbricneolive-server.toml: greeting=default loaded=true path=/srv/config/forbricneolive-server.toml");
 
-	/** The second boot's, with {@code -Dforbric.modFilePerJar=on}: the jar is one file, listed once. */
-	private static final List<String> M21_PERJAR_GREEN = List.of(
-			SCAN_OWN,
-			"[ForbricNeoLive/SCAN] ModList.getAllScanData(): 1 file(s), 5 annotation(s)",
-			"[ForbricNeoLive/SCAN] ModList.getAllScanData() lists forbricneolive's jar 1 time(s)");
-
 	@Test
 	void m21NeoBlockIsGreenOnTheLiveCanaryLinesAndRedWithoutEachOne() throws Exception {
 		String green = String.join("\n", M21_GREEN) + "\n";
-		String perJar = String.join("\n", M21_PERJAR_GREEN) + "\n";
-		assertGreen(m21(green, perJar));
+		assertGreen(m21(green));
 		for (int i = 0; i < M21_GREEN.size(); i++) {
 			List<String> without = new java.util.ArrayList<>(M21_GREEN);
 			String line = without.remove(i);
-			Result result = m21(String.join("\n", without) + "\n", perJar);
+			Result result = m21(String.join("\n", without) + "\n");
 			assertEquals(1, result.exit(), "still green without: " + line + "\n" + result.output());
-		}
-		for (int i = 0; i < M21_PERJAR_GREEN.size(); i++) {
-			List<String> without = new java.util.ArrayList<>(M21_PERJAR_GREEN);
-			String line = without.remove(i);
-			if (line.contains("getAllScanData(): ")) continue; // the count line is asked of the default boot only
-			Result result = m21(green, String.join("\n", without) + "\n");
-			assertEquals(1, result.exit(), "still green without, per jar: " + line + "\n" + result.output());
 		}
 	}
 
@@ -81,41 +66,31 @@ class GateNeoCanaryContractTest {
 	@Test
 	void m21NeoBlockRefusesTheOtherFamilysEnumShapeAndASecondServerConfigLoad() throws Exception {
 		String green = String.join("\n", M21_GREEN) + "\n";
-		String perJar = String.join("\n", M21_PERJAR_GREEN) + "\n";
-		Result forgeShape = m21(green.replace(SCAN_HOLDER, "net.minecraftforge.forgespi.language.ModFileScanData$EnumData"),
-				perJar);
+		Result forgeShape = m21(green.replace(SCAN_HOLDER, "net.minecraftforge.forgespi.language.ModFileScanData$EnumData"));
 		assertRed(forgeShape, "an enum member has NeoForge's own EnumHolder shape");
-		Result twice = m21(green + M21_GREEN.get(M21_GREEN.size() - 1) + "\n", perJar);
+		Result twice = m21(green + M21_GREEN.get(M21_GREEN.size() - 1) + "\n");
 		assertRed(twice, "its SERVER config loads once");
 		String unreadable = "[ForbricNeoLive/SCAN] could not read the LoadingModList scan index: java.lang.IllegalStateException\n";
-		assertRed(m21(green + unreadable, perJar), "NeoForge: neither reader failed");
-		assertRed(m21(green, perJar + unreadable), "NeoForge, per jar: neither reader failed");
+		assertRed(m21(green + unreadable), "NeoForge: neither reader failed");
 	}
 
 	/**
-	 * The two shapes told apart, each in the boot that must not have it. The per-jar boot with one file per MOD (what
-	 * {@code M21_PERJAR_JVM=-Dforbric.modFilePerJar=off} gives) lists the jar twice and finds the canary's annotation
-	 * in both entries; the count line alone says only "2 file(s)", which the old check's {@code [1-9][0-9]*} took as
-	 * green. The default boot with the jar's one file (the switch on there: the default flipped before Stage 4) lists
-	 * it once.
+	 * The jar's one file told apart from the same jar listed once per mod, which is what
+	 * {@code M21_EXTRA_JVM=-Dforbric.modFilePerJar=off} (the shape before the Stage 4 flip) prints: the jar twice, and
+	 * the canary's annotation found in both entries. The count line alone says only "2 file(s)", which the old check's
+	 * {@code [1-9][0-9]*} took as green; exactly the two per-jar checks must say it.
 	 */
 	@Test
 	void m21NeoBlockTellsOneJarFromTheSameJarListedOncePerMod() throws Exception {
-		String green = String.join("\n", M21_GREEN) + "\n";
-		String perJar = String.join("\n", M21_PERJAR_GREEN) + "\n";
-		Result perModInThePerJarBoot = m21(green, green);
-		assertRed(perModInThePerJarBoot, "per jar: the index lists the canary's jar once, as one IModFile");
-		assertTrue(perModInThePerJarBoot.output().contains(
-				"FAIL NeoForge (ModList), per jar: its own annotation is found in one entry"), perModInThePerJarBoot.output());
-
-		List<String> flipped = new java.util.ArrayList<>(M21_GREEN);
-		flipped.remove(SCAN_OWN);
-		flipped.replaceAll(line -> line.replace("2 time(s)", "1 time(s)").replace("2 file(s), 10", "1 file(s), 5"));
-		Result perJarInTheDefaultBoot = m21(String.join("\n", flipped) + "\n", perJar);
-		assertRed(perJarInTheDefaultBoot, "default: the index still lists the canary's jar once per mod");
-		assertTrue(perJarInTheDefaultBoot.output().contains(
-				"FAIL NeoForge (ModList), default: its own annotation is found in both of the jar's entries"),
-				perJarInTheDefaultBoot.output());
+		List<String> perMod = new java.util.ArrayList<>(M21_GREEN);
+		perMod.add(0, SCAN_OWN);
+		perMod.replaceAll(line -> line.replace("1 time(s)", "2 time(s)").replace("1 file(s), 5", "2 file(s), 10"));
+		Result perModBoot = m21(String.join("\n", perMod) + "\n");
+		assertRed(perModBoot, "FAIL NeoForge: the index lists the canary's jar once, as one IModFile");
+		assertTrue(perModBoot.output().contains(
+				"FAIL NeoForge (ModList): its own annotation is found in one entry"), perModBoot.output());
+		assertEquals(2, perModBoot.output().lines().filter(line -> line.startsWith("[kernel] FAIL")).count(),
+				perModBoot.output());
 	}
 
 	private static final List<String> M26_GREEN = m26Green();
@@ -277,29 +252,19 @@ class GateNeoCanaryContractTest {
 		return new Result(process.exitValue(), Files.readString(output));
 	}
 
-	private Result m21(String log, String perJarLog) throws Exception {
-		return block(M21, "M21_NEO_CONTRACTS", log, perJarLog);
-	}
+	private Result m21(String log) throws Exception { return block(M21, "M21_NEO_CONTRACTS", log); }
 	private Result m26Fabric(String log) throws Exception { return block(M26, "M26_FABRIC_ASSERTIONS", log); }
 	private Result m26(String log) throws Exception { return block(M26, "M26_NEO_ASSERTIONS", log); }
 
 	private Result block(Path gate, String name, String log) throws Exception {
-		return block(gate, name, log, null);
-	}
-
-	/** {@code perJarLog}, when given, is gate-m21's second boot's log, which its block reads as {@code LOG_PERJAR}. */
-	private Result block(Path gate, String name, String log, String perJarLog) throws Exception {
 		Path file = temporary.resolve("gate.log");
 		Files.writeString(file, log);
-		Path perJarFile = temporary.resolve("gate-perjar.log");
-		Files.writeString(perJarFile, perJarLog == null ? "" : perJarLog);
 		String script = Files.readString(gate);
 		int begin = script.indexOf("# " + name + "_BEGIN");
 		int end = script.indexOf("# " + name + "_END", begin);
 		assertTrue(begin >= 0 && end > begin, "missing executable gate contract " + name);
 		ProcessBuilder builder = new ProcessBuilder("bash", "-c", ". run/lib.sh\n" + script.substring(begin, end) + "\nexit \"$FAIL\"");
 		builder.environment().put("LOG", file.toString());
-		builder.environment().put("LOG_PERJAR", perJarFile.toString());
 		Process process = builder.redirectErrorStream(true).start();
 		assertTrue(process.waitFor(15, TimeUnit.SECONDS), "offline gate contract timed out");
 		return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));

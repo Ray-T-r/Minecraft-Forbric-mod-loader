@@ -55,12 +55,11 @@ public final class KernelModFileInfo implements IModFileInfo {
 	/**
 	 * The owning file of the mod {@code owner} will hold.
 	 *
-	 * <p>One mod's own file and file info, as the kernel has always built them — unless
-	 * {@code -Dforbric.modFilePerJar=on}, {@code neoForge} is true and there is a jar: then it is the jar's ONE file
-	 * info, shared with every other NeoForge declaration of the jar, as FML builds one {@code ModFileInfo} per jar
-	 * ({@link KernelModFile} has the carrier's bytecode for it). A Fabric mod the kernel describes
-	 * ({@code KernelDeclarationReaders}) passes false, so a universal jar's Fabric half never joins its NeoForge
-	 * half's file.
+	 * <p>When {@code neoForge} is true and there is a jar, the jar's ONE file info, shared with every other NeoForge
+	 * declaration of the jar, as FML builds one {@code ModFileInfo} per jar ({@link KernelModFile} has the carrier's
+	 * bytecode for it). Otherwise — a jar-less alias, a Fabric mod the kernel describes ({@code KernelDeclarationReaders}
+	 * passes false, so a universal jar's Fabric half never joins its NeoForge half's file), or any mod under
+	 * {@code -Dforbric.modFilePerJar=off} — the mod's own file and file info, as the kernel built them before Stage 4.
 	 *
 	 * @param owner    a one-slot holder back-filled with the {@link KernelModInfo} once it exists. The two types
 	 *                 refer to each other — a mod info has an owning file, and that file's {@code getMods()} must

@@ -69,9 +69,10 @@ public final class KernelModInfo implements IModInfo {
 
 	/**
 	 * A NeoForge mod's info: the one {@link KernelContainers} builds for every container and for
-	 * {@code KernelContainers.modInfo}. With {@code -Dforbric.modFilePerJar=on} its owning file is its jar's one
-	 * file, shared with the jar's other NeoForge mods ({@link KernelModFileInfo#forMod}); the public constructors,
-	 * which {@code KernelDeclarationReaders} uses for the Fabric mods it describes, always give a mod its own.
+	 * {@code KernelContainers.modInfo}. Its owning file is its jar's one file, shared with the jar's other NeoForge
+	 * mods ({@link KernelModFileInfo#forMod}; a file of its own under {@code -Dforbric.modFilePerJar=off}); the public
+	 * constructors, which {@code KernelDeclarationReaders} uses for the Fabric mods it describes, always give a mod its
+	 * own.
 	 *
 	 * @param declared as {@link #KernelModInfo(String, Path, DiscoveredMod)}; one that names another ecosystem is
 	 *                 not a NeoForge declaration, and gets a file of its own
