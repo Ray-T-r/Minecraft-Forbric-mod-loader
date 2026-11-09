@@ -1363,10 +1363,8 @@ test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aBareNameCompan
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aCompanionOnTheLoadersOwnLambdaBoundToItsWidenedTwinStaysAsWritten()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aCompanionTheMergedClassWouldBindToAnotherLiveOverloadLeavesTheMixinAlone()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aCompanionTheMergedClassWouldBindToAnotherWideningOfItsEntryLeavesTheMixinAlone()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aCompanionTheMergedClassWouldBindToTheDeadLoaderInsteadLeavesTheMixinAlone()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	aCompanionTheMergedClassWouldBindToTheDeadLoadersLambdaLeavesTheMixinAlone()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	withoutTheNativeClassABareNameCompanionLeavesTheMixinAlone()	[fixture:staged] the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.RegistryLoaderSelectorMappingTest	aBareNameCompanionLeavesTheWholeMixinAlone()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.RegistryLoaderCompanionBindingTest	withoutTheNativeClassABareNameCompanionStaysOnTheEntryVanillaBindsItTo()	[fixture:staged] the staged base: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.mixin.RegistryLoaderSelectorMappingTest	aBareNameCompanionStaysOnTheEntryVanillaBindsItTo()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.RegistryLoaderSelectorMappingTest	aCallbackDeclaringTheHostParametersLeavesTheMixinAlone()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.RegistryLoaderSelectorMappingTest	aClientWrapStaysOnTheClientEntryAndFollowsTheWidenedLoader()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.RegistryLoaderSelectorMappingTest	aLiveCallKeepsItsWrap()	[fixture:mc-libraries] actual game required

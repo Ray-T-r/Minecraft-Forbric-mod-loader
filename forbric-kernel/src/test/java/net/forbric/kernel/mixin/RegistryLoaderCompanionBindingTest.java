@@ -21,20 +21,23 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * Whether a registry-loader companion was written for the dead private loader is decided where it was written: the one
  * method its selectors bind in the class the mod was compiled against ({@link MixinCallbackShape#written}), not what a
- * bare name happens to reach among the merged class's overloads. Not fabric-registry-sync's mixin: another mod's names,
+ * bare name happens to reach among the current class's overloads. Not fabric-registry-sync's mixin: another mod's names,
  * its wrap's selector and point dotted, its wrap keeping the argument array in a local, and companions of two kinds — a
  * CallbackInfoReturnable-only {@code @Inject} and a {@code @ModifyArg} — written with a bare {@code load} selector and an
  * ownerless or descriptorless point.
  *
- * <p>A bare name binds the first method of that name. Compiled against a class that declares the private loader first,
- * the companion is that loader's, and follows the wrap into the widened loader — also where the merged class declares
- * the dead loader beside four live overloads (which once refused the whole mixin) and where it no longer declares it at
- * all (which once left the companion to bind a live overload Mixin picks). Compiled against vanilla, whose first
- * {@code load} is the resource-manager entry, the same bare name is that entry's companion and stays as written; and
- * where the merged class would bind it to the dead loader instead, nothing can map it and the whole mixin is left alone —
- * as it is where the merged class would bind it to another overload (the networked entry, or the entry's own widening by
- * a list of pending tags) or to the dead loader's own lambda. A companion on that lambda, bound in the merged class to
- * its twin widened by exactly the loader's appended parameters, runs where the moved wrap runs and stays as written.
+ * <p>A bare name binds the first method of that name. NeoForge's loader no longer declares vanilla's private loader at
+ * all: it widened it with a trailing flag. Compiled against a class that declares the private loader first, the
+ * companion is that loader's, and follows the wrap into the widened loader (which once left the companion to bind a live
+ * overload Mixin picks). Compiled against vanilla, whose first {@code load} is the resource-manager entry, the same bare
+ * name is that entry's companion and stays as written — also without vanilla's class, since NeoForge's first {@code load}
+ * is that entry too. Where the current class would bind it to another overload instead (the networked entry, or the
+ * entry's own widening by a list of pending tags), nothing can map it and the whole mixin is left alone. A companion on
+ * the loader's own lambda, bound in the current class to its twin widened by exactly the loader's appended parameters,
+ * runs where the moved wrap runs and stays as written.
+ *
+ * <p>The merged base also declared the dead loader (and its lambda) beside the widened one, and two cases pinned the
+ * refusal where a companion would have bound to those; NeoForge's class declares neither, so those cases went with it.
  */
 class RegistryLoaderCompanionBindingTest {
 	private static final String LOADER = "net/minecraft/resources/RegistryDataLoader";
@@ -56,9 +59,9 @@ class RegistryLoaderCompanionBindingTest {
 	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
 	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
 
-	/** Every case reads the staged merged loader, and its native classes through the merged base's native-reference index. */
-	@BeforeEach void stagedMergedBase() {
-		TestFixtures.requireFiles(Fixture.STAGED, "the staged merged base", TestFixtures.stagedBase());
+	/** Every case reads NeoForge's staged loader, and vanilla's as a Fabric mod is compiled against it (the vanilla-reference sidecar). */
+	@BeforeEach void stagedBase() {
+		TestFixtures.requireFiles(Fixture.STAGED, "the staged base", TestFixtures.stagedBase());
 	}
 
 	@AfterEach void reset() {
@@ -67,47 +70,39 @@ class RegistryLoaderCompanionBindingTest {
 
 	// ---- written for the dead loader ---------------------------------------------------------------------------------
 
-	/** The merged class declares the dead loader and four live overloads: a bare name reaches all five there. */
+	/** Written for the private loader, which NeoForge's class no longer declares: its bare name reaches only live overloads there. */
 	@Test void aBareNameCompanionWrittenForTheDeadLoaderFollowsTheWrap() throws Exception {
 		ClassNode mixin = mixin(inject("load", "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
-		assertEquals(2, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> merged(false, false), natives(true)));
+		assertEquals(2, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> current(), natives(true)));
 		assertMoved(mixin, "onSupply");
 	}
 
-	/** The merged class no longer declares the dead loader: its bare name reaches only live overloads there. */
+	/** The same, a {@code @ModifyArg} whose selector carries an owner prefix and whitespace and whose point has no descriptor. */
 	@Test void aBareNameCompanionWrittenForALoaderTheMergeDroppedStillFollowsTheWrap() throws Exception {
 		ClassNode mixin = mixin(modifyArg(" L" + LOADER + "; load", "Ljava/util/concurrent/CompletableFuture;supplyAsync"));
-		assertEquals(2, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> merged(true, false), natives(true)));
+		assertEquals(2, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> current(), natives(true)));
 		assertMoved(mixin, "keepSupplier");
 	}
 
 	// ---- written for a live method, or for nothing this can map --------------------------------------------------------
 
-	/** Compiled against vanilla, a bare {@code load} is the resource-manager entry's, and the merged class binds it there too. */
+	/** Compiled against vanilla, a bare {@code load} is the resource-manager entry's, and NeoForge's class binds it there too. */
 	@Test void aBareNameCompanionWrittenForTheResourceManagerEntryStaysAsWritten() throws Exception {
 		ClassNode mixin = mixin(inject("load", "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
 		AnnotationNode companion = MixinFit.injectorOf(handler(mixin, "onSupply"));
 		byte[] before = CarpetMixinAdapterTest.bytes(annotated(companion));
-		assertEquals(1, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> merged(false, false), natives(false)), "the wrap alone moves");
+		assertEquals(1, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> current(), natives(false)), "the wrap alone moves");
 		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(handler(mixin, "onSupply")))), "the companion is left as written");
 		assertEquals(List.of("L" + LOADER + ";" + LIVE), atTargets(handler(mixin, "notePhase")));
 	}
 
-	/** Written for the resource-manager entry, but bound to the dead loader in a merged class that declares it first. */
-	@Test void aCompanionTheMergedClassWouldBindToTheDeadLoaderInsteadLeavesTheMixinAlone() throws Exception {
-		ClassNode mixin = mixin(inject("load", "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
-		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
-		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> merged(false, true), natives(false)));
-		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
-	}
-
 	/**
-	 * Written for the resource-manager entry, but bound to another live overload in a merged class that declares that one
+	 * Written for the resource-manager entry, but bound to another live overload in a class that declares that one
 	 * first: left as written, the companion would silently serve the networked entry. Nothing can map it, so the whole
 	 * mixin is left alone — the wrap too.
 	 */
 	@Test void aCompanionTheMergedClassWouldBindToAnotherLiveOverloadLeavesTheMixinAlone() throws Exception {
-		assertLeftAlone("load", ENTRY, first(merged(false, false), NETWORKED), NETWORKED);
+		assertLeftAlone("load", ENTRY, first(current(), NETWORKED), NETWORKED);
 	}
 
 	/**
@@ -115,36 +110,40 @@ class RegistryLoaderCompanionBindingTest {
 	 * but not by the ones the carrier appended to the loader the wrap follows, so it is another overload all the same.
 	 */
 	@Test void aCompanionTheMergedClassWouldBindToAnotherWideningOfItsEntryLeavesTheMixinAlone() throws Exception {
-		assertLeftAlone("load", ENTRY, first(merged(false, false), ENTRY_PENDING), ENTRY_PENDING);
+		assertLeftAlone("load", ENTRY, first(current(), ENTRY_PENDING), ENTRY_PENDING);
 	}
 
 	/**
-	 * Written for the private loader's own lambda: where the merged class binds the bare name to that lambda's twin in the
+	 * Written for the private loader's own lambda: where the current class binds the bare name to that lambda's twin in the
 	 * widened loader — widened by exactly the loader's appended parameters — the companion runs where the moved wrap now
 	 * runs, and stays as written while the wrap moves.
 	 */
 	@Test void aCompanionOnTheLoadersOwnLambdaBoundToItsWidenedTwinStaysAsWritten() throws Exception {
-		ClassNode reordered = first(merged(false, false), LAMBDA_LIVE);
+		ClassNode reordered = first(current(), LAMBDA_LIVE);
 		ClassNode mixin = mixin(inject("lambda$load$0", CONTEXT));
 		MethodNode companion = handler(mixin, "onSupply");
 		assertEquals(LAMBDA_DEAD, name(MixinCallbackShape.written(companion, natives(false).apply(Ecosystem.FABRIC, LOADER))), "premise: vanilla's lambda");
-		assertEquals(LAMBDA_LIVE, name(MixinTargetSelectors.one(companion, reordered)), "premise: the merge binds its widened twin");
+		assertEquals(LAMBDA_LIVE, name(MixinTargetSelectors.one(companion, reordered)), "premise: the current class binds its widened twin");
 		byte[] before = CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(companion)));
 		assertEquals(1, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> reordered, natives(false)), "the wrap alone moves");
 		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(handler(mixin, "onSupply")))), "the companion is left as written");
 	}
 
-	/** The same lambda, where the merged class declares the dead loader's own copy first: it would never run. */
-	@Test void aCompanionTheMergedClassWouldBindToTheDeadLoadersLambdaLeavesTheMixinAlone() throws Exception {
-		assertLeftAlone("lambda$load$0", LAMBDA_DEAD, first(merged(false, false), LAMBDA_DEAD), LAMBDA_DEAD);
-	}
-
-	/** Without the class the mod was compiled against, a bare name shared by the dead loader and live ones names neither. */
-	@Test void withoutTheNativeClassABareNameCompanionLeavesTheMixinAlone() throws Exception {
+	/**
+	 * Without the class the mod was compiled against, a bare name is read in the current class, where NeoForge declares no
+	 * dead loader for it to name: it binds NeoForge's first {@code load}, the resource-manager entry, which is vanilla's
+	 * first {@code load} too (javap of both jars; neither entry calls {@code supplyAsync}, only the private loader does).
+	 * The companion binds the same method it binds on vanilla, so it stays as written while the wrap moves.
+	 */
+	@Test void withoutTheNativeClassABareNameCompanionStaysOnTheEntryVanillaBindsItTo() throws Exception {
 		ClassNode mixin = mixin(inject("load", "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
-		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
-		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> merged(false, false), null));
-		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
+		MethodNode companion = handler(mixin, "onSupply");
+		assertEquals(ENTRY, name(MixinTargetSelectors.one(companion, StagedFabricMixinFixture.game(LOADER, true))), "premise: vanilla binds it to its entry");
+		assertEquals(ENTRY, name(MixinTargetSelectors.one(companion, current())), "premise: and so does NeoForge's class");
+		byte[] before = CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(companion)));
+		assertEquals(1, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> current(), null), "the wrap alone moves");
+		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(handler(mixin, "onSupply")))), "the companion is left as written");
+		assertEquals(List.of("L" + LOADER + ";" + LIVE), atTargets(handler(mixin, "notePhase")));
 	}
 
 	// ---- fixtures ----------------------------------------------------------------------------------------------------------
@@ -155,7 +154,7 @@ class RegistryLoaderCompanionBindingTest {
 		assertEquals(List.of(NETWORKED), MixinFit.stringList(MixinFit.value(MixinFit.injectorOf(wrap), "method")), "the wrap stays on its own entry");
 		assertEquals(List.of("L" + LOADER + ";" + LIVE), atTargets(wrap));
 		CarpetMixinAdapterTest.verify(mixin);
-		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> merged(false, false), natives(true)), "moved once");
+		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> current(), natives(true)), "moved once");
 	}
 
 	/** Vanilla's loader as a Fabric mod is compiled against; {@code deadFirst}: the private loader declared before its entries. */
@@ -167,12 +166,14 @@ class RegistryLoaderCompanionBindingTest {
 		};
 	}
 
-	/** The staged merged loader, with code; {@code withoutDead}: the dead loader removed; {@code deadFirst}: declared first. */
-	private static ClassNode merged(boolean withoutDead, boolean deadFirst) {
+	/** NeoForge's staged loader, with code: it declares the widened loader and not vanilla's private one. */
+	private static ClassNode current() {
 		try {
 			ClassNode node = StagedFabricMixinFixture.game(LOADER, false);
-			if (withoutDead) assertTrue(node.methods.removeIf(m -> (m.name + m.desc).equals(DEAD)), "premise: the merge declares the dead loader");
-			return deadFirst ? first(node, DEAD) : node;
+			assertTrue(node.methods.stream().noneMatch(m -> (m.name + m.desc).equals(DEAD) || (m.name + m.desc).equals(LAMBDA_DEAD)),
+					"premise: NeoForge's loader declares neither vanilla's private loader nor its lambda");
+			assertTrue(node.methods.stream().anyMatch(m -> (m.name + m.desc).equals(LIVE)), "premise: it declares the widened loader");
+			return node;
 		} catch (RuntimeException unchecked) {
 			throw unchecked; // a missing fixture's skip among them
 		} catch (Exception unreadable) {
@@ -188,7 +189,7 @@ class RegistryLoaderCompanionBindingTest {
 		ClassNode mixin = mixin(inject(selector, "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
 		MethodNode companion = handler(mixin, "onSupply");
 		assertEquals(written, name(MixinCallbackShape.written(companion, natives(false).apply(Ecosystem.FABRIC, LOADER))), "premise: what vanilla binds");
-		assertEquals(bound, name(MixinTargetSelectors.one(companion, reordered)), "premise: what the merge binds");
+		assertEquals(bound, name(MixinTargetSelectors.one(companion, reordered)), "premise: what the current class binds");
 		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
 		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> reordered, natives(false)));
 		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
