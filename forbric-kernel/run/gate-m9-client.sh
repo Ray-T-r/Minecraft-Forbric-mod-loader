@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# M9 gate — the CLIENT half. A tri-ecosystem instance must reach a rendered world and leave it cleanly.
+# M9 gate — the CLIENT half. A Fabric + NeoForge instance must reach a rendered world and leave it cleanly.
 #
 # Every client fix in this kernel was verified by launching the game and reading the log by hand, so none of them
 # was protected against the next change. This gate is that protection: it drives a real client into a real world
@@ -32,6 +32,12 @@ if [ ! -f "$RUNDIR/options.txt" ]; then
   echo "[kernel] SKIP-FATAL: no $RUNDIR/options.txt — quick-play would be blocked by the onboarding screen" >&2
   exit 3
 fi
+# The gate writes into its rundir (options.txt, the mip probe, the save), so it refuses the shared fixture itself and
+# any link into it: run it on a clone (`cp -c -R "$(cd run/client-merged-pack && pwd -P)" <dir>`, M9_RUNDIR=<dir>), as
+# gates-parallel.py does.
+# (After the missing-fixture check, so a machine without the fixture still gets that check's own words, as
+# gates-parallel.py expects when it leaves the rundir variable unset; nothing above writes into the rundir.)
+refuse_shared_rundir "$RUNDIR"
 
 # SEED A MODIFIER BINDING, every run. MinecraftForge writes a modified key as
 # `key_key.jei.toggleOverlay:key.keyboard.o:CONTROL_OR_COMMAND` and reads it back through vanilla's
@@ -58,6 +64,11 @@ else:
     raise SystemExit('no key_key.* binding in options.txt to give a modifier to')
 PY_SEED
 # M9_KEY_MODIFIER_SEED_END
+# A NEOFORGE MOD'S SAVED KEY BINDINGS, before the run. JEI's bindings are in this file; the game re-reads options.txt
+# after the mods registered their keys and writes the file back whenever an options screen closes (the smoke opens the
+# key binds screen). A load that failed would write defaults over it, so the same lines must come back after the run.
+JEI_KEYS_BEFORE="$(grep -aE '^key_key\.jei\.' "$RUNDIR/options.txt" | sort)"
+OPTIONS_SEEDED="$BUILD/gate-m9-options-seeded.stamp"; sleep 1; : > "$OPTIONS_SEEDED"
 
 # A SPRITE SMALLER THAN THE MIP LEVEL, every run. Vanilla's SpriteLoader lowers an atlas's mip level to fit its
 # smallest sprite, and so does NeoForge's (the same bytes). The merged base gated that on MinecraftForge's
@@ -83,13 +94,29 @@ PY_MIPPROBE
 kernel_jar
 mkdir -p "$RUNDIR/quickPlay"
 rm -f "$RUNDIR/logs/latest.log"
+# Mixin exports every class it wove (-Dmixin.debug.export=true below) for the full-chain lambda scan at the end; a
+# previous run's export must not answer for this one.
+rm -rf "$RUNDIR/.mixin.out"
 : > "$LOG"
 
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
-# M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Also verified:
-#   -Dforbric.keyModifierSuffix=off -> 2 red ("the key-modifier suffix is dropped before the name is parsed",
-#                                             "options.txt loads with modded modifier bindings in it")
-#   -Dforbric.carrierLanguages=off -> 2 red ("NeoForge's own screens have their text", "and MinecraftForge's do too")
+# M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Also verified (the
+# counts below were measured on the merged base unless an entry says otherwise; C5 re-measures the whole list on
+# NeoForge's base, an open G-C item, and an entry marked TO MEASURE states only what is expected):
+#   -Dforbric.keyModifierSuffix=off -> 2 red on the merged base ("the key-modifier suffix is dropped before the name is
+#                                             parsed", "options.txt loads with modded modifier bindings in it"); TO
+#                                             MEASURE on NeoForge's base.
+#   -Dforbric.carrierLanguages=off -> TO MEASURE; expected 1 red ("NeoForge's own screens have their text"). The second
+#                                      red of the merged base, "and MinecraftForge's do too", went with the
+#                                      MinecraftForge carrier's check in Stage 4.
+#   -Dforbric.modDataPacks=off     -> TO MEASURE; expected red in the content step (mods' own datapacks not served).
+#   -Dforbric.aliasPresenceParity=off -> TO MEASURE; expected 2 red ("registry alias parity restored", and "no alias warns
+#                                      that its target is missing": C3 counted 134 such warnings with the switch off).
+#   -Dforbric.neoRegistrationOrder=off -> TO MEASURE; expected red at "NeoForge registration order" (and the unbound
+#                                      data component it guards against).
+#   -Dforbric.lootModifierIndex=off -> TO MEASURE; expected 2 red: the legacy index fails to parse again ("no data file
+#                                      fails to parse" names neoforge:loot_modifiers/global_loot_modifiers.json) and
+#                                      "loot-modifier scan ran and hid the legacy index" is gone.
 #   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
 #                                      registered carries an uninitialised cache all run. Vanilla computes it
 #                                      lazily, so this is a hot-path repair, not a crash repair — the Lithium
@@ -118,7 +145,7 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                                   ClickCrystals then killed the client inside Minecraft.<init>.
 # (-Dforbric.pruneDuplicateLambdas=off was a control here on the merged base, where it brought back StubException and the
 # failed world load; NeoForge's base carries no lambda name twice and the pruner was deleted in Stage 4.)
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dmixin.debug.export=true -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -164,11 +191,10 @@ check_absent "no repair was handed its target and declined" "Forbric/Anchor\] .*
 # SRG-named fields and 1.x members), 6 AT methods whose name is there under another descriptor (an overload this
 # Minecraft lacks or a merge re-typing — not judged: bagus_lib's Model.animate, YACL's and Jade's constructors,
 # sophisticatedcore's recipe builders), all of which a native loader ignores the same and which mark nobody.
-# Every access WIDENER found its member. fabric-biome-api's featuresPerStep one used to miss at ACCESS and be
-# replayed after a COREMOD repair gave the field vanilla's descriptor back; the merged base now keeps both
-# descriptors itself, so it matches first time and nothing is replayed. "0 AW" holds either way, which is the
-# point: it asserts the outcome (no widener left unmatched), not which path got it there. The replay itself is
-# RestoredAccessTransformerTest's.
+# Every access WIDENER found its member. fabric-biome-api's featuresPerStep one used to miss at ACCESS on the merged
+# base and be replayed after a COREMOD repair gave the field vanilla's descriptor back; NeoForge's base declares it
+# with vanilla's descriptor, so it matches first time. "0 AW" asserts the outcome (no widener left unmatched), not which
+# path got it there. The replay itself is RestoredAccessTransformerTest's.
 check        "the access census ran"               "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [1-9][0-9]* transformed class" "$LOG"
 check        "no directive remains re-typed by an ecosystem" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing.*: 0 re-typed by an ecosystem" "$LOG"
 check        "every access widener reached its member" "Forbric/Access\] [0-9]+ directive\(s\) matched nothing across [0-9]+ transformed class\(es\) \([0-9]+ AT, 0 AW\)" "$LOG"
@@ -188,6 +214,11 @@ step "a sprite smaller than the mip level lowers the atlas's mip level, and a mo
 # merged base with the old repair off and an 8x8 sprite aboard: both absences red, black screen (C3 evidence 2b').
 check "vanilla lowered the atlas's mip level for the probe's 8x8 sprite" \
   'Texture forbricmipprobe:block/tiny with size 8x8 limits mip level from 4 to' "$LOG"
+# …and the reload went on to build the block atlas at the lowered level (x3: the probe's 8 = 2^3), which is what the
+# player then sees. TextureAtlas logs "Created:" from its upload, so a reload abandoned before the atlas was applied
+# leaves the line out; the two absences below are the failure's own words.
+check "the block atlas was uploaded at the lowered mip level after the reload" \
+  'Created: [0-9]+x[0-9]+x3 minecraft:textures/atlas/blocks.png-atlas' "$LOG"
 check_absent "no resource reload was abandoned" 'Caught error loading resourcepacks' "$LOG"
 check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG"
 # MinecraftForge writes a modified binding as key.keyboard.o:CONTROL_OR_COMMAND and then hands that whole string
@@ -197,6 +228,20 @@ check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG
 check "the key-modifier suffix is dropped before the name is parsed" \
   'Forbric/MergedBaseCompat\] InputConstants.getKey now drops' "$LOG"
 check_absent "options.txt loads with modded modifier bindings in it" 'Failed to load options' "$LOG"
+# …and a NeoForge mod's own bindings survive the load and the save after it (Stage 2's ForgeOptionsInjector re-read only
+# keys on the merged base; NeoForge's own Options load reads the whole file once the mods' keys exist).
+JEI_KEYS_AFTER="$(grep -aE '^key_key\.jei\.' "$RUNDIR/options.txt" | sort)"
+# Only a file the game wrote back says anything about the binding it held: an untouched file compares equal too.
+if [ "$RUNDIR/options.txt" -nt "$OPTIONS_SEEDED" ]; then
+  echo "[kernel] PASS the game wrote options.txt back during the run"
+else
+  echo "[kernel] FAIL the game never wrote options.txt back, so the binding check below compares the seed with itself"; FAIL=1
+fi
+if [ -n "$JEI_KEYS_BEFORE" ] && [ "$JEI_KEYS_BEFORE" = "$JEI_KEYS_AFTER" ]; then
+  echo "[kernel] PASS JEI's $(printf '%s\n' "$JEI_KEYS_BEFORE" | wc -l | tr -d ' ') saved key binding(s) are in options.txt after the run, unchanged"
+else
+  echo "[kernel] FAIL JEI's saved key bindings did not survive the run: before [$(printf '%s' "$JEI_KEYS_BEFORE" | paste -sd' ' -)] after [$(printf '%s' "$JEI_KEYS_AFTER" | paste -sd' ' -)]"; FAIL=1
+fi
 
 step "the full FML mod lifecycle ran, not just the phases the kernel used to know about"
 # Each of these was missing outright until the kernel started mirroring CommonModLoader.load's task order.
@@ -247,21 +292,10 @@ check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [1-9]
 check "load complete posted"          "posted FML load complete to [1-9][0-9]* NeoForge mod"  "$LOG"
 check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC process)" "$LOG"
 
-# The client half of the Neo->Forge bridge inventory. This one bridge carries every MinecraftForge mod's client
-# reload listeners -- GeckoLib's whole model and animation cache hangs off it -- and it used to be reported only
-# by an unasserted "installed the ... bridge" line.
-check "the client-side bridge pass is complete" "all 3 CLIENT_MOD_BUS bridge\(s\) installed" "$LOG"
-# By "complete", not by count -- see gate-m4 for why. The client ticks are their own pass because they name
-# NeoForge's client event package, which a dedicated server must never resolve.
-check "the game-bus bridge pass is complete too" "EventMux\] all [0-9][0-9]* GAME_BUS bridge\(s\) installed"      "$LOG"
-check "the client game-bus bridges went on too" "EventMux\] all [0-9][0-9]* CLIENT_GAME_BUS bridge\(s\) installed" "$LOG"
-# The two transformer-landed passes (Phase 1 A): Forge's client registration hooks inside Minecraft.<init> and the
-# block-colour table, and the creative-tab / spawn-placement hooks. Verified by count so a repair that stood down on
-# an unexpected base is named, not silently absent.
-check "the client initialization bridges landed" "EventMux\] all 3 CLIENT_INIT bridge\(s\) installed"  "$LOG"
-check "the registration bridges landed"          "EventMux\] all 2 REGISTRATION bridge\(s\) installed" "$LOG"
-check_absent "no bridge reported missing"       "bridge\(s\) MISSING"                        "$LOG"
-# F2: fabric-model-loading-api-v1's ModelManagerMixin is TRIMMED to the eight injectors that fit the merged
+# (The EventMux bridge inventory that stood here -- NeoForge events relayed to MinecraftForge listeners on the client
+# mod bus, the game buses, Minecraft.<init> and registration -- went with the multiplexer in Stage 4: no MinecraftForge
+# mod loads, so NeoForge's own buses deliver to every listener there is, and the inventory line is never written.)
+# F2: fabric-model-loading-api-v1's ModelManagerMixin is TRIMMED to the eight injectors that fit NeoForge's
 # ModelManager instead of pinned whole, so Fabric ModelLoadingPlugins dispatch. RED with
 # M9_EXTRA_JVM=-Dforbric.guestInjectorPruner=off (the pin returns and the 'pruned' line is absent). The
 # check_absent is the missingno regression guard: half-applied, all 4666 block models died on this parse error
@@ -311,38 +345,46 @@ check_absent "no pack mixin lands on a renumbered anonymous class" "targets .* a
 # M9_EXTRA_JVM=-Dforbric.fieldDriftAudit=off.
 check "field-drift audit ran over the whole pack" "Forbric/FieldDrift\] scanned [0-9][0-9]+ jar\(s\): [0-9]+ reference" "$LOG"
 check_absent "no pack jar reads a re-typed vanilla field" "Forbric/FieldDrift\] .* reads .* \(cost" "$LOG"
-# H5 (the FluidRenderer.tesselate funnel for MinecraftForge fluid models) is asserted in gate-m26, not here: this
-# pack carries sodium, which replaces vanilla's chunk and fluid meshing, so the vanilla funnel is never reached.
 
-step "a Forge-family mod's own content and data actually arrived (must PASS)"
+step "a NeoForge mod's own content and data actually arrived (must PASS)"
 # Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
-# -Dforbric.registryAliasParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED.
+# -Dforbric.aliasPresenceParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED (expected reds in the
+# recipe list at the top, to measure on NeoForge's base).
 check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* datapack"             "$LOG"
-# The carriers are where the c: convention-tag skeleton lives — 513 tag files that exist in NO other jar, and that
-# every cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero.
+# The carrier is where the c: convention-tag skeleton lives — tag files that exist in NO other jar, and that every
+# cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero. One
+# carrier since Stage 4: NeoForge's (the MinecraftForge carrier and its pack went with MinecraftForge).
 CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
-assert_eq "loader carriers served" 2 "${CARRIERS:-none}"
-# The ORDER, not the file names. This asserted the basenames of one machine's staged artifacts, so pointing the
-# gate at another machine's — a user's own install, where the same jars are named forge-runtime-26.2.jar — failed
-# it for a reason that has nothing to do with where the carriers sit. What it is about is 1- before 2-.
-check "carriers sit below the mods"   "forbric/carrier/1-forge-runtime[^,]*, forbric/carrier/2-neoforge-runtime" "$LOG"
-check "registry alias parity restored" "Forbric/Aliases\] gave .* alias-resolving lookup"      "$LOG"
+assert_eq "the loader carrier is served" 1 "${CARRIERS:-none}"
+# The ORDER, not the file name: the carrier's pack is the FIRST in the list, so every mod's data sits above it. Its id is
+# rank + the jar's file name (KernelDataPacks.carrierPackId), so the name is matched loosely: the stage's jar is
+# neoforge-runtime.jar, an installed game's is neoforge-runtime-<version>.jar. (UPG's D43 fix makes the id stable; until
+# it lands, pinning the bare id would fail every install for a reason that has nothing to do with where the carrier sits.)
+check "the carrier sits below the mods" "datapack\(s\) to the server PackRepository.*: \[forbric/carrier/2-neoforge-runtime[^,]*, forbric/data/" "$LOG"
+# NeoForge's DeferredRegister applies a mod's aliases before it registers their targets, in the same call, and NeoForge's
+# own addAlias never warns about that. fabric-registry-sync's mixin-added addAlias overrides it and warns for every
+# target not registered yet ("... but the latter doesn't exist"), so a NeoForge mod got a Fabric warning about
+# NeoForge's design on every boot (KernelRegistryAliases). The repair line says the warning is answered, and the absence
+# says so from the log's side: 134 such lines in this gate's log with -Dforbric.aliasPresenceParity=off (C3).
+check "registry alias parity restored" "Forbric/Aliases\] post-mixin repair: net.minecraft.core.MappedRegistry.addAlias no longer warns" "$LOG"
+check_absent "no alias warns that its target is missing" "but the latter doesn't exist" "$LOG"
 check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s registration order"  "$LOG"
 # A mod whose items name their own data components: with RegisterEvent in field order the item registry is filled
 # 57 registries too early, DeferredHolder.value() throws, and the mod loses every item it had not reached yet.
 check_absent "no unbound data component" "Trying to access unbound value"                      "$LOG"
-# I5: the registries freeze NeoForge-first on both windows (server + client entrypoint), so NeoForge's freezeData
-# finishes instead of aborting at the first registry MinecraftForge had already frozen. RED with
-# M9_EXTRA_JVM=-Dforbric.freezeNeoForgeFirst=off (the THREW line returns twice).
+# I5: the kernel owns the registry freeze on both windows (server + client entrypoint) and runs NeoForge's freezeData
+# there, which must finish. (Its old RED control, -Dforbric.freezeNeoForgeFirst=off, froze MinecraftForge's registries
+# first on the merged base; it retired with MinecraftForge in Stage 4. The line keeps its "NeoForge-first" wording.)
 check_absent "NeoForge's freezeData finished on both windows" "GameData.freezeData\(\) THREW" "$LOG"
 check "registries frozen NeoForge-first, twice"  "froze the registries NeoForge-first: [1-9][0-9]* registr(ies|y), [0-9]+ tag key" "$LOG" 2
 check_absent "no RegisterEvent listener failed" "RegisterEvent listener failed"                "$LOG"
 check_absent "no tag lost to a dangling id"     "Couldn.t load tag"                            "$LOG"
 
 step "one NightConfig, and it is the working one (must PASS)"
-# The MinecraftForge carrier bundles NightConfig 3.7.4 at the UNSHADED package name, where
+# The MinecraftForge carrier bundled NightConfig 3.7.4 at the UNSHADED package name, where
 # StampedConfig.valueMap() is a stub that throws. Child-first handed the game that copy and shadowed the working
-# 3.8.x on the parent classpath, so every config read that descends a dotted path into a nested table died.
+# 3.8.x on the parent classpath, so every config read that descends a dotted path into a nested table died. That carrier
+# is gone (Stage 4); the absence stays as the pin that no carrier brings a second NightConfig back.
 # zfastnoise is the visible victim — it reads config in its mixin PLUGIN's constructor, and Mixin responds to a
 # plugin it cannot build by applying that config's mixins with no opinion, which then killed chunk generation.
 # The positive assertion is the load-bearing one: the plugin only gets guarded once it has been CONSTRUCTED.
@@ -364,9 +406,8 @@ check_absent "no duplicate registry key"    "Duplicate key ResourceKey"         
 # every one a terralith biome from before that mod was dropped. That is a property of the save. The shape
 # that matters is a datapack ELEMENT failing to parse, which is what an unregistered modifier type produced.
 check_absent "no datapack element unparseable" "Failed to parse .* from pack"                 "$LOG"
-# A SimpleJsonResourceReloadListener names EVERY element it rejects, so assert the SET rather than the absence:
-# two are expected, and a third must turn this gate red. Both are mods (or a carrier) shipping data for a
-# contract that moved, and a genuine NeoForge 26.2 instance rejects each of them the same way:
+# A SimpleJsonResourceReloadListener names EVERY element it rejects, so assert the SET rather than the absence.
+# The one data file in this pack shipped for a contract that moved is one a genuine NeoForge 26.2 instance rejects too:
 #   *:global_loot_modifiers  — the legacy Forge list file (replace/entries). NeoForge's LootModifierManager runs
 #     IGlobalLootModifier.DIRECT_CODEC over every file in loot_modifiers/ and has no list-file concept; its own
 #     GlobalLootModifierProvider stopped writing one. The MODIFIERS are fine — usefulfood:glow_squid and
@@ -375,15 +416,17 @@ check_absent "no datapack element unparseable" "Failed to parse .* from pack"   
 #     NeoForge 26.2.0.88: its EntityFluidInteraction mixin calls isInFluid(TagKey) with its own earthmobsmod:mud
 #     tag, and from .88 that path goes through getFluidTypeByTag, which knows water and lava and throws on
 #     anything else — verified against the stock NeoForge-patched jar, so it is not a Forbric failure.)
-# I7: both managers' directory scans now run over a view that hides the legacy index, so NOTHING fails to parse
-# — a genuinely broken loot modifier is distinguishable again. RED with M9_EXTRA_JVM=-Dforbric.lootModifierIndex=off
-# (both ERROR lines return and the set is the two indexes again).
+# I7: the manager's directory scan runs over a view that hides the legacy index, so NOTHING fails to parse — a
+# genuinely broken loot modifier is distinguishable again. One index since Stage 4 (NeoForge's own namespace; the
+# forge: one came with the MinecraftForge carrier). RED with M9_EXTRA_JVM=-Dforbric.lootModifierIndex=off: the index's
+# ERROR line returns, so the unparseable set is that one file again, and the scan line below is gone (expected; to
+# measure on NeoForge's base, see the recipe list at the top).
 UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
 assert_eq "no data file fails to parse" "" "$UNPARSEABLE"
-check "loot-modifier scan ran and hid the two indexes" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 2 legacy index file\(s\) hidden \[(forge|neoforge):loot_modifiers/global_loot_modifiers.json, (forge|neoforge):loot_modifiers/global_loot_modifiers.json\]" "$LOG"
-# J8: every installed jar's Forge-family class references resolve against the carriers, the merged base and the
-# pack itself. 0 on this pack is the false-positive pin (CustomSkinLoader's fml/loading refs are out of scope by
-# rule); a mod compiled against another NeoForge/MinecraftForge would be named here and DEGRADED on its row.
+check "loot-modifier scan ran and hid the legacy index" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 1 legacy index file\(s\) hidden \[neoforge:loot_modifiers/global_loot_modifiers.json\]" "$LOG"
+# J8: every installed jar's NeoForge class references resolve against the carrier, the game base and the pack itself.
+# 0 on this pack is the false-positive pin (CustomSkinLoader's fml/loading refs are out of scope by rule); a mod compiled
+# against another NeoForge would be named here and DEGRADED on its row.
 check "abi audit ran and found no dangling Forge-family reference" "AbiAudit\] scanned [1-9][0-9]* jar\(s\) in [0-9]+ ms: 0 with dangling" "$LOG"
 check_absent "join negotiation succeeded"   "Network Protocol Error"                           "$LOG"
 # Same treatment for "was loaded too early": pin the SET, so a new name is a decision rather than a line nobody reads. Mixin's select() runs selectConfigs -> Extensions.select -> prepareConfigs, so EVERY guest config plugin
@@ -577,18 +620,11 @@ ROWS=$(grep -oE 'frame\(s\) listing [0-9]+ mod' "$LOG" | grep -oE '[0-9]+' | hea
 [ "${ROWS:-0}" -ge 1 ] && echo "[kernel] PASS and it listed mods ($ROWS rows)" \
   || { echo "[kernel] FAIL the Mods screen listed nothing (got ${ROWS:-none})"; FAIL=1; }
 check_absent "the screen did not throw" "the unified Mods screen could not be opened" "$LOG"
-# The client connection lifecycle and client commands for MinecraftForge mods (KernelGameClientNetworkEvents): a
-# MinecraftForge listener hears the join and the leave, and a client command registered through each family's event is
-# in the tree the game runs.
-check "MinecraftForge hears the client join and leave" \
-  "ClientSmoke\] MinecraftForge connection events: LoggingIn [1-9][0-9]*, LoggingOut [1-9]" "$LOG"
-# Chat, fog, field of view and screen drawing, and the atlas and model reload, reach MinecraftForge listeners
-# (KernelGameClientEvents, KernelGameClientResourceEvents): each is produced by the smoke run itself.
-for heard in RenderFog FogColor FovModifier ScreenRenderPre ScreenRenderPost SystemMessage TextureStitched ModelsBaked; do
-  check "MinecraftForge hears $heard" "ClientSmoke\] MinecraftForge client events heard:.* $heard=[1-9]" "$LOG"
-done
-check "both families' client commands are in the game's command tree" \
-  "ClientSmoke\] client command tree after joining: forge=true neo=true" "$LOG"
+# A client command registered through NeoForge's client-command event is in the tree the game runs. (The MinecraftForge
+# halves -- its listeners hearing the join, the leave, fog, chat, screen drawing and the reloads, and its own client
+# command -- went with KernelGameClientEvents and the MinecraftForge probes in Stage 4: no MinecraftForge mod loads.)
+check "a NeoForge mod's client command is in the game's command tree" \
+  "ClientSmoke\] client command tree after joining: neo=true" "$LOG"
 # NeoForge's ScreenEvent.Opening, judged by a NeoForge mod's own answer: Controlling swaps vanilla's key binds screen
 # for its own. NeoForge's Gui.setScreen posts Opening and Closing itself; on the merged base, whose Gui.setScreen was
 # MinecraftForge's, a kernel repair had to post them, and this check went red without it.
@@ -616,8 +652,8 @@ check "mod packs carry the overlays they declare" \
 check_absent "and no pack fell back to synthesised metadata" \
   "could not read a pack's own metadata" "$LOG"
 
-check "the filter is back on the screen" \
-  "PackScreen\] restored the hidden-pack filter" "$LOG"
+# (The repair line "restored the hidden-pack filter" went with PackScreenHiddenFilterInjector in Stage 4: NeoForge's own
+# pack screen reads Pack.isHidden. What it was for is asserted below from the screen's own rows.)
 # EXACTLY ONE row, and it is the parent. Seventy-odd rows would be the old "every mod is a row the player did
 # not add" problem; zero would mean the player has no way to put their own pack above a mod's textures, which is
 # what required+fixed+TOP on every mod pack used to guarantee.
@@ -720,14 +756,11 @@ PY_MALILIB
 [ $? -eq 0 ] || FAIL=1
 
 step "an access directive the kernel already satisfies does not mark its mod (must PASS)"
-# fabric-biome-api's widener asks for ChunkGenerator.featuresPerStep as vanilla's Supplier. MinecraftForge
-# re-typed that field to its own ClearableLazy so refreshFeaturesPerStep() has something to invalidate, and a
-# merge that kept only that declaration left the widener matching nothing and the mod marked.
-#
-# The merged base now keeps BOTH descriptors (the Supplier view reads the live provider cell), so the widener
-# matches at ACCESS and makes the field public non-final, which is its whole job. There is no replay left to
-# count -- a "replayed >= 1" check here would be pinning the old two-step path, not the outcome. Asserted: the
-# directive is not reported unmatched in any form, and no row is marked for it.
+# fabric-biome-api's widener asks for ChunkGenerator.featuresPerStep as vanilla's Supplier. MinecraftForge re-typed
+# that field to its own ClearableLazy, and the merged base that kept only that declaration left the widener matching
+# nothing and the mod marked. NeoForge's base declares the field as vanilla's Supplier, so the widener matches at ACCESS
+# and makes the field public non-final, which is its whole job. Asserted: the directive is not reported unmatched in
+# any form, and no row is marked for it.
 check_absent "fabric-biome-api's widener is not left unmatched" \
   "Forbric/Access\] AW directive from [^ ]*fabric-biome-api" "$LOG"
 check_absent "and its mod is not marked for it" \
@@ -795,20 +828,18 @@ check_absent "and its mod is not marked" \
 check "and the conditions no source guard owns are still judged" \
   "Forbric/Conditions\] a native decode without a completed source guard asks Fabric's resource-condition evaluator directly" "$LOG"
 
-step "each carrier's own screens have their own text (must PASS)"
-# The carriers keep a second translation table beside Minecraft's, because the text on it -- the loading screen,
+step "the carrier's own screens have their own text (must PASS)"
+# The carrier keeps a second translation table beside Minecraft's, because the text on it -- the loading screen,
 # the mod list, the branding line under the logo -- has to render before a resource pack exists. FMLTranslations
-# and ForgeI18n read only that table and NEVER the resource manager, and a missing key there renders as the key
-# itself. Each carrier fills it in exactly one place, and both are inside the client mod loader the kernel
-# replaces, so both tables stayed empty: a Forbric client showed "fml.menu.branding" under the logo and
-# "fml.button.continue.launch" on the button that leaves the loading screen.
+# reads only that table and NEVER the resource manager, and a missing key there renders as the key itself. NeoForge
+# fills it in exactly one place, inside the client mod loader the kernel replaces, so the table stayed empty: a
+# Forbric client showed "fml.menu.branding" under the logo and "fml.button.continue.launch" on the button that leaves
+# the loading screen. (MinecraftForge's table and its check went with the MinecraftForge carrier in Stage 4.)
 #
 # The probe key is asserted, not just the count: a table that loaded the WRONG file is still a broken screen, and
 # that failure used to look identical to a healthy one in the log.
 check "NeoForge's own screens have their text" \
   "Forbric/Lang\] neoforge carrier: [0-9]+ built-in translation\(s\) loaded; 'fml.menu.branding' resolves" "$LOG"
-check "and MinecraftForge's do too" \
-  "Forbric/Lang\] forge carrier: [0-9]+ built-in translation\(s\) loaded; 'fml.menu.mods' resolves" "$LOG"
 check_absent "and no carrier loaded a table without its own keys in it" \
   "Forbric/Lang\].*still does not resolve" "$LOG"
 # (The check that both carriers' namespaces were visible to the resource manager read the kernel's client-resource
@@ -889,6 +920,74 @@ check "the save ran on the way out"        "Saving worlds"                      
 check "and it finished"                    "ThreadedAnvilChunkStorage: All dimensions are saved" "$LOG"
 check_absent "nothing aborted the stop"    "Exception stopping the server"                    "$LOG"
 
+step "no class the client wove declares one lambda name twice (must PASS)"
+# The full chain as Mixin wove it: every class Mixin wove, every mod's mixins applied, exported by Mixin itself -- so
+# BEFORE the kernel's post-Mixin passes (NativeCoremodParity, PostMixinFixups, UncalledValueRelay, the conflicts pass,
+# codec-return arbitration, callback priority; KernelMixinBootstrap), whose output this scan does not see. Two methods
+# with one lambda$ name in one class is the shape the merged base produced (MinecraftForge's
+# and NeoForge's bodies of one method each kept their lambdas) and that a mixin then bound to the wrong one of; the
+# pruner that answered it went in Stage 4 because NeoForge's base carries no lambda name twice. The staged census test
+# proves that for the base, its twins and the compat repairs; this proves it for the classes as woven, guest mixins
+# included (C3: 1,227 classes, 0 at d253a14d). The count is the denominator: an export that never ran finds nothing.
+python3 - "$RUNDIR/.mixin.out/class" <<'PY_DUPSCAN'
+import os, struct, sys
+root = sys.argv[1]
+def method_names(data):
+    if data[:4] != b'\xca\xfe\xba\xbe':
+        raise ValueError('not a class file')
+    count = struct.unpack('>H', data[8:10])[0]
+    utf8, i, slot = {}, 10, 1
+    while slot < count:
+        tag = data[i]
+        if tag == 1:
+            n = struct.unpack('>H', data[i + 1:i + 3])[0]
+            utf8[slot] = data[i + 3:i + 3 + n].decode('utf-8', 'replace'); i += 3 + n
+        elif tag in (3, 4, 9, 10, 11, 12, 17, 18): i += 5
+        elif tag in (5, 6): i += 9; slot += 1
+        elif tag in (7, 8, 16, 19, 20): i += 3
+        elif tag == 15: i += 4
+        else: raise ValueError('constant pool tag %d' % tag)
+        slot += 1
+    i += 6
+    i += 2 + 2 * struct.unpack('>H', data[i:i + 2])[0]
+    def members(i):
+        out = []
+        count, i = struct.unpack('>H', data[i:i + 2])[0], i + 2
+        for _ in range(count):
+            out.append(utf8[struct.unpack('>H', data[i + 2:i + 4])[0]])
+            attrs, i = struct.unpack('>H', data[i + 6:i + 8])[0], i + 8
+            for _ in range(attrs):
+                i += 6 + struct.unpack('>I', data[i + 2:i + 6])[0]
+        return out, i
+    _, i = members(i)
+    methods, _ = members(i)
+    return methods
+classes, dupes = 0, []
+for base, _, files in os.walk(root):
+    for f in files:
+        if not f.endswith('.class'):
+            continue
+        path = os.path.join(base, f)
+        with open(path, 'rb') as fh:
+            names = method_names(fh.read())
+        classes += 1
+        seen = {}
+        for n in names:
+            if n.startswith('lambda$'):
+                seen[n] = seen.get(n, 0) + 1
+        dupes += ['%s.%s x%d' % (os.path.relpath(path, root)[:-6], n, c) for n, c in sorted(seen.items()) if c > 1]
+print('[kernel] the mixin export holds %d woven class(es)' % classes)
+if classes < int(os.environ.get('M9_DUPSCAN_MIN_CLASSES', '500')):
+    print('[kernel] FAIL the mixin export is too small to say anything (%d class(es)): did -Dmixin.debug.export reach the client?' % classes)
+    raise SystemExit(1)
+for d in dupes[:20]:
+    print('[kernel]   ' + d)
+print(('[kernel] PASS no woven class declares one lambda$ name twice (%d classes)' % classes) if not dupes
+      else ('[kernel] FAIL %d lambda$ name(s) declared twice in one woven class' % len(dupes)))
+raise SystemExit(0 if not dupes else 1)
+PY_DUPSCAN
+[ $? -eq 0 ] || FAIL=1
+
 step "nothing leaked past main"
 # Vanilla logs this ~15s after main returns when a non-daemon thread is still alive — a leaked mod thread.
 check_absent "no thread leaked past main"   "Client shutdown from post-main"                   "$LOG"
@@ -909,9 +1008,65 @@ else echo "[kernel] FAIL strict compatibility acceptance — see compatibility-r
 fi
 # M9_COMPATIBILITY_REPORT_END
 
+step "a NeoForge mod's multipart entity is tracked on the client with all its parts (must PASS)"
+# A multipart entity is where a client once disconnected: the merged base's tracking callback (Forbric 0.4 and earlier)
+# read the other family's part array, which is null for a NeoForge mod's entity. This pack has no NeoForge multipart mod,
+# so a second, small client runs with TofuCraft's (and its library bagus_lib, both from client-popular) and the smoke
+# summons TofuCraft's shudofuspider and vanilla's ender dragon beside the player, then reads on the CLIENT whether each is
+# there with every part its getParts() answers in the level's part list. C3 measured 7 of 7 and 8 of 8. The dragon is
+# the control that must always hold; the spider is the subject. A client that disconnected never says anything, so
+# the clean-leave line is asserted too.
+MP_RUNDIR="${M9_MULTIPART_RUNDIR:-$BUILD/gate-m9-multipart}"
+refuse_shared_rundir "$MP_RUNDIR"
+MP_MODS="${M9_MULTIPART_MODS:-$KERNEL/run/client-popular/mods}"
+MP_LOG="$BUILD/gate-m9-multipart.log"
+MP_JARS=("$(ls "$MP_MODS"/tofucraft-*.jar 2>/dev/null | head -1)" "$(ls "$MP_MODS"/bagus_lib-*.jar 2>/dev/null | head -1)")
+if [ -z "${MP_JARS[0]}" ] || [ -z "${MP_JARS[1]}" ]; then
+  echo "[kernel] FAIL no tofucraft-*.jar and bagus_lib-*.jar in $MP_MODS (set M9_MULTIPART_MODS)"; FAIL=1
+else
+  rm -rf "$MP_RUNDIR"
+  mkdir -p "$MP_RUNDIR/mods" "$MP_RUNDIR/saves" "$MP_RUNDIR/quickPlay"
+  cp "${MP_JARS[@]}" "$MP_RUNDIR/mods/"
+  cp -R "$RUNDIR/saves/$WORLD" "$MP_RUNDIR/saves/"
+  printf 'version:4903\nonboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nlang:en_us\n' > "$MP_RUNDIR/options.txt"
+  : > "$MP_LOG"
+  FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeMultipart=80 -Dforbric.clientSmokeMultipartTypes=tofucraft:shudofuspider,minecraft:ender_dragon -Dforbric.clientSmokeDisconnectTicks=180 ${M9_MULTIPART_EXTRA_JVM:-}" \
+  RUNDIR="$MP_RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
+    --quickPlayPath "$MP_RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$MP_LOG" 2>&1 &
+  MP_PID=$!
+  echo "[kernel] multipart client pid=$MP_PID ($(ls -1 "$MP_RUNDIR/mods" | paste -sd' ' -))"
+  for i in $(seq 1 300); do
+    kill -0 "$MP_PID" 2>/dev/null || break
+    grep -qE 'ClientSmoke\] clean disconnect observed|Game crashed|Mod Loading has failed|Failed to load level data' \
+         "$MP_RUNDIR/logs/latest.log" 2>/dev/null && break
+    sleep 1
+  done
+  for i in $(seq 1 25); do kill -0 "$MP_PID" 2>/dev/null || break; sleep 1; done
+  stop_tree "$MP_PID"
+  wait "$MP_PID" 2>/dev/null
+  cat "$MP_RUNDIR/logs/latest.log" >> "$MP_LOG" 2>/dev/null || true
+  for TYPE in tofucraft:shudofuspider minecraft:ender_dragon; do
+    LINE=$(grep -aoE "multipart: $TYPE tracked on the client: multipart=[a-z]+, -?[0-9]+ part\(s\) from its getParts\(\), [0-9]+ of them" "$MP_LOG" | head -1)
+    PARTS=$(printf '%s' "$LINE" | sed -E 's/.*, (-?[0-9]+) part\(s\).*/\1/')
+    LISTED=$(printf '%s' "$LINE" | sed -E 's/.*getParts\(\), ([0-9]+) of them/\1/')
+    case "$LINE" in
+      *multipart=true*) if [ "${PARTS:-0}" -ge 1 ] && [ "$PARTS" = "$LISTED" ]; then
+                          echo "[kernel] PASS $TYPE is tracked on the client with all its parts ($LISTED of $PARTS in the level's part list)"
+                        else
+                          echo "[kernel] FAIL $TYPE is tracked on the client with all its parts (${LISTED:-?} of ${PARTS:-?})"; FAIL=1
+                        fi ;;
+      *) echo "[kernel] FAIL $TYPE was not reported as a multipart entity on the client: ${LINE:-$(grep -aoE "multipart: no $TYPE[^\[]*" "$MP_LOG" | head -1)}"; FAIL=1 ;;
+    esac
+  done
+  check_absent "the multipart probe did not fail" "multipart probe failed" "$MP_LOG"
+  check "the multipart client left the world cleanly" "ClientSmoke\] clean disconnect observed" "$MP_LOG"
+  check_absent "and it did not crash" "Preparing crash report" "$MP_LOG"
+  rm -rf "$MP_RUNDIR"
+fi
+
 step "M9 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M9 CLIENT GATE GREEN — tri-ecosystem client entered a world and left it cleanly"
+  echo "[kernel] ✅ M9 CLIENT GATE GREEN — Fabric + NeoForge client entered a world and left it cleanly"
 else
   echo "[kernel] ❌ M9 CLIENT GATE RED — see $LOG"
 fi
