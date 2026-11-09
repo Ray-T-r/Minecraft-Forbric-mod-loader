@@ -351,6 +351,9 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
    to whichever chunk generated first. A comparison over two absent or half-generated worlds
    reports zero differences, so the `chunks:` and `full:` counts must be checked before any
    zero counts. `test_world_parity.py` checks which spawner differences count; gate-m0 runs it.
+   `world-snapshot.py` is not part of the sweep either: gate-m58 (world upgrade) and gate-m59 (Forge to NeoForge
+   build swap) export a save to a typed snapshot and compare two under named rules; its docstring is the
+   operating manual. `test_world_snapshot.py` checks it, including against bytes the game wrote.
 9. `push-and-run.py` implements the shell entry point's orchestration and writes
    `report.md` using `report-template.md`, with commit, manifest, phase results, log
    assertions, frame verdict, region evidence and named load-report failures. Retain
