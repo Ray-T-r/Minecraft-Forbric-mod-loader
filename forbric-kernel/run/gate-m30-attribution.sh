@@ -24,8 +24,8 @@
 # the refusal; Stage 4 deletes that boot (D32/D51: gate-m26 and gate-m29 cover the refusal, on the client and the
 # server), and the fixture with it. The three canaries above, their checks and their controls carry the gate.
 #
-# RED demonstrations (re-measured on the genuine base in Stage 4 C5 after the refusal boot went; each switch fails
-# exactly the checks named — 7, 3, 2 — and none of the control's):
+# RED demonstrations (measured on the genuine base 2026-11-09 after the refusal boot went, green 28/28, stage4-c5-g-a.md;
+# each switch fails exactly the checks named — 7, 3, 2 — and none of the control's):
 #   M30_EXTRA_JVM=-Dforbric.loadReportRewrite=off     the report is written once at load-complete, before the subscriber
 #                                                     registers and the deferred task runs and before the world creates
 #                                                     RegionFileStorage: the summary names two mods, not three, no
