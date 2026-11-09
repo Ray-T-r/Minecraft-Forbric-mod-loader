@@ -24,4 +24,8 @@ args=(--kernel "$KERNEL" --staged "$RUN_OLD" --fixture "${M34_FIXTURE:-$KERNEL/r
 # gate's file when the client is gone, so the report below covers it.
 rc=0
 python3 "$KERNEL/run/compat/soak-run.py" "${args[@]}" "$@" || rc=$?
+# soak-run.py's own lines carry the verdict; this is the gate's countable one. A --control run that passes is
+# CONTROL_PASS, never release acceptance (soak-run.py says which it was above).
+if [ "$rc" -eq 0 ]; then echo "[kernel] PASS M34 soak-run accepted the run (exit 0)"
+else echo "[kernel] FAIL M34 soak-run stopped with exit $rc"; fi
 exit "$rc"
