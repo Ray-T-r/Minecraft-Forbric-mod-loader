@@ -54,9 +54,7 @@ import net.forbric.kernel.util.ForbricLog;
  * <p>Applied to {@code LivingEntity} and {@code Player} (which overrides it the same way), only where the method opens
  * with the invulnerability check and armours the container's amount rather than the parameter. A read of the
  * parameter before armour does not make the body vanilla's: NeoForge's body never reads the parameter again after the
- * check, so a mod rewriting such a read would still change nothing. (On the old merged base that read was
- * MinecraftForge's {@code damage = ForgeHooks.onLivingHurt(this, source, damage)}, kept by the edit-splicing merge.)
- * Placed right after the invulnerability check. {@code -Dforbric.vanillaDamageRead=off}.
+ * check, so a mod rewriting such a read would still change nothing. Placed right after the invulnerability check. {@code -Dforbric.vanillaDamageRead=off}.
  *
  * <p>The same for vanilla's value at the absorption call. Vanilla holds the damage left after absorption in the parameter
  * when it calls {@code setAbsorptionAmount}, and goes on to the health with that value; NeoForge's body stores the

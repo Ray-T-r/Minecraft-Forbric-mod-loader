@@ -57,8 +57,12 @@ public final class AccessCensus {
 		}
 	}
 
-	/** The two ecosystems' own packages: a descriptor naming one is a type this Minecraft does not ship. */
-	private static final List<String> CARRIER_TYPES = List.of("Lnet/minecraftforge/", "Lnet/neoforged/");
+	/**
+	 * The carrier's own package: a descriptor naming it is a type this Minecraft does not ship. NeoForge's only: the
+	 * game base and carrier name no {@code net/minecraftforge/} class at all (0 of their classes, Stage 4 C5), so a
+	 * MinecraftForge prefix here could never match a field this instance declares.
+	 */
+	private static final List<String> CARRIER_TYPES = List.of("Lnet/neoforged/");
 
 	/**
 	 * Whether a field the widener missed is one an ECOSYSTEM re-typed, judged from what it is now.
@@ -69,8 +73,8 @@ public final class AccessCensus {
 	 * native loader ignores in exactly the same way — and it was being reported as a merge re-typing that marked
 	 * the mod.
 	 *
-	 * <p>What distinguishes the real case is that the descriptor now names a CARRIER type: NeoForge's or
-	 * MinecraftForge's own class, which stock Minecraft does not ship, so no version of the game ever declared it
+	 * <p>What distinguishes the real case is that the descriptor now names a CARRIER type: NeoForge's own class,
+	 * which stock Minecraft does not ship, so no version of the game ever declared it
 	 * that way. That is a cost this instance introduced for the mod. Restored members stop counting only after
 	 * their actual access rule has visited them.
 	 */

@@ -171,4 +171,18 @@ class AccessCensusTest {
 		cw.visitEnd();
 		return cw.toByteArray();
 	}
+
+	/**
+	 * A field the widener missed counts as re-typed by an ecosystem only when it now names the carrier's own package. On
+	 * NeoForge's base that is NeoForge's alone: neither the base nor the carrier names a {@code net/minecraftforge/} class,
+	 * so such a descriptor is no type this instance introduced (and a stale widener naming one is the mod's own drift).
+	 */
+	@Test
+	void onlyNeoForgesOwnPackageCountsAsAnEcosystemReTyping() {
+		assertTrue(AccessCensus.retypedByAnEcosystem(List.of("Lnet/neoforged/neoforge/common/util/Lazy;")));
+		assertEquals(false, AccessCensus.retypedByAnEcosystem(List.of("Ljava/util/function/Supplier;")),
+				"vanilla re-types fields between versions too: not an ecosystem's doing");
+		assertEquals(false, AccessCensus.retypedByAnEcosystem(List.of("Lnet/minecraftforge/common/util/ClearableLazy;")),
+				"no class of this instance is MinecraftForge's");
+	}
 }
