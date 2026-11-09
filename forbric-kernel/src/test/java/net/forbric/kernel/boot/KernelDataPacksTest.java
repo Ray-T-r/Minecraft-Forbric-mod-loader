@@ -259,6 +259,18 @@ class KernelDataPacksTest {
 				"a carrier with no family keeps its file name");
 	}
 
+	/** Two jars with NeoForge's data would share the carrier id and collapse into one pack; the second keeps its name. */
+	@Test
+	void aSecondNeoForgeCarrierKeepsItsFileNameId() throws Exception {
+		java.util.Set<String> taken = new java.util.LinkedHashSet<>();
+		Path first = jar("neoforge-runtime.jar", null, "data/neoforge/damage_type/thing.json");
+		Path second = jar("other-neo-carrier.jar", null, "data/neoforge/damage_type/thing.json");
+		assertEquals("forbric/carrier/2-neoforge-runtime", KernelDataPacks.carrierPackId(first, taken));
+		assertEquals("forbric/carrier/2-other-neo-carrier", KernelDataPacks.carrierPackId(second, taken));
+		assertEquals("forbric/carrier/0-something-else", KernelDataPacks.carrierPackId(
+				jar("something-else.jar", null, "data/whatever/x.json"), taken), "a carrier with no family is unaffected");
+	}
+
 	/**
 	 * What old worlds recorded is renamed where it stands: the carrier keeps its place below the mod packs, MinecraftForge's
 	 * carrier id is left for vanilla to report missing, and a list naming the carrier twice keeps the first.

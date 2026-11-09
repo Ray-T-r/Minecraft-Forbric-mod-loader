@@ -121,8 +121,9 @@ public final class KernelDataPacks {
 		// reordered out from under it.
 		List<Object> packs = new ArrayList<>();
 		List<String> ids = new ArrayList<>();
+		Set<String> takenCarrierIds = new java.util.LinkedHashSet<>();
 		int loaderPacks = collect(cl, packType, carriersWithData(runtimeJars), packs, ids,
-				KernelDataPacks::carrierPackId, KernelDataPacks::carrierKnownPack);
+				jar -> carrierPackId(jar, takenCarrierIds), KernelDataPacks::carrierKnownPack);
 		Set<String> takenModIds = new java.util.LinkedHashSet<>();
 		int modPacks = collect(cl, packType, forgeFamilyJarsWithData(jars), packs, ids,
 				jar -> modPackId(jar, KernelDataPacks::firstModIdIn, takenModIds), KernelDataPacks::modKnownPack);
@@ -201,6 +202,22 @@ public final class KernelDataPacks {
 		int rank = carrierRank(jar);
 		if (rank == 2) return NEO_CARRIER_ID;
 		return "forbric/carrier/" + rank + "-" + stripExtension(jar.getFileName().toString());
+	}
+
+	/**
+	 * {@link #carrierPackId(Path)}, unless an earlier carrier of this boot already has that id: then the jar's file-name
+	 * id, said out loud. Since the NeoForge carrier's id stopped naming its file (D43), a second jar with NeoForge's data
+	 * would get the same id, and two packs under one id collapse into one in the pack repository without a word. One
+	 * NeoForge carrier is all a launch passes today; this keeps a second from vanishing if that ever changes.
+	 */
+	static String carrierPackId(Path jar, Set<String> taken) {
+		String id = carrierPackId(jar);
+		if (taken.add(id)) return id;
+		String byName = "forbric/carrier/" + carrierRank(jar) + "-" + stripExtension(jar.getFileName().toString());
+		ForbricLog.warn("[Forbric/DataPacks] %s would share the carrier pack id %s with an earlier carrier; served as %s "
+				+ "instead (a world records that id, so it moves if the file is renamed)", jar.getFileName(), id, byName);
+		taken.add(byName);
+		return byName;
 	}
 
 	/** The NeoForge carrier's datapack id: rank 2 (D2), family NeoForge (D43). Worlds record it in {@code level.dat}. */
