@@ -146,8 +146,9 @@ furnace remainder. The fixed run must pass every case with fabric-item-api's `It
 must fail exactly the two `damage.*` handler cases and `-Dforbric.shearsRelayMobs=off` exactly the three tag-shears cases,
 and `-Dforbric.supersededMixins=off` no case, each showing its mixin suspected again (the furnace mixin's rows are
 resolved only by SupersededMixins' native-furnace-remainder entry), so each check is known to be able to fail. See [the probe's instructions](../../canary/regress/README.md).
-`gate-m60-regress.sh` runs it in the gate list (inputs from `build/compat-inputs/sweep90` and
-`build/purefabric-2026-10-03`, `M60_*` override; servers on `GATE_PORT` to `GATE_PORT+3`) and asserts each phase's
+`gate-m60-regress.sh` runs it in the gate list (fabric-api from `.dev/api`, else `run/client-merged-pack/mods`, as
+build.gradle takes it; BCLib and WorldWeaver from `build/compat-inputs/sweep90`, WunderLib from
+`build/purefabric-2026-10-03`; `M60_*` override; servers on `GATE_PORT` to `GATE_PORT+3`) and asserts each phase's
 exact line.
 
 ## Vanilla fluid parity

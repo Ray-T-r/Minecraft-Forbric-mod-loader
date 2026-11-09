@@ -10,13 +10,16 @@
 # damage.* handler cases, shears-mobs-off the three tag-shears cases, superseded-off none) and show its mixin suspected
 # again. The driver raises on anything else; this gate reads its per-phase lines and the lost-port marker of every server.
 #
-# Inputs (each overridable, none downloaded): fabric-api 0.155.2+26.2, BCLib 26.201.2 and its dependencies WorldWeaver
-# 26.201.2 and WunderLib 26.201.0, from the compatibility inputs this tree's build/ links to.
+# Inputs (each overridable, none downloaded): fabric-api 0.155.2+26.2 from where build.gradle takes the game side's API
+# (.dev/api, else the client-merged-pack's copy, the same jar), BCLib 26.201.2 and its dependency WorldWeaver 26.201.2
+# from build/compat-inputs/sweep90, and WunderLib 26.201.0 from build/purefabric-2026-10-03.
 # GATE-PARALLEL: mem=2500
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25650}"
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
-FAPI="${M60_FABRIC_API:-$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar}"
+FAPI_DEV="$KERNEL/.dev/api/fabric-api-0.155.2+26.2.jar"
+[ -f "$FAPI_DEV" ] || FAPI_DEV="$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar"
+FAPI="${M60_FABRIC_API:-$FAPI_DEV}"
 BCLIB="${M60_BCLIB:-$BUILD/compat-inputs/sweep90/mods/bclib-26.201.2.jar}"
 WORLDWEAVER="${M60_WORLDWEAVER:-$BUILD/compat-inputs/sweep90/mods/worldweaver-26.201.2.jar}"
 WUNDERLIB="${M60_WUNDERLIB:-$BUILD/purefabric-2026-10-03/mods/wunderlib-26.201.0.jar}"
