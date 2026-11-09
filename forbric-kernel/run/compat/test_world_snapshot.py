@@ -315,5 +315,140 @@ class Census(unittest.TestCase):
             self.assertEqual(ws.census(snap, [regs], ["item=minecraft:stone"]), [("item", "minecraft:stone")])
 
 
+TAGS = {"byte", "short", "int", "long", "float", "double", "string", "byte_array", "int_array", "long_array", "list",
+        "compound"}
+DIM = r"[a-z0-9_.-]+:[a-z0-9_./-]+"
+# The chunk-root keys chunk_extra leaves out, as the header lists them (spelled out here, not read from the module).
+CHUNK_SKIP_FROZEN = {"sections", "block_entities", "Heightmaps", "block_ticks", "fluid_ticks", "LastUpdate",
+                     "InhabitedTime", "xPos", "zPos"}
+
+
+def untagged_ok(element, item):
+    """An item of a typed list carries no tag of its own (the frozen schema's list rule)."""
+    if element == "compound":
+        return isinstance(item, dict) and all(typed_ok(v) for v in item.values())
+    if element == "list":
+        return isinstance(item, list) and len(item) == 2 and all(untagged_ok(item[0], x) for x in item[1])
+    return typed_ok([element, item])
+
+
+def typed_ok(v):
+    """Whether `v` is a TYPED value exactly as world-snapshot.py's header defines it."""
+    if not isinstance(v, list) or not v or v[0] not in TAGS:
+        return False
+    tag = v[0]
+    if tag in ("byte", "short", "int", "long"):
+        return len(v) == 2 and isinstance(v[1], int) and not isinstance(v[1], bool)
+    if tag in ("float", "double"):
+        return len(v) == 2 and isinstance(v[1], (int, float)) and not isinstance(v[1], bool)
+    if tag == "string":
+        return len(v) == 2 and isinstance(v[1], str)
+    if tag.endswith("_array"):
+        return len(v) == 2 and isinstance(v[1], list) and all(isinstance(x, int) for x in v[1])
+    if tag == "compound":
+        return len(v) == 2 and isinstance(v[1], dict) and all(typed_ok(x) for x in v[1].values())
+    return len(v) == 3 and (v[1] in TAGS or v[1] == "end") and all(untagged_ok(v[1], x) for x in v[2])
+
+
+class FrozenSchema(unittest.TestCase):
+    """U2: the snapshot file, the diff report and the import API are frozen (header of world-snapshot.py). A change that
+    fails here is a new schema (/2) and a note to lane SWAP, whose fixture holds a /1 snapshot nobody can write again."""
+
+    def test_the_frozen_names(self):
+        self.assertEqual(ws.SCHEMA, "forbric-world-snapshot/1")
+        self.assertEqual(ws.DIFF_SCHEMA, "forbric-world-snapshot-diff/1")
+        self.assertEqual(ws.EXPORTER, 1)
+        self.assertEqual(ws.FACETS, ("level", "blocks", "biomes", "block_entities", "chunk_extra", "entities", "players",
+                                     "advancements", "stats", "saved_data"))
+        self.assertEqual(ws.CHUNK_SKIP, CHUNK_SKIP_FROZEN)
+        for name in ("export", "diff", "diff_report", "read_nbt_file", "get", "referenced_names", "census"):
+            self.assertTrue(callable(getattr(ws, name)), name)
+        doc = ws.__doc__
+        self.assertIn("THE SNAPSHOT FILE IS FROZEN", doc)
+        for word in ("schema", "meta") + ws.FACETS + (ws.SCHEMA, ws.DIFF_SCHEMA):
+            self.assertIn('"%s"' % word if word in ("schema", "meta") + ws.FACETS else word, doc, word)
+
+    def test_a_save_the_game_wrote_exports_in_the_frozen_shape(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = Path(tmp) / "world"
+            (world / "region").mkdir(parents=True)
+            self.assertTrue((TESTDATA / "level.dat").is_file(), "game-written testdata missing: %s" % TESTDATA)
+            (world / "level.dat").write_bytes((TESTDATA / "level.dat").read_bytes())
+            (world / "region" / "r.0.0.mca").write_bytes((TESTDATA / "r.0.0.mca").read_bytes())
+            snap = ws.export(world, [-1, -1, 1, 1], "frozen")
+        self.assertEqual(set(snap), {"schema", "meta"} | set(ws.FACETS))
+        self.assertEqual(snap["meta"], {"exporter": 1, "world": str(world), "chunks": [-1, -1, 1, 1], "label": "frozen"})
+        self.assertTrue(typed_ok(snap["level"]) and snap["level"][0] == "compound")
+        self.assertTrue(snap["blocks"])
+        for key, state in snap["blocks"].items():
+            self.assertRegex(key, r"^%s -?\d+ -?\d+ -?\d+$" % DIM)
+            self.assertRegex(state, r"^%s(\[[^\]]+\])?$" % DIM)
+        self.assertTrue(snap["biomes"])
+        for key, runs in snap["biomes"].items():
+            self.assertRegex(key, r"^%s -?\d+ -?\d+ -?\d+$" % DIM)
+            self.assertTrue(all(isinstance(b, str) and isinstance(n, int) for b, n in runs))
+            self.assertEqual(sum(n for _, n in runs), 64)
+        self.assertTrue(snap["chunk_extra"])
+        for key, extra in snap["chunk_extra"].items():
+            self.assertRegex(key, r"^%s -?\d+ -?\d+$" % DIM)
+            self.assertTrue(typed_ok(extra) and extra[0] == "compound")
+            self.assertFalse(set(extra[1]) & CHUNK_SKIP_FROZEN)
+        # A snapshot is plain JSON: what a gate writes is what it reads back.
+        self.assertEqual(json.loads(json.dumps(snap, sort_keys=True)), snap)
+
+    def test_every_facet_of_a_full_world_is_typed_as_documented(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            snap = ws.export(make_world(Path(tmp)))
+        for facet in ("block_entities", "players"):
+            self.assertTrue(snap[facet], facet)
+            self.assertTrue(all(typed_ok(v) and v[0] == "compound" for v in snap[facet].values()), facet)
+        self.assertTrue(all("x" not in v[1] and "y" not in v[1] and "z" not in v[1] for v in snap["block_entities"].values()))
+        for key, ent in snap["entities"].items():
+            self.assertRegex(key, r"^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$")
+            self.assertEqual(set(ent), {"dim", "nbt"})
+            self.assertTrue(typed_ok(ent["nbt"]))
+        for rel, value in snap["saved_data"].items():
+            self.assertIn("data/", "/" + rel)
+            self.assertTrue(typed_ok(value) or set(value) <= {"sha1", "unreadable_sha1"}, rel)
+
+    def test_the_diff_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            world = make_world(Path(tmp))
+            a, b, out = Path(tmp) / "a.json", Path(tmp) / "b.json", Path(tmp) / "diff.json"
+            self.assertEqual(ws.main(["export", str(world), "--out", str(a)]), 0)
+            ws.mutate(world, [("minecraft:overworld 3 -64 0", 0, 6)])
+            self.assertEqual(ws.main(["export", str(world), "--out", str(b)]), 0)
+            self.assertEqual(ws.main(["diff", str(a), str(a), "--rules", "reopen", "--json", str(out)]), 0)
+            clean = json.loads(out.read_text(encoding="utf-8"))
+            self.assertEqual((clean["count"], clean["differences"], clean["by_facet"]), (0, [], {}))
+            self.assertEqual(clean["rules_used"]["level clock Time"], 2)
+            self.assertEqual(ws.main(["diff", str(a), str(b), "--rules", "reopen", "--ignore-namespace", "zzz",
+                                      "--json", str(out)]), 1)
+            report = json.loads(out.read_text(encoding="utf-8"))
+        self.assertEqual(set(report), {"schema", "rules", "ignore_namespace", "rules_used", "by_facet", "count",
+                                       "differences"})
+        self.assertEqual((report["schema"], report["rules"], report["ignore_namespace"]),
+                         ("forbric-world-snapshot-diff/1", "reopen", ["zzz"]))
+        self.assertEqual(report["count"], 1)
+        self.assertEqual(report["by_facet"], {"block_entities": 1})
+        self.assertEqual(report["differences"], [{"facet": "block_entities", "path": "/minecraft:overworld 3 -64 0/Items[0]/count",
+                                                  "a": ["int", 1], "b": ["int", 6]}])
+
+    def test_another_schema_or_exporter_is_refused(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            good = ws.export(make_world(Path(tmp)))
+            paths = {}
+            for name, change in (("good", {}), ("schema2", {"schema": "forbric-world-snapshot/2"}),
+                                 ("exporter2", {"meta": dict(good["meta"], exporter=2)})):
+                paths[name] = Path(tmp) / (name + ".json")
+                paths[name].write_text(json.dumps(dict(good, **change)), encoding="utf-8")
+            regs = Path(tmp) / "regs.json"
+            regs.write_text('{"registries": {}}', encoding="utf-8")
+            self.assertEqual(ws.main(["diff", str(paths["good"]), str(paths["schema2"]), "--rules", "reopen"]), 3)
+            self.assertEqual(ws.main(["diff", str(paths["good"]), str(paths["exporter2"]), "--rules", "reopen"]), 3)
+            self.assertEqual(ws.main(["census", str(paths["schema2"]), str(regs)]), 3)
+            self.assertEqual(ws.main(["diff", str(paths["good"]), str(paths["good"]), "--rules", "reopen"]), 0)
+
+
 if __name__ == "__main__":
     unittest.main()

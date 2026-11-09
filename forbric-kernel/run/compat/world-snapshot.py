@@ -3,7 +3,7 @@
 controls, and check a snapshot's names against a registry census.
 
     world-snapshot.py export <world-dir> --out <snap.json> [--chunks X0,Z0,X1,Z1] [--label TEXT]
-    world-snapshot.py diff <a.json> <b.json> --rules upgrade|reopen [--ignore-namespace NS]... [--list N]
+    world-snapshot.py diff <a.json> <b.json> --rules upgrade|reopen [--ignore-namespace NS]... [--list N] [--json OUT]
     world-snapshot.py mutate <world-dir> [--chest-count "DIM X Y Z" SLOT COUNT]... [--palette OLD=NEW]...
     world-snapshot.py census <snap.json> <registries.json>... [--drop KIND=NAME]
 
@@ -18,24 +18,70 @@ through world-parity.py's typed reader (`read_typed`), the tree's one NBT parser
 disagree about what a file holds; test_world_snapshot.py checks that reader against bytes the game itself wrote
 (testdata/world-snapshot/, a flat world the old kernel saved) as well as against our own writer.
 
-Snapshots are typed (see world-parity.py `read_typed`): `["int", 5]` and `["byte", 5]` differ, so a field that changes
-type on resave is a difference, not a silent equality. Schema `forbric-world-snapshot/1`, facets (each a JSON object
-with sorted keys):
-  level           level.dat root, typed (Data, fml.LoadingModList, ...)
-  blocks          "DIM X Y Z" -> "ns:id[k=v,...]" for every non-air block in the chunk box
-  biomes          "DIM CX SY CZ" -> [[biome, run-length], ...] per section in the box
-  block_entities  "DIM X Y Z" -> typed compound (minus x, y, z)
-  chunk_extra     "DIM CX CZ" -> typed compound: the chunk root minus sections, block_entities and per-tick keys
-                  (this is where neoforge:attachments, fabric:attachments or a ForgeCaps land)
-  entities        "UUID" -> {"dim": DIM, "nbt": typed compound}
-  players         "STEM" -> typed root of players/data/STEM.dat
-  advancements    "STEM" -> JSON;  stats  "STEM" -> JSON
-  saved_data      "relative/path.dat" -> typed root; any other file under a data/ dir -> {"sha1": ...}
-  meta            exporter version, world dir, chunk box, label
+THE SNAPSHOT FILE IS FROZEN (milestone U2, 2026-11-09): schema `forbric-world-snapshot/1`. gate-m59 keeps a snapshot
+of a world nobody can write again (the old kernel with a Forge mod's MinecraftForge build) as a fixture, and lane SWAP's
+forge-swap.py reads snapshots too, so a change to anything below is a new schema (`/2`), never an edit of `/1`: `diff`
+and `census` refuse a file whose "schema" is not this module's (exit 3). A fix to what `export` puts in a facet, with
+the shapes unchanged, raises `meta.exporter` instead, and `diff` refuses two snapshots from different exporters (exit
+3): re-export both worlds with one world-snapshot.py.
 
-`diff` exits 0 with no differences, 1 with some, 3 on unusable input. Every rule that hid something is printed with
-its count (`rule <name>: <n>`), so an allowance that fires where it should not is visible, and one that never fires
-can be asserted on. Everything not covered by a rule must be equal; a key only one side has is a difference.
+One JSON object, written with sorted keys:
+  "schema"          "forbric-world-snapshot/1"
+  "meta"            {"exporter": int (1), "world": the directory as given, "chunks": null or [X0, Z0, X1, Z1]
+                    (chunk coordinates, inclusive, min first), "label": string}
+  "level"           TYPED root compound of level.dat, or null when there is none
+  "blocks"          "DIM X Y Z" -> "ns:id" or "ns:id[k=v,...]" (properties sorted by name), every non-air block
+                    (air, cave_air, void_air left out) in the chunk box; X Y Z are block coordinates
+  "biomes"          "DIM CX SY CZ" -> [[biome id, run length], ...] over the section's 64 cells in storage order
+  "block_entities"  "DIM X Y Z" -> TYPED compound, the stored block entity minus its x, y, z
+  "chunk_extra"     "DIM CX CZ" -> TYPED compound, the chunk root minus sections, block_entities, Heightmaps,
+                    block_ticks, fluid_ticks, LastUpdate, InhabitedTime, xPos, zPos (neoforge:attachments,
+                    fabric:attachments, a ForgeCaps and Status land here)
+  "entities"        UUID ("8-4-4-4-12" lower-case hex) -> {"dim": DIM, "nbt": TYPED compound}; an entity without a
+                    UUID is keyed "DIM CX CZ #N"
+  "players"         file stem -> TYPED root of players/data/<stem>.dat (or playerdata/<stem>.dat)
+  "advancements"    file stem -> the JSON of players/advancements/<stem>.json (or advancements/)
+  "stats"           file stem -> the JSON of players/stats/<stem>.json (or stats/)
+  "saved_data"      path relative to the world, "/"-separated -> for a *.dat under a data/ directory its TYPED root
+                    (or {"unreadable_sha1": hex} when it is not NBT); for any other file there {"sha1": hex}
+                    (*.dat_old and *.lock are left out; nothing under players/)
+DIM is a dimension id, "ns:path" ("minecraft:overworld" for the world's own region/; dimensions/<ns>/<path>/ otherwise).
+
+A TYPED value is a JSON array whose first element is the NBT tag name (world-parity.py `read_typed`):
+  ["byte"|"short"|"int"|"long", integer]   signed, as stored
+  ["float"|"double", number]               a float is its float32 value widened to a double; NaN and infinities are
+                                           written as Python's json writes them (NaN, Infinity, -Infinity)
+  ["string", text]
+  ["byte_array"|"int_array"|"long_array", [integers]]   signed
+  ["compound", {name: TYPED}]
+  ["list", element tag, [items]]           items carry NO tag of their own: a scalar or string is its bare value,
+                                           an array its integer list, a compound its {name: TYPED} object, a list
+                                           [element tag, [items]]; an empty list's element tag may be "end"
+So ["byte", 1] and ["int", 1] are different values: a field that changes type on a resave is a difference, not a
+silent equality.
+
+`diff` (frozen with the file): exit 0 with no differences, 1 with some, 3 on unusable input (unreadable, another
+schema, another exporter). Its text lines, which gates grep: "rules: <mode>[ ignore-namespace=NS]...", one
+"rule <name>: <n>" per rule that hid something (sorted by name, so an allowance that fires where it should not is
+visible and one that never fires can be asserted on), up to --list "diff <facet> <path>: <a> -> <b>" or
+"diff rule <text>" lines, "differences by facet: <facet>=<n> ..." (or "none") and last "differences: <n>". With
+--json OUT it also writes the same result as schema `forbric-world-snapshot-diff/1`:
+  {"schema": "forbric-world-snapshot-diff/1", "rules": mode, "ignore_namespace": [NS, ...],
+   "rules_used": {name: n}, "by_facet": {facet: n}, "count": n,
+   "differences": [{"facet": facet, "path": path, "a": TYPED or JSON or null, "b": ...}, ...]}  (all of them)
+A rule violation is a difference with facet "rule", its text as the path and null on both sides. Everything not
+covered by a rule must be equal; a key only one side has is a difference (null on the side that lacks it). Paths are
+"/"-joined keys from the facet's top ("/minecraft:overworld 3 -64 0/Items[0]/count"), "[i]" for a list element.
+
+For a script that imports this file (importlib, the name has a hyphen) the frozen API is: SCHEMA, DIFF_SCHEMA,
+EXPORTER, FACETS, export(world, box=None, label="") -> snapshot, diff(a, b, mode, ignore=()) -> (differences as
+(facet, path, a, b) tuples, rules with .used {name: n} and .violations), diff_report(differences, rules) -> the --json
+object, read_nbt_file(path) -> TYPED root or None, get(compound, key, default=None), referenced_names(snapshot) and
+census(snapshot, registries, drops=()). Anything else in here may change.
+
+`mutate` and `census` are controls for gate-m58: mutate exits 0 when it changed something and 1 when nothing matched;
+census exits 0 with every referenced name present, 1 with some missing ("census missing: <n>" last), 3 on another
+schema.
 """
 import argparse
 import copy
@@ -55,6 +101,7 @@ wp = importlib.util.module_from_spec(_spec)
 _spec.loader.exec_module(wp)
 
 SCHEMA = "forbric-world-snapshot/1"
+DIFF_SCHEMA = "forbric-world-snapshot-diff/1"
 EXPORTER = 1
 AIR = {"minecraft:air", "minecraft:cave_air", "minecraft:void_air"}
 # Chunk-root keys that are not chunk content: what the other facets already hold, and per-tick bookkeeping.
@@ -549,6 +596,10 @@ def diff(a, b, mode, ignore=()):
     for snap in (a, b):
         if snap.get("schema") != SCHEMA:
             raise ValueError("not a %s snapshot (schema %r)" % (SCHEMA, snap.get("schema")))
+    ea, eb = (s.get("meta", {}).get("exporter") for s in (a, b))
+    if ea != eb:
+        raise ValueError("the two snapshots come from different exporters (%r and %r): re-export both worlds with one "
+                         "world-snapshot.py" % (ea, eb))
     rules = Rules(mode, ignore)
     na, nb = normalise(a, rules, "a"), normalise(b, rules, "b")
     out = []
@@ -565,6 +616,16 @@ def diff(a, b, mode, ignore=()):
     for v in rules.violations:
         out.append(("rule", v, None, None))
     return out, rules
+
+
+def diff_report(found, rules):
+    """The --json object (schema DIFF_SCHEMA) for what `diff` returned."""
+    by_facet = {}
+    for facet, _path, _x, _y in found:
+        by_facet[facet] = by_facet.get(facet, 0) + 1
+    return {"schema": DIFF_SCHEMA, "rules": rules.mode, "ignore_namespace": list(rules.ignore),
+            "rules_used": dict(sorted(rules.used.items())), "by_facet": dict(sorted(by_facet.items())), "count": len(found),
+            "differences": [{"facet": f, "path": p, "a": x, "b": y} for f, p, x, y in found]}
 
 
 def _short(v, n=160):
@@ -733,6 +794,7 @@ def main(argv=None):
     d.add_argument("--rules", choices=("upgrade", "reopen"), required=True)
     d.add_argument("--ignore-namespace", action="append", default=[])
     d.add_argument("--list", type=int, default=40)
+    d.add_argument("--json", type=Path, default=None, help="also write the result as %s" % DIFF_SCHEMA)
     m = sub.add_parser("mutate")
     m.add_argument("world", type=Path)
     m.add_argument("--chest-count", nargs=3, action="append", default=[], metavar=("POS", "SLOT", "COUNT"))
@@ -775,6 +837,8 @@ def main(argv=None):
             print("... %d more" % (len(found) - args.list))
         print("differences by facet: %s" % (" ".join("%s=%d" % kv for kv in sorted(by_facet.items())) or "none"))
         print("differences: %d" % len(found))
+        if args.json is not None:
+            args.json.write_text(json.dumps(diff_report(found, rules), sort_keys=True), encoding="utf-8")
         return 1 if found else 0
     if args.cmd == "mutate":
         changed = mutate(args.world, [(p, int(s), int(n)) for p, s, n in args.chest_count], args.palette)
@@ -782,8 +846,15 @@ def main(argv=None):
             print("[snapshot] mutated %s" % line)
         return 0 if changed else 1
     if args.cmd == "census":
-        snap = json.loads(args.snapshot.read_text(encoding="utf-8"))
-        regs = [json.loads(p.read_text(encoding="utf-8")) for p in args.registries]
+        try:
+            snap = json.loads(args.snapshot.read_text(encoding="utf-8"))
+            regs = [json.loads(p.read_text(encoding="utf-8")) for p in args.registries]
+        except (OSError, ValueError) as err:
+            print("[snapshot] FATAL %s" % err, file=sys.stderr)
+            return 3
+        if snap.get("schema") != SCHEMA:
+            print("[snapshot] FATAL not a %s snapshot (schema %r)" % (SCHEMA, snap.get("schema")), file=sys.stderr)
+            return 3
         missing = census(snap, regs, args.drop)
         names = referenced_names(snap)
         print("census: referenced %s" % " ".join("%s=%d" % (k, len(v)) for k, v in sorted(names.items())))
