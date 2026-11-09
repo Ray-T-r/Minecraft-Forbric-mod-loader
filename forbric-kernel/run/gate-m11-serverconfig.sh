@@ -16,7 +16,8 @@
 # needs shogi + cookingforblockheads present to construct. fabric-api is here because the failure was first seen
 # on a mixed pack and this keeps the gate honest about that.
 #
-# TEETH: -Dforbric.earlyConfigs=off turns this gate RED (measured: getActive NPE x4, Done never reached).
+# TEETH: -Dforbric.earlyConfigs=off turns this gate RED (measured on the merged base: getActive NPE x4, Done never
+# reached; on the genuine base 2026-11-09: 6 checks red, the config-less getActive present x2, Done never reached).
 # GATE-PARALLEL: rundirs=server-config mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
