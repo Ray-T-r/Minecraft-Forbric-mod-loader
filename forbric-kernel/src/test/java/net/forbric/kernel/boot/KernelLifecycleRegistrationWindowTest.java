@@ -123,6 +123,31 @@ class KernelLifecycleRegistrationWindowTest {
 						+ "setup posts into a bus nothing dispatches, silently");
 	}
 
+	/**
+	 * The client entrypoint window empties NeoForge's blockstate→id map right before the freeze that closes it, so that
+	 * freeze's bake numbers every state once (lens A of lane S's wave-2 review: without it each client id was its
+	 * dedicated-server id plus the whole state count, NeoForge's probe block 64733 against 32366).
+	 */
+	@Test
+	void theClientWindowEmptiesTheBlockStateMapRightBeforeItsFreeze() throws Exception {
+		ClassNode node = compiled();
+		assertTrue(node != null,
+				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
+		MethodNode close = method(node, "closeClientEntrypointWindow");
+		int clear = firstCall(close, "clearBlockStateIds"), freeze = firstCall(close, "freeze");
+		assertTrue(clear >= 0, "the client window must empty the blockstate map before re-freezing");
+		assertTrue(freeze > clear, "and empty it BEFORE the freeze, whose bake refills it");
+		List<String> between = new ArrayList<>();
+		AbstractInsnNode[] insns = close.instructions.toArray();
+		for (int i = clear + 1; i < freeze; i++) if (insns[i] instanceof MethodInsnNode call) between.add(call.name);
+		assertTrue(between.isEmpty(), "nothing runs between the clear and the freeze: " + between);
+		boolean neoForgesMap = false;
+		for (AbstractInsnNode insn : method(node, "clearBlockStateIds").instructions.toArray()) {
+			if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && "getBlockStateIDMap".equals(ldc.cst)) neoForgesMap = true;
+		}
+		assertTrue(neoForgesMap, "the map cleared is NeoForge's own, GameData.getBlockStateIDMap()");
+	}
+
 	private static ClassNode compiled() throws Exception {
 		Path file = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");

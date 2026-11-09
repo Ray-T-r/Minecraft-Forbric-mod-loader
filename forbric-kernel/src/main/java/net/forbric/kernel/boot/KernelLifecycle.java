@@ -267,8 +267,10 @@ public final class KernelLifecycle {
 	 * <p>The blockstate→id map is not among it any more. The kernel used to rebuild it here (the merged base's bake re-added
 	 * only the blocks registered inside the window, and MinecraftForge mods registered a second wave in
 	 * {@code Minecraft.<init>}); NeoForge's own {@code BlockCallbacks.onBake}, which the {@code freeze} right before each
-	 * call of this runs, re-adds the state of every block in the registry, so on NeoForge's base the map always agreed
-	 * and the rebuild never ran (Stage 4 C5, lane S: no boot printed it; switch {@code forbric.blockStateIdRefill} retired).
+	 * call of this runs, adds the state of every block in the registry, so on NeoForge's base the map always held every
+	 * registered state and the rebuild, which checked only that count, never ran (Stage 4 C5, lane S: no boot printed it;
+	 * switch {@code forbric.blockStateIdRefill} retired). That the ids themselves were native is a separate matter: the
+	 * client's second bake appended them again until {@link #clearBlockStateIds} (lane S's wave-2 review, lens A).
 	 */
 	private static void completeBlockStateBookkeeping(ClassLoader cl) {
 		// Vanilla fills every block state's cache in Bootstrap, before any mod has registered a block, and the kernel
@@ -2072,10 +2074,10 @@ public final class KernelLifecycle {
 	 * registers its status effects from {@code loadCommon()} and catches Throwable into a field, so the only symptom
 	 * was {@code WorldMap.events} still being null a hundred ticks later, inside {@code Minecraft.runTick}.
 	 *
-	 * <p>Reopening is the smaller half of the job: the ids assigned here have to be rebuilt into NeoForge's
-	 * blockstate map and any late {@code BlockItem} linked back to its block, exactly as at the end of the main
-	 * window — otherwise the first block update fails to encode. Both run in a {@code finally} so a mod throwing
-	 * cannot leave the registries open.
+	 * <p>Reopening is the smaller half of the job: any late {@code BlockItem} is linked back to its block, NeoForge's
+	 * blockstate→id map is emptied so the closing freeze's own bake numbers every state once
+	 * ({@link #closeClientEntrypointWindow}), and the state caches are filled. All of it runs in a {@code finally} so a mod
+	 * throwing cannot leave the registries open.
 	 *
 	 * <p>Closing this window is also Fabric's registry freeze point: the Fabric injectors on
 	 * {@code BuiltInRegistries.freeze()} that {@code FabricFreezeHookMixinAdapter} moved run here, the HEAD half while
@@ -2189,16 +2191,44 @@ public final class KernelLifecycle {
 		}
 	}
 
+	/**
+	 * Empties NeoForge's blockstate→id map ({@code GameData.getBlockStateIDMap()}, a {@code ClearableObjectIntIdentityMap}
+	 * whose {@code clear()} is the one {@code BlockCallbacks.onClear} calls), so the bake of the freeze that follows numbers
+	 * every state once. Reported, never thrown: a map left full keeps the doubled ids, as before.
+	 */
+	static void clearBlockStateIds(ClassLoader cl) {
+		try {
+			Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
+			Object map = gameData.getMethod("getBlockStateIDMap").invoke(null);
+			java.lang.reflect.Method clear = map.getClass().getDeclaredMethod("clear");
+			clear.setAccessible(true);
+			clear.invoke(map);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] could not empty NeoForge's blockstate->id map before the client re-freeze — "
+					+ "its bake appends every state again, so each id on this client is offset by the state count");
+		}
+	}
+
 	/** Test seam. */
 	static void forgetFabricFreezePoint() {
 		FABRIC_FREEZE_HOOKS_RUN.clear();
 	}
 
-	/** Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated. */
+	/**
+	 * Re-closes after the client entrypoints and redoes the id bookkeeping their registrations invalidated.
+	 *
+	 * <p>NeoForge's blockstate→id map is emptied right before the freeze. Reopening ({@code unfreezeData}) clears nothing,
+	 * and the freeze's {@code BlockCallbacks.onBake} adds every block's states again after the ones the main window's bake
+	 * left, so without the clear every id on a client was its dedicated-server id plus the whole state count (gate-m26:
+	 * NeoForge's probe block 64733 where a dedicated server reads 32366), past the width of the global palette sized from
+	 * the map's {@code size()}. Native NeoForge bakes a client's blocks once, so each state's id is its position in registry
+	 * order; the bake after the clear gives exactly that, with the late registrations at the end.
+	 */
 	private static void closeClientEntrypointWindow(ClassLoader cl) {
 		try {
 			linkBlockItems(cl);
 			rootRegistry(cl, false);
+			clearBlockStateIds(cl);
 			freeze(cl);
 			completeBlockStateBookkeeping(cl);
 		} catch (Throwable t) {
