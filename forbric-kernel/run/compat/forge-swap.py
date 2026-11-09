@@ -558,21 +558,24 @@ def classify(forbric, native, client=None):
     f_old, f_new = read(forbric, "old"), read(forbric, "neo-open")
     n_old, n_new = read(native, "forge-reopen"), read(native, "neo-open")
     lf, ln = losses(f_old, f_new, ws), losses(n_old, n_new, ws)
+    player = lambda k: k.startswith(("players ", "advancements ", "stats ")) or k.startswith(("rule player ",))
+    # A dedicated server never loads a player file, so its export has the old file untouched: no player row comes from
+    # a server arm (native has no player at all).
+    lf = {k: v for k, v in lf.items() if not player(k)}
+    ln = {k: v for k, v in ln.items() if not player(k)}
     if client:
         # A dedicated server never loads a player file, so the player's rows come from the singleplayer client that
         # opened the old world with the NeoForge builds (its own export): only its player facets are taken.
         c_new = json.loads(Path(client).read_text())
         lc = losses(f_old, c_new, ws)
-        lf = {k: v for k, v in lf.items() if not k.startswith(("players ", "advancements ", "stats "))}
-        lf.update({k: v for k, v in lc.items() if k.startswith(("players ", "advancements ", "stats "))})
-        lf.update({k: v for k, v in lc.items() if k.startswith("rule ") and "player " in k})
+        lf.update({k: v for k, v in lc.items() if player(k)})
     native_mods = _mods_named(n_old.get("blocks", {}), n_old.get("block_entities", {}), n_old.get("entities", {}),
                               sorted(n_old.get("saved_data", {})))
     rows = []
     for key in sorted(set(lf) | set(ln)):
         fk = lf.get(key, ("kept",))[0]; nk = ln.get(key, ("kept",))[0]
         mods = (lf.get(key) or ln.get(key))[1]
-        no_native = key.startswith(("players ", "advancements ", "stats ")) or (mods != ["vanilla"] and not set(mods) & native_mods)
+        no_native = player(key) or (mods != ["vanilla"] and not set(mods) & native_mods)
         if "gained" in (fk, nk) and "lost" not in (fk, nk) and "rule" not in (fk, nk):
             verdict = "GAINED (not a loss)"
         elif "changed" in (fk, nk) and "lost" not in (fk, nk) and "rule" not in (fk, nk):

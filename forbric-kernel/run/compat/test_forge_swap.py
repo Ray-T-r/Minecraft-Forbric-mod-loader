@@ -163,6 +163,28 @@ class Classify(unittest.TestCase):
         self.assertEqual(("lost", "n/a", "NO NATIVE ROW (judged by the mod's code)"), (pipe["forbric"], pipe["native"], pipe["verdict"]))
 
 
+    def test_the_player_comes_from_the_client_never_from_a_server_arm(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f, n = self._arms(Path(tmp))
+            old = json.loads((f / "old.snapshot.json").read_text())
+            player = ["compound", {"ForgeCaps": ["compound", {"tombstone:cap_tombstone": ["compound", {"knowledge": ["int", 8]}]}],
+                                   "XpLevel": ["int", 23]}]
+            old["players"] = {"00000000-0000-0000-0000-000000000000": player}
+            (f / "old.snapshot.json").write_text(json.dumps(old))
+            new = json.loads((f / "neo-open.snapshot.json").read_text())
+            new["players"] = {"00000000-0000-0000-0000-000000000000": player}  # a server never loaded it
+            (f / "neo-open.snapshot.json").write_text(json.dumps(new))
+            self.assertFalse([r for r in fs.classify(f, n)["rows"] if "player" in r["key"]])
+            client = Path(tmp) / "client.json"
+            seen = copy.deepcopy(new)
+            seen["players"] = {"00000000-0000-0000-0000-000000000000": ["compound", {"XpLevel": ["int", 23]}]}
+            client.write_text(json.dumps(seen))
+            rows = [r for r in fs.classify(f, n, client)["rows"] if "player" in r["key"]]
+        self.assertEqual(1, len(rows), rows)
+        self.assertEqual(("rule", "n/a", "NO NATIVE ROW (judged by the mod's code)", "tombstone"),
+                         (rows[0]["forbric"], rows[0]["native"], rows[0]["verdict"], rows[0]["mod"]))
+
+
 class WorldFiles(unittest.TestCase):
     def test_a_mods_own_files_are_kept_changed_or_lost(self):
         with tempfile.TemporaryDirectory() as tmp:
