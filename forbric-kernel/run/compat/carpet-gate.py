@@ -60,7 +60,8 @@ def stale(console, compatibility):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--carpet', type=Path, required=True, help='Unmodified fabric-carpet-26.2+v260616.jar')
-    parser.add_argument('--staged-root', type=Path, help='The shared forbric-loader/run directory')
+    parser.add_argument('--staged-root', type=Path, help='The staged run/ directory (default: $FORBRIC_OLD/run)')
+    parser.add_argument('--port', type=int, default=0, help='First server port; each run takes the next (0: any free one)')
     parser.add_argument('--output', type=Path, help='A new directory for logs, worlds and reports')
     args = parser.parse_args()
     kernel = Path(__file__).resolve().parents[2]
@@ -95,7 +96,7 @@ def main():
                 jar.write(path, path.relative_to(classes).as_posix())
             jar.write(root / 'META-INF/neoforge.mods.toml', 'META-INF/neoforge.mods.toml')
     results = {}
-    for phase in ('baseline', 'fixed', 'neighbour-off'):
+    for index, phase in enumerate(('baseline', 'fixed', 'neighbour-off')):
         run = output / phase
         (run / 'mods').mkdir(parents=True)
         (run / 'world/scripts').mkdir(parents=True)
@@ -103,7 +104,7 @@ def main():
         shutil.copy2(carpet, run / 'mods' / carpet.name)
         shutil.copy2(root / 'forbric_carpet_probe.sc', run / 'world/scripts')
         (run / 'server.properties').write_text(
-            'server-ip=127.0.0.1\nserver-port=0\nlevel-name=world\nlevel-type=minecraft:flat\n'
+            f'server-ip=127.0.0.1\nserver-port={args.port + index if args.port else 0}\nlevel-name=world\nlevel-type=minecraft:flat\n'
             'generate-structures=false\nonline-mode=false\nmax-tick-time=-1\npause-when-empty-seconds=0\n'
             'view-distance=2\nsimulation-distance=2\nspawn-protection=0\n')
         env = dict(os.environ, FORBRIC_OLD=str(stage.parent), RUNDIR=str(run),

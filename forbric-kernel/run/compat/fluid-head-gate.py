@@ -44,7 +44,7 @@ def main():
     parser.add_argument('--staged-root', type=Path, help='The staged run directory (default: $FORBRIC_OLD/run)')
     parser.add_argument('--output', type=Path, help='A new directory for logs, worlds and reports')
     parser.add_argument('--off', default=HEAD_OFF, help='JVM switch of the negative run (default: the HEAD wrap off). Any other '
-                        'switch (e.g. -Dforbric.nativeEntryRelay=off for an older tree on the merged base) only reports which cases fail.')
+                        'switch only reports which cases fail, without asserting them.')
     args = parser.parse_args()
     kernel = Path(__file__).resolve().parents[2]
     stage = (args.staged_root or Path(os.environ.get('FORBRIC_OLD', kernel.parent / 'forbric-loader')) / 'run').resolve()
