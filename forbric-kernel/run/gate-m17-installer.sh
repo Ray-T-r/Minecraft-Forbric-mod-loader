@@ -15,14 +15,29 @@
 # supply them. The install directory itself is fresh every run.
 #
 # Stage 3 of dropping MinecraftForge: the installer's which-mods sentence and the profile's ecosystems list now name
-# Fabric and NeoForge only (the kernel refuses a MinecraftForge-only mod); both are asserted below. The installed game
-# itself still carries the MinecraftForge runtime until Stage 4, so the dedup check for its jar stays.
+# Fabric and NeoForge only (the kernel refuses a MinecraftForge-only mod); both are asserted below. Stage 4: the
+# installed game is NeoForge's own patched game with one runtime, NeoForge's; the profile is checked for exactly that,
+# and a kernel handed the arguments of an install made by Forbric 0.4 or earlier refuses them (control N, below).
+#
+# Two phases print an explicit "[kernel] SKIP (C6: ...)" line under D64 until C6 (the installer clean-up of Stage 4)
+# rewrites or deletes them: the merge-tool phase and the offline-reinstall phase. Both were written around the merge,
+# which no install runs since C1, but each guards something an install still does, so each SKIP line says what is left
+# for C6 to re-point it at (the link checker's tools jar; a reinstall over a full cache).
+#
+# Rundir: M17_DEST (default run/installed, which the gate wipes). M17_SEED_CACHE=<an earlier install's directory> copies
+# that install's download caches (.forbric-build/dl and tools) and NeoForm's patched game (.forbric-build/out/
+# patched-mc-neoforge-*.jar and its stamp) into the fresh directory first: the first install then builds the NeoForge
+# runtime and the vanilla reference from local inputs and takes NeoForm's game from the cache, so it goes to the network
+# for nothing, so far as the installer's own fetches go (not yet measured with the network denied: the C5 run this note
+# once cited was lost with the old scratchpad, D67). Unset, the first install builds everything and downloads its
+# inputs, as a player's does.
 # GATE-PARALLEL: rundirs=installed mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 INSTALLER="$KERNEL/../forbric-kernel-installer"
 DEST="${M17_DEST:-$KERNEL/run/installed}"
+refuse_shared_rundir "$DEST"
 LOG="$BUILD/gate-m17-install.log"
 CLOG="$BUILD/gate-m17-client.log"
 MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
@@ -36,7 +51,13 @@ mkdir -p "$BUILD"
 kernel_jar
 
 step "build the installer jar"
-if ! (cd "$INSTALLER" && ./gradlew -q jar > "$BUILD/gate-m17-installer-build.log" 2>&1); then
+# Offline and without a daemon, like every other Gradle run of a gate. kernel_jar (above) built the kernel jar the
+# installer bundles and the loader builds the merge-tools jar (the link checker's) here; the installer's own nested
+# builds of the two (buildForbricJars, buildMergeTools) are left out because they call gradlew online, and its bundle
+# tasks fail loudly on a jar that is not there.
+if ! { (cd "$KERNEL/../forbric-loader" && ./gradlew --offline --no-daemon -q mergeToolsJar) \
+       && (cd "$INSTALLER" && ./gradlew --offline --no-daemon -q jar -x buildForbricJars -x buildMergeTools); } \
+     > "$BUILD/gate-m17-installer-build.log" 2>&1; then
   echo "[kernel] FATAL: installer build failed" >&2
   grep -vE 'WARNING|^$' "$BUILD/gate-m17-installer-build.log" | tail -20 >&2
   exit 3
@@ -51,6 +72,19 @@ echo "[kernel] installer: $JAR ($(du -h "$JAR" | cut -f1))"
 step "install into an empty directory"
 rm -rf "$DEST"
 mkdir -p "$DEST"
+if [ -n "${M17_SEED_CACHE:-}" ]; then
+  mkdir -p "$DEST/.forbric-build"
+  for cache in dl tools; do
+    [ -d "$M17_SEED_CACHE/.forbric-build/$cache" ] || { echo "[kernel] SKIP-FATAL: M17_SEED_CACHE has no .forbric-build/$cache" >&2; exit 3; }
+    cp -cR "$M17_SEED_CACHE/.forbric-build/$cache" "$DEST/.forbric-build/" 2>/dev/null \
+      || cp -R "$M17_SEED_CACHE/.forbric-build/$cache" "$DEST/.forbric-build/"
+  done
+  mkdir -p "$DEST/.forbric-build/out"
+  SEEDED_BASE=$(ls "$M17_SEED_CACHE"/.forbric-build/out/patched-mc-neoforge-*.jar 2>/dev/null | head -1)
+  [ -n "$SEEDED_BASE" ] && [ -f "$SEEDED_BASE.pins" ] || { echo "[kernel] SKIP-FATAL: M17_SEED_CACHE has no stamped NeoForm game in .forbric-build/out" >&2; exit 3; }
+  cp "$SEEDED_BASE" "$SEEDED_BASE.pins" "$DEST/.forbric-build/out/"
+  echo "[kernel] seeded dl, tools and NeoForm's $(basename "$SEEDED_BASE") from $M17_SEED_CACHE; the NeoForge runtime and the vanilla reference are built here"
+fi
 # The base version is copied rather than re-downloaded: this gate is about the installer, not about Mojang's CDN.
 mkdir -p "$DEST/versions/26.2"
 cp "$MC/versions/26.2/26.2.json" "$MC/versions/26.2/26.2.jar" "$DEST/versions/26.2/" 2>/dev/null || true
@@ -62,8 +96,9 @@ step "the install wrote what a launcher needs (must PASS)"
 assert_eq "the installer exited cleanly" "0" "$INSTALL_RC"
 check "it wrote a version profile"     "wrote .*versions/26.2-forbric/26.2-forbric.json" "$LOG"
 check "it staged Forbric's own jars"   "staged [1-9][0-9]* Forbric and kernel-dependency jar" "$LOG"
-# Four: the three game jars and the vanilla reference the kernel reads beside the base (VanillaReference).
-check "it staged the game artifacts"   "staged 4 game artifact"                          "$LOG"
+# Three: NeoForge's patched game, the NeoForge runtime and the vanilla reference the kernel reads beside the base
+# (VanillaReference). (Four on the merged base: its own base and two runtimes.)
+check "it staged the game artifacts"   "staged 3 game artifact"                          "$LOG"
 # Stage 3 of dropping MinecraftForge: the install's last line names the two ecosystems the kernel loads, and says it no
 # longer loads MinecraftForge mods. The old line ("Fabric, MinecraftForge and NeoForge mods all go in") sent a player
 # straight into the kernel's refusal of a MinecraftForge-only jar.
@@ -303,12 +338,13 @@ PY
 PY_RC=$?
 assert_eq "the profile resolved like a launcher would" "0" "$PY_RC"
 
-# The profile has to survive that dedup with every ecosystem intact. It did not always: two --runtimeJar flags
-# collapsed into one, MinecraftForge's runtime never reached the kernel, and the game died on the first
-# net.minecraftforge class — after the kernel had logged a clean boot, so the game's own log said nothing.
-check "MinecraftForge's runtime survived the dedup" "/forge-runtime-[0-9.-]+\.jar"     "$CMD_FILE"
+# The profile has to survive that dedup intact. It did not always: on the merged base two --runtimeJar flags collapsed
+# into one, MinecraftForge's runtime never reached the kernel, and the game died on the first net.minecraftforge class.
+# One runtime now, NeoForge's, and no MinecraftForge runtime at all: the kernel would refuse it as an old install.
 check "NeoForge's runtime survived the dedup"       "/neoforge-runtime-[0-9.]+\.jar"  "$CMD_FILE"
-check "the merged base survived the dedup"          "/patched-mc-merged-[0-9.-]+\.jar" "$CMD_FILE"
+check_exactly "and it is the only runtime"          "^--runtimeJar$"                 "$CMD_FILE" 1
+check_absent "no MinecraftForge runtime is on the command line" "/forge-runtime-[0-9.-]+\.jar" "$CMD_FILE"
+check "the game base survived the dedup"            "/patched-mc-neoforge-[0-9.-]+\.jar" "$CMD_FILE"
 # The vanilla reference rides in its own flag. Were it a second --gameJar, the dedup above would keep only the last
 # value and hand the kernel a resources-only jar as the game, which is exactly what PCL2 would do.
 check "the vanilla reference survived the dedup"    "/vanilla-reference-[0-9.-]+\.jar" "$CMD_FILE"
@@ -337,7 +373,7 @@ fi
 
 step "the installed version runs the Fabric + NeoForge game (must PASS)"
 check "the kernel booted from the profile" "Forbric/Boot\] sovereign kernel — client" "$CLOG"
-check "it opened the merged base"          "Forbric/Boot\] merged base"               "$CLOG"
+check "it opened the game base"            "Forbric/Boot\] game base"                 "$CLOG"
 check "FABRIC references come from the vanilla-reference sidecar" "$NATIVE_REFS_FROM_SIDECAR"  "$CLOG"
 check "mods from both ecosystems"          "Forbric/Boot\] sovereign kernel .*Forge-family mod\(s\) in mods/, [0-9]+ nested jar\(s\), [1-9]" "$CLOG"
 check "the smoke controller armed"         "ClientSmoke\] armed on Minecraft.tick"    "$CLOG"
@@ -348,6 +384,58 @@ check_absent "no client crash"             "Preparing crash report"             
 # same). What may not go missing is anything the INSTALL is responsible for putting on the classpath.
 check_absent "nothing the installer staged went missing" \
   "(NoClassDefFoundError|ClassNotFoundException).*(net/forbric|net\\.forbric|net/minecraft|org/apache/logging|com/mojang|org/objectweb/asm|org/spongepowered)" "$CLOG"
+
+step "control N: this kernel, handed an install made by Forbric 0.4 or earlier, refuses it (must PASS)"
+# The reverse of everything above: the same resolved command, with the inputs an old install's profile passed -- a merged
+# base (it embedded MinecraftForge's native-reference index) and a second, MinecraftForge runtime. A kernel that carries
+# no MinecraftForge would otherwise fail far from here on the first MinecraftForge class that base names, so
+# LaunchInputCheck refuses it before anything is read, with exit 2 and one problem (OLD_INSTALL, English only until a
+# localized refusal exists). -Dforbric.launchInputCheck=off must not downgrade that refusal (D9). Both inputs are
+# stand-ins built here holding exactly the entries the check reads (an index entry; the five MinecraftForge carrier
+# entries), so nothing old is downloaded or staged.
+OLD_DIR="$BUILD/gate-m17-old-install"
+rm -rf "$OLD_DIR"; mkdir -p "$OLD_DIR"
+python3 - "$OLD_DIR" <<'PY_OLD' || exit 3
+import sys, zipfile
+d = sys.argv[1]
+with zipfile.ZipFile(d + '/patched-mc-merged-26.2.jar', 'w') as base:
+    base.writestr('META-INF/forbric/native-reference/FORGE/index.tsv', 'net/minecraft/world/level/block/Block\n')
+with zipfile.ZipFile(d + '/forge-runtime-26.2.jar', 'w') as carrier:
+    for entry in ('net/minecraftforge/forgespi/language/IModInfo.class', 'net/minecraftforge/fml/ModContainer.class',
+                  'net/minecraftforge/fml/loading/FMLLoader.class', 'net/minecraftforge/fml/loading/FMLEnvironment.class',
+                  'META-INF/mods.toml'):
+        carrier.writestr(entry, b'')
+PY_OLD
+# old_launch <label> [jvm-arg] -- the resolved command with the old base and the extra runtime; prints the exit status.
+old_launch() {
+  local label="$1" extra="${2:-}" line prev="" rc
+  local argv=()
+  while IFS= read -r line; do
+    if [ "$prev" = "--gameJar" ]; then line="$OLD_DIR/patched-mc-merged-26.2.jar"; fi
+    argv+=("$line")
+    if [ "$prev" = "--runtimeJar" ]; then argv+=("--runtimeJar" "$OLD_DIR/forge-runtime-26.2.jar"); fi
+    if [ "${#argv[@]}" -eq 1 ] && [ -n "$extra" ]; then argv+=("$extra"); fi
+    prev="$line"
+  done < "$CMD_FILE"
+  ( cd "$DEST" && FORBRIC_JVM="" JAVA_TOOL_OPTIONS="" "${argv[@]}" ) > "$BUILD/gate-m17-old-$label.log" 2>&1 &
+  local pid=$!
+  for i in $(seq 1 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  if kill -0 "$pid" 2>/dev/null; then stop_tree "$pid" >&2; fi
+  wait "$pid" 2>/dev/null; rc=$?
+  echo "$rc"
+}
+if [ "$PY_RC" -eq 0 ]; then
+  OLD_RC=$(old_launch refused)
+  OLDOFF_RC=$(old_launch refused-off "-Dforbric.launchInputCheck=off")
+  assert_eq "the old install's arguments end the launch with status 2" "2" "$OLD_RC"
+  check "with the one old-install problem, naming the merged base's index" \
+    "this game was installed by Forbric 0\.4 or earlier, still carries MinecraftForge \(game jar patched-mc-merged-26\.2\.jar embeds META-INF/forbric/native-reference/FORGE/index\.tsv; runtime jar forge-runtime-26\.2\.jar is a complete MinecraftForge runtime\); run the new installer again" \
+    "$BUILD/gate-m17-old-refused.log"
+  check_absent "and the game never booted" "Forbric/Boot\] game base" "$BUILD/gate-m17-old-refused.log"
+  assert_eq "-Dforbric.launchInputCheck=off does not let it through: status 2 again" "2" "$OLDOFF_RC"
+  check "and says why the switch does not apply" \
+    "launchInputCheck=off does not apply to an install made by Forbric 0\.4 or earlier" "$BUILD/gate-m17-old-refused-off.log"
+fi
 
 # ---------------------------------------------------------------------------------------------------------
 # The cache. Everything above installs into an EMPTY directory, which is why the reuse path went untested for
@@ -360,97 +448,48 @@ check_absent "nothing the installer staged went missing" \
 # resolved from a half-refreshed cache.
 step "a second install into the same directory reuses what is already built"
 java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
-REUSED=$(grep -cE "^\[(forge-runtime|patched|neoforge-runtime|neoform|merge|interop)\] up-to-date" "$BUILD/gate-m17-install-2.log")
-assert_eq "every artifact came from the cache" "6" "$REUSED"
+# Two built artifacts since C1: the NeoForge runtime and NeoForm's patched game (six on the merged base).
+REUSED=$(grep -cE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-2.log")
+assert_eq "every artifact came from the cache" "2" "$REUSED"
 # Reused by what it records -- the SHA-1 of the vanilla jar and of the base -- not by the pins: rebuilt only when either
 # input changed, and neither did.
 check "the vanilla reference came from the cache too" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-2.log"
 
 step "and a pin that no longer matches is NOT served from it"
-# Only forge-runtime's stamp is disturbed, because the stamp is the whole pin set: in real use all six move
-# together, and tampering with one is the cheapest honest probe of the DECISION. forge-runtime is also the
-# quickest of the six to rebuild.
-FR_STAMP="$DEST/.forbric-build/out/forge-runtime.jar.pins"
-if [ ! -f "$FR_STAMP" ]; then
-  echo "[kernel] FAIL no stamp beside forge-runtime.jar — nothing records what built it"; FAIL=$((FAIL+1))
+# Only the NeoForge runtime's stamp is disturbed, because the stamp is the whole pin set: in real use both move
+# together, and tampering with one is the cheapest honest probe of the DECISION. The runtime is also the quicker of the
+# two to rebuild (its inputs are already in .forbric-build/dl).
+NR_STAMP="$DEST/.forbric-build/out/neoforge-runtime.jar.pins"
+if [ ! -f "$NR_STAMP" ]; then
+  echo "[kernel] FAIL no stamp beside neoforge-runtime.jar — nothing records what built it"; FAIL=$((FAIL+1))
 else
-  echo "mc=26.2 forge=PRETEND-OTHER neoforge=PRETEND-OTHER nfrt=0 result=none" > "$FR_STAMP"
+  echo "mc=26.2 neoforge=PRETEND-OTHER nfrt=0 result=none" > "$NR_STAMP"
   java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-3.log" 2>&1
-  check_absent "the stale artifact is rebuilt, not reused" "^\[forge-runtime\] up-to-date" \
+  check_absent "the stale artifact is rebuilt, not reused" "^\[neoforge-runtime\] up-to-date" \
     "$BUILD/gate-m17-install-3.log"
-  check "and it says so"       "^\[forge-runtime\] (fetching|merging|wrote)" "$BUILD/gate-m17-install-3.log"
-  check "the others still hit" "^\[neoform\] up-to-date"                     "$BUILD/gate-m17-install-3.log"
+  check "and it says so"       "^\[neoforge-runtime\] (fetching|merging|wrote)" "$BUILD/gate-m17-install-3.log"
+  check "the others still hit" "^\[neoform\] up-to-date"                        "$BUILD/gate-m17-install-3.log"
 fi
 
 step "the merge tool itself is not served from the previous install"
-# The layer below the artifact cache, and the reason the first fixed installer still produced a broken merged
-# base on a machine that had installed before: the bundled tools jar was unpacked into .forbric-build/tools
-# only when one was not already there. The artifact stamps invalidated correctly and the rebuild then ran the
-# PREVIOUS installer's merge tool.
-TOOLS="$DEST/.forbric-build/tools/forbric-merge-tools.jar"
-WANT="$BUILD/gate-m17-tools-bundled.jar"
-unzip -p "$JAR" forbric/tools/forbric-merge-tools.jar > "$WANT" 2>/dev/null
-if [ ! -s "$WANT" ]; then
-  echo "[kernel] FAIL the installer carries no bundled merge tools"; FAIL=$((FAIL+1))
-else
-  # The tool is unpacked by the merge step, so the merge has to actually RUN — disturb its stamp too, or the
-  # install is served entirely from cache, never asks for the tool, and the tampered file survives while
-  # nothing is wrong. (That is how this assertion failed the first time it was written.)
-  printf 'not a jar at all' > "$TOOLS"
-  echo "mc=26.2 forge=PRETEND-OTHER neoforge=PRETEND-OTHER nfrt=0 result=none tools=none" \
-    > "$DEST/.forbric-build/out/patched-mc-merged-26.2.jar.pins"
-  java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
-  check_absent "the merge re-runs, so the tool is actually asked for" "^\[merge\] up-to-date" \
-    "$BUILD/gate-m17-install-4.log"
-  assert_eq "the stale tool is replaced by the bundled one" \
-    "$(shasum -a 1 "$WANT" | cut -d' ' -f1)" "$(shasum -a 1 "$TOOLS" | cut -d' ' -f1)"
-fi
+# SKIP until C6 (D64). This phase checked that a reinstall re-unpacked the installer's bundled tools jar instead of
+# running the previous install's, and it made the install ask for the tool by forcing a MERGE, which no install runs
+# since C1. The hazard itself is still live: the installer still bundles forbric/tools/forbric-merge-tools.jar for its
+# link checker, and LinkCheckTool.unpackTools overwrites .forbric-build/tools/forbric-merge-tools.jar on every install
+# (ArtifactBuilder runs the link check on every build path, cached reinstalls included) -- "a stale checker passes jars
+# the current one would refuse". So the phase's subject did not go with the merge: re-pointed, it is tamper with that
+# file, reinstall, and compare its SHA-1 with the bundled one. G-C reported that against D64 (C5); until the
+# orchestrator rules, it stays a SKIP with this reason.
+echo "[kernel] SKIP (C6: the phase forced a merge to make the install unpack its tools jar, and nothing merges since C1; the link checker still runs from that jar on every install, so C6 re-points the phase at it)"
 
-step "an offline reinstall over that cache needs no network (must PASS)"
-# The libraries the merge reads are fetched only once the merge or the interop patch has found its output stale.
-# They used to be fetched ahead of the merge's own cache check, so a reinstall whose every artifact was cached still
-# went to libraries.minecraft.net for any library not in place, and failed offline for a file nothing would read.
-# "Offline" is a proxy on a port nothing listens on, for http and https alike; one library the base version lists for
-# this OS is removed first, so a download, if the installer attempted one, would be certain and would fail.
-# The port is one the system just handed out and took back, so nothing listens there; it is not a knob, because no
-# server binds it (gates-parallel.py hands out the ports servers bind).
-DEAD_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
-GONE=$(python3 - "$DEST" <<'GONE'
-import json, os, platform, sys
-dest = sys.argv[1]
-osname = {"Darwin": "osx", "Windows": "windows"}.get(platform.system(), "linux")
-with open(os.path.join(dest, "versions", "26.2", "26.2.json")) as f:
-    base = json.load(f)
-def allowed(lib):
-    ok = not lib.get("rules")
-    for rule in lib.get("rules") or []:
-        spec = rule.get("os")
-        if spec is not None and spec.get("name") != osname:
-            continue
-        ok = rule.get("action") == "allow"
-    return ok
-for lib in base.get("libraries", []):
-    path = ((lib.get("downloads") or {}).get("artifact") or {}).get("path")
-    if path and allowed(lib) and os.path.isfile(os.path.join(dest, "libraries", path)):
-        print(os.path.join(dest, "libraries", path))
-        break
-GONE
-)
-if [ -z "$GONE" ]; then
-  echo "[kernel] FAIL no library the base version lists is in the install to remove"; FAIL=$((FAIL+1))
-else
-  rm -f "$GONE"
-  echo "[kernel] removed $(basename "$GONE"); proxy 127.0.0.1:$DEAD_PORT (nothing listening)"
-  java -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort="$DEAD_PORT" -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort="$DEAD_PORT" \
-    -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-5.log" 2>&1
-  assert_eq "the offline reinstall exited cleanly" "0" "$?"
-  REUSED=$(grep -acE "^\[(forge-runtime|patched|neoforge-runtime|neoform|merge|interop)\] up-to-date" "$BUILD/gate-m17-install-5.log")
-  assert_eq "every artifact came from the cache" "6" "$REUSED"
-  check_absent "it fetched no library" "downloaded [0-9]+ Minecraft librar" "$BUILD/gate-m17-install-5.log"
-  check "and it measured no new vanilla reference" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-5.log"
-  [ ! -e "$GONE" ] && echo "[kernel] PASS the removed library is still absent: nothing went to the network for it" \
-    || { echo "[kernel] FAIL the removed library came back: the install fetched it although nothing merged"; FAIL=$((FAIL+1)); }
-fi
+step "an offline reinstall over that cache needs no network"
+# SKIP until C6 (D64). This phase removed one library the base version lists and reinstalled behind a dead proxy, to
+# prove the libraries the MERGE read were fetched only once the merge found its output stale. Since C1 nothing merges
+# and the installer fetches no Minecraft library at all (D13), so that sub-step proves nothing about the installer. The
+# rest of the claim still has a subject: a reinstall over a full cache serves the NeoForge runtime, NeoForm's game and
+# the vanilla reference from the cache (NfrtRunner never starts NFRT then), so behind the dead proxy it should exit 0
+# with every artifact up to date. G-C reported that against D64 (C5); until the orchestrator rules, it stays a SKIP.
+echo "[kernel] SKIP (C6: the removed-library step was written for the libraries the merge read, and the installer fetches no library since C1, D13; the cached-reinstall-behind-a-dead-proxy half is still checkable and C6 keeps it)"
 
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then
