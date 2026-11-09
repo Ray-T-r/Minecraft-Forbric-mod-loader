@@ -50,7 +50,18 @@ class MergedBaseGateSpellingTest {
 	private static final String LOAD = "L" + LOADER + ";load(L" + LOADER + "$LoaderFactory;Ljava/util/List;Ljava/util/List;Ljava/util/concurrent/Executor;)Ljava/util/concurrent/CompletableFuture;";
 	private static final String DEFERS = "source callback repeats or defers the kernel-owned registry freeze; its tracker protocol could not be adapted";
 	private static final String UNFIT = "registry-loader: source wraps a loader call the carrier left dead, and the wrap does not fit the widened overloads that replaced it";
-	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
+	/**
+	 * The staged native references, read on first use rather than when the class loads: {@link NativeCallTestEvidence#staged()}
+	 * aborts without the staged base, and an abort in a static initializer fails every case of the class instead of letting
+	 * the fixture check skip them (the unstaged CI profile).
+	 */
+	private static BiFunction<Ecosystem, String, ClassNode> staged;
+	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = (family, owner) -> staged().apply(family, owner);
+
+	private static BiFunction<Ecosystem, String, ClassNode> staged() {
+		if (staged == null) staged = NativeCallTestEvidence.staged();
+		return staged;
+	}
 	/** As at discovery: the adapters ask with the mixin's family, not noted yet, and the config's family answers. */
 	private static final BiFunction<Ecosystem, String, ClassNode> NATIVES = (asked, owner) -> STAGED.apply(asked != null ? asked : Ecosystem.FABRIC, owner);
 

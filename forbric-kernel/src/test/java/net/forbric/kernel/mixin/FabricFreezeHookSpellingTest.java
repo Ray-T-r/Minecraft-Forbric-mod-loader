@@ -55,7 +55,18 @@ class FabricFreezeHookSpellingTest {
 	private static final String INJECT = "Lorg/spongepowered/asm/mixin/injection/Inject;";
 	private static final String CI = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfo;";
 	private static final String FREEZE_CALL = "L" + BIR + ";freeze()V";
-	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
+	/**
+	 * The staged native references, read on first use rather than when the class loads: {@link NativeCallTestEvidence#staged()}
+	 * aborts without the staged base, and an abort in a static initializer fails every case of the class instead of letting
+	 * the fixture check skip them (the unstaged CI profile).
+	 */
+	private static BiFunction<Ecosystem, String, ClassNode> staged;
+	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = (family, owner) -> staged().apply(family, owner);
+
+	private static BiFunction<Ecosystem, String, ClassNode> staged() {
+		if (staged == null) staged = NativeCallTestEvidence.staged();
+		return staged;
+	}
 
 	private Supplier<java.util.Set<String>> registrySync;
 
