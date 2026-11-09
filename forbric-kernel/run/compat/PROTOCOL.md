@@ -362,6 +362,12 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
    a run of the old line against itself has shown it. It reads saves through `world-parity.py`'s typed reader, the
    tree's one NBT parser; its docstring is the operating manual, and `test_world_snapshot.py` checks it, including
    against bytes the game wrote (`testdata/world-snapshot/`).
+   `forge-swap-make-old.sh <out-dir>` writes the old side of the Forge to NeoForge build swap with
+   `run/old-kernel.sh` (a world the pre-removal kernel wrote with the candidates' MinecraftForge builds, a
+   singleplayer player pass, the old side's own A/A, and the fixture's MANIFEST); `forge-swap.py` holds the probe's
+   console and drill lines, the player kit, the loader-key census and the per-key loss classification
+   (`classify --forbric DIR --native DIR`); `native-controls.py swap` runs the native oracle and the Forbric open.
+   Their docstrings are the operating manual; `test_forge_swap.py` and `test_native_controls.py` check them.
 9. `push-and-run.py` implements the shell entry point's orchestration and writes
    `report.md` using `report-template.md`, with commit, manifest, phase results, log
    assertions, frame verdict, region evidence and named load-report failures. Retain
