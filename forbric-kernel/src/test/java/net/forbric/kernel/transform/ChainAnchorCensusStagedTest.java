@@ -176,7 +176,7 @@ class ChainAnchorCensusStagedTest {
 	 * makes each once — Minecraft's constructor at bci 2371 and 2881, ReloadableServerResources' reload lambda at bci 38,
 	 * BaseFireBlock.onPlace at bci 33. No kernel transformer rewrites these calls today.
 	 *
-	 * <p>Measured on 26.2.0.93 (C5): the chain rewrites {@code Minecraft} on both sides (its constructor among two dozen
+	 * <p>Measured on 26.2.0.93 (C5): the chain rewrites {@code Minecraft} on both sides (its constructor among eighteen
 	 * methods, plus six added lambda thunks; on the client the entrypoint, exit, compatibility-prompt and NeoForge
 	 * client-setup hooks land there) and {@code BaseFireBlock} on both sides ({@code onPlace} itself among three methods), so
 	 * for those three calls the post-chain half reads a method the chain did change. {@code ReloadableServerResources} comes
