@@ -39,8 +39,9 @@
 # resource-condition funnel (KernelForgeConditions: the transform's markers, the leniency lines, the rejection count, the
 # recipe-condition context). The world-datapack probes stay, re-derived (D49): a forge:condition / forge:conditional is
 # MinecraftForge's dialect, which native NeoForge 26.2.0.93 does not judge, so each probe now expects native NeoForge's
-# own answer -- measured once on native NeoForge 26.2.0.93's dedicated server with this exact pack (native-controls'
-# NeoForge image, 2026-11-02, Stage 4 C5 record). The access-transformer line now says it is the NeoForge carrier's.
+# own answer -- measured on native NeoForge 26.2.0.93's dedicated server with this exact pack and these probes
+# (native-controls' NeoForge image; 13 of 13 answers as below, 2026-11-09, stage4-c5-g-a.md). The 2026-11-02
+# measurement's log was lost (D67). The access-transformer line now says it is the NeoForge carrier's.
 # GATE-PARALLEL: rundirs=server-forgesetup mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -209,9 +210,13 @@ check_absent "no NoSuchMethodError on getConditionContext" 'NoSuchMethodError.*g
 
 step "conditions in MinecraftForge's dialect are data NeoForge does not judge, as on native NeoForge (D49)"
 # Every probe's expected answer is native NeoForge 26.2.0.93's, measured with this pack (header). A Forbric answer that
-# differs is a Forbric-only behaviour: dual_forge's is one today (Forbric's condition leniency keeps a file whose
-# neoforge:conditions names a type nobody registers; native skips it), recorded in the Stage 4 C5 record as an open
-# defect with its owner, not hidden by matching Forbric's answer here.
+# differs is a Forbric-only behaviour: dual_forge's is one today. KernelNeoConditions.lenient, which
+# ForbricMergedBaseCompatTransformer.letForeignResourceConditionsThrough puts in front of ICondition.CODEC, reads a
+# condition type NeoForge has not registered as true for EVERY pack, so Forbric keeps a world datapack's file that
+# native NeoForge skips ("Couldn't parse data file ... Unknown registry key ... neoforge:condition_codecs"). The guiding
+# rule keeps that leniency only where the mod's own ecosystem tolerates the case (a Fabric mod's data: gate-m8's
+# terralith:config), not for a world datapack. The check stays red as an open defect in stage4-c5-g-a.md (owner: the
+# kernel lane the orchestrator names), never hidden by matching Forbric's answer here.
 check_absent "registries loaded"                             "Failed to load registries due to errors" "$LOG"
 check "the canary pack was loaded" "data pack file/forbricm21" "$LOG"
 check_probe "a true forge:condition keeps a predicate"           "predicate kept"     'Test passed'
@@ -249,11 +254,13 @@ check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
 # The scan index, a server data loader, a mod finding its own container, a mixin config plugin, a per-world SERVER
 # config: until Stage 3 the MinecraftForge canary proved each for its family too; these are the NeoForge twins that stay.
 #
-# RED controls (re-measured on the genuine base, Stage 4 C5 record, unless marked):
+# RED controls (measured on the genuine base 2026-11-09, stage4-c5-g-a.md, unless marked; dual_forge, the open defect
+# above, is red in each of them as in the default boot and is not counted):
 #   M21_EXTRA_JVM='-Dforbric.neoScanData=off'    the NeoForge index is the empty one it once was: both readers' "found
 #                                                its own" lines, both shape lines and both member lines are gone,
 #                                                ModList's count line says 0 annotations and lists the jar 0 times --
-#                                                @NEOSCAN@ -- and the kernel names the switch ("NeoForge scan index
+#                                                11 checks red, the per-jar boot's two among them, since that boot carries
+#                                                M21_EXTRA_JVM too -- and the kernel names the switch ("NeoForge scan index
 #                                                DISABLED (-Dforbric.neoScanData=off)")
 #   M21_PERJAR_JVM='-Dforbric.modFilePerJar=off' the second boot keeps one IModFile per MOD, the default: the canary's
 #                                                jar holds two @Mod classes, NeoForge's own distinct() keeps both
@@ -264,11 +271,12 @@ check "the per-jar boot reached Done" "Done \(" "$LOG_PERJAR"
 #                                                default go red (1 for 2; exactly 2 got 1) (measured 2026-10-30)
 #   M21_EXTRA_JVM='-Dforbric.seededScanData=off' the seeded LoadingModList's ModFile has no index again, so its reader
 #                                                throws FML's "Scanning of this mod file has not started yet." and the
-#                                                LoadingModList lines are gone; ModList's reader is untouched: @SEEDED@
+#                                                LoadingModList lines are gone; ModList's reader is untouched: 5 checks red,
+#                                                the three LoadingModList lines and both boots' "neither reader failed"
 #   M21_EXTRA_JVM='-Dforbric.modDataPacks=off'   the kernel serves no NeoForge mod's own data/ (ModList.modFiles is
 #                                                empty, so NeoForge's own pack finder finds none; KernelDataPacks is the
 #                                                only server of it): the canary's listener still runs, over 0 files --
-#                                                @DATAPACKS@
+#                                                exactly "NeoForge: the registered data loader ran" goes red
 # So of the three NeoForge RELOAD checks only the data loader has a red control. "DELIVERED" and "context=live" are
 # POSITIVE-ONLY: no kernel switch turns them red, because the event is posted by NeoForge's own EventHooks.onResourceReload
 # on NeoForge's own game bus, where the canary's constructor registers its listener, and its condition context is
