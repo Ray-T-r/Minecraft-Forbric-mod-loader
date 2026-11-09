@@ -36,8 +36,11 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * the loader's own lambda, bound in the current class to its twin widened by exactly the loader's appended parameters,
  * runs where the moved wrap runs and stays as written.
  *
- * <p>The merged base also declared the dead loader (and its lambda) beside the widened one, and two cases pinned the
- * refusal where a companion would have bound to those; NeoForge's class declares neither, so those cases went with it.
+ * <p>A class that still declares vanilla's private loader (and its lambda) beside the widened one — the shape the
+ * merged base had; NeoForge's class declares neither, and nothing twins them back — is built here from NeoForge's class
+ * and vanilla's two methods, so the adapter's refusals for it keep a case each: a companion such a class would bind to
+ * the dead loader, or to the lambda only the dead loader reaches, would never run; and without the class the mod was
+ * compiled against, a bare name shared by the dead loader and live ones names neither.
  */
 class RegistryLoaderCompanionBindingTest {
 	private static final String LOADER = "net/minecraft/resources/RegistryDataLoader";
@@ -139,6 +142,27 @@ class RegistryLoaderCompanionBindingTest {
 		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(annotated(MixinFit.injectorOf(handler(mixin, "onSupply")))), "the companion is left as written");
 	}
 
+	// ---- a class that still declares vanilla's private loader beside the widened one (constructed) ---------------------
+
+	/** Written for the resource-manager entry, but bound to the dead loader in a class that declares it first: it would never run. */
+	@Test void aCompanionAClassWouldBindToTheDeadLoaderInsteadLeavesTheMixinAlone() throws Exception {
+		assertLeftAlone("load", ENTRY, first(withVanillasPrivateLoader(), DEAD), DEAD);
+	}
+
+	/** The loader's own lambda, where the class declares the dead loader's copy first: only the dead loader reaches it. */
+	@Test void aCompanionAClassWouldBindToTheDeadLoadersLambdaLeavesTheMixinAlone() throws Exception {
+		assertLeftAlone("lambda$load$0", LAMBDA_DEAD, first(withVanillasPrivateLoader(), LAMBDA_DEAD), LAMBDA_DEAD);
+	}
+
+	/** Without the class the mod was compiled against, a bare name shared by the dead loader and live ones names neither. */
+	@Test void withoutTheNativeClassABareNameTheDeadLoaderSharesLeavesTheMixinAlone() throws Exception {
+		ClassNode mixin = mixin(inject("load", "supplyAsync(Ljava/util/function/Supplier;Ljava/util/concurrent/Executor;)" + FUTURE));
+		byte[] before = CarpetMixinAdapterTest.bytes(mixin);
+		ClassNode withDead = withVanillasPrivateLoader();
+		assertEquals(0, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> withDead, null));
+		assertArrayEquals(before, CarpetMixinAdapterTest.bytes(mixin));
+	}
+
 	/**
 	 * Without the class the mod was compiled against, a bare name is read in the current class, where NeoForge declares no
 	 * dead loader for it to name: it binds NeoForge's first {@code load}, the resource-manager entry, which is vanilla's
@@ -189,6 +213,28 @@ class RegistryLoaderCompanionBindingTest {
 		} catch (Exception unreadable) {
 			throw new AssertionError(unreadable);
 		}
+	}
+
+	/**
+	 * NeoForge's staged loader with vanilla's private loader and its lambda put back beside the widened ones, code and all
+	 * (appended, so NeoForge's own order is kept): the dead loader is still called by nothing, and only it reaches its lambda.
+	 */
+	private static ClassNode withVanillasPrivateLoader() throws Exception {
+		ClassNode node = current(), vanilla = StagedFabricMixinFixture.game(LOADER, true);
+		for (String member : List.of(DEAD, LAMBDA_DEAD)) {
+			MethodNode source = vanilla.methods.stream().filter(m -> (m.name + m.desc).equals(member)).findFirst().orElseThrow();
+			MethodNode copy = new MethodNode(source.access, source.name, source.desc, source.signature, source.exceptions.toArray(String[]::new));
+			source.accept(copy);
+			node.methods.add(copy);
+		}
+		assertTrue(node.methods.stream().noneMatch(m -> m.instructions.size() > 0 && calls(m, DEAD)), "premise: nothing calls the dead loader");
+		return node;
+	}
+
+	private static boolean calls(MethodNode method, String member) {
+		for (AbstractInsnNode i : method.instructions)
+			if (i instanceof MethodInsnNode call && call.owner.equals(LOADER) && (call.name + call.desc).equals(member)) return true;
+		return false;
 	}
 
 	/**
