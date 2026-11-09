@@ -145,7 +145,7 @@ JUDGED = ('air', 'health', 'result')
 STORED = JUDGED + ('rng',)
 # The MinecraftForge canary's blocks and items: a row in them is skipped where that jar does not run.
 REFUSED_SKIPS = ('no block forbricbreathforge:', 'no item forbricbreathforge:')
-PHASES = ('positive', 'refused', 'vanilla-refill-off')
+PHASES = ('positive', 'vanilla-refill-off')
 
 
 def sha256(path):
@@ -327,7 +327,7 @@ def vanilla_refill_reasons(reference, name, row, keeps):
 
 def predicted_failures(phase):
     """Which rows a phase must fail; exact both ways."""
-    if phase in ('positive', 'refused'): return set()
+    if phase == 'positive': return set()
     if phase == 'vanilla-refill-off': return set(VANILLA_REFILL_ROWS)
     raise SystemExit(f'unknown phase {phase}')
 

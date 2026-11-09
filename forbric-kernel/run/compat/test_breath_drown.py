@@ -129,7 +129,10 @@ class PlanAndTable(unittest.TestCase):
         for phase in bd.PHASES:
             self.assertRegex(gate, rf'\nrun_server {phase} ', phase)
             self.assertRegex(gate, rf'\njudge {phase} ', phase)
-        self.assertRegex(gate, r'\nrun_server refused continue "" "\$NEO" "\$FORGE"\n')
+        # STAGE 4 (D51): no phase stages the MinecraftForge canary any more; only the native reference runs it.
+        self.assertNotRegex(gate, r'\nrun_server refused ')
+        self.assertNotIn('forge-refused/', gate)
+        self.assertNotIn('build-forge-refusal-fixtures.sh', gate)
         self.assertRegex(gate, r'\nrun_server vanilla-refill-off continue "-Dforbric\.vanillaAirRefill=off" "\$NEO"\n')
 
     def test_the_committed_reference_measures_every_row_it_is_compared_on(self):
@@ -274,24 +277,23 @@ class Phases(unittest.TestCase):
 
     def test_only_vanilla_refill_off_predicts_failures(self):
         self.assertEqual(bd.predicted_failures('positive'), set())
-        self.assertEqual(bd.predicted_failures('refused'), set())
+        with self.assertRaises(SystemExit):
+            bd.predicted_failures('refused')
         self.assertEqual(bd.predicted_failures('vanilla-refill-off'), bd.VANILLA_REFILL_ROWS)
 
     def test_a_phase_is_exact_both_ways(self):
         ref = reference()
         good = neo_result(ref)
         self.assertEqual(self.run_judge(ref, good, 'positive')[0], 0)
-        self.assertEqual(self.run_judge(ref, good, 'refused')[0], 0)
         # vanilla-refill-off predicts the vanilla-refill rows: both of them as native NeoForge passes the phase...
         own = neoforges_own_refill(ref, good)
         self.assertEqual(self.run_judge(ref, own, 'vanilla-refill-off')[0], 0)
-        # ...one of them holding is red, and so is the same result judged as positive or refused.
+        # ...one of them holding is red, and so is the same result judged as positive.
         held = copy.deepcopy(own)
         name = sorted(bd.VANILLA_REFILL_ROWS)[0]
         held['rows'] = [r if r['name'] != name else next(g for g in good['rows'] if g['name'] == name) for r in held['rows']]
         self.assertEqual(self.run_judge(ref, held, 'vanilla-refill-off')[0], 1)
         self.assertEqual(self.run_judge(ref, own, 'positive')[0], 1)
-        self.assertEqual(self.run_judge(ref, own, 'refused')[0], 1)
         # A row the phase does not predict failing beside them is red too.
         extra = copy.deepcopy(own)
         next(r for r in extra['rows'] if r['name'] == 'drown-read')['health'] = [1.0, 1.0]
@@ -306,11 +308,11 @@ class Phases(unittest.TestCase):
         self.assertEqual(code, 1)
         self.assertIn('failed for another cause', out)
 
-    def test_a_refused_jar_that_took_part_is_red_in_the_refused_phase(self):
+    def test_a_minecraftforge_listener_that_heard_a_body_is_red(self):
         ref = reference()
         result = neo_result(ref)
         next(r for r in result['rows'] if r['name'] == 'breathe-f-refill2')['views'][bd.F] = {'breathe': view(30, ['forge x'])}
-        code, out = self.run_judge(ref, result, 'refused')
+        code, out = self.run_judge(ref, result, 'positive')
         self.assertEqual(code, 1)
         self.assertIn("unexpected: ['breathe-f-refill2']", out)
 
