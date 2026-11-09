@@ -218,8 +218,11 @@ fi
 # loader is slow had nothing to agree or disagree with.
 #
 # The MEAN is not the assertion — a server keeping up holds 50ms exactly, by sleeping off what the tick did not
-# use. The tail is: an interval at twice the budget means there was no sleep left to give back. Live baseline on
-# this machine is 1 in 1800.
+# use. The tail is: an interval at twice the budget means there was no sleep left to give back. (An older note here
+# gave a live baseline of 1 in 1800. C5 wave 2 measured 21, 10, 4, 16, 3 and 16 over the sampler's 700 ticks, six runs
+# alone on NeoForge's base, with 0 in the first 100 ticks in the three runs whose server log was kept. Ticks 100-700 hold
+# the client's boot and its join, and the sampler cannot separate the two. The ceiling of 20 sits inside that spread;
+# whether to count after the join or move the ceiling is open.)
 check "the tick sampler reported" "Forbric/Tick\] [0-9]+ tick\(s\): mean " "$SLOG"
 LATE_TICKS="$(grep -aoE 'at twice the budget or worse [0-9]+' "$SLOG" | grep -oE '[0-9]+' | tail -1)"
 if [ -n "${LATE_TICKS:-}" ] && [ "$LATE_TICKS" -le "${M12_LATE_CEILING:-20}" ]; then

@@ -21,9 +21,13 @@
 # THE NEGATIVE CONTROL (D48): M14_EXTRA_JVM=-Dforbric.fabricRegistryInitialization=off keeps fabric-registry-sync's
 # BootstrapMixin / MainMixin / client MinecraftMixin suppressed, so fabric-api's sync never tracks the block-state id
 # list. Measured on NeoForge's base (C5, 2026-11-09): 32 PASS / 1 FAIL, exactly one red, "the shared mod's block reads back
-# as itself" (the server places mcwbridges:andesite_bridge, the client reads a minecraft:note_block state), with the item, the join, the
-# capture line, the id move and put-back, the revert and the clean leave green; the same gate without the switch is 33 PASS
-# / 0 FAIL. (A C5 planning run's 32/5 against the gate before this rewrite counted the four MinecraftForge-wrapper checks
+# as itself", with the item, the vanilla control, the join, the capture line, the id move and put-back, the revert and the
+# clean leave green; the same gate without the switch is 33 PASS / 0 FAIL. What the client read back is NOT the expected
+# outcome of an unsynced list: a native one (vanilla, then the canary, then mcwbridges) would put the server's bridge id on
+# a neighbouring canary or mcwbridges state, but this client read a VANILLA block (minecraft:note_block[...]). Its own
+# block-state id list is not native -- the same defect gate-m13 shows on a vanilla server (a NeoForge mod's states at
+# vanilla ids), escalated to a kernel lane in C5 wave 2. Re-measure this control after that fix; expect a mcwbridges or
+# canary state in the read-back. (A C5 planning run's 32/5 against the gate before this rewrite counted the four MinecraftForge-wrapper checks
 # deleted below; its log was lost with the old scratchpad, D67, and this run replaces it.)
 # (On the merged base the control was -Dforbric.forgeWrapperSync=off and the red was the item, held as a MOSSY
 # COBBLESTONE bridge: seventeen of the registries were MinecraftForge wrappers whose fields fabric-api's remap never
