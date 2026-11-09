@@ -27,7 +27,7 @@ PY
 fi
 kernel_jar
 bash "$KERNEL/run/build-entity-callbacks-canary.sh"
-python3 - <<'PY'
+python3 - <<'PY' || { echo "[kernel] FAIL M37 — the driver stopped on the assertion above"; exit 1; }
 import json, os, pathlib, shutil, subprocess, uuid, signal
 kernel=pathlib.Path(os.environ['KERNEL']);root=kernel.parent;results=kernel/'build/verification/m37-entity';results.mkdir(parents=True,exist_ok=True)
 inputs=json.loads((kernel/'run/canary/m37-build-inputs.json').read_text());port=os.environ['GATE_PORT']
@@ -56,13 +56,12 @@ for phase in ('positive','off','guard-off'):
    # the sleeping direction wrap to NeoForge's answer.
    +(' -Dforbric.carrierDefaultChains=off -Dforbric.mixinRetarget=off -Dforbric.mixinStubRebind=off -Dforbric.scopedClearRelay=off -Dforbric.carrierDecisions=off -Dforbric.carrierGuardedPoints=off -Dforbric.carrierReturnedCalls=off' if phase=='off' else '')
    +(' -Dforbric.carrierGuardedPoints=off' if phase=='guard-off' else ''))
- # The canary builder records "forge": null when no MinecraftForge carrier was staged: launch with the NeoForge carrier
- # alone (launch-kernel-server.sh finds none at the same staged paths) and attest no forge-interop jar.
- for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:
-  if inputs.get(role) is None:env.pop(key,None)
-  else:env[key]=inputs[role]['path']
+ # The game base (NeoForge's patched game) and its one carrier the canary was built and recorded against, handed to the
+ # launcher as BASE and NEO_RT and attested under the neo-patched / neo-runtime roles. (Stage 4: no merged base, no
+ # MinecraftForge carrier.)
+ for key,role in [('BASE','base'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
- for role,path in [('merged',env['MERGED']),*([('forge-interop',env['FORGE_RT'])] if 'FORGE_RT' in env else []),('neo-runtime',env['NEO_RT']),('fabric-api',inputs['fabricApi']['path']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
+ for role,path in [('neo-patched',env['BASE']),('neo-runtime',env['NEO_RT']),('fabric-api',inputs['fabricApi']['path']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
  command+=['--','bash',str(kernel/'run/gate-m37-entity-callbacks.sh'),'--execute']
  (results/(phase+'.log')).unlink(missing_ok=True)  # the lost-port check below must not read an earlier run's log
  with (results/(phase+'-driver.log')).open('w') as output:
@@ -100,6 +99,6 @@ for phase in ('positive','off','guard-off'):
  assert (direction in text)==(phase!='off'),(phase,'the sleeping direction wrap moves to the answer in every phase but the negative control')
  relay='[Forbric/ScopedClear] net.minecraft.world.entity.LivingEntity: [removeAllEffects()Z(activeEffects)]'
  assert (relay in text)==(phase!='off'),(phase,'the scoped-clear relay runs in every phase but the negative control')
- print('[M37] PASS',phase,'nineteen actual entity callback cases with expected verdicts',flush=True)
-print('[M37] GATE GREEN')
+ print('[kernel] PASS M37',phase,'nineteen actual entity callback cases with expected verdicts',flush=True)
+print('[kernel] M37 GATE GREEN')
 PY

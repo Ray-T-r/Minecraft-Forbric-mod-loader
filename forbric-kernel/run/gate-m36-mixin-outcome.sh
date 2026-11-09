@@ -7,7 +7,7 @@ GATE_PORT="${GATE_PORT:-25596}"
 export KERNEL BUILD OLD GATE_PORT
 kernel_jar
 bash "$KERNEL/run/build-mixin-outcome-canary.sh"
-python3 - <<'PY'
+python3 - <<'PY' || { echo "[kernel] FAIL M36 — the driver stopped on the assertion above"; exit 1; }
 import json, os, pathlib, shutil, subprocess, time, uuid, signal
 kernel=pathlib.Path(os.environ['KERNEL']);root=kernel.parent
 run=kernel/'run/server-mixin-outcome-m36';results=kernel/'build/verification/m36-outcome';results.mkdir(parents=True,exist_ok=True)
@@ -21,13 +21,12 @@ for phase,mode,policy,required in [('required-strict','required','strict',True),
  (run/'eula.txt').write_text('eula=true\n')
  (run/'server.properties').write_text(f'server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nmax-tick-time=-1\npause-when-empty-seconds=0\nview-distance=2\nsimulation-distance=2\n')
  env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY=policy,FORBRIC_JVM=f'-Dforbric.outcomeMode={mode} -Dforbric.mixinAtWiden=' + ('off' if phase=='widened-off' else 'on'))
- # The canary builder records "forge": null when no MinecraftForge carrier was staged: launch with the NeoForge carrier
- # alone (launch-kernel-server.sh finds none at the same staged paths) and attest no forge-interop jar.
- for key,role in [('MERGED','merged'),('FORGE_RT','forge'),('NEO_RT','neo')]:
-  if inputs.get(role) is None:env.pop(key,None)
-  else:env[key]=inputs[role]['path']
+ # The game base (NeoForge's patched game) and its one carrier the canary was built and recorded against, handed to the
+ # launcher as BASE and NEO_RT and attested under the neo-patched / neo-runtime roles. (Stage 4: no merged base, no
+ # MinecraftForge carrier.)
+ for key,role in [('BASE','base'),('NEO_RT','neo')]:env[key]=inputs[role]['path']
  command=['python3',str(kernel/'run/compat/evidence.py'),'run','--source',str(root),'--mods',str(run/'mods'),'--output',str(results/(phase+'.json'))]
- for role,path in [('merged',env['MERGED']),*([('forge-interop',env['FORGE_RT'])] if 'FORGE_RT' in env else []),('neo-runtime',env['NEO_RT']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
+ for role,path in [('neo-patched',env['BASE']),('neo-runtime',env['NEO_RT']),('kernel',str(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')),('kernel-runtime',str(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar'))]:command+=['--artifact',role+'='+path]
  command+=['--','bash',str(kernel/'run/launch-kernel-server.sh')]
  (results/(phase+'.log')).unlink(missing_ok=True)  # the lost-port check below must not read an earlier run's log
  with (results/(phase+'-driver.log')).open('w') as output:
@@ -55,6 +54,6 @@ for phase,mode,policy,required in [('required-strict','required','strict',True),
  if mode=='widened':assert ('value=changed|context' if phase=='widened' else 'value=initial|context') in text,(phase,'argument result did not match')
  assert ('required present handler ran' in text)==(mode=='required')
  assert ('optional present handler ran' in text)==(mode=='optional')
- print('[M36] PASS',phase,'real defaultRequire result and completed-tick policy',flush=True)
-print('[M36] GATE GREEN')
+ print('[kernel] PASS M36',phase,'real defaultRequire result and completed-tick policy',flush=True)
+print('[kernel] M36 GATE GREEN')
 PY
