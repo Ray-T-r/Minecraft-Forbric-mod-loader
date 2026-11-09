@@ -121,7 +121,8 @@ class WeaveCoverageCensusTest {
 			Map.entry("CarrierReturnedCalls", Switch.own("forbric.carrierReturnedCalls")), // CarrierReturnedCallsWeaveTest
 			Map.entry("NativeSliceOccurrences", Switch.own("forbric.nativeSliceOccurrences")), // NativeSliceOccurrencesWeaveTest
 			Map.entry("MixinGuiItemCaptureAdapter", Switch.own("forbric.guiItemCaptureAnchor")),
-			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay")),
+			// The block rows: MixinShearsRelayWeaveTest; the sheep and snow golem rows: MixinShearsRelayMobsWeaveTest.
+			Map.entry("MixinShearsRelay", Switch.own("forbric.shearsRelay", "forbric.shearsRelayMobs")),
 			Map.entry("InsertedLambdaArgumentShim", Switch.own("forbric.insertedLambdaArguments")),
 			Map.entry("MixinPlayerWorldCallbackAdapter", Switch.own("forbric.playerWorldCallbacks")),
 			// The neighbour-change wrap, TAIL and reaction-point handler: CarpetFluidMixinAdapterWeaveTest, MixinFluidReactionWeaveTest;
@@ -142,6 +143,7 @@ class WeaveCoverageCensusTest {
 			Map.entry("FabricBlockStateCodecMixinAdapter", Switch.own("forbric.blockStateModelFormats")),
 			Map.entry("FabricCommonPayloadMixinAdapter", Switch.own("forbric.playPayloadFallThrough")), // FabricCommonPayloadMixinAdapterTest
 			Map.entry("MixinPrivateDefaultCollision", Switch.own("forbric.mixinPrivateDefaults")), // MixinPrivateDefaultCollisionTest
+			Map.entry("FabricItemDamageMixinAdapter", Switch.own("forbric.itemDamageHandler")), // FabricItemDamageMixinAdapterWeaveTest
 			Map.entry("FabricClientMixinAnchors", Switch.own("forbric.fabricClientAnchors")),
 			Map.entry("CarrierHelperResults", Switch.own("forbric.carrierHelperResults")), // CarrierHelperResultsWeaveTest
 			Map.entry("CarrierMethodReferences", Switch.own("forbric.carrierMethodReferences")), // CarrierMethodReferencesWeaveTest
@@ -163,12 +165,10 @@ class WeaveCoverageCensusTest {
 
 	private static final String NO_SCENARIO = "no weave scenario yet; ClassNode-level tests only";
 	/**
-	 * Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave.
-	 * FabricItemDamageMixinAdapter: FabricItemDamageMixinAdapterTest reads the real fabric-item-api mixin and the real
-	 * ItemStack at ClassNode level, and run/compat/regress-gate.py runs the moved handler in a dedicated server with
-	 * its switch on and off, but no weave scenario hands it to Mixin and MixinExtras in CI yet.
+	 * Only shrinks. Every row is a stage whose output no CI test has yet run through the real weave. Empty: the last row,
+	 * FabricItemDamageMixinAdapter, has FabricItemDamageMixinAdapterWeaveTest.
 	 */
-	static final Map<String, String> NOT_WOVEN_YET = notWovenYet("FabricItemDamageMixinAdapter");
+	static final Map<String, String> NOT_WOVEN_YET = notWovenYet();
 
 	@Test void everyPipelineStageIsWovenOrListedWithAReason() throws Exception {
 		Set<String> configTime = configTimeStages();

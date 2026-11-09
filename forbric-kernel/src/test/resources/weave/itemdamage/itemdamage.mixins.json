@@ -1,0 +1,1 @@
+{"required": true, "package": "net.fabricmc.fabric.mixin.item", "compatibilityLevel": "JAVA_21", "mixins": ["ItemStackMixin"], "injectors": {"defaultRequire": 1}}
