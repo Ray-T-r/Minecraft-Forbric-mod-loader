@@ -101,17 +101,21 @@ class LibCaughtContractTest {
 
 	/**
 	 * NeoForge's entity-attribute events not finishing turns a gate red even without strict, and nothing else does. The
-	 * two lines are KernelLifecycle.postAttributeEvents' own, as Caught.java writes them (message in the fourth column);
-	 * the third is another hook through the same invokeGameDataOn, which must stay an ordinary carried-on failure.
+	 * three lines are KernelLifecycle.postAttributeEvents' own, as Caught.java writes them (message in the fourth column):
+	 * the hook threw, the settle step before it failed, the hook is missing. The fourth is another hook through the same
+	 * invokeGameDataOn, which must stay an ordinary carried-on failure. The settle line alone matched the pattern before
+	 * C5; the hook's two lines are what this case tells apart.
 	 */
 	@Test void anEntityAttributeEventThatDidNotFinishIsFatalAndNoOtherHookIs() throws Exception {
 		String threw = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2013",
 				"[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW — it exists and did not finish");
 		String settle = failure("net.forbric.kernel.boot.KernelLifecycle.postAttributeEvents:1965",
 				"[Forbric/Attributes] DefaultAttributes could not initialise before the entity-attribute events — they read it");
+		String missing = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2006",
+				"[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks has no modifyAttributes() — the kernel expected that hook on this carrier");
 		String otherHook = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2013",
 				"[Forbric/Lifecycle] net.minecraft.world.entity.SpawnPlacements.fireSpawnPlacementEvent() THREW — it exists and did not finish");
-		for (String line : List.of(threw, settle)) {
+		for (String line : List.of(threw, settle, missing)) {
 			Result r = run(gate("attributes", line + "\n"), Map.of());
 			assertEquals(1, r.exit(), r.out());
 			assertTrue(r.out().contains("[kernel] FAIL 1 entity-attribute event(s) did not finish"), r.out());
