@@ -8,12 +8,25 @@
 # NeoForge->MinecraftForge item-finish bridge) are all retired switches whose code was deleted in C2 (D22, D29): on this
 # base BaseFireBlock.onPlace asks only EventHooks.onTrySpawnPortal and EventHooks.finalizeMobSpawnSpawner is NeoForge's
 # own (javap: invokevirtual Mob.finalizeSpawn; pop), so each switch only warns and its phase could not fail. So did the
-# javap read of the merged base's portal-hook order and the MinecraftForge carrier this gate required. No kernel
-# transformer touches these seven paths (NativeCoremodParity's targets have no BaseSpawner, BaseFireBlock or
-# LivingEntity), so the replacement control is a premise control (D48): the probe's `withhold` phase keeps every NeoForge
-# listener counting its event but withholds its answer, and the cases that judge an answer reaching the game must fail,
-# exactly portal-neo-veto, the four spawner-* cases and item-result; portal-allow, which asks only that NeoForge's event
-# fired once, holds.
+# javap read of the merged base's portal-hook order and the MinecraftForge carrier this gate required.
+#
+# One kernel transformer does sit on these paths: SpawnPositionCallsInjector (COREMOD, -Dforbric.spawnPositionCalls)
+# rewrites BaseSpawner.serverTick, the live caller of the four spawner-* cases, putting vanilla's checkSpawnRules /
+# checkSpawnObstruction back after NeoForge's PositionCheck event (KernelSpawnPosition.decide posts the same event and
+# uses its answer as NeoForge's hook does). It decides nothing differently, so it cannot be a red control; instead the
+# `spawn-position-off` phase runs the same probe with -Dforbric.spawnPositionCalls=off -- NeoForge's own hook bytes -- and
+# must pass all seven cases like `positive`: a native A/B on the exact path, not a red control. The gate also asserts
+# the rewrite is logged for BaseSpawner in `positive` and absent in `spawn-position-off`, so the A/B is known to differ.
+# Nothing else in the kernel rewrites BaseFireBlock.onPlace, BaseSpawner or LivingEntity.completeUsingItem for a probe
+# with no mixins (VanillaEarlyReturns and NativeValueStores act only on guest-mixin targets).
+#
+# The red control is a premise control (D48): the probe's `withhold` phase keeps every NeoForge listener counting its
+# event but withholds its answer, and exactly portal-neo-veto, the four spawner-* cases and item-result must fail, each
+# for its pinned reason (the failure text and the game state the probe recorded); portal-allow, which asks only that
+# NeoForge's event fired once, holds. Five of the six are game behaviour. spawner-nonempty-input is not: no finalization
+# runs in either phase, the world inserts the mob and Entity.load sees the spawner's tag in both, and its red is the
+# probe reading back the replacement SpawnGroupData its own listener withheld (pinned as "probe-side read-back only").
+# It stays in the set PLAN names (D48); whether it should leave the set is the orchestrator's call (review A-1, wave 2).
 # GATE-PARALLEL: rundirs=server-behavior-m35 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25595}"
@@ -24,10 +37,10 @@ mkdir -p "$RESULTS"
 
 if [ "${1:-}" = "--execute-phase" ]; then
   phase="$2"; token="$3"; result="$RESULTS/$phase-probe.json"
-  case "$phase" in positive|withhold) ;; *) exit 2 ;; esac
+  case "$phase" in positive|withhold) ab="" ;; spawn-position-off) ab="-Dforbric.spawnPositionCalls=off" ;; *) exit 2 ;; esac
   rm -f "$result" "$RESULTS/$phase-compatibility.json"
   RUNDIR="$RUNDIR" FORBRIC_COMPAT_POLICY=strict \
-    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.relaxGuestMixins=off -Dforbric.behaviorPhase=$phase -Dforbric.behaviorToken=$token -Dforbric.behaviorRoot=$RUNDIR -Dforbric.behaviorOutput=$result" \
+    FORBRIC_JVM="${FORBRIC_JVM:-} $ab -Dforbric.relaxGuestMixins=off -Dforbric.behaviorPhase=$phase -Dforbric.behaviorToken=$token -Dforbric.behaviorRoot=$RUNDIR -Dforbric.behaviorOutput=$result" \
     "$KERNEL/run/launch-kernel-server.sh" </dev/null
   code=$?
   if [ -f "$RUNDIR/.forbric-kernel/compatibility-report.json" ]; then
@@ -116,36 +129,60 @@ names = [row['name'] for row in proof['cases']]
 assert set(names) == {'portal-allow', 'portal-neo-veto', 'spawner-data', 'spawner-neo-cancel-finalize',
                       'spawner-neo-veto-spawn', 'spawner-nonempty-input', 'item-result'}, names
 failures = {row['name'] for row in proof['cases'] if row['pass'] is not True}
+red = phase == 'withhold'
 # withhold: NeoForge's listeners still count their events but give no answer (D48's premise control).
+# spawn-position-off: NeoForge's own position-check hook in BaseSpawner (native A/B), must equal positive.
 expected = {
-    'positive': set(),
+    'positive': set(), 'spawn-position-off': set(),
     'withhold': {'portal-neo-veto', 'spawner-data', 'spawner-neo-cancel-finalize', 'spawner-neo-veto-spawn',
                  'spawner-nonempty-input', 'item-result'},
 }[phase]
 assert failures == expected, (phase, failures, expected, proof)
-assert proof['pass'] is (phase == 'positive'), proof
+assert proof['pass'] is (not red), proof
 assert outcome['inputsUnchanged'] is True, outcome
-assert outcome['commandPassed'] is (phase == 'positive'), outcome
-assert outcome['exitCode'] == (0 if phase == 'positive' else 1), outcome
+assert outcome['commandPassed'] is (not red), outcome
+assert outcome['exitCode'] == (1 if red else 0), outcome
 log = (root / (phase + '-inputs.log')).read_text(errors='replace')
 assert 'Done (' in log and '[M35Behavior] ARMED natural item consumption' in log, 'world/action startup absent'
+rewrite = '[Forbric/Spawner] put checkSpawnRules/checkSpawnObstruction back into net.minecraft.world.level.BaseSpawner '
+if phase == 'spawn-position-off':
+    assert rewrite not in log, 'the BaseSpawner rewrite ran although -Dforbric.spawnPositionCalls=off'
+else:
+    assert rewrite in log, 'the BaseSpawner rewrite was not logged, so spawn-position-off would not be an A/B'
+rows = {row['name']: row for row in proof['cases']}
+if red:
+    # Each red for its own reason, not merely by name: the failure text and the state the probe recorded.
+    def why(name, text, **state):
+        row = rows[name]
+        assert text in str(row.get('detail', '')), (name, 'reason differs', text, row)
+        for key, value in state.items():
+            assert row.get(key) == value, (name, key, value, row)
+    why('portal-neo-veto', 'original frame result differs', originalPortalBlocks=6)
+    why('spawner-data', "NeoForge's replacement SpawnGroupData did not reach finalizer", finalizations=1, neoDataUsed=False)
+    why('spawner-neo-cancel-finalize', 'finalization count differs', finalizations=1)
+    why('spawner-neo-veto-spawn', 'event cancellation and world-insertion veto were conflated', worldInsertion=True)
+    # Not game behaviour (review A-1): the game state is positive's, the red is the probe's own read-back.
+    why('spawner-nonempty-input', 'probe-side read-back only', finalizations=0, worldInsertion=True, valueInputMarker=35)
+    item = rows['item-result']
+    assert 'detail' not in item and item.get('held') == '1 minecraft:bucket', ('item-result reason differs', item)
 # Every listener was asked in both phases: a withheld answer is not a missing event.
 for row in proof['cases']:
     assert row.get('neoEvents') == 1, ('NeoForge was not asked exactly once', phase, row)
 (root / (phase + '-probe.sha256')).write_text(hashlib.sha256(proof_path.read_bytes()).hexdigest() + '\n')
-print('[kernel] PASS M35', phase, 'expected behavioral failures:', sorted(failures))
+print('[kernel] PASS M35', phase, 'expected behavioral failures:', sorted(failures),
+      '(BaseSpawner rewrite', 'absent)' if phase == 'spawn-position-off' else 'logged)')
 PY
   then :
   else echo "[kernel] FAIL M35 $phase evidence or behavior differs"; FAIL=1
   fi
 }
 
-for phase in positive withhold; do
+for phase in positive spawn-position-off withhold; do
   step "M35 actual world behavior: $phase"
   run_phase "$phase"
 done
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M35 WORLD BEHAVIOR GATE GREEN — 7 positive cases and the withhold premise control red on exactly its six"
+  echo "[kernel] ✅ M35 WORLD BEHAVIOR GATE GREEN — 7 positive cases, the same 7 on NeoForge's own spawner hook, and the withhold premise control red on exactly its six, each for its pinned reason"
 else
   echo "[kernel] ❌ M35 GATE RED — inspect $RESULTS"
 fi

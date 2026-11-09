@@ -46,7 +46,13 @@ import net.neoforged.neoforge.event.level.BlockEvent;
  * no finalize cancel or spawn veto, no result stack. The cases that judge an answer reaching the game must then fail
  * (portal-neo-veto, the four spawner cases, item-result) while portal-allow, which asks only that the event fired, holds.
  * It proves the positive phase's verdicts come from NeoForge's listeners through the live game callers and not from the
- * world doing the same thing on its own.
+ * world doing the same thing on its own. One of the six is not game behaviour: in spawner-nonempty-input no finalization
+ * runs in either phase, and its withhold red is the probe reading back the replacement SpawnGroupData its own listener did
+ * not set; its failure text says so.
+ *
+ * <p>Phase {@code spawn-position-off} behaves as {@code positive}; the gate runs it with
+ * {@code -Dforbric.spawnPositionCalls=off}, so BaseSpawner.serverTick keeps NeoForge's own position-check hook instead of
+ * the kernel's SpawnPositionCallsInjector rewrite, and every case must pass there too (a native A/B, not a red control).
  */
 public final class WorldProbe {
     public static final Identifier MOB_ID = Identifier.fromNamespaceAndPath("forbricbehaviorprobe", "probe_mob");
@@ -96,7 +102,7 @@ public final class WorldProbe {
         try {
             root = Path.of(System.getProperty("forbric.behaviorRoot", ".")).toAbsolutePath().normalize();
             token = System.getProperty("forbric.behaviorToken", ""); phase = System.getProperty("forbric.behaviorPhase", "");
-            if (token.isBlank() || !List.of("positive", "withhold").contains(phase)
+            if (token.isBlank() || !List.of("positive", "withhold", "spawn-position-off").contains(phase)
                     || !Files.readString(root.resolve(".m35-owned")).trim().equals(token)
                     || !server.getWorldPath(LevelResource.ROOT).toAbsolutePath().normalize().equals(root.resolve("world"))) {
                 System.out.println("[M35Behavior] DISARMED: gate ownership absent"); return;
@@ -215,7 +221,10 @@ public final class WorldProbe {
             if (expectedFinal == 1) require(mob.finalizedWith == NEO_DATA, "NeoForge's replacement SpawnGroupData did not reach finalizer");
             require(MOB_ID.toString().equals(inputId), "actual nonempty entity ValueInput was not observed by Entity.load");
             // EventHooks.finalizeMobSpawnSpawner discards finalizeSpawn's return (javap: invokevirtual finalizeSpawn; pop).
-            require(neoFinalize != null && neoFinalize.getSpawnData() == NEO_DATA, "native discarded finalizer return was written back into the event");
+            // In withhold the listener never set NEO_DATA, so this read-back fails whatever the game does: say so.
+            require(neoFinalize != null && neoFinalize.getSpawnData() == NEO_DATA, withheld()
+                    ? "probe-side read-back only: the event carries no replacement SpawnGroupData because the probe's listener withheld it"
+                    : "native discarded finalizer return was written back into the event");
             if (mode.equals("nonempty-input")) require(inputMarker == 35, "the spawner's custom entity tag field did not reach Entity.load");
             pass = true;
         } catch (Throwable failure) { evidence.put("detail", failure.toString()); failure.printStackTrace(); }
