@@ -3,7 +3,9 @@
 Branch `s4-c5-g-c`, cut from the Phase-0 tip cd6d0fe8. Notes and logs: `~/Forbric-backups/stage4-notes/c5/g-c/`
 (the run outputs named below are under `c5/g-c/review/`).
 
-## State: the gates are edited, none has run on the genuine stage
+**Wave 2 (2026-11-09/10) supersedes the state below: every gate ran on the genuine stage with the pinned build; see "Wave 2" at the end.**
+
+## State in wave 1: the gates are edited, none has run on the genuine stage
 
 Gradle cannot build offline on this machine. The dependency cache `~/.gradle/caches/modules-2` was recreated
 on 2026-11-08 at 20:47 and holds none of the kernel's dependencies. Every lane hit this. The D66 first act was
@@ -104,3 +106,175 @@ No test is deleted, renamed or added, so no TSV rows are owed (D47).
 - A-10 (optional): canary-block raw-id survival line in m14.
 - client-neo-pack sophisticated*/earthmobsmod (c1/handoff.md:1063): a fixture edit that needs the
   orchestrator's OK. Not asked yet.
+
+## Wave 2 (2026-11-09/10): first runs, red controls, the m9 batch
+
+Branch `s4-c5-g-c`, rebased onto the stage tip f0cb66b0 (no-op: the lane tip was the tip). Pinned build, plain
+`--offline` from `props.txt` (D68); no init script, no private Gradle home. Logs: `~/Forbric-backups/stage4-notes/c5/g-c/w2/`
+(gate outputs under `gates/`, the m9 batch summary in `m9-batch-summary.txt`). Gate counts are `^\[kernel\] PASS` /
+`^\[kernel\] FAIL` lines only. Every client gate ran under the client lock, one at a time; the client-merged-pack gates
+ran on fresh APFS clones by real path, deleted afterwards.
+
+### Suite
+
+- **First act** at f0cb66b0: 5772 tests, 0 skipped, 5 failed: exactly the five rows of `failures-wave1.txt` (LiquidBounce x3,
+  SharedFinalSourceActualTest x2). XML: `w2/suite-first-xml/`.
+- **End** at 2e378a77 (same command): 5772 tests, 0 skipped, 5 failed, the same five names; 0 new, 0 gone (XML:
+  `w2/suite-final-xml/`, list `c5/failures-g-c-w2.txt`). No test was added, deleted or renamed, so no TSV row (D47).
+- The 23 test classes that read G-C's gate files or `assert.sh` (incl. AssertCompatTest, GatesAllTest): 132 / 0 / 0
+  after the header edits.
+
+### Gates on the genuine stage
+
+| gate | PASS / FAIL / SKIP | note |
+|---|---|---|
+| m1 | 17 / 0 / 0 | |
+| m9 | 163 / 0 / 0 | base run of the batch |
+| m12 | 31/1, 32/0, 32/0, then 32/0, 32/0, 32/0 | six runs alone (`--exclusive`); x1 failed "server ticks late: 21 (ceiling 20)", see below |
+| m13 | **24 / 6**, then **26 / 4** alone, **26 / 4** with a block probe | **RED: a real kernel defect, escalated** (below). 30 / 0 without the NeoForge block mod |
+| m14 | 33 / 0 / 0 | first run (the Fabric canary had to be built first: `run/canary/forbricfabriclive.jar` was absent) |
+| m17 | 49 / 0 / 0 | first run since C1, cold start (NFRT build, downloads allowed by D68); no SKIP line any more (D70) |
+| m20 | 41 / 0 / 0 | |
+| m22 | 5 / 0 / 0 | |
+| m23 | 7 / 0 / 0 | |
+| m27 | 7 / 0 / 0 | |
+| m54 | 11 / 0 / 0 | |
+| m55 | 23 / 0 / 0 | |
+| m56 | 143 / 0 / 0 | |
+
+The scripts' bodies did not change after these runs; only header comments did (the measured controls written in). m17
+ran with its D70 re-point already in place.
+
+### Red controls (switch off -> red; the same gate without it is the green row above)
+
+| gate | control | measured |
+|---|---|---|
+| m14 | `-Dforbric.fabricRegistryInitialization=off` (D48 control A) | 32 / 1: exactly "the shared mod's block reads back as itself" (read back as a `minecraft:note_block` state). Replaces the lost 32/5 |
+| m54 | `-Dforbric.playPayloadFallThrough=off` (in-gate) | server "ForbricKernel lost connection: Internal Exception: java.lang.IllegalStateException: Unknown addon"; no carry verdict |
+| m17 | control N (in-gate) | the old install's arguments: exit 2, the OLD_INSTALL line, no boot; `launchInputCheck=off` exit 2 again |
+| m17 | tools-jar phase, mutation (out of gate) | installer built with `unpackTools` keeping an existing file, on a copy of the install with the spoiled tools jar: exit 1, "Could not find or load main class net.forbric.tools.MergedLinkChecker". The real installer on the same copy: exit 0, bundled SHA-1 7ff2cba3 back |
+| m17 | offline phase, premise (out of gate) | an EMPTY directory behind the same dead proxy fails at once ("could not reach maven.neoforged.net", ConnectException), so the proxy is a real denial |
+| m20 | `-Dforbric.dependencyDialog=off` (in-gate step) | green as a control inside the 41 / 0 run |
+| m20 | `-Dforbric.crossEcosystemIds=off` (the header's "re-count") | 36 / 5: the two cross-spelling checks and the continue step's three "1 finding(s)" checks |
+| m22 | `-Dforbric.bootJarPreload=off` | 3 / 2: the preload line and "every kernel class resolved" (KernelRegistryRevert, ClientShutdown$GuardOutcome) |
+| m55 | withheld phase (in-gate) | green inside 23 / 0 |
+| m55 | `M55_EXTRA_JVM=-Dforbric.creativeSearchCanaryRefresh=off` | 14 / 9: phase 1's refresh line, its seven grid counts and "minecraft:stone first", as the header said |
+| m56 | control phase and 3b (in-gate) | green inside 143 / 0 |
+| m56 | `M56_PHASES=standin M56_EXTRA_JVM=-Dforbric.modMenuStandIn=off` | 32 / 29: exactly the 29 the header names |
+| m9 | 24 recipes, one run each | below |
+
+**m9 batch** (each switch on a fresh clone; the base run 163 / 0). "STRICT stop": a required mixin is lost and this STRICT
+client stops at ~60 s, so every in-world check goes red with the named ones.
+
+| switch(es) off | red | the named checks |
+|---|---|---|
+| keyModifierSuffix | 1 | the repair's own line only; see "Evidence against D25" |
+| carrierLanguages | 1 | "NeoForge's own screens have their text" (2 -> 1 as planned) |
+| modDataPacks | 3 | carrier sits below the mods; loot-modifier scan; conditions no source guard owns |
+| aliasPresenceParity | 2 | alias parity line; "no alias warns ..." present x134 (C3's 134) |
+| neoRegistrationOrder | 35 | its line; unbound data component x16; RegisterEvent listener failed x8; tags lost x60; no world |
+| lootModifierIndex | 2 | neoforge:global_loot_modifiers fails to parse; the scan line |
+| blockStateCaches | 1 | every block state's cache is computed |
+| registryElementCallbacks | 1 | a closed block-state walk is instrumented |
+| splitterPacketContext | 2 | splitter line; "no repair was handed its target and declined" x2 |
+| clientSmokeTooltipEvent | 1 | a NeoForge mod can add a line to an item's tooltip |
+| fabricMainInConstructor | 43 | its two lines, the datapack-declaration pair, client exits at ~65 s |
+| guestInjectorPruner | 3 | ModelManagerMixin trimmed; fabric-item-api tooltip injectors pruned; providers from appenders |
+| mixinRetarget + mixinStubRebind | 49 | STRICT stop; both rebound lines, both half-applied absences, the isAir pair |
+| mixinRetarget | 44 | STRICT stop; the isAir pair and its absence, malilib's never-runs pair |
+| snippetFunnel | 42 | STRICT stop; its three checks |
+| widenedFieldTwins | 42 | STRICT stop; its three checks |
+| tooltipOrderScrape | 1 | its line |
+| fieldDriftAudit | 1 | its line |
+| fabricTooltipBridge | 2 | its two lines |
+| mixinStubRebind | 1 | malilib's language format hook reaches the body the game calls |
+| mixinRetarget.renameCensus.uncalled | 41 | STRICT stop; malilib's never-runs pair |
+| decodeSourceScopes | 2 | its two checks |
+| fabricConditions | 1 | conditions no source guard owns are still judged |
+| datapackDeclarationAfterFabric | 2 | its two checks |
+
+Every entry the header marked TO MEASURE now carries a measured number (commit below); nothing was deleted.
+
+### m13: a real defect (escalated, not fixed here)
+
+On a vanilla-protocol server (Paper + GrimAC), a Forbric client carrying a NeoForge mod that registers blocks decodes the
+server's vanilla block-state ids as that mod's states. Measured with the smoke's block probe under the spawn
+(`m13-probe-client.log`): grass at (-2 -61 -3) reads `mcwbridges:iron_bridge[connection=side_s]`, dirt
+`mcwbridges:iron_bridge[connection=side_w]`, bedrock `mcwbridges:crimson_log_bridge_middle`. The player has no ground,
+falls a tick at a time and is set back by the server: Grim files 107-171 movement flags before the control (Simulation
+.0784 = one tick of gravity, GroundSpoof), the walk covers no ground, the pool is not water, and the control move goes
+unflagged because the player is already being set back. The same gate with `M13_MODS` = fabric-api + collective (no
+mcw-bridges): **30 / 0**, the probe reads `minecraft:grass_block` (8), `minecraft:dirt` (9), `minecraft:bedrock` (34),
+0 flags before the control, 1 after. Native NeoForge appends modded states after vanilla's (its
+`BlockCallbacks.onBake` re-adds every block's states in registry order, javap in `w2/javap/BlockCallbacks.txt`), so the
+vanilla ids agree on a vanilla server; m12 (NeoForge sync) and m14 (Fabric sync) remap the ids and so cannot show it.
+Not root-caused further: candidates are the kernel's registry re-open/re-freeze for the Fabric client entrypoints and
+the kernel's own pre-connection snapshot that `RegistryManager.revertToFrozen` restores. Owner: a kernel lane
+(orchestrator to assign). m13 stays RED; its assertions are not loosened.
+
+### m12: the late-tick flake, root-caused
+
+Six runs alone under `--exclusive`: ticks at twice the budget 21, 10, 4, 16, 3, 16 (ceiling 20); 0 overload warnings in
+all six ("server kept up" never failed this wave). With the machine's load sampled every 2 s (x4-x6): every late tick
+falls in the 100-700-tick window, when the gate's own client JVM boots and joins at 5-6.6 cores on this 10-core machine
+(x4-x6: first 100 ticks 0 late each time; 700-tick mean 50.1-51.9 ms). The flake is the gate's own client competing with its server,
+not another lane and not a slow server. The ceiling sits inside that spread. Open (owner G-C, a gate-design call): either
+start counting after the join or raise the ceiling; not changed in this wave.
+
+### m17 (D70) and its seeded cache
+
+- Merge-tool phase -> the link checker's tools jar phase; offline phase -> a dead-proxy reinstall over the full cache
+  (exit 0, 2 artifacts up to date, vanilla reference up to date, link check twice). The removed-library sub-step is deleted
+  (D34): it existed for the libraries the merge read, and the installer fetches no Minecraft library since C1
+  (`MojangDownloader` has no `downloadLibraries`, D13); any other fetch is caught by the dead proxy, whose denial is shown
+  by the empty-directory control above.
+- M17_SEED_CACHE, measured with the network denied: a directory seeded from the gate's install exactly as the gate seeds
+  (dl, tools, NeoForm's stamped game), behind the dead proxy: exit 0, NeoForge runtime built from the seeded downloads,
+  NeoForm up to date, both link checks `dangling references: 0`, vanilla reference written (10952 classes), 3 artifacts
+  staged.
+
+### Evidence against D25 (dropTheKeyModifierSuffix), reported, nothing changed
+
+With `-Dforbric.keyModifierSuffix=off` only the repair's own line goes red; "options.txt loads with modded modifier
+bindings in it" and "JEI's 35 saved key bindings are in options.txt after the run, unchanged" stay green although the
+fixture holds `key_key.attack:key.mouse.left:CONTROL_OR_COMMAND`. javap of the genuine `Options.processOptions`
+(`w2/javap/Options-processOptions-keymapping.txt`): NeoForge splits the value at `:`, passes `[0]` to
+`InputConstants.getKey` and `[1]` to `KeyModifier.valueFromString`, which returns NONE on an unknown name. So on this base
+the repaired call never sees a suffixed name; D25 keeps the repair for options.txt from Forbric <= 0.4. A C3-style
+three-check is the orchestrator's call.
+
+### D71: client-neo-pack
+
+Before (63 jars): a STRICT client stops before any world ("launch stopped ... policy STRICT"; AbiAudit: sophisticatedbackpacks
+3.25.83 names a NeoForge class this instance does not carry, C1 W4). After (62 jars), on a clone first: client-ready after 60 ticks, clean disconnect,
+exit 0. `MixinRetargetRenamedBodyCorpusTest` (which reads the pack) passes against the edited pack (run on a scratch clone
+of the worktree). Then the fixture itself (`/Users/jerry/Documents/Forbric/forbric-kernel/run/client-neo-pack`, untracked)
+was edited, nothing downloaded:
+
+| jar | sha1 | now |
+|---|---|---|
+| sophisticatedcore-26.2-1.4.90.2199.jar | 62e03024… | moved to `mods-disabled/` |
+| sophisticatedbackpacks-26.2-3.25.83.2018.jar | 127c32ce… | moved to `mods-disabled/` |
+| earthmobsmod-26.2-30.1.0.jar | 655dfaea… | moved to `mods-disabled/` (crashes native NeoForge .93 too, C1 W4; no other build on disk) |
+| sophisticatedcore-26.2-1.5.0.2337.jar | 971b2b22… | added (APFS copy from client-merged-pack, where m9 runs it green) |
+| sophisticatedbackpacks-26.2-3.26.2.2154.jar | 5b9faaac… | added (same) |
+
+No gate reads client-neo-pack (only lib.sh's shared-fixture list and the corpus test). A NeoForge .93 build of
+earthmobsmod would need a download: not done, reported.
+
+### Commits (wave 2)
+
+| sha | what |
+|---|---|
+| 7cabf8cc | m17 tools-jar and offline phases re-pointed (D70), removed-library step deleted (D34) |
+| 3da7caa8 | measured controls written into m14, m54, m22, m20 headers |
+| 2e378a77 | m9 recipe list measured; m17 header: seeded-offline and tools-jar red measured |
+| (this commit) | this record |
+
+### Open
+
+- m13 RED: the vanilla-server block-state id defect above. Owner: kernel lane (orchestrator to assign).
+- m12 late-tick ceiling vs the gate's own client boot (above). Owner G-C, next wave.
+- D25 evidence above. Owner: orchestrator.
+- A-10 (optional, m14 canary raw-id survival line): not done.
+- README "Not done yet" still lists m17's two SKIPs; they are gone (orchestrator's file).
