@@ -19,11 +19,16 @@ package net.forbric.kernel.transform;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
@@ -36,12 +41,15 @@ import org.objectweb.asm.tree.VarInsnNode;
 
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
+import net.fabricmc.api.EnvType;
 
+@ExecutesInjector(CarrierPackIdMigrationInjector.class)
 class CarrierPackIdMigrationInjectorTest {
 	private static final String TARGET = "net/minecraft/server/MinecraftServer";
 	private static final String METHOD = "configurePackRepository";
 	private static final String CONFIG = "Lnet/minecraft/world/level/WorldDataConfiguration;";
 	private static final String DESC = "(Lnet/minecraft/server/packs/repository/PackRepository;" + CONFIG + "ZZ)" + CONFIG;
+	private static final String HOOK_SOURCE = "net/forbric/kernel/runtime/KernelCarrierPackIds.java";
 
 	@Test
 	void theSavedSelectionIsReplacedBeforeTheBodyReadsIt() {
@@ -66,6 +74,83 @@ class CarrierPackIdMigrationInjectorTest {
 		byte[] renamed = standIn(TARGET, "configurePackRepositoryV2");
 		assertArrayEquals(renamed, new CarrierPackIdMigrationInjector().transform(TARGET, renamed, null),
 				"a gone anchor hands the class back and says so, never throws");
+	}
+
+	/**
+	 * The rewritten method runs: a world's saved selection naming the carrier by an earlier install's id reaches the
+	 * body renamed in place, and one with nothing to rename reaches it untouched. The hook is the real
+	 * KernelCarrierPackIds, compiled from its source against stand-ins of the four game types it touches.
+	 */
+	@Test
+	void anOldWorldsSelectionReachesTheBodyRenamed(@TempDir Path work) throws Throwable {
+		Map<String, String> standIns = Map.of(
+				"net.minecraft.server.packs.repository.PackRepository",
+				"package net.minecraft.server.packs.repository; public class PackRepository {}",
+				"net.minecraft.world.flag.FeatureFlagSet", "package net.minecraft.world.flag; public class FeatureFlagSet {}",
+				"net.minecraft.world.level.DataPackConfig", """
+						package net.minecraft.world.level;
+						public class DataPackConfig {
+							private final java.util.List<String> enabled, disabled;
+							public DataPackConfig(java.util.List<String> enabled, java.util.List<String> disabled) {
+								this.enabled = enabled; this.disabled = disabled;
+							}
+							public java.util.List<String> getEnabled() { return enabled; }
+							public java.util.List<String> getDisabled() { return disabled; }
+						}
+						""",
+				"net.minecraft.world.level.WorldDataConfiguration", """
+						package net.minecraft.world.level;
+						public record WorldDataConfiguration(DataPackConfig dataPacks,
+								net.minecraft.world.flag.FeatureFlagSet enabledFeatures) {}
+						""",
+				"net.minecraft.server.MinecraftServer", """
+						package net.minecraft.server;
+						import net.minecraft.world.level.WorldDataConfiguration;
+						public class MinecraftServer {
+							public static WorldDataConfiguration configurePackRepository(
+									net.minecraft.server.packs.repository.PackRepository repository, WorldDataConfiguration saved,
+									boolean safeMode, boolean initMode) {
+								return saved;
+							}
+						}
+						""");
+		Map<String, String> sources = new HashMap<>(standIns);
+		sources.put(HOOK_SOURCE, java.nio.file.Files.readString(Path.of("src/runtime/java").resolve(HOOK_SOURCE)));
+		Map<String, byte[]> classes = new HashMap<>(InjectorExecution.compile(work, sources));
+		byte[] original = classes.get(TARGET);
+		byte[] rewritten = InjectorExecution.transform(new CarrierPackIdMigrationInjector(), TARGET.replace('/', '.'), original,
+				EnvType.SERVER);
+		assertNotSame(original, rewritten);
+		classes.put(TARGET, rewritten);
+		ClassLoader loader = InjectorExecution.load(classes);
+		assertEquals("", InjectorExecution.verify(rewritten, loader));
+
+		Class<?> packConfig = loader.loadClass("net.minecraft.world.level.DataPackConfig");
+		Class<?> flags = loader.loadClass("net.minecraft.world.flag.FeatureFlagSet");
+		Class<?> config = loader.loadClass("net.minecraft.world.level.WorldDataConfiguration");
+		Object features = flags.getConstructor().newInstance();
+		java.util.function.BiFunction<List<String>, List<String>, Object> saved = (enabled, disabled) -> {
+			try {
+				Object packs = packConfig.getConstructor(List.class, List.class).newInstance(enabled, disabled);
+				return config.getConstructor(packConfig, flags).newInstance(packs, features);
+			} catch (ReflectiveOperationException e) {
+				throw new AssertionError(e);
+			}
+		};
+		Class<?> server = loader.loadClass(TARGET.replace('/', '.'));
+
+		Object old = saved.apply(List.of("vanilla", "forbric/carrier/1-forge-runtime-interop",
+				"forbric/carrier/2-neoforge-runtime-26.2", "forbric/data/mcwbridges"), List.of("forbric/carrier/2-neoforge-runtime-26.2"));
+		Object loaded = InjectorExecution.invokeStatic(server, METHOD, null, old, false, false);
+		Object packs = InjectorExecution.invoke(loaded, "dataPacks");
+		assertEquals(List.of("vanilla", "forbric/carrier/1-forge-runtime-interop", "forbric/carrier/2-neoforge-runtime",
+				"forbric/data/mcwbridges"), InjectorExecution.invoke(packs, "getEnabled"), "renamed where it stood");
+		assertEquals(List.of("forbric/carrier/2-neoforge-runtime"), InjectorExecution.invoke(packs, "getDisabled"));
+		assertSame(features, InjectorExecution.invoke(loaded, "enabledFeatures"), "the feature flags are carried over");
+
+		Object current = saved.apply(List.of("vanilla", "forbric/carrier/2-neoforge-runtime"), List.of());
+		assertSame(current, InjectorExecution.invokeStatic(server, METHOD, null, current, false, false),
+				"a selection with nothing to rename reaches the body as saved");
 	}
 
 	/** The anchor is the genuine base's own static method with this descriptor. */
