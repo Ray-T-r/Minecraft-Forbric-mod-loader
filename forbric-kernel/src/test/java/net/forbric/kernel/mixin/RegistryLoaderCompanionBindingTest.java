@@ -57,7 +57,17 @@ class RegistryLoaderCompanionBindingTest {
 	private static final String CONTEXT = "createContext(Ljava/util/List;Ljava/util/List;)Lnet/minecraft/resources/RegistryOps$RegistryInfoLookup;";
 	private static final String OP = "com/llamalad7/mixinextras/injector/wrapoperation/Operation";
 	private static final String CIR = "Lorg/spongepowered/asm/mixin/injection/callback/CallbackInfoReturnable;";
-	private static final BiFunction<Ecosystem, String, ClassNode> STAGED = NativeCallTestEvidence.staged();
+	/**
+	 * The native references, read on first use rather than when the class loads: {@link NativeCallTestEvidence#staged()}
+	 * aborts without the staged base, and an abort in a static initializer fails every case instead of letting
+	 * {@link #stagedBase()} skip them (the unstaged CI profile).
+	 */
+	private static BiFunction<Ecosystem, String, ClassNode> staged;
+
+	private static BiFunction<Ecosystem, String, ClassNode> staged() {
+		if (staged == null) staged = NativeCallTestEvidence.staged();
+		return staged;
+	}
 
 	/** Every case reads NeoForge's staged loader, and vanilla's as a Fabric mod is compiled against it (the vanilla-reference sidecar). */
 	@BeforeEach void stagedBase() {
@@ -160,7 +170,7 @@ class RegistryLoaderCompanionBindingTest {
 	/** Vanilla's loader as a Fabric mod is compiled against; {@code deadFirst}: the private loader declared before its entries. */
 	private static BiFunction<Ecosystem, String, ClassNode> natives(boolean deadFirst) {
 		return (family, owner) -> {
-			ClassNode node = STAGED.apply(family, owner);
+			ClassNode node = staged().apply(family, owner);
 			if (node == null || !owner.equals(LOADER) || !deadFirst) return node;
 			return first(PointRespelling.copy(node), DEAD);
 		};
