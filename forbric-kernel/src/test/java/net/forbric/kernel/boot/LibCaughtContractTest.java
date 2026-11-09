@@ -99,6 +99,34 @@ class LibCaughtContractTest {
 		assertEquals(1, count(r.out(), "FORBRIC_CAUGHT_STRICT=1"), "the inner run does not judge a file it does not own: " + r.out());
 	}
 
+	/**
+	 * NeoForge's entity-attribute events not finishing turns a gate red even without strict, and nothing else does. The
+	 * two lines are KernelLifecycle.postAttributeEvents' own, as Caught.java writes them (message in the fourth column);
+	 * the third is another hook through the same invokeGameDataOn, which must stay an ordinary carried-on failure.
+	 */
+	@Test void anEntityAttributeEventThatDidNotFinishIsFatalAndNoOtherHookIs() throws Exception {
+		String threw = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2013",
+				"[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW — it exists and did not finish");
+		String settle = failure("net.forbric.kernel.boot.KernelLifecycle.postAttributeEvents:1965",
+				"[Forbric/Attributes] DefaultAttributes could not initialise before the entity-attribute events — they read it");
+		String otherHook = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2013",
+				"[Forbric/Lifecycle] net.minecraft.world.entity.SpawnPlacements.fireSpawnPlacementEvent() THREW — it exists and did not finish");
+		for (String line : List.of(threw, settle)) {
+			Result r = run(gate("attributes", line + "\n"), Map.of());
+			assertEquals(1, r.exit(), r.out());
+			assertTrue(r.out().contains("[kernel] FAIL 1 entity-attribute event(s) did not finish"), r.out());
+		}
+		Result r = run(gate("otherhook", otherHook + "\n"), Map.of());
+		assertEquals(0, r.exit(), r.out());
+		assertTrue(r.out().contains("[kernel] CAUGHT 1 failure site(s)"), r.out());
+		assertFalse(r.out().contains("entity-attribute"), r.out());
+	}
+
+	private static String failure(String where, String message) {
+		return "printf 'FAILURE\\tWARN\\t%s\\t%s\\tjava.lang.RuntimeException\\n' '" + where + "' '" + message
+				+ "' >> \"$FORBRIC_CAUGHT_FILE\"";
+	}
+
 	/** A gate-* script (lib.sh owns a caught file only for those) that sources the real lib.sh, then runs {@code body}. */
 	private Path gate(String role, String body) throws IOException {
 		Path script = temporary.resolve(tag + "-" + role + ".sh");

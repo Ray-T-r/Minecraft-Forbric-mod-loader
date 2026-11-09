@@ -86,11 +86,20 @@ caught_report() {
       for (i = 1; i <= k && i <= 30; i++) { w = order[i]; printf "[kernel]   %sx %s: %s\n", (w in n ? n[w] : "?"), w, what[w] }
       if (k > 30) printf "[kernel]   ... and %d more\n", k - 30
     }' "$file"
-  # Never carried on from, strict or not: an entity-attribute event that did not finish leaves every living entity of an
-  # ecosystem without its attributes, and a base that reads forge:swim_speed for every swimming entity then crashes on
-  # the first one in water. A gate in whose JVMs that happened is red whatever its own checks say.
+  # Never carried on from, strict or not: NeoForge's entity-attribute events not finishing. CommonHooks.modifyAttributes
+  # posts EntityAttributeCreationEvent and then EntityAttributeModificationEvent, which is how NeoForge's own attributes
+  # (neoforge:swim_speed, nametag_distance) reach every living entity; one that did not finish leaves them without, and
+  # the first living entity in water then crashes. A gate in whose JVMs that happened is red whatever its own checks
+  # say. Two kernel lines say it happened (KernelLifecycle.postAttributeEvents): DefaultAttributes could not initialise
+  # before the events ("[Forbric/Attributes] ... could not initialise", the walk then fails too), or the hook itself
+  # threw ("[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW"). Until Stage 4 the
+  # pattern matched only the deleted KernelForgeAttributes' lines, so NeoForge's THREW line could not turn a gate red.
+  # Known gap: Caught.java writes a site's FIRST failure to the file, and modifyAttributes shares its site with the
+  # other hooks KernelLifecycle.invokeGameDataOn calls. GameData's unfreezeData and vanillaSnapshot run through it
+  # before modifyAttributes; if one of them threw first, its line is the one recorded and a later modifyAttributes
+  # failure is not seen here (closing it needs a site of its own in the kernel).
   local fatal
-  fatal=$(awk -F'\t' '$1=="FAILURE" && $4 ~ /Forbric\/Attributes/ && $4 ~ /did not finish|could not initialise/ {print $3}' \
+  fatal=$(awk -F'\t' '$1=="FAILURE" && (($4 ~ /\[Forbric\/Attributes\]/ && $4 ~ /could not initialise/) || $4 ~ /CommonHooks\.modifyAttributes\(\) THREW/) {print $3}' \
     "$file" 2>/dev/null | sort -u | wc -l | tr -d ' ')
   if [ "${fatal:-0}" -gt 0 ]; then
     printf '[kernel] FAIL %s entity-attribute event(s) did not finish — living entities are left without attributes\n' "$fatal"
