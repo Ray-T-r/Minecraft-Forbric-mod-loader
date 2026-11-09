@@ -28,7 +28,6 @@ import net.forbric.kernel.transform.RegistryElementCallbackInjector;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.forbric.kernel.util.ForbricSwitches;
-import net.minecraft.core.IdMapper;
 import net.minecraft.core.Registry;
 import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.world.item.BlockItem;
@@ -38,12 +37,11 @@ import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
 import net.neoforged.neoforge.common.CreativeModeTabRegistry;
-import net.neoforged.neoforge.registries.GameData;
 
 /**
  * The game side of everything the kernel repairs in the vanilla registries once its registration window closes.
  *
- * <p>Five jobs that share nothing but their timing — {@code KernelLifecycle.closeRegistrationWindow} decides WHEN
+ * <p>Jobs that share nothing but their timing — {@code KernelLifecycle.closeRegistrationWindow} decides WHEN
  * each runs and that ordering is hand-written, hard-won and stays boot-side. What is here is only what each one
  * DOES, which was ~20 {@code Class.forName} strings and as many {@code getMethod} names.
  *
@@ -53,84 +51,6 @@ import net.neoforged.neoforge.registries.GameData;
  */
 public final class KernelRegistryContent {
 	private KernelRegistryContent() {
-	}
-
-	/** The switch that puts back the old rule: a non-empty map is left exactly as the first pass built it. */
-	static final String STATE_ID_SWITCH = "forbric.blockStateIdRefill";
-
-	/**
-	 * Refills NeoForge's blockstate→id map, which the registration window's clear callback empties.
-	 *
-	 * <p>This is also {@code Block.BLOCK_STATE_REGISTRY} — NeoForge's {@code Block.<clinit>} reads
-	 * {@code GameData.getBlockStateIDMap()} into it — so it is what {@code Block.getId} answers from, what
-	 * {@code block_update} encodes with, and what any mod that walks every state in the game iterates.
-	 *
-	 * <p>It used to return early whenever the map was non-empty, to avoid appending a second id for every state.
-	 * On the client that skipped the wave that matters. Blocks arrive TWICE there: once in the registration
-	 * window, and again in the {@code Minecraft.<init>} window, where the Forge-family mods are constructed. On a
-	 * 97-jar pack the first pass mapped 32,367 states and the second was skipped — so the 28,713 states every
-	 * Forge-family mod had just registered carried no id at all, and {@code Block.getId} answered 0 (AIR) for all
-	 * of them.
-	 *
-	 * <p>So the pass now compares the map against the registry and, when blocks have appeared since, rebuilds it
-	 * WHOLE rather than topping it up. Appending would give the same state a different id on a client than on a
-	 * dedicated server, where one wave assigns them all in registry order; clearing first keeps both sides
-	 * deriving the same ids from the same order. Nothing has read an id yet at either call site.
-	 *
-	 * @return how many states the map holds, or -1 when it already agreed with the registry
-	 */
-	public static int rebuildBlockStateIds() {
-		try {
-			IdMapper<BlockState> idMap = GameData.getBlockStateIDMap();
-			int possible = 0;
-			for (Block block : BuiltInRegistries.BLOCK) {
-				possible += block.getStateDefinition().getPossibleStates().size();
-			}
-			int had = idMap.size();
-			if (had == possible) return -1;
-			if (had > 0 && "off".equalsIgnoreCase(System.getProperty(STATE_ID_SWITCH, "on"))) return -1;
-			if (had > 0 && !clearStateIds(idMap)) return -1;
-
-			int states = 0;
-			for (Block block : BuiltInRegistries.BLOCK) {
-				for (BlockState state : block.getStateDefinition().getPossibleStates()) {
-					idMap.add(state);
-					states++;
-				}
-			}
-			if (had == 0) {
-				ForbricLog.info("[Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (%d states) — the "
-						+ "registration window's clear callback had emptied it", states);
-			} else {
-				ForbricLog.info("[Forbric/Lifecycle] rebuilt NeoForge blockstate→id map (%d states, was %d) — "
-						+ "%d more state(s) were registered after the first pass, and Block.getId answered 0 (AIR) "
-						+ "for every one of them", states, had, states - had);
-			}
-			return states;
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not rebuild NeoForge blockstate→id map "
-					+ "(block_update packets will fail to encode)");
-			return -1;
-		}
-	}
-
-	/**
-	 * Empties the map through NeoForge's own {@code clear()}, the one its registration callback calls.
-	 *
-	 * <p>Package-private on {@code ClearableObjectIntIdentityMap}, so it is reached reflectively. If it is not
-	 * there, the caller leaves the map alone rather than appending duplicate ids.
-	 */
-	private static boolean clearStateIds(IdMapper<BlockState> idMap) {
-		try {
-			java.lang.reflect.Method clear = idMap.getClass().getDeclaredMethod("clear");
-			clear.setAccessible(true);
-			clear.invoke(idMap);
-			return true;
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] NeoForge's blockstate→id map has no clear() to call — leaving "
-					+ "the ids it already holds rather than appending a second id for every state");
-			return false;
-		}
 	}
 
 	/** The switch that leaves every late-registered block state's cache exactly as the registration left it. */

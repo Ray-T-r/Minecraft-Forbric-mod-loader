@@ -127,7 +127,6 @@ public final class KernelRuntimeClasses {
 		// hand-ordered in KernelLifecycle.closeRegistrationWindow and stays there; only what each DOES is here.
 		// See KernelRegistryContent.
 		CLASSES.put("net.forbric.kernel.runtime.KernelRegistryContent", new Entry(Origin.COMPILED, List.of(
-				new Call("rebuildBlockStateIds", int.class),
 				new Call("initialiseBlockStateCaches", int.class),
 				new Call("initialiseBlockInfoCaches", boolean.class),
 				new Call("sortCreativeTabs", void.class),

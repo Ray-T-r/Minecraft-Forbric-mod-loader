@@ -42,7 +42,7 @@ class KernelLifecycleRegistrationWindowTest {
 	/**
 	 * Everything that closes the window must be reachable from a finally. Inline at the end of the try, anything
 	 * that threw after {@code unfreeze} left every registry writable for the rest of the run and skipped the
-	 * block-item link, the blockstate-id rebuild, the creative-tab sort and the {@code registriesLoaded} latch —
+	 * block-item link, the block-state bookkeeping, the creative-tab sort and the {@code registriesLoaded} latch —
 	 * which surface as an empty creative tab, a player kicked at spawn on the first block update, and mods
 	 * refusing to register render layers.
 	 */
@@ -59,7 +59,7 @@ class KernelLifecycleRegistrationWindowTest {
 
 		MethodNode close = method(node, "closeRegistrationWindow");
 		List<String> steps = callsIn(close);
-		for (String required : List.of("linkBlockItems", "freeze", "rebuildNeoForgeBlockStateIds",
+		for (String required : List.of("linkBlockItems", "freeze", "completeBlockStateBookkeeping",
 				"sortNeoCreativeTabs")) {
 			assertTrue(steps.contains(required),
 					"closing the window must still " + required + " — each of these is a failure the kernel has "

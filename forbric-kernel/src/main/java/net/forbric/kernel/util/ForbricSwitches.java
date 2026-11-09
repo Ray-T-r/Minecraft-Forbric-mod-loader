@@ -237,7 +237,9 @@ public final class ForbricSwitches {
 					+ "dedicated or integrated, so the kernel has no about-to-start load of its own to switch"),
 			Map.entry("forbric.clientResourcePreload", "NeoForge runs its client setup before the first resource reload and "
 					+ "Forbric loads no MinecraftForge mod, which ran its mod loading inside that reload, so the client "
-					+ "resource manager is left as NeoForge leaves it"));
+					+ "resource manager is left as NeoForge leaves it"),
+			Map.entry("forbric.blockStateIdRefill", "NeoForge's own block bake callback, which every registry freeze runs, maps "
+					+ "the state of every registered block, so the kernel no longer rebuilds the blockstate→id map after it"));
 
 	private static final ForbricSwitches SYSTEM =
 			new ForbricSwitches(RENAMED, RETIRED, System::getProperty, ForbricLog::warn);

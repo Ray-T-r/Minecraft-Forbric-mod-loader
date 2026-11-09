@@ -261,24 +261,22 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * Rebuilds NeoForge's blockstate→id map after the registration window closes.
+	 * The block bookkeeping the kernel redoes after each registry freeze, because it drives registration itself: every
+	 * block state's cache, then the mods' whole-registry passes for late registrations.
 	 *
-	 * <p>Opening the window runs the vanilla registries' clear callback, and NeoForge's
-	 * {@code BlockCallbacks.onClear} empties both that map and the {@code addedBlocks} set its {@code onBake} rebuilds
-	 * from — so the bake only re-adds blocks REGISTERED INSIDE the window, i.e. none of vanilla's. The map is then
-	 * empty and the first {@code clientbound/minecraft:block_update} cannot encode ("Can't find id for
-	 * Block{minecraft:lava}"), kicking the player right after spawn. Re-add every block's states in registry order —
-	 * the same order vanilla assigns ids in, so the numbering a remote client expects is reproduced. No-op if the map
-	 * is already populated.
+	 * <p>The blockstate→id map is not among it any more. The kernel used to rebuild it here (the merged base's bake re-added
+	 * only the blocks registered inside the window, and MinecraftForge mods registered a second wave in
+	 * {@code Minecraft.<init>}); NeoForge's own {@code BlockCallbacks.onBake}, which the {@code freeze} right before each
+	 * call of this runs, re-adds the state of every block in the registry, so on NeoForge's base the map always agreed
+	 * and the rebuild never ran (Stage 4 C5, lane S: no boot printed it; switch {@code forbric.blockStateIdRefill} retired).
 	 */
-	private static void rebuildNeoForgeBlockStateIds(ClassLoader cl) {
-		contentCall(cl, "rebuildBlockStateIds", "rebuild the NeoForge blockstate→id map");
-		// Same moment, same reason: vanilla fills every block state's cache in Bootstrap, before any mod has
-		// registered a block, and the kernel drives registration itself.
+	private static void completeBlockStateBookkeeping(ClassLoader cl) {
+		// Vanilla fills every block state's cache in Bootstrap, before any mod has registered a block, and the kernel
+		// drives registration itself.
 		contentCall(cl, "initialiseBlockStateCaches", "initialise the block state caches");
-		// Last, and AFTER the id map is whole, because the completion walks those registries: a mod whose own
-		// "every element exists now" pass ran before the kernel's last wave of registrations never saw those elements,
-		// so each element registered since gets that pass's per-element callback now, once.
+		// Last, because the completion walks those registries: a mod whose own "every element exists now" pass ran before
+		// the kernel's last wave of registrations never saw those elements, so each element registered since gets that
+		// pass's per-element callback now, once.
 		contentCall(cl, "initialiseBlockInfoCaches", "complete the mods' whole-registry passes for late registrations");
 	}
 
@@ -657,7 +655,7 @@ public final class KernelLifecycle {
 			// It used to live inline at the end of this try, so anything that threw in between — a Class.forName for
 			// a carrier type that was renamed, NeoForgeRegistries failing to initialise, an Error escaping the
 			// baseline or the Fabric entrypoints — left every registry writable for the rest of the run and skipped
-			// linkBlockItems, the blockstate-id rebuild, the creative-tab sort and the registriesLoaded latch. The
+			// linkBlockItems, the block-state bookkeeping, the creative-tab sort and the registriesLoaded latch. The
 			// symptoms are the ones this file already documents one by one: Block.asItem() returns AIR so a mod's
 			// creative tab is empty and its blocks cannot be picked, the first block_update fails to encode with
 			// "Can't find id for Block{minecraft:lava}" and kicks the player at spawn, and mods gating on
@@ -784,8 +782,8 @@ public final class KernelLifecycle {
 	 * <p>Each of these four is a failure the kernel has already paid for once, so they are named rather than
 	 * folded: {@code linkBlockItems} links any block item still missing from {@code Item.BY_BLOCK} (normally none: the
 	 * item registry's add-callback links each one as it is added; without either, {@code Block.asItem()} is AIR and a
-	 * mod's creative tab collapses to empty), {@code freeze} also latches {@code registriesLoaded},
-	 * {@code rebuildNeoForgeBlockStateIds} re-adds the blockstate ids the open window's clear callback dropped, and
+	 * mod's creative tab collapses to empty), {@code freeze} also latches {@code registriesLoaded} (and its bake
+	 * re-adds every block's blockstate ids), {@code completeBlockStateBookkeeping} fills the state caches, and
 	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
 	 *
 	 * <p>Best-effort as a whole AND per step, because this runs in a finally: it must not replace the exception
@@ -805,10 +803,10 @@ public final class KernelLifecycle {
 					+ "rest of this run");
 		}
 		try {
-			rebuildNeoForgeBlockStateIds(cl);
+			completeBlockStateBookkeeping(cl);
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not rebuild the blockstate->id map — the first block update "
-					+ "will fail to encode");
+			Caught.warn(t, "[Forbric/Lifecycle] could not complete the block state bookkeeping — late-registered block "
+					+ "states keep the caches their registration left");
 		}
 		try {
 			sortNeoCreativeTabs(cl);
@@ -2202,7 +2200,7 @@ public final class KernelLifecycle {
 			linkBlockItems(cl);
 			rootRegistry(cl, false);
 			freeze(cl);
-			rebuildNeoForgeBlockStateIds(cl);
+			completeBlockStateBookkeeping(cl);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not re-close after the Fabric client entrypoints");
 		}
