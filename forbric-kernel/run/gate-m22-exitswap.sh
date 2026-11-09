@@ -17,7 +17,8 @@
 #
 # The exit hook was not the only class read late. Every hook spliced into the game is read from the jar at its first
 # use: the first nightly (2026-10-05) crashed the server here when the first lava flow came after the truncation
-# (NoClassDefFoundError: net/forbric/kernel/interop/ForgeRuntimeInterop, through MinecraftForge's fluid rules), and
+# (NoClassDefFoundError: net/forbric/kernel/interop/ForgeRuntimeInterop, through the merged base's MinecraftForge fluid
+# rules, which went with MinecraftForge in Stage 4), and
 # every run, green ones included, logged NoClassDefFoundError: net/forbric/kernel/boot/KernelRegistryRevert when the
 # client left the world — this gate only looked for the interop package, so that one never counted. The kernel now
 # defines its whole jar at boot (KernelJarPreload), and the absence check below covers every kernel class.
@@ -37,6 +38,11 @@ kernel_jar
 REAL="$(ls "$KERNEL"/build/libs/forbric-kernel-*.jar | head -1)"
 [ -f "$REAL" ] || { echo "[kernel] FAIL no boot jar to copy"; exit 1; }
 [ -d "$RUNDIR/saves/$WORLD" ] || { echo "[kernel] SKIP-FATAL: no world at $RUNDIR/saves/$WORLD" >&2; exit 3; }
+# The gate writes into its rundir, so it refuses the shared fixture itself and any link into it: run it on a clone
+# (`cp -c -R "$(cd run/client-merged-pack && pwd -P)" <dir>`), as gates-parallel.py does.
+# (After the missing-fixture check, so a machine without the fixture still gets that check's own words, as
+# gates-parallel.py expects when it leaves the rundir variable unset; nothing above writes into the rundir.)
+refuse_shared_rundir "$RUNDIR"
 
 step "launch the client from a COPY of the boot jar"
 cp "$REAL" "$COPY"

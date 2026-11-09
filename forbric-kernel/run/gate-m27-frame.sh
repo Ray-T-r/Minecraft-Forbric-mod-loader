@@ -19,6 +19,11 @@ mkdir -p "$BUILD"
 
 [ -f "$RUNDIR/saves/$WORLD/level.dat" ] || { echo "[kernel] FATAL: no saved world at $RUNDIR/saves/$WORLD" >&2; exit 3; }
 [ -f "$RUNDIR/options.txt" ] || { echo "[kernel] FATAL: no options.txt; onboarding blocks quick-play" >&2; exit 3; }
+# The gate writes into its rundir, so it refuses the shared fixture itself and any link into it: run it on a clone
+# (`cp -c -R "$(cd run/client-merged-pack && pwd -P)" <dir>`), as gates-parallel.py does.
+# (After the missing-fixture check, so a machine without the fixture still gets that check's own words, as
+# gates-parallel.py expects when it leaves the rundir variable unset; nothing above writes into the rundir.)
+refuse_shared_rundir "$RUNDIR"
 MODS=$(find "$RUNDIR/mods" -maxdepth 1 -name '*.jar' -type f 2>/dev/null | wc -l | tr -d ' ')
 assert_eq "the full 97-jar pack is staged" 97 "$MODS"
 [ "$FAIL" -eq 0 ] || exit "$FAIL"

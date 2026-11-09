@@ -3,9 +3,10 @@
 #
 # WHY THIS EXISTS. gate-m12 proved a Forbric client can join a Forbric server; it says nothing about what that
 # client looks like to a server that is WATCHING it. Anti-cheats ban on behaviour — the movement and combat
-# packets a client emits — and the merged base those packets come out of is three patch sets byte-merged into one
-# jar (1045 resolved conflicts, plus the kernel's post-merge fixups). Any place that merge nudged movement physics
-# off vanilla would read to a prediction-based anti-cheat as "this player moves wrong", and nothing measured that.
+# packets a client emits — and the game those packets come out of is NeoForge's patched game plus the kernel's own
+# repairs and every Fabric mod's adaptation onto it (written when the base was three patch sets byte-merged into one
+# jar). Any place that nudged movement physics off vanilla would read to a prediction-based anti-cheat as "this player
+# moves wrong", and nothing measured that.
 #
 # This gate does. It boots Paper 26.2 with GrimAC (the strictest open-source prediction anti-cheat, sensitised so
 # that EVERY violation prints — see the staging step), connects a Forbric client, and drives it through the
@@ -201,8 +202,8 @@ if awk -v a="${Z0:-0}" -v b="${Z1:-0}" 'BEGIN{exit !(b - a > 5)}'; then echo "[k
 check "the pool was dug"              "Successfully filled"                               "$SLOG"
 check "the land phases were on land"  "drill phase (sprint|sprint-jump|turn|strafe|backpedal|sneak-walk|mine|place) at .*inWater=false" "$CGAME" 8
 # Holding the button down is what puts a block into the level's break-progress map, and that map is what the render
-# frame turns into a breaking overlay — the one path on the merged base where the game asked MinecraftForge for a
-# model-data manager the merge had left it without. Zero here means the frame that used to crash was never drawn.
+# frame turns into a breaking overlay — on the merged base the one path where the game asked MinecraftForge for a
+# model-data manager the merge had left it without. Zero here means that frame was never drawn.
 check "the drill actually broke ground" "ClientSmoke\] mining: [1-9][0-9]* block\(s\) showing break progress" "$CGAME"
 check "the swim phase was in water"   "drill phase swim at .*inWater=true"                "$CGAME"
 # The arena's premise, read back from the world the server saved: it generated without structures.

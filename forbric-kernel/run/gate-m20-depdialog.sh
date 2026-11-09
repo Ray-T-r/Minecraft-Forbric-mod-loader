@@ -57,8 +57,11 @@ OFFLOG="$BUILD/gate-m20-off.log"
 CONTLOG="$BUILD/gate-m20-continue.log"
 REQLOG="$BUILD/gate-m20-ask-required.log"
 REQOFFLOG="$BUILD/gate-m20-off-required.log"
-SRV="$KERNEL/run/server-depdialog"
-CLI="$KERNEL/run/client-depdialog"
+# Rundirs the gate wipes: M20_SERVER_RUNDIR / M20_CLIENT_RUNDIR (default run/server-depdialog, run/client-depdialog).
+SRV="${M20_SERVER_RUNDIR:-$KERNEL/run/server-depdialog}"
+CLI="${M20_CLIENT_RUNDIR:-$KERNEL/run/client-depdialog}"
+refuse_shared_rundir "$SRV"
+refuse_shared_rundir "$CLI"
 WORK="$BUILD/depdialog-canary"
 mkdir -p "$BUILD"
 

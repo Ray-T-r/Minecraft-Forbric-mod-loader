@@ -93,6 +93,7 @@ set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 RUNDIR="${M56_RUNDIR:-$KERNEL/run/client-config-screens-m56}"
+refuse_shared_rundir "$RUNDIR"
 WORLD=ForbricTest
 FIXTURE="${M56_WORLD:-$KERNEL/run/client-merged-pack/saves/$WORLD}"
 MODMENU="${M56_MODMENU:-$(ls "$KERNEL"/run/modmenu/modmenu-*.jar 2>/dev/null | head -1)}"

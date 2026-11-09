@@ -34,6 +34,7 @@ set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 RUNDIR="${M55_RUNDIR:-$KERNEL/run/client-creative-search-m55}"
+refuse_shared_rundir "$RUNDIR"
 WORLD=ForbricTest
 FIXTURE="${M55_WORLD:-$KERNEL/run/client-merged-pack/saves/$WORLD}"
 RESULTS="$BUILD/verification/m55-creative-search"
