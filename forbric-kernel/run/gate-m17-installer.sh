@@ -27,9 +27,11 @@
 # that install's download caches (.forbric-build/dl and tools) and NeoForm's patched game (.forbric-build/out/
 # patched-mc-neoforge-*.jar and its stamp) into the fresh directory first: the first install then builds the NeoForge
 # runtime and the vanilla reference from local inputs and takes NeoForm's game from the cache, so it goes to the network
-# for nothing, so far as the installer's own fetches go (not yet measured with the network denied: the C5 run this note
-# once cited was lost with the old scratchpad, D67). Unset, the first install builds everything and downloads its
-# inputs, as a player's does.
+# for nothing, so far as the installer's own fetches go. Measured with the network denied (C5, 2026-11-09): a directory
+# seeded this way from this gate's install, installed behind a proxy on a port nothing listens on, exits 0 having built
+# the NeoForge runtime and the vanilla reference and passed both link checks, while an empty directory behind the same
+# proxy fails at once ("could not reach maven.neoforged.net"). Unset, the first install builds everything and downloads
+# its inputs, as a player's does.
 # GATE-PARALLEL: rundirs=installed mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -475,7 +477,9 @@ step "the link checker's tools jar is not served from the previous install (must
 # (ArtifactBuilder.build). LinkCheckTool.unpackTools overwrites .forbric-build/tools/forbric-merge-tools.jar each time; it
 # used to keep a copy that was already there, and a rebuild then ran the PREVIOUS installer's tool -- a stale checker
 # passes jars the current one would refuse. So: spoil that copy, reinstall over the full cache, and the install must still
-# pass the link check (it cannot, from a file that is not a jar) and leave the bundled jar's bytes there.
+# pass the link check (it cannot, from a file that is not a jar) and leave the bundled jar's bytes there. RED, measured
+# (C5, 2026-11-09): an installer built with unpackTools keeping an existing file, run on a copy of this install with the
+# same spoiled file, exits 1 ("Could not find or load main class net.forbric.tools.MergedLinkChecker").
 # (On the merged base this phase forced a merge to make the install ask for the tool; since C1 the link check asks.)
 TOOLS="$DEST/.forbric-build/tools/forbric-merge-tools.jar"
 WANT="$BUILD/gate-m17-tools-bundled.jar"

@@ -100,23 +100,28 @@ rm -rf "$RUNDIR/.mixin.out"
 : > "$LOG"
 
 step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar 2>/dev/null | wc -l | tr -d ' ') mods, no compatibility flags)"
-# M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Also verified (the
-# counts below were measured on the merged base unless an entry says otherwise; C5 re-measures the whole list on
-# NeoForge's base, an open G-C item, and an entry marked TO MEASURE states only what is expected):
-#   -Dforbric.keyModifierSuffix=off -> 2 red on the merged base ("the key-modifier suffix is dropped before the name is
-#                                             parsed", "options.txt loads with modded modifier bindings in it"); TO
-#                                             MEASURE on NeoForge's base.
-#   -Dforbric.carrierLanguages=off -> TO MEASURE; expected 1 red ("NeoForge's own screens have their text"). The second
-#                                      red of the merged base, "and MinecraftForge's do too", went with the
-#                                      MinecraftForge carrier's check in Stage 4.
-#   -Dforbric.modDataPacks=off     -> TO MEASURE; expected red in the content step (mods' own datapacks not served).
-#   -Dforbric.aliasPresenceParity=off -> TO MEASURE; expected 2 red ("registry alias parity restored", and "no alias warns
-#                                      that its target is missing": C3 counted 134 such warnings with the switch off).
-#   -Dforbric.neoRegistrationOrder=off -> TO MEASURE; expected red at "NeoForge registration order" (and the unbound
-#                                      data component it guards against).
-#   -Dforbric.lootModifierIndex=off -> TO MEASURE; expected 2 red: the legacy index fails to parse again ("no data file
-#                                      fails to parse" names neoforge:loot_modifiers/global_loot_modifiers.json) and
-#                                      "loot-modifier scan ran and hid the legacy index" is gone.
+# M9_EXTRA_JVM is how the gate's teeth are demonstrated: switch a fix off and this must go RED. Every recipe below was
+# re-measured on NeoForge's base in one batch (C5 wave 2, 2026-11-09; each on a fresh clone of the fixture; the same gate
+# without a switch was 163 PASS / 0 FAIL). "STRICT stop" means a required mixin was lost, so this STRICT client stopped
+# at ~60 s before any world: every in-world check went red with the named ones, which is the switch working.
+#   -Dforbric.keyModifierSuffix=off -> 1 red, the repair's own line ("the key-modifier suffix is dropped before the name
+#                                      is parsed"). "options.txt loads with modded modifier bindings in it" stays green:
+#                                      NeoForge's Options.processOptions splits ":<modifier>" off before InputConstants.getKey
+#                                      (javap) and KeyModifier.valueFromString falls back to NONE, so on this base the
+#                                      fixture's CONTROL_OR_COMMAND binding never reaches the repaired call (C5 reported
+#                                      this against D25; the merged base's 2 red included the options-load check).
+#   -Dforbric.carrierLanguages=off -> 1 red ("NeoForge's own screens have their text"). The merged base's second red,
+#                                      "and MinecraftForge's do too", went with the MinecraftForge carrier in Stage 4.
+#   -Dforbric.modDataPacks=off     -> 3 red: "the carrier sits below the mods" (no mod pack above it), "loot-modifier scan
+#                                      ran and hid the legacy index" and "and the conditions no source guard owns are still
+#                                      judged" (both read mods' own data).
+#   -Dforbric.aliasPresenceParity=off -> 2 red ("registry alias parity restored", and "no alias warns that its target is
+#                                      missing": 134 such warnings, as C3 counted).
+#   -Dforbric.neoRegistrationOrder=off -> 35 red: "NeoForge registration order", "no unbound data component" (16),
+#                                      "no RegisterEvent listener failed" (8), "no tag lost to a dangling id" (60) and the
+#                                      world: the client never joins (the registry load fails), so every in-world check.
+#   -Dforbric.lootModifierIndex=off -> 2 red: "no data file fails to parse" names neoforge:global_loot_modifiers again,
+#                                      and "loot-modifier scan ran and hid the legacy index" is gone.
 #   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
 #                                      registered carries an uninitialised cache all run. Vanilla computes it
 #                                      lazily, so this is a hot-path repair, not a crash repair — the Lithium
@@ -139,10 +144,18 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                      probe withholds its own NeoForge ItemTooltipEvent listener, so nothing adds the
 #                                      line the check counts. The control for the check, not for a repair: the game's
 #                                      getTooltipLines posts the event itself.
-#   -Dforbric.fabricMainInConstructor=off -> 2 red ("Fabric main entrypoints run where Fabric runs them",
-#                                                   "and not in the pre-Minecraft window"). Off, a Fabric mod that
-#                                                   caches Minecraft.getInstance() from onInitialize caches null:
-#                                                   ClickCrystals then killed the client inside Minecraft.<init>.
+#   -Dforbric.fabricMainInConstructor=off -> 43 red: "Fabric main entrypoints run where Fabric runs them", "and not in
+#                                      the pre-Minecraft window", the datapack-declaration pair below, and the world:
+#                                      a Fabric mod that caches Minecraft.getInstance() from onInitialize caches null,
+#                                      and the client exits at ~65 s (ClickCrystals killed it inside Minecraft.<init>).
+#   The recipes written beside their checks below, measured in the same batch:
+#     guestInjectorPruner=off 3 red; "mixinRetarget=off mixinStubRebind=off" 49 red (STRICT stop; the two rebound lines,
+#     the two half-applied absences, the isAir pair); mixinRetarget=off 44 red (STRICT stop; the isAir rebound pair and
+#     its half-applied absence, malilib's never-runs pair); snippetFunnel=off 42 red (STRICT stop; its three checks);
+#     widenedFieldTwins=off 42 red (STRICT stop; its three checks); tooltipOrderScrape=off 1; fieldDriftAudit=off 1;
+#     fabricTooltipBridge=off 2; mixinStubRebind=off 1 (malilib's language format hook); mixinRetarget.renameCensus.
+#     uncalled=off 41 red (STRICT stop; malilib's never-runs pair); decodeSourceScopes=off 2; fabricConditions=off 1;
+#     datapackDeclarationAfterFabric=off 2.
 # (-Dforbric.pruneDuplicateLambdas=off was a control here on the merged base, where it brought back StubException and the
 # failed world load; NeoForge's base carries no lambda name twice and the pruner was deleted in Stage 4.)
 FORBRIC_JVM="-Dmixin.debug.export=true -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
@@ -348,8 +361,8 @@ check_absent "no pack jar reads a re-typed vanilla field" "Forbric/FieldDrift\] 
 
 step "a NeoForge mod's own content and data actually arrived (must PASS)"
 # Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
-# -Dforbric.aliasPresenceParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED (expected reds in the
-# recipe list at the top, to measure on NeoForge's base).
+# -Dforbric.aliasPresenceParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED (measured on NeoForge's
+# base: 3, 2 and 35 red, listed in the recipe list at the top).
 check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* datapack"             "$LOG"
 # The carrier is where the c: convention-tag skeleton lives — tag files that exist in NO other jar, and that every
 # cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero. One
@@ -419,8 +432,8 @@ check_absent "no datapack element unparseable" "Failed to parse .* from pack"   
 # I7: the manager's directory scan runs over a view that hides the legacy index, so NOTHING fails to parse — a
 # genuinely broken loot modifier is distinguishable again. One index since Stage 4 (NeoForge's own namespace; the
 # forge: one came with the MinecraftForge carrier). RED with M9_EXTRA_JVM=-Dforbric.lootModifierIndex=off: the index's
-# ERROR line returns, so the unparseable set is that one file again, and the scan line below is gone (expected; to
-# measure on NeoForge's base, see the recipe list at the top).
+# ERROR line returns, so the unparseable set is that one file again, and the scan line below is gone (measured on
+# NeoForge's base: exactly those 2 red, see the recipe list at the top).
 UNPARSEABLE=$(grep -aoE "Couldn.t parse data file '[^']*'" "$LOG" | sed -E "s/.*'(.*)'/\1/" | sort -u | paste -sd, -)
 assert_eq "no data file fails to parse" "" "$UNPARSEABLE"
 check "loot-modifier scan ran and hid the legacy index" "loot-modifier directory scan: [1-9][0-9]* file\(s\) kept, 1 legacy index file\(s\) hidden \[neoforge:loot_modifiers/global_loot_modifiers.json\]" "$LOG"
