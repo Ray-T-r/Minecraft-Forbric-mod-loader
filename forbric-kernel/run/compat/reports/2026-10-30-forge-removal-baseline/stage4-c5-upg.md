@@ -131,6 +131,7 @@ Logs and evidence copies: `~/Forbric-backups/stage4-notes/c5/upg/w2/p2/` (`m58-*
 | `37cc189d` | W2 | `canary/world-upgrade/{common,fabric,neo}` + three scripts + README, `run/build-world-upgrade-canary.sh` (from the D67 recovery copies, changed for 26.2: PermissionSet sources, registry game-rule names, result callbacks) |
 | `6ce60ac9` | W5 | world-snapshot.py diff rules for the resave noise the A/A measured (chunk tickets, recipeBook string lists, warden tick counter, XpSeed 0 -> drawn once, session stats may only grow); schema/report/API unchanged |
 | `9c70886b` | W4 | `run/gate-m58-world-upgrade.sh` (phases main sp aa transfer energy forge installed controls) + GateArgv test |
+| `63cbaf0e` | W5 | phase `bb` (new -> new), in the default set: attributes a red check to this tree instead of the upgrade |
 | `bc020d49` | D53 | the held nightly change: SLOW_GATES = soak + m58, weekday skip, Sunday --release |
 
 ### gate-m58, all phases (run 4, `m58-full-4.out`): **141 PASS / 3 FAIL**
@@ -190,17 +191,22 @@ CanUpdate on the three entities and the player, `forbric/carrier/1-forge-runtime
    waystones and sophisticatedbackpacks (+ libs) from its set for it, with the reason in the gate.
 2. **New-kernel client drops the connection on the first chunk packet** with gate-m58's set (fabric-api 0.155.2, the two
    canaries, mcw-bridges, mcw-furniture, ToolBelt, corpse): `No value with id 43766` (block-state id) in `LinearPalette.read`,
-   on new -> new too (s4, c1; also in run 3). The old client joined the old server with the same set in every run. Not
-   diagnosed further here; a gate-m12 reproduction with this set, and with it minus mcw-furniture, is queued
-   (`m12-repro.sh`; result below or in handoff.md).
+   on new -> new too (s4, c1; also in run 3). The old client joined the old server with the same set in every run.
+   Attribution (`63cbaf0e`, gate-m58 phase `bb`, `m58-bb-5.out`, 30 PASS / 2 FAIL): the NEW kernel writing the same save
+   itself and reopening it hits the same crash on both joins, while S2n -> S3n is 0 differences: this tree's own
+   multiplayer defect, not an upgrade loss. gate-m12 with the same mod set on its own fresh world (`m12-repro.sh`):
+   the client joins and leaves cleanly (31/1, the one FAIL a load warning, "server kept up"; without mcw-furniture
+   32/0), so the crash needs the save's placed modded blocks (mcwbridges piers, an mcwfurnitures drawer) in a sent
+   chunk. Not diagnosed further here.
 
 ## Open (owner named)
 
 - Done in wave 2 part 2: canaries (W2), gate-m58 (W4) with every phase and control C1-C5, W5 calibration incl. the A/A, the
   installed-name phase green at the tip and red at `a0eeba07`, the nightly SLOW_GATES change, m31 re-run.
-- **gate-m58 is 141/3 at the tip, not green**: its three FAILs are the new client's socket join (defect 2 above). Owner: the
-  kernel (orchestrator to assign; MP registry/chunk sync on the genuine base). m58 goes green when that join works; nothing
-  in the gate needs to change for it. Defect 1 (particle remap `clear()`): same owner; when fixed, waystones and
+- **gate-m58 is not green at the tip**: run 4 (all phases then) 141/3, and phase `bb` 30/2; every FAIL is the new client's
+  socket join (defect 2 above), which `bb` shows new -> new. Owner: the kernel (orchestrator to assign; client chunk/block
+  state sync on the genuine base). m58 goes green when that join works; nothing in the gate needs to change for it. A full
+  default run including `bb` in one go was not made (the two runs together cover every phase). Defect 1 (particle remap `clear()`): same owner; when fixed, waystones and
   sophisticatedbackpacks can return to the gate's set.
 - The old client was exercised (MP and SP) on the tag's kernel; an old -> old A/A in singleplayer is not run (the server
   A/A is).
