@@ -1175,7 +1175,8 @@ test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aSelectorBinding
 test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	aSelectorNamingAnotherOwnersMethodIsLeftAlone()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	selectorsWrittenAnotherWayFollowTheSameReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.mixin.MixinReturnDecorationSpellingTest	theReleasedCallbackUnderOtherNamesFollowsTheReturn()	[fixture:staged] native-indexed merged base and the actual Fabric API: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
-test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	apolisLastReturnOfDestroyBlockIsTheMergedLastReturn()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	anExitAddedAheadOfVanillasMovesApolisOrdinalToTheLastReturn()	[fixture:staged] actual game required
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	apolisLastReturnOfDestroyBlockIsNeoForgesLastReturn()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	onTheNativeBodyItselfNothingMoves()	[fixture:mc-libraries] actual game required
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	theSwitchLeavesTheOrdinalAsCompiled()	[fixture:staged] actual game required
 test	net.forbric.kernel.mixin.MixinSharedPredicateSeamSpellingTest	aGroundSelectorBindingAnotherMethodLeavesThePair()	[fixture:staged] actual native pair: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar

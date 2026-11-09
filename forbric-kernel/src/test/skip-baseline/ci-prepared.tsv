@@ -601,7 +601,8 @@ test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	fabricRenderi
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	highlightersSlotMarkFollowsTheDecorationsIntoRenderSlotContents()	[fixture:third-party] $ROOT/forbric-kernel/build/compat-inputs/sweep90/mods/Highlighter-26.2-forge-1.2.2.jar absent (symlink build/compat-inputs from the main checkout)
 test	net.forbric.kernel.mixin.MixinRetargetCarrierHelperStagedTest	puzzleslibsFogColourStaysAtTheSourceSetInsideClientHooks()	[fixture:third-party] $ROOT/forbric-kernel/build/compat-inputs/sweep90/mods/PuzzlesLib-v26.2.4-mc26.2.x-Fabric.jar absent (symlink build/compat-inputs from the main checkout)
 test	net.forbric.kernel.mixin.MixinRetargetRenamedBodyCorpusTest	r3MovesExactlyThePinnedInjectorsOverTheAuditCorpus()	[fixture:third-party] build/compat-inputs required (symlink it from the main checkout)
-test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	apolisLastReturnOfDestroyBlockIsTheMergedLastReturn()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	anExitAddedAheadOfVanillasMovesApolisOrdinalToTheLastReturn()	[fixture:third-party] popular-pack Origins fixture absent
+test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	apolisLastReturnOfDestroyBlockIsNeoForgesLastReturn()	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	onTheNativeBodyItselfNothingMoves()	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.MixinReturnOrdinalsTest	theSwitchLeavesTheOrdinalAsCompiled()	[fixture:third-party] popular-pack Origins fixture absent
 test	net.forbric.kernel.mixin.MixinShearsRelayTest	aWrapStillBoundToOtherIsCallsKeepsThemAndAnswersTheCarrierToo()	[fixture:third-party] sweep pack absent
