@@ -589,7 +589,11 @@ def run_set(engine, family, mods, ticks=200, timeout=900, xmx="3G", level_type="
 # of the prepared images (`cp -c -R`), never a byte copy of their libraries and never `prepare` (which downloads).
 
 SWAP_PHASES = {"native": ("forge-create", "forge-reopen", "neo-open", "neo-reopen"), "forbric": ("neo-open", "neo-reopen")}
-SAVED = re.compile(r"Saved the game|All dimensions are saved")
+# The answer to `save-all flush`, and only that: a server prints "All dimensions are saved" on its way down too, so with
+# that line a save-all nobody answered still came out saved once `stop` ran (review A-4). `stop` never prints "Saved the
+# game" (measured: one per session log in every swap run, old, native and Forbric arms), so any one after the save-all
+# is its answer, even one that comes after the stop was sent.
+SAVED = re.compile(r"Saved the game")
 
 
 def clone_tree(source, destination):

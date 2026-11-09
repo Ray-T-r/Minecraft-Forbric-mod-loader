@@ -129,7 +129,9 @@ for line in sys.stdin:
         if mode != "nosave":
             print("Saved the game", flush=True)
     elif line == "stop":
-        print("Stopping the server", flush=True); sys.exit(0)
+        # a real server's shutdown save says this too (forbric2/neo-reopen.log); it is not an answer to save-all
+        print("Stopping the server", flush=True)
+        print("ThreadedAnvilChunkStorage: All dimensions are saved", flush=True); sys.exit(0)
 """
 
 
@@ -151,6 +153,12 @@ class ForbricStage(unittest.TestCase):
             (root / rel).parent.mkdir(parents=True, exist_ok=True); (root / rel).write_bytes(rel.encode())
         return root
 
+    def _reference(self, tmp):
+        """A reference checkout whose forbric-loader/ is a complete decoy stage: an arm that boots it instead of the
+        caller's stage then fails on the FORBRIC_OLD assertion, not on a missing file (review A-5)."""
+        self._stage(tmp / "reference/forbric-loader")
+        return tmp / "reference"
+
     def test_run_set_hands_the_forbric_arm_the_callers_stage(self):
         seen = {}
 
@@ -169,6 +177,7 @@ class ForbricStage(unittest.TestCase):
             jar = tmp / "forbric-kernel-0.1.0-SNAPSHOT.jar"; jar.write_bytes(b"kernel")
             mod = tmp / "mod.jar"; mod.write_bytes(b"mod")
             with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(stage)}), mock.patch.object(nc, "BASE", tmp / "nc"), \
+                    mock.patch.object(nc, "ORIGINAL", self._reference(tmp)), \
                     mock.patch.object(nc, "kernel_jar", lambda: jar), mock.patch.object(nc.subprocess, "Popen", Exited), \
                     mock.patch.object(nc.subprocess, "check_output", return_value="java 25"):
                 result = nc.run_set("forbric", "fabric", [mod], ticks=0, timeout=5)
@@ -199,6 +208,7 @@ class ForbricStage(unittest.TestCase):
             checks = tmp / "checks.txt"; checks.write_text("# a comment\nsetblock 0 80 0 example:block\n\nwait 2\n")
             config = tmp / "old-config"; config.mkdir(); (config / "mod-common.toml").write_text("mark = 3\n")
             with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(stage)}), mock.patch.object(nc, "swap_session", session), \
+                    mock.patch.object(nc, "ORIGINAL", self._reference(tmp)), \
                     mock.patch.object(nc, "_snapshot_module", FakeSnapshots), mock.patch("sys.stdout", new_callable=io.StringIO):
                 result = nc.swap("forbric", [], [neo], tmp / "out", checks=checks, old_world=world, old_config=config)
             self.assertNotIn("error", result)
@@ -227,7 +237,8 @@ class SwapSession(unittest.TestCase):
         self.assertEqual(["say one", "say two", "save-all flush", "stop"], sent)
 
     def test_a_save_the_server_never_answers_is_not_saved(self):
-        result, _ = self._run("nosave", [])
+        result, log = self._run("nosave", [])
+        self.assertIn("All dimensions are saved", log)  # the stop's own save, which is not the answer
         self.assertFalse(result["saved"])
 
     def test_a_server_that_never_reached_done_failed_to_start(self):
