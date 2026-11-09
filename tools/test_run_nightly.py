@@ -55,7 +55,7 @@ arguments = sys.argv[1:]
 with open(os.environ['FAKE_NIGHT_LOG'], 'a') as log:
     log.write(json.dumps(dict(tool='gates', argv=arguments)) + '\n')
 red = os.environ.get('FAKE_RED_GATE', '')
-gates = ('gate-m0.sh', 'gate-m9-client.sh', 'gate-m34-soak.sh')
+gates = ('gate-m0.sh', 'gate-m9-client.sh', 'gate-m34-soak.sh', 'gate-m58-world-upgrade.sh')
 skipped = [arguments[i + 1] for i, a in enumerate(arguments) if a == '--skip']
 for name in skipped:
     if name not in gates:
@@ -219,7 +219,7 @@ class NightlyTest(unittest.TestCase):
         self.assertEqual(str(self.root / 'minecraft'), dev['MC_DIR'])
         self.assertTrue(dev['linked'])
         [gates] = self.calls('gates')
-        self.assertEqual(['-j', 'auto', '--skip', 'gate-m34-soak.sh'], gates['argv'])
+        self.assertEqual(['-j', 'auto', '--skip', 'gate-m34-soak.sh', '--skip', 'gate-m58-world-upgrade.sh'], gates['argv'])
 
         # Only ci-results was pushed, and it is an orphan holding the dated summary and latest.md.
         origin_after = self.origin_refs()
@@ -229,7 +229,7 @@ class NightlyTest(unittest.TestCase):
         self.assertIn(f'# Forbric nightly {SATURDAY}: PASS', summary)
         self.assertIn(self.tested[:12], summary)
         self.assertIn('second \\| with a pipe', summary)
-        self.assertIn('skipped: it runs on Sundays', summary)
+        self.assertIn('skipped: they run on Sundays', summary)
         self.assertIn('| test | 2 | 2 | 0 | 0.0 | 0 |', summary)
         self.assertNotIn(str(self.root), summary)
         self.assertIn(f'results/{SATURDAY}/summary.md', self.published('latest.md'))
@@ -302,7 +302,8 @@ class NightlyTest(unittest.TestCase):
         self.assertEqual([], self.calls('dev') + self.calls('gates'))
         self.assertEqual([], self.statuses())
         for expected in ('[dry-run] git -C', 'fetch --quiet --prune origin', 'worktree add --quiet --detach',
-                         'tools/dev.py integration', '--skip gate-m34-soak.sh', 'push --quiet origin ci-results',
+                         'tools/dev.py integration', '--skip gate-m34-soak.sh --skip gate-m58-world-upgrade.sh',
+                         'push --quiet origin ci-results',
                          'api repos/Ray-T-r/Minecraft-Forbric-mod-loader/statuses/', '# Forbric nightly 2026-10-03: DRY RUN'):
             self.assertIn(expected, output)
 
@@ -328,7 +329,8 @@ class ScheduleAndSummaryTest(unittest.TestCase):
         self.assertEqual([False] * 6 + [True], [nightly.soak_tonight(day) for day in week])
         self.assertTrue(all(nightly.soak_tonight(day, 'always') for day in week))
         self.assertFalse(any(nightly.soak_tonight(day, 'never') for day in week))
-        self.assertEqual(['-j', '4', '--skip', 'gate-m34-soak.sh'], nightly.gates_arguments(False, 4))
+        self.assertEqual(['-j', '4', '--skip', 'gate-m34-soak.sh', '--skip', 'gate-m58-world-upgrade.sh'],
+                         nightly.gates_arguments(False, 4))
         self.assertEqual(['-j', 'auto', '--release'], nightly.gates_arguments(True, 'auto'))
 
     def test_every_gate_a_weekday_skips_is_a_gate_in_this_tree(self):

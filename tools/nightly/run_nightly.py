@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Run nightly, on the developer's Mac, what CI cannot run: the client gates (they open a macOS window), the
-gates that need third-party mod packs, and the soak.
+gates that need third-party mod packs, and the slow gates (the soak and the world upgrade).
 
 launchd starts it (com.forbric.nightly.plist; README.md beside this file says how to install it). Python
 standard library only, like tools/dev.py. One night:
@@ -8,8 +8,9 @@ standard library only, like tools/dev.py. One night:
   1. fetch, and put a dedicated worktree (--work) detached at origin/main. The main checkout is only read:
      its HEAD, branch, index and files are never changed.
   2. link into it, from the main checkout, the fixtures the gates and the staged tests read (FIXTURES).
-  3. run `tools/dev.py integration` (strict: a skipped test fails it), then `gates-all.sh`. gate-m34-soak takes
-     two hours or more, so it runs only on Sundays, and a Sunday run is a --release acceptance run.
+  3. run `tools/dev.py integration` (strict: a skipped test fails it), then `gates-all.sh`. The slow gates
+     (SLOW_GATES: gate-m34-soak takes two hours or more, gate-m58-world-upgrade about forty minutes of twenty JVMs)
+     run only on Sundays, and a Sunday run is a --release acceptance run.
   4. write results/<YYYY-MM-DD>/summary.md and latest.md on the orphan branch ci-results, in a worktree of its
      own (<work>-results), and push that branch and nothing else.
   5. set the commit status nightly/dev-mac on the tested commit.
@@ -32,6 +33,9 @@ REPO_SLUG = 'Ray-T-r/Minecraft-Forbric-mod-loader'
 STATUS_CONTEXT = 'nightly/dev-mac'
 RESULTS_BRANCH = 'ci-results'
 SOAK_GATE = 'gate-m34-soak.sh'
+# Gates too slow for every night: the soak, and the world upgrade (old kernel writes, new kernel reads, ~20 JVMs).
+# Weekdays skip them all; Sunday runs them all, as a --release run.
+SLOW_GATES = (SOAK_GATE, 'gate-m58-world-upgrade.sh')
 SUNDAY = 6  # datetime.date.weekday()
 # Everything the gates and the staged tests read from a checkout that is not in git, found by reading
 # forbric-kernel/run/gate-m*.sh, gates-all.sh, gates-parallel.py and the tests' fixture paths. The rest of what
@@ -129,9 +133,9 @@ def soak_tonight(date, mode='auto'):
 
 
 def gates_arguments(soak, jobs):
-    # A weekday run skips the soak, so it cannot be --release: a release run fails on any --skip by design.
+    # A weekday run skips the slow gates, so it cannot be --release: a release run fails on any --skip by design.
     # Sunday's run has nothing skipped and is the full acceptance run.
-    return ['-j', str(jobs)] + (['--release'] if soak else ['--skip', SOAK_GATE])
+    return ['-j', str(jobs)] + (['--release'] if soak else [a for gate in SLOW_GATES for a in ('--skip', gate)])
 
 
 def default_minecraft_dir():
@@ -344,8 +348,8 @@ def render_summary(night, slug=REPO_SLUG):
             f'| commit | [`{night.sha[:12]}`](https://github.com/{slug}/commit/{night.sha}) {subject} |',
             f'| tested | `{night.ref}` on the developer\'s Mac (commit status `{STATUS_CONTEXT}`) |',
             f'| started | {night.started:%Y-%m-%d %H:%M %z} |',
-            f'| soak (`{SOAK_GATE}`) | ' + ('run: a `--release` run, nothing skipped'
-                    if night.soak else 'skipped: it runs on Sundays') + ' |',
+            '| slow gates (' + ', '.join(f'`{g}`' for g in SLOW_GATES) + ') | ' + ('run: a `--release` run, nothing skipped'
+                    if night.soak else 'skipped: they run on Sundays') + ' |',
             f'| integration | {night.integration.describe()} |',
             f'| gates | {night.gates.describe()}' + (f': {gate_counts(night.gate_results)}' if night.gates.ran else '') + ' |']
     if night.missing_fixtures:

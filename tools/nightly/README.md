@@ -2,7 +2,9 @@
 
 CI (`.github/workflows/build.yml`) runs the unit suite and four dedicated-server gates. It cannot run the rest:
 the client gates open a macOS window, many gates and staged tests need third-party mod packs that are not in
-this repository, and the soak (`gate-m34-soak.sh`) simulates for two hours or more. `run_nightly.py` runs those
+this repository, and the slow gates are too slow for every night: the soak (`gate-m34-soak.sh`) simulates for two
+hours or more, and the world upgrade (`gate-m58-world-upgrade.sh`) boots the old kernel and the new one about twenty
+times. `run_nightly.py` runs those
 on the developer's Mac every night at 02:30, started by launchd.
 
 ## What one night does
@@ -21,7 +23,8 @@ on the developer's Mac every night at 02:30, started by launchd.
    `~/Library/Application Support/minecraft` (the launch scripts' default), unless `--forbric-old` / `--mc-dir`
    or `$MC_DIR` say otherwise.
 3. Runs `python3 tools/dev.py integration` (strict: a skipped test fails it), then
-   `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh`. On Sundays the soak runs too
+   `bash forbric-kernel/run/compat/gates-all.sh -j auto --skip gate-m34-soak.sh --skip gate-m58-world-upgrade.sh`.
+   On Sundays the slow gates run too
    and the gates run as `--release`, which fails on any skipped or still-red gate. Timeouts: 120 min for the
    tests, 180 min for the gates (360 on Sundays); a step that overruns is stopped with everything it started.
 4. Commits `results/<YYYY-MM-DD>/summary.md` and `latest.md` to the orphan branch `ci-results` from a second
