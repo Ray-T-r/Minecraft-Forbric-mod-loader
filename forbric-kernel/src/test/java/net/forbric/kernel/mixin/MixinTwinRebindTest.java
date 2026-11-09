@@ -30,8 +30,9 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
  * MixinTwinRebind on {@code ModelBlockRenderer.shouldRenderFace}, the row LiquidBounce's X-Ray needs: vanilla's
- * {@code (level, state, direction, neighborPos)}, which the merged class keeps after NeoForge's
- * {@code (level, pos, state, direction, neighborPos)} and nothing calls.
+ * {@code (level, state, direction, neighborPos)}, which NeoForge's own class keeps after its
+ * {@code (level, pos, state, direction, neighborPos)} and nothing calls (javap of the staged NeoForge jar: both
+ * {@code tesselateFlat} and {@code tesselateAmbientOcclusion} call the five-argument overload).
  */
 class MixinTwinRebindTest {
 	private static final Path MERGED = TestFixtures.stagedBase();
@@ -199,7 +200,7 @@ class MixinTwinRebindTest {
 		assertEquals(0, MixinTwinRebind.adapt(off, name -> renderer(1, 1)), "switched off");
 	}
 
-	/** The released jar on the staged merged class: the face test moves, wrapped; nothing else in the mixin is touched. */
+	/** The released jar on NeoForge's staged class: the face test moves, wrapped; nothing else in the mixin is touched. */
 	@Test void releasedLiquidBounceMovesItsFaceTestAndNothingElse() throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, MERGED, "actual game required");
 		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(LIQUIDBOUNCE), LIQUIDBOUNCE + " absent");
@@ -229,7 +230,7 @@ class MixinTwinRebindTest {
 	}
 
 	/**
-	 * The merged class's shape: NeoForge's overload first and called by {@code tesselateFlat}, vanilla's after it and
+	 * NeoForge's class's shape: its own overload first and called by {@code tesselateFlat}, vanilla's after it and
 	 * called by nothing; each calls Block.shouldRenderFace the given number of times, and returns once.
 	 */
 	private static ClassNode renderer(int vanillaCalls, int overloadCalls) {

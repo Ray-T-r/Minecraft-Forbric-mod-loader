@@ -91,7 +91,7 @@ class RegistryLoaderCompanionBindingTest {
 	}
 
 	/** The same, a {@code @ModifyArg} whose selector carries an owner prefix and whitespace and whose point has no descriptor. */
-	@Test void aBareNameCompanionWrittenForALoaderTheMergeDroppedStillFollowsTheWrap() throws Exception {
+	@Test void aBareNameModifyArgWrittenForTheDeadLoaderFollowsTheWrapToo() throws Exception {
 		ClassNode mixin = mixin(modifyArg(" L" + LOADER + "; load", "Ljava/util/concurrent/CompletableFuture;supplyAsync"));
 		assertEquals(2, FabricRegistryLoaderMixinAdapter.adapt(mixin, name -> current(), natives(true)));
 		assertMoved(mixin, "keepSupplier");
@@ -114,7 +114,7 @@ class RegistryLoaderCompanionBindingTest {
 	 * first: left as written, the companion would silently serve the networked entry. Nothing can map it, so the whole
 	 * mixin is left alone — the wrap too.
 	 */
-	@Test void aCompanionTheMergedClassWouldBindToAnotherLiveOverloadLeavesTheMixinAlone() throws Exception {
+	@Test void aCompanionTheCurrentClassWouldBindToAnotherLiveOverloadLeavesTheMixinAlone() throws Exception {
 		assertLeftAlone("load", ENTRY, first(current(), NETWORKED), NETWORKED);
 	}
 
@@ -122,7 +122,7 @@ class RegistryLoaderCompanionBindingTest {
 	 * The same, bound to the entry's own widening (a trailing list of pending tags): its parameters extend the entry's,
 	 * but not by the ones the carrier appended to the loader the wrap follows, so it is another overload all the same.
 	 */
-	@Test void aCompanionTheMergedClassWouldBindToAnotherWideningOfItsEntryLeavesTheMixinAlone() throws Exception {
+	@Test void aCompanionTheCurrentClassWouldBindToAnotherWideningOfItsEntryLeavesTheMixinAlone() throws Exception {
 		assertLeftAlone("load", ENTRY, first(current(), ENTRY_PENDING), ENTRY_PENDING);
 	}
 
