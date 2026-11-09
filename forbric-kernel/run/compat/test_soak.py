@@ -276,7 +276,8 @@ class SoakVerifierTest(unittest.TestCase):
                 def wait(self,timeout=None):return 0
                 def poll(self):return 0
             gate=put(root/'gate-m34-soak.1.tsv',b'')
-            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=None),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
+            reference=put(root/'reference/vanilla-reference.jar',b'sidecar')
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
                 self.assertEqual(0,soak.launch(args))
             self.assertEqual(source,manifests[0]['source'])
             # NeoForge's patched game, frozen, and its one carrier: no MinecraftForge carrier is owned any more.
@@ -284,6 +285,10 @@ class SoakVerifierTest(unittest.TestCase):
             self.assertEqual(1,command.count('--gameJar'));self.assertEqual(1,command.count('--runtimeJar'))
             self.assertEqual('base.jar',Path(command[command.index('--gameJar')+1]).name)
             self.assertEqual('neo.jar',Path(command[command.index('--runtimeJar')+1]).name)
+            # The base's sidecar, frozen with the rest and handed over under its own flag.
+            self.assertEqual(1,command.count('--nativeReference'))
+            self.assertEqual('vanilla-reference.jar',Path(command[command.index('--nativeReference')+1]).name)
+            self.assertIn(str(reference.resolve()),[record['source'] for record in manifests[0]['artifacts']])
             self.assertIn('generated from frozen base.jar/version.json',[record['source'] for record in manifests[0]['artifacts']])
             acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
             self.assertFalse(acceptance['releaseAccepted'])
@@ -291,4 +296,16 @@ class SoakVerifierTest(unittest.TestCase):
             self.assertEqual(['net.forbric.Probe.site:1'],acceptance['caught']['failureSites'])
             self.assertIn('[Forbric/Probe] injected',Path(acceptance['caught']['file']).read_text())
             self.assertIn('[Forbric/Probe] injected',gate.read_text())
+    def test_no_vanilla_reference_stops_the_soak_instead_of_launching_without_one(self):
+        # NeoForge's patched game embeds no vanilla index: a client launched without --nativeReference has no FABRIC
+        # references at all, so the soak must stop here rather than soak a kernel no launcher runs.
+        class Result:
+            def __init__(self,code,out='',err=''):self.returncode,self.stdout,self.stderr=code,out,err
+        for result in (Result(1,err='no sidecar for this base'),Result(0,out='')):
+            with patch.object(soak.subprocess,'run',return_value=result):
+                with self.assertRaises(SystemExit) as stopped:
+                    soak.vanilla_reference(Path('/kernel'),Path('/stage/base.jar'),Path('/mc'))
+            self.assertIn('FATAL: no vanilla reference',str(stopped.exception))
+        with patch.object(soak.subprocess,'run',return_value=Result(0,out='/build/vanilla-reference.jar\n')):
+            self.assertEqual(Path('/build/vanilla-reference.jar'),soak.vanilla_reference(Path('/kernel'),Path('/stage/base.jar'),Path('/mc')))
 if __name__=='__main__':unittest.main()

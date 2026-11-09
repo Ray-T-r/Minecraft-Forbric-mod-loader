@@ -331,16 +331,18 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
 
 def vanilla_reference(kernel, base, mc):
     """run/vanilla-reference-jar.sh's sidecar for base — staged by prepare or built once into build/, and only one that
-    records this base — or None, said on stdout, when it can provide none."""
+    records this base. When it can provide none the soak stops: NeoForge's patched game embeds no vanilla index of its
+    own, so a client launched without --nativeReference has no FABRIC references at all, and two hours of it would soak a
+    kernel no player runs (every launcher hands the sidecar over). --native-reference names one explicitly."""
     result = subprocess.run(['bash', str(kernel / 'run/vanilla-reference-jar.sh'), str(base)], text=True,
                             stdout=subprocess.PIPE, stderr=subprocess.PIPE, env={**os.environ, 'MC_DIR': str(mc)})
     named = result.stdout.strip().splitlines()
     if result.returncode == 6:
         raise SystemExit(f'[M34] FATAL: the vanilla reference was refused: {result.stderr.strip()[-500:]}')
     if result.returncode or not named:
-        print(f'[M34] no vanilla reference for {base}; launching without --nativeReference: {result.stderr.strip()[-500:]}',
-              flush=True)
-        return None
+        raise SystemExit(f'[M34] FATAL: no vanilla reference for {base}, and a soak without --nativeReference runs with no '
+                         f'FABRIC references: name one with --native-reference (exit {result.returncode}): '
+                         f'{result.stderr.strip()[-500:]}')
     return Path(named[-1])
 
 
@@ -399,11 +401,11 @@ def launch(args):
     base = copy_frozen(base_source, frozen / 'base.jar', records)
     neo = copy_frozen(Path(args.neo) if args.neo else staged / 'neoforge-runtime/neoforge-runtime.jar', frozen / 'neo.jar', records)
     # The kernel's FABRIC native references (--nativeReference), handed over as on every other launch path and frozen
-    # with the rest: the sidecar recording this base. The base embeds no index, so without one the soak runs with no
-    # FABRIC references.
+    # with the rest: the sidecar recording this base. The base embeds no index, so there is no soak without one
+    # (vanilla_reference stops the run when it can provide none).
     reference_source = (Path(args.native_reference) if args.native_reference
                         else vanilla_reference(kernel, base_source, mc))
-    native_reference = copy_frozen(reference_source, frozen / 'vanilla-reference.jar', records) if reference_source else None
+    native_reference = copy_frozen(reference_source, frozen / 'vanilla-reference.jar', records)
     parent = [boot]
     cp_raw = Path(args.boot_classpath).read_text().strip().split(os.pathsep)
     for index, item in enumerate(cp_raw):
@@ -459,7 +461,7 @@ def launch(args):
     command += ['-cp', os.pathsep.join(map(str, parent)), 'net.forbric.kernel.boot.KernelClientLaunch', '--gameJar', str(base),
                 '--runtimeJar', str(neo), '--libraryPath', os.pathsep.join(map(str, game_libraries)),
                 # Its own flag, never a second --gameJar: the resources-only sidecar is not a game.
-                *(['--nativeReference', str(native_reference)] if native_reference else []),
+                *['--nativeReference', str(native_reference)],
                 '--', '--version', version['id'] + '-forbric-kernel', '--gameDir', str(run), '--assetsDir', str(mc / 'assets'),
                 '--assetIndex', version['assetIndex']['id'], '--accessToken', '0', '--username', 'ForbricKernel',
                 '--uuid', '00000000000000000000000000000000', '--userType', 'legacy', '--versionType', 'release',
