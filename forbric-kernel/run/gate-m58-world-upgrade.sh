@@ -24,6 +24,9 @@
 #   aa         reverse control C3, the A/A: the OLD kernel reopens a copy of S2 with an old client joining -> S2aa, and
 #              S2 -> S2aa must be 0 under `reopen` once the merged-only keys are set aside on both sides. Anything the
 #              rules would have to hide here is the old line's own noise, not the upgrade's.
+#   bb         the B/B, its counterpart on this tree: the NEW kernel writes the same save (world and player scripts, a new
+#              client over the socket) and reopens it -> S2n, S3n, 0 under `reopen`. A check red here as well as in main is
+#              this tree's own, not the upgrade's.
 #   transfer   gate-m33's machines: `prepare` on the old kernel, `reload` on the new one (40 items, 32,417 Fabric fluid
 #              units, both families' block entities deserialized).
 #   energy     gate-m40's cells the same way (Team Reborn Energy and NeoForge, 40,000 E).
@@ -72,7 +75,7 @@ LOGS="$RESULTS/logs"
 WS="$KERNEL/run/compat/world-snapshot.py"
 SCRIPTS="$KERNEL/canary/world-upgrade"
 CANARIES="$BUILD/m58-canary"
-PHASES=" ${M58_PHASES:-main sp aa transfer energy forge installed controls} "
+PHASES=" ${M58_PHASES:-main sp aa bb transfer energy forge installed controls} "
 BOX="-2,-2,2,2"
 rm -rf "$RESULTS"; mkdir -p "$SNAP" "$LOGS"
 want() { case "$PHASES" in *" $1 "*) return 0;; esac; return 1; }
@@ -505,6 +508,20 @@ PY
   if [ "${got:-x}" = 0 ]; then echo "[kernel] PASS A/A: the old kernel reopening its own save changed nothing ($(head -n 1 "$SNAP/S2-S2aa.aa.diff.txt"))"
   else echo "[kernel] FAIL A/A: the old kernel reopening its own save shows ${got:-no} differences ($SNAP/S2-S2aa.aa.diff.txt):"
     grep -aE '^diff ' "$SNAP/S2-S2aa.aa.diff.txt" | head -n 25 | sed 's/^/[kernel]   /'; FAIL=1; fi
+fi
+
+# --- B/B: the new kernel against itself ---------------------------------------------------------------------------------
+if want bb; then
+  step "B/B: the NEW kernel writes the same save (server + new client) and reopens it; a failure here is not the upgrade's"
+  fresh_dir "$ROOT/bb-new" "${MAIN_MODS[@]}"
+  fresh_dir "$ROOT/cli-bb" "${MAIN_MODS[@]}"
+  server_round new "$ROOT/bb-new" bb-write write "$ROOT/cli-bb" "${WRITE_SCRIPTS[@]}"
+  write_checks "$LOGS/bb-write.server.log" yes world.commands
+  export_snap "$ROOT/bb-new/world" S2n
+  server_round new "$ROOT/bb-new" bb-read read "$ROOT/cli-bb"
+  canary_read "$LOGS/bb-read.server.log" "$RESULTS/bb-read" yes
+  export_snap "$ROOT/bb-new/world" S3n
+  diff_zero "B/B: the new kernel reopening its own save changed nothing" S2n S3n reopen
 fi
 
 # --- machines: transfer and energy, prepared on the old kernel, reloaded on the new one -------------------------------
