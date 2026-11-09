@@ -1,32 +1,34 @@
 #!/usr/bin/env bash
-# M42 — what NeoForge's own coremods (and MinecraftForge's identical ones) do to the game, done by the kernel.
+# M42 — what NeoForge's own coremods do to the game, done by the kernel.
 #
-# Neither family's coremods run on the merged base, and its bodies are written for them. A dedicated server with a
-# probe mod drives the game paths a player's actions reach and records each verdict (canary/coremod-parity):
-#   flower pots — vanilla, a NeoForge-declared pot, an addPlant-declared pot, pick-block, NeoForge's getFullPot;
-#   the liquid block's getter; spawn finalization of a counting probe mob — both families' events and exactly one
-#   finalization carrying MinecraftForge's data from EntityType.spawn and /summon, a NeoForge cancel and a
-#   MinecraftForge cancel (no finalization, mob still spawned), a NeoForge veto a MinecraftForge listener clears; a
-#   NeoForge biome modifier (temperature, water colour, and what the network codec sends a client); a NeoForge
+# NeoForge's coremods (FML transformers) do not run under Forbric, and the kernel does their work (NativeCoremodParity).
+# A dedicated server with a probe mod drives the game paths a player's actions reach and records each verdict
+# (canary/coremod-parity), 21 cases:
+#   flower pots — vanilla (plant, take, pick empty and full, a non-plant), a NeoForge-declared pot (plant, take, pick), a
+#   plant declared only through addPlant (a no-op on NeoForge: never potted), NeoForge's getFullPot;
+#   spawn finalization of a counting probe mob — from EntityType.spawn and /summon NeoForge's FinalizeSpawnEvent once and
+#   exactly one finalization carrying its data, a NeoForge cancel (no finalization, mob still spawned), a NeoForge veto
+#   (no mob); a zombie drowning into a drowned, heard by the probe's own LivingConversionEvent.Post listener;
+#   a NeoForge biome modifier (temperature, water colour, and what the network codec sends a client); a NeoForge
 #   structure modifier; a Fabric weather change through the unmodified fabric-biome-api, which must survive NeoForge's
 #   pass; and a biome climate replaced after the pass, which must win over it as it would on Fabric.
 #
 #   1. positive — STRICT, every case passes, zero confirmed required findings.
-#   2. off — -Dforbric.coremodParity=off: every repaired case fails, and only the two Fabric climates (read raw) and
-#      the liquid block's getter still hold, so each case is shown to depend on the repair. The liquid getter is a merge
-#      repair with its own switch, not under this one: on a base that needs it, Blocks.<clinit> throws without it and
-#      there is no server at all.
-#   2b. liquid-off — -Dforbric.liquidBlockFluid=off, judged by what the booted base does, read from it: a base whose
-#      LiquidBlock constructors all fill the supplier answers the getter itself (the repair stood by in phase 1, and
-#      with it off every case still passes); on any other base the game cannot bootstrap -- LiquidBlock.getFluid
-#      throws from Blocks.<clinit> -- so the repair is shown to be needed by the only evidence there is.
+#   2. off — -Dforbric.coremodParity=off: every repaired case fails; only the two Fabric climates (read raw), drown.neo
+#      (NeoForge's own Zombie conversion lambdas post the event) and pot.neoforge.api (NeoForge's own getFullPot) hold.
 #   3. rebase-off — -Dforbric.biomeRebase=off: everything passes except the two Fabric climates, so the pass
 #      bookkeeping (rebase and pass-time record) is what keeps them.
 #   4. withhold-conversion — -Dforbric.coremodParityWithholdConversionPost=true takes the probe's own NeoForge
-#      LivingConversionEvent.Post listener away: exactly drown.neo fails, so that case can fail (no repair is involved:
-#      NeoForge's own Zombie conversion lambdas post the event).
-# Not covered here: the trial spawner (its helper is unit-tested, KernelFinalizeSpawnTest; no trial spawner runs in
-# this world), natural and structure spawns (the redirect is unit-tested), and a rendered client.
+#      LivingConversionEvent.Post listener away: exactly drown.neo fails, so that case can fail (no repair is involved).
+# Not covered here: the trial spawner and natural or structure spawns (no such spawn runs in this world), and a rendered
+# client.
+#
+# STAGE 4 OF DROPPING MinecraftForge (what changed and why). On the merged base this gate also judged MinecraftForge's
+# identical coremods: MinecraftForge's spawn events and cancel, a NeoForge veto a MinecraftForge listener cleared, and
+# the liquid block's getter (fluid.water), whose own phase 2b (-Dforbric.liquidBlockFluid=off, retired) read
+# LiquidBlock's constructors from the merged base with merged_delivers. Those cases left the probe with the MinecraftForge
+# carrier (22 -> 21) and phase 2b and the base read went with them (D3). drown.neo and pot.neoforge.api hold with the
+# repairs off because NeoForge's own body answers them on its own base (measured in C3).
 # GATE-PARALLEL: rundirs=server-coremod-m42 mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -34,6 +36,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-coremod-m42"
 RESULTS="$BUILD/verification/m42-coremod-parity"
 FAIL=0
+refuse_shared_rundir "$SERVER_DIR"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 
 kernel_jar
@@ -67,7 +70,7 @@ import json, sys
 report, phase, rule = json.load(open(sys.argv[1])), sys.argv[2], sys.argv[3]
 assert report['phase'] == phase, report['phase']
 cases = {c['name']: c for c in report['cases']}
-assert len(cases) == 22, sorted(cases)
+assert len(cases) == 21, sorted(cases)
 failed = {name for name, c in cases.items() if not c['pass']}
 for name in sorted(failed): print(f"[kernel]   {phase}: {name} failed — {cases[name]['detail'][:240]}")
 assert eval(rule, {'failed': failed, 'cases': cases}), (phase, sorted(failed))
@@ -78,35 +81,14 @@ PY
 
 step "1. positive: every coremod path behaves as on the native loaders"
 run_server positive strict ""
-judge positive "not failed" "all 22 cases pass"
+judge positive "not failed" "all 21 cases pass"
 if python3 -c "import json,sys; r=json.load(open(sys.argv[1])); sys.exit(0 if r['confirmedRequired']==0 else 1)" "$RESULTS/positive-compatibility.json" 2>/dev/null
 then echo "[kernel] PASS positive: zero confirmed required findings under STRICT"
 else echo "[kernel] FAIL positive: STRICT report missing or has confirmed required findings"; FAIL=1; fi
 
 step "2. off: the same server with the repairs switched off"
-# A merge that keeps both families' edits of LiquidBlock's constructors fills the supplier MinecraftForge's getter
-# reads in vanilla's constructor too, so water answers its fluid with the getter repair off: the base decides that
-# case, the kernel did not repair it. Read from the base this run booted, by every constructor's store; exact both
-# ways. The repair has its own switch, so this reading decides phase 2b, not this one.
-merged_delivers fluid.water --every net.minecraft.world.level.block.LiquidBlock '<init>' put:net/minecraft/world/level/block/LiquidBlock.supplier
-NATIVE_FLUID="${MERGED_NATIVE%, }"
-echo "[kernel] cases the merged base decides itself: set([$NATIVE_FLUID])"
 run_server off continue "-Dforbric.coremodParity=off"
-judge off "failed == set(cases) - {'biome.fabric.keep', 'biome.late.keep', 'fluid.water'}" "every repaired case fails; only the raw Fabric climates and the liquid getter (its own switch) hold"
-
-step "2b. liquid-off: the liquid getter's own switch"
-run_server liquid-off continue "-Dforbric.liquidBlockFluid=off"
-if [ -n "$NATIVE_FLUID" ]; then
-  # The base fills the supplier in every constructor: the repair stood by in phase 1 and the getter answers as merged.
-  check "positive: the liquid getter repair stood by, as the base read says" '\[Forbric/Fluid\] LiquidBlock.s constructors all fill the supplier its getter reads' "$RESULTS/positive.log"
-  judge liquid-off "not failed" "the base answers the getter itself: with the repair off every case still passes"
-else
-  # The frames carry the defining loader's name ("at forbric//net.minecraft..."), so the patterns allow one.
-  check "liquid-off: the getter has no supplier to ask" 'NullPointerException: Cannot invoke "java\.util\.function\.Supplier\.get\(\)" because "this\.supplier" is null' "$RESULTS/liquid-off.log"
-  check "liquid-off: ...in LiquidBlock.getFluid" 'at ([A-Za-z0-9_.-]+//)?net\.minecraft\.world\.level\.block\.LiquidBlock\.getFluid\(' "$RESULTS/liquid-off.log"
-  check "liquid-off: ...asked from the block bootstrap" 'at ([A-Za-z0-9_.-]+//)?net\.minecraft\.world\.level\.block\.Blocks\.<clinit>' "$RESULTS/liquid-off.log"
-  check_absent "liquid-off: and no server came up" 'Done \(' "$RESULTS/liquid-off.log"
-fi
+judge off "failed == set(cases) - {'biome.fabric.keep', 'biome.late.keep', 'drown.neo', 'pot.neoforge.api'}" "every repaired case fails; only the raw Fabric climates and NeoForge's own drown.neo and getFullPot hold"
 
 step "3. rebase-off: NeoForge's pass from the biome's original info"
 run_server rebase-off continue "-Dforbric.biomeRebase=off"
@@ -117,7 +99,7 @@ run_server withhold-conversion continue "-Dforbric.coremodParityWithholdConversi
 judge withhold-conversion "failed == {'drown.neo'}" "only drown.neo fails: the case hears NeoForge's own conversion Post"
 
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M42 COREMOD PARITY GATE GREEN — pots, fluids, finalization and modifiers behave natively, each by its repair"
+  echo "[kernel] ✅ M42 COREMOD PARITY GATE GREEN — pots, finalization, conversion and modifiers behave natively, each by its repair"
 else
   echo "[kernel] ❌ M42 GATE RED — inspect $RESULTS"
 fi
