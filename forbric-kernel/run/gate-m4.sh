@@ -21,7 +21,7 @@
 #
 # STAGE 4 OF DROPPING MinecraftForge (what changed and why). The game is NeoForge's own patched jar and Forbric carries
 # no MinecraftForge runtime, so what this gate asserted about MinecraftForge went with them: the traditional-Forge
-# baseline mod, the tick-bridge step (which read MinecraftServer.tickServer from the merged base with merged_calls and
+# baseline mod, the tick-bridge step (which read MinecraftServer.tickServer out of the merged base's bytecode and
 # counted 20 ServerTickEvents forwarded 1:1 from NeoForge's to MinecraftForge's bus, or the bridges standing down), the
 # "all N GAME_BUS bridge(s) installed" line and the -Dforbric.unifiedEvents=off control (switch retired with the
 # multiplexer, D29), and two absences whose producers were deleted ("no third-party mod constructed as MinecraftForge",

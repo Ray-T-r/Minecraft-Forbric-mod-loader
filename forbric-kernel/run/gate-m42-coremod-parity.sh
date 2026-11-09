@@ -26,7 +26,7 @@
 # STAGE 4 OF DROPPING MinecraftForge (what changed and why). On the merged base this gate also judged MinecraftForge's
 # identical coremods: MinecraftForge's spawn events and cancel, a NeoForge veto a MinecraftForge listener cleared, and
 # the liquid block's getter (fluid.water), whose own phase 2b (-Dforbric.liquidBlockFluid=off, retired) read
-# LiquidBlock's constructors from the merged base with merged_delivers. Those cases left the probe with the MinecraftForge
+# LiquidBlock's constructors out of the merged base's bytecode. Those cases left the probe with the MinecraftForge
 # carrier (22 -> 21) and phase 2b and the base read went with them (D3). drown.neo and pot.neoforge.api hold with the
 # repairs off because NeoForge's own body answers them on its own base (measured in C3).
 # GATE-PARALLEL: rundirs=server-coremod-m42 mem=2000
