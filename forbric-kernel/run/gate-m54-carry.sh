@@ -2,31 +2,40 @@
 # M54 gate — a NeoForge mod's play-phase packet to the server is heard: Carry On picks a chest up and puts it back,
 # then a pig, driven through the game's own keyboard and mouse.
 #
-# WHY THIS EXISTS. The merged ServerGamePacketListenerImpl.handleCustomPayload is MinecraftForge's override: it asks
-# ForgeHooks.onCustomPayload, drops the answer and returns, and never reaches NeoForge's dispatcher. Carry On tells
-# the server "the carry key is held" with exactly such a packet, so the server never believed the key was down and
-# a sneak-right-click on a chest opened the chest instead. No crash, no log, compatibility report OK: a player's
-# "Carry On does not work". The same drop silenced every NeoForge mod's GUI button and keybind sent upward.
+# WHY THIS EXISTS. Carry On tells the server "the carry key is held" with a play-phase payload. NeoForge's patched
+# ServerGamePacketListenerImpl.handleCustomPayload is super.handleCustomPayload(packet), because NeoForge's whole
+# dispatcher lives in ServerCommonPacketListenerImpl's. fabric-api injects a handler at the HEAD of that super that serves
+# only the configuration listener and throws "Unknown addon" for any other, so with fabric-api installed the first play
+# payload fabric-api's own play receiver does not take ends the connection the moment Carry On sends its key. On vanilla
+# no play payload reaches the super: the play listener's override is empty. FabricCommonPayloadMixinAdapter returns from
+# that handler at its head for a play listener, so NeoForge's body runs as on NeoForge. (On the merged base the override
+# was MinecraftForge's, which never reached NeoForge's dispatcher at all, so the server never believed the key was down;
+# that repair went with MinecraftForge in Stage 4, and the switch below now governs the fabric-api handler.)
 #
-# WHY fabric-api IS IN THE PACK. The first repair fell through to super, where fabric-api injects a handler meant for
-# the configuration listener alone; on the play listener it throws "Unknown addon" and disconnects the player the
-# moment Carry On sends its key. Without fabric-api in the pack that version passes this gate.
+# WHY fabric-api IS IN THE PACK. It is the half of the conflict: without fabric-api nothing throws "Unknown addon".
 #
 # WHY THE VERDICT IS THE WORLD. The drill (KernelClientSmoke, -Dforbric.clientSmokeCarry) presses LEFT_SHIFT through
 # KeyboardHandler.keyPress and the right button through MouseHandler.onButton, then reads on the SERVER whether the
 # chest left its block and came back with its 7 diamonds, and whether the pig left and came back. Carry On's own
 # carry data is logged beside that as evidence of which link broke; nothing Forbric says about itself is asserted.
 #
-# THE NEGATIVE CONTROL. The same run with -Dforbric.playPayloadFallThrough=off must fail to pick anything up — a gate
-# that cannot go red without the repair is not measuring it.
+# THE NEGATIVE CONTROL. The same run with -Dforbric.playPayloadFallThrough=off leaves fabric-api's handler as written.
+# Expected, from the handler's code (TO MEASURE: not yet observed on NeoForge's base): the server disconnects the player
+# ("Internal Exception: java.lang.IllegalStateException: Unknown addon") when Carry On sends its key, and nothing is
+# picked up -- the drill then has no world to report on, or reports nothing carried. A gate that cannot go red without
+# the repair is not measuring it. A disconnected client would be left on the disconnect screen with no smoke left to
+# stop it, so the control is stopped by the gate once its integrated server has stopped, and that is not counted
+# against it.
 #
 # Needs: carryon-neoforge-26.2-2.11.2.jar (M54_CARRYON, default run/carry-on/) and a fabric-api jar (M54_FABRIC_API,
-# default the client-merged-pack's). Both are third-party jars this tree does not ship.
+# default the client-merged-pack's). Both are third-party jars this tree does not ship. Rundir: M54_RUNDIR (default
+# run/client-carry-m54, which the gate wipes per run).
 # GATE-PARALLEL: rundirs=client-carry-m54 mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
-RUNDIR="$KERNEL/run/client-carry-m54"
+RUNDIR="${M54_RUNDIR:-$KERNEL/run/client-carry-m54}"
+refuse_shared_rundir "$RUNDIR"
 WORLD="ForbricTest"
 FIXTURE="${M54_WORLD_FIXTURE:-$KERNEL/run/client-merged-pack/saves/$WORLD}"
 CARRYON="${M54_CARRYON:-$KERNEL/run/carry-on/carryon-neoforge-26.2-2.11.2.jar}"
@@ -41,9 +50,11 @@ done
 
 kernel_jar
 
-# carry_run <label> <extra-jvm> — a fresh world and the drill, one client; the log is $BUILD/gate-m54-<label>.log.
+# carry_run <label> <extra-jvm> [stranded] — a fresh world and the drill, one client; the log is $BUILD/gate-m54-<label>.log.
+# "stranded": the run is expected to lose its connection, so its client is stopped once the integrated server has
+# stopped (or the budget ran out) instead of being judged for not leaving on its own.
 carry_run() {
-  local label="$1" extra="$2" log="$BUILD/gate-m54-$1.log"
+  local label="$1" extra="$2" stranded="${3:-}" log="$BUILD/gate-m54-$1.log" i
   reap_stale_server "$RUNDIR"
   # The drill builds its stage in the world, so every run starts from the fixture rather than the last run's save.
   rm -rf "$RUNDIR"
@@ -62,7 +73,18 @@ carry_run() {
   local pid=$!
   record_server_pid "$RUNDIR" "$pid"
   echo "[kernel] client pid=$pid (this gate never kills by name — another client may be running)"
-  await_server "$pid" "$log" 320
+  if [ -z "$stranded" ]; then
+    await_server "$pid" "$log" 320
+    return
+  fi
+  for i in $(seq 1 320); do
+    kill -0 "$pid" 2>/dev/null || break
+    grep -qE 'Stopping server|Game crashed' "$log" 2>/dev/null && break
+    sleep 1
+  done
+  for i in $(seq 1 20); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  stop_tree "$pid"
+  wait "$pid" 2>/dev/null
 }
 
 verdict() { grep -aoE 'carry drill result: .*' "$1" | head -1; }
@@ -84,11 +106,18 @@ check_absent "no crash report" "Preparing crash report" "$LOG"
 check "the client left the world cleanly" "clean disconnect observed" "$LOG"
 
 step "the same drill with the repair switched off (must be RED)"
-carry_run control "-Dforbric.playPayloadFallThrough=off"
-CONTROL="$(verdict "$BUILD/gate-m54-control.log")"
+carry_run control "-Dforbric.playPayloadFallThrough=off" stranded
+CLOG_CONTROL="$BUILD/gate-m54-control.log"
+CONTROL="$(verdict "$CLOG_CONTROL")"
+# Either end may say it first: the server's "<player> lost connection: ..." or the client's "Client disconnected with
+# reason: ..." (the client's line is the one a stranded client always writes; the server's may still be unflushed when
+# the gate stops it).
+check "the control's player was disconnected by fabric-api's configuration handler" \
+  "(lost connection|Client disconnected with reason): Internal Exception: java.lang.IllegalStateException: Unknown addon" "$CLOG_CONTROL"
 case "$CONTROL" in
-  *'chest picked up=false'*'pig picked up=false'*) echo "[kernel] PASS the control picks nothing up — the gate measures the repair" ;;
-  *) echo "[kernel] FAIL the control did not go red, so the gate does not measure the repair: ${CONTROL:-<no verdict>}"; FAIL=1 ;;
+  *'chest picked up=true'*|*'pig picked up=true'*)
+    echo "[kernel] FAIL the control still carried something, so the gate does not measure the repair: $CONTROL"; FAIL=1 ;;
+  *) echo "[kernel] PASS the control carried nothing — the gate measures the repair (${CONTROL:-no verdict: the drill lost its world})" ;;
 esac
 
 step "M54 result"
