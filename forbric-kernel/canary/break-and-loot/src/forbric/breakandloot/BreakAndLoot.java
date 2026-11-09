@@ -122,12 +122,14 @@ public final class BreakAndLoot {
    return null;});
 
   // A loot table's pools, each with one item: which items a roll gives says which pools survived their conditions.
+  // forge:condition is MinecraftForge's key: native NeoForge 26.2.0.93 does not read it (D49, measured on a native
+  // NeoForge server with this table), so a pool guarded only by it is kept whether it says false or true.
   LootTable table=server.reloadableRegistries().getLootTable(ResourceKey.create(Registries.LOOT_TABLE,Identifier.fromNamespaceAndPath(ID,"probe")));
   Set<String> rolled=new TreeSet<>();
   for(ItemStack stack:table.getRandomItems(new LootParams.Builder(level).create(LootContextParamSets.EMPTY)))rolled.add(String.valueOf(BuiltInRegistries.ITEM.getKey(stack.getItem())));
   test("loot.json.plain",()->expect(rolled.contains("minecraft:stone"),"a plain pool: "+rolled));
-  test("loot.json.forgeFalse",()->expect(!rolled.contains("minecraft:dirt"),"a pool whose forge:condition is false: "+rolled));
-  test("loot.json.forgeTrue",()->expect(rolled.contains("minecraft:diamond"),"a pool whose forge:condition is true (mod_loaded): "+rolled));
+  test("loot.json.forgeFalse",()->expect(rolled.contains("minecraft:dirt"),"a pool guarded only by forge:condition false, which native NeoForge does not judge: "+rolled));
+  test("loot.json.forgeTrue",()->expect(rolled.contains("minecraft:diamond"),"a pool guarded only by forge:condition true (mod_loaded), which native NeoForge does not judge: "+rolled));
   test("loot.json.neoFalse",()->expect(!rolled.contains("minecraft:emerald"),"a pool whose neoforge:conditions are false: "+rolled));
   test("loot.json.bothTrue",()->expect(rolled.contains("minecraft:gold_ingot"),"a pool with both families' conditions true: "+rolled));
 
