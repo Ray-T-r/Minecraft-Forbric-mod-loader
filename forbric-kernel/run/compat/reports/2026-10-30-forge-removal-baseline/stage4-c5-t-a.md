@@ -1,4 +1,4 @@
-# Stage 4 C5, lane T-A: mixin / client re-pins on NeoForge's own base, with review A/B fixes
+# Stage 4 C5, lane T-A: mixin / client re-pins on NeoForge's own base, with review A/B fixes and wave 2
 
 Lane T-A of the C5 plan (`stage4-notes/c5/PLAN.md` §2 "Lane T-A", as amended by D47, D58, D59, D60 and the critic's
 F10/F13/F14), on branch `s4-c5-t-a` from `cd6d0fe8`. Ports 46680-46699 (none used: T-A owns no gate and changed no gate
@@ -130,7 +130,7 @@ assign; the C5-close CI run would show them).
 | constructed partial-tick difference (expected 0) | in the test (`aLocalWhoseOperandTheCarrierComputesDifferentlyIsRefused`) | review A M1: removing `carrierTick.name="getRealtimeDeltaTicks"` turns it red at "the carrier's partial tick is not the source's ==> expected: <0> but was: <1>" |
 | corpus structural pin on a mutated handler | reproduced (not committed as a test) | in `MixinRetargetRenamedBodyCorpusTest`'s unit loop, before `noteEcosystem`, set `HudMixin.wrapAirBar`'s `method` to `["tick"]` for the unit starting `fabric-api-0.155.2`: prints `MUTATION M2 fabric-api-0.155.2+26.2.jar!fabric-rendering-v1-25.3.1+6988455e9e.jar was [extractPlayerHealth]`, "43 moves in jars, 19 distinct", and fails at "every jar that carries a pinned handler moves it, and only those" (`t-a/review-fixes/m2-corpus-mutant.log`) |
 | RegistryLoader dead-loader refusals | in the tests (`2846a907`) | mutation M3 above |
-| weave scenarios red with switch `=off` | **not started** (the weave scenarios themselves are not written) | open |
+| weave scenarios red with switch `=off` | done in wave 2 | "Wave 2" below |
 
 ## TSV rows (D47), measured
 
@@ -147,10 +147,139 @@ the two deleted merged cases, the old names of the renamed/re-derived cases (ci-
 for T-B phase 2. `ci-prepared-noforge.tsv:681` still lists `MixinReturnOrdinalsTest.apolisLastReturnOfDestroyBlockIsTheMergedLastReturn()`
 and lacks the two new names: **C6** (PLAN §3: that file is untouched in C5).
 
-## Not done (open, T-A)
+## Not done in wave 1 (all closed in wave 2, below)
 
 - Weave scenarios for `FabricItemDamageMixinAdapter`, `MixinFluidReactionAdapter.neighbourChangeOnly`, ShearsRelay
   `MOB_ROWS`, each with a switch-off red control.
 - `WeaveCoverageCensusTest`: `FabricCommonPayloadMixinAdapter` and `MixinPrivateDefaultCollision` still claimed WOVEN with
   only plain unit tests.
 - `MixinSharedResultTransportTest`: the two vacuous rows (D34 spirit).
+
+## Wave 2 (2026-11-09): the items wave 1 left open
+
+Branch `s4-c5-t-a` rebased onto the stage tip `f0cb66b0` (fast-forward: the branch was an ancestor; wave 1's commits are
+the stage's `a4862df1` and below). Harness per D68: the restored Gradle cache, pinned versions, plain `--offline` from
+`props.txt`; no init script, no private GRADLE_USER_HOME. Ports 46680-46699 unused: T-A owns no gate (PLAN §2, §9), so no
+gate was run. Notes and logs: `~/Forbric-backups/stage4-notes/c5/t-a/w2/`.
+
+### Commits
+
+| sha | item | subject (shortened) |
+|---|---|---|
+| `2d6e8d77` | owed weave scenarios: FabricItemDamage, ShearsRelay MOB_ROWS | Weave fabric-item-api's hookDamage and BCLib's sheep and snow golem shears wraps through the real Mixin |
+| `f1f32d6a` | census WOVEN claims | Give FabricCommonPayloadMixinAdapter and MixinPrivateDefaultCollision the real-weave scenarios the census claimed |
+| `aa551185` | static `staged()` fields | Read the staged native references of the three spelling tests on first use |
+| `9b96c4cc` | MixinSharedResultTransportTest vacuity | Check the unperturbed crafting group is transported before the three remaining rejection tests |
+| (the commit that adds this section) | this record | Record lane T-A's C5 wave 2 |
+
+Only test sources, weave fixtures and this record change: no kernel code, gate, build.gradle, TestFixtures or TSV.
+`compileJava compileRuntimeJava compileTestJava` green on the whole wave-2 edit set before the first commit
+(`w2/compile2.log`; that tree is the tip's) and at the tip (the suite below compiles it); the earlier commits hold subsets of
+it whose new test files nothing else references.
+
+### First act
+
+At `f0cb66b0` (an APFS clone of the lane worktree with the lane's uncommitted wave-2 edits reverted, so the run saw the
+rebased tip exactly; the queued run in the worktree was stopped before it took a slot, because by then the worktree
+held edits): `heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test
+--continue` -> **5772 tests, 0 skipped, 5 failed**, name for name the 5 rows of `c5/failures-wave1.txt` (0 new, 0 gone;
+`w2/suite-first/`).
+
+### Items
+
+- **Weave scenario, FabricItemDamageMixinAdapter** (`2d6e8d77`, `FabricItemDamageMixinAdapterWeaveTest`, fixture
+  `weave/itemdamage/`). fabric-item-api-v1 14.3.0's `hookDamage` in shape (javap of the jar in fabric-api 0.155.2: the
+  call's operands, the `Operation`, then `@Local(argsOnly = true)` entity and slot) on an `ItemStack` whose
+  `hurtAndBreak(int, LivingEntity, EquipmentSlot)` calls NeoForge's `hurtAndBreak(int, ServerLevel, LivingEntity, Consumer)`
+  with the entity (javap of the genuine base, bci 33) and whose `ServerPlayer` overload delegates there.
+  Probe (an everlasting tool held by a mob and by a player, a plain tool held by a mob), as printed by the two child runs:
+  moved `mob=handler:1,damage:0,base:zombie player=handler:1,damage:0,base:steve plain=handler:0,damage:1,base:zombie`;
+  `-Dforbric.itemDamageHandler=off` `mob=handler:0,damage:1,... player=handler:0,damage:1,...` and one unbound
+  `#hookDamage(` finding. `base:zombie` in the moved run shows `KernelItemDamage.relay` hands NeoForge's call the entity
+  the handler was given null for.
+- **Weave scenario, MixinShearsRelay MOB_ROWS** (`2d6e8d77`, `MixinShearsRelayMobsWeaveTest`, fixture
+  `weave/shearsrelaymobs/`). BCLib 26.201.2's `SheepMixin` / `SnowGolemMixin` in shape (javap: `@WrapOperation(method =
+  "mobInteract", at = ItemStack.is(Object))`) on a sheep and a snow golem whose `mobInteract` reads the held stack and
+  asks nothing (javap of the genuine base: `getItemInHand; invokespecial Animal.mobInteract` / `getstatic PASS`), plus a
+  `ShearsItem` whose entity entry tests `IShearable` (the premise `MixinShearsRelay.shearsEntry` reads). The probe uses
+  each item in `Player.interactOn`'s order and names who sheared. Relayed: `sheep: shears=item tagged=mob stick=pass
+  golem: shears=item tagged=mob stick=pass`; `-Dforbric.shearsRelayMobs=off`: `tagged=pass` on both, two unbound
+  `#bclib_isShears(` findings.
+- **neighbourChangeOnly** (no commit needed): the c3 critic's item (`c3/critic.md:293`, written at `a3791619`) was met
+  after it was written: `6c3e96f6` (TAIL and reaction point: `CarpetFluidMixinAdapterWeaveTest`, `MixinFluidReactionWeaveTest`,
+  both with `-Dforbric.fluidReactionNeighbourChange=off`) and `8462a705` (HEAD: `FluidPairMixinAdaptersWeaveTest` with
+  `...NeighbourChange.head=off`), both descendants of `a3791619`, on fixtures with the genuine `LiquidBlock` shape
+  (`onPlace` asks `shouldSpreadLiquid`, `neighborChanged` asks `FluidInteractionRegistry.canInteract`). Proven by a
+  mutation instead of a new test: M-nc (`neighbourChangeOnly` returns 0 at entry) on an APFS clone turns **8 of the 12**
+  cases of the three classes red (every wrap-side case and every `theControlFlips…`; the four off-side or oracle cases stay
+  green), restored 12/12 green (`w2/mutation-nc/`, `w2/mutation-nc-restored/`).
+- **WeaveCoverageCensusTest WOVEN claims** (`f1f32d6a`). The census said `FabricCommonPayloadMixinAdapter` and
+  `MixinPrivateDefaultCollision` were WOVEN on `FabricCommonPayloadMixinAdapterTest` / `MixinPrivateDefaultCollisionTest`,
+  which only read ClassNodes. Both now have a real-weave scenario, so the claim is true rather than moved to NOT_WOVEN_YET:
+  - `FabricCommonPayloadMixinAdapterWeaveTest` (fixture `weave/commonpayload/`): fabric-networking-api's
+    `handleCustomPayloadReceivedAsync` in shape (javap, fabric-api 0.155.2: one `instanceof ServerConfigurationNetworkAddon`,
+    else `new IllegalStateException("Unknown addon")`) with a play listener whose override calls super, as NeoForge's
+    does. Adapted: `configuration.fabric=fabric configuration.neoforge=neoforge play.neoforge=neoforge`;
+    `-Dforbric.playPayloadFallThrough=off`: `play.neoforge=disconnect(Unknown addon)`, the other two unchanged.
+  - `MixinPrivateDefaultCollisionWeaveTest` (fixture `weave/privatedefault/`): fabric-entity-events' private
+    `LivingEntity self()` on a `LivingEntity` implementing an `ILivingEntityExtension` that defaults `self()`. Renamed:
+    `tick=fabric:axolotl neoforge=neoforge:axolotl`; `-Dforbric.mixinPrivateDefaults=off`: `neoforge=AbstractMethodError`
+    (the guest handler runs either way).
+  `MixinShearsRelay`'s row now lists both of its switches, and `FabricItemDamageMixinAdapter` moved from NOT_WOVEN_YET to
+  WOVEN, so NOT_WOVEN_YET is empty. Census line at the tip: `weave coverage: config-time 1/1, getClassNode 81/81, post-Mixin 6/6`.
+- **MixinSharedResultTransportTest, the 2 vacuous rows** (`9b96c4cc`). The two rows c3's review named (A3/B6: the
+  furnace-fed `usedOldInput…` and `ambiguousResultCall…`) were already re-pinned in C3 by `54a4bce4` (an ancestor of the
+  critic tip, so map-misc row 85 was stale). Measured rather than assumed: mutation M-tr (`MixinSharedResultTransport.adapt`
+  returns 0) on the genuine stage leaves **4 of 8 green** with the test file at `f0cb66b0`: the furnace pin and three more
+  rejection tests (`aProducerSharingAnotherValueIsNotAPassThrough`, `transformedProducerReceiverOrAdditionalGroupSideEffectIsNotAccepted`,
+  `closedGroupRequiresTheSameStackSourceAndNoPathBypassingItsProducer`), which assert only `adapt == 0` after a
+  perturbation. Each now first asserts the unperturbed crafting group is transported (`adapt == 2`). With the new file
+  M-tr leaves **1 of 8 green**: `theFurnaceSnapshotHasNoRegionToMoveToOnNeoForgesBase`, which pins that nothing moves on
+  NeoForge's furnace (its premise, `ee1aed96`; it goes red only if that group were transported, so it is not vacuous for
+  what it states). Restored: 8/8 (`w2/mutation-tr-*/`). Nothing deleted.
+- **Static `NativeCallTestEvidence.staged()` fields** (`aa551185`). Measured in a ci-unstaged-shaped run (APFS clone with
+  no staged root, no Minecraft libraries, no `.dev/api`, every fixture link removed; `-Pforbric.stagedRoot=<clone>/forbric-loader/run
+  -Pforbric.mcLibraries=/nonexistent/...`): before, `MergedBaseGateSpellingTest` 7/7, `AdapterPointSpellingTest` 6/6
+  (container `initializationError`) and `FabricFreezeHookSpellingTest` 8/8 **failed** (`ExceptionInInitializerError`, then
+  `NoClassDefFoundError: Could not initialize class …`), with `RegistryLoaderCompanionBindingTest` 10/10 skipped as the
+  control. After the lazy accessor (same shape as wave 1's `5c7f8cc6`): 7/7, 293/293 and 8/8 skipped, 0 failed; the skipped
+  names equal `ci-unstaged.tsv`'s rows for each class exactly (7, 274 distinct, 8: 0 missing, 0 extra), so **no TSV change**.
+  The same run shows the four new weave tests, the census and the transport test in that shape: the weave tests and the
+  census run and pass (0 skipped), the transport test skips 8/8, equal to its 8 TSV rows (`w2/unstaged-before/`,
+  `w2/unstaged-after/`). The new tests need no fixture of any kind, so they add no row to either TSV (D47).
+
+### Red controls (wave 2)
+
+| control | result |
+|---|---|
+| FabricItemDamage weave, `-Dforbric.itemDamageHandler=off` | handler 0 / damage 1 for mob and player, one unbound finding; the moved run's predicate is false on it (`theControlFlipsEveryMoveAssertion`) |
+| ShearsRelay MOB_ROWS weave, `-Dforbric.shearsRelayMobs=off` | `tagged=pass` on sheep and golem, two unbound findings; `theControlFlipsEveryRelayAssertion` |
+| CommonPayload weave, `-Dforbric.playPayloadFallThrough=off` | `play.neoforge=disconnect(Unknown addon)`; `theControlFlipsEveryAssertion` |
+| PrivateDefault weave, `-Dforbric.mixinPrivateDefaults=off` | `neoforge=AbstractMethodError`, woven `LivingEntity` declares `self()`; `theControlFlipsEveryAssertion` |
+| neighbourChangeOnly, mutation M-nc | 8/12 red, restored 12/12 |
+| transport vacuity, mutation M-tr | before 4/8 green, after 1/8 green (the furnace premise), restored 8/8 |
+| lazy staged fields, ci-unstaged shape | before 21 failed, after 0 failed / 308 skipped = TSV |
+
+### Suite at the wave-2 tip
+
+`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test --continue` in
+`s4c5-t-a/forbric-kernel` at `9b96c4cc`, clean tree, pinned build (D68): **5784 tests, 0 skipped, 5 failed**
+(`w2/suite-final/`). Against `c5/failures-wave1.txt`: **0 new, 0 gone, 5 kept** (LB x3, SharedFinalSourceActualTest x2:
+the Stage-0 fixture reds D58 keeps). 5772 -> 5784 = the four new weave classes, 3 cases each. The four probe pairs above
+and the census line are the ones those child runs printed (stdout in the suite's XML). List: `c5/failures-t-a-w2.txt`.
+
+### Gates
+
+None. T-A owns no gate file (PLAN §2 "Lane T-A", §9 coverage: the 60 gates are G-A/G-B1/G-B2/G-C's) and changed none;
+no gate was started, so there are no `[kernel] PASS`/`FAIL` counts to report.
+
+### Open after wave 2
+
+| item | owner |
+|---|---|
+| LB x3: `../build/lb-vfp/jars/liquidbounce-{9889fe2,0.40.1+26.2-20260925}.jar` absent (D58 Stage-0 fixture reds) | P1 / owner (jars not on disk; not fetched, D68) |
+| SharedFinalSourceActualTest x2: opt-in fixture `.stage4/run/shared-final-definitions` absent (D58) | owner |
+| `FabricRegistryLoaderMixinAdapter.java:128` clause `deadCallees.contains(bound)` unreachable on NeoForge's class (wave 1, M3b) | owner / S2 |
+| `ci-prepared-noforge.tsv:681` stale apoli row (+ wave 1's two names) | C6 |
+| `MERGED` constants, `Draw.merged()`, "in the merged method" display names, "the staged merged base" fixture texts in the three spelling tests | Stage 6 / T-B phase 2 |
+| Unit tests for KernelFluidReactions / KernelMobShears (c3 critic B5, "need a live Level/registry"): the runtime halves now run inside the weave scenarios (`KernelMobShears` in `MixinShearsRelayMobsWeaveTest`; `KernelFluidReactions` already in `MixinFluidReactionWeaveTest`), not in a unit test of their own | not assigned in C5 (recorded only) |
