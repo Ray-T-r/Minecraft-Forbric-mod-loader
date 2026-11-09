@@ -197,6 +197,7 @@ Runs (genuine stage, ports 46760+, heavy.sh, D68):
   (`fluid-parity-mods-93/summary.json`, consoles kept, server copies deleted).
 - **gates-all** (`-j 1`, every other gate skipped): RESULT m60 GREEN 10/0, m61 GREEN 6/0, m62 GREEN 6/0, exit 0; m60
   read fabric-api from `.dev/api` (`gates-all-m60-m62/`).
+- **m33** after its step-title change: 22 PASS / 0 FAIL, GREEN (`gates/m33.out`).
 - python: test_gate_ports 11/11, test_soak 28/28.
 - **Suite** at the review tip (pinned build): 5772 tests, 0 skipped, 5 failed, exactly the five rows of failures-wave1.txt (0 new, 0 gone; `review-fixes/suite-final.log`, `suite-final-xml/`).
 
