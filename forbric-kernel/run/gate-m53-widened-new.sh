@@ -18,6 +18,7 @@ set -uo pipefail
 
 SERVER_DIR="$KERNEL/run/server-widened-new-m53"
 RESULTS="$BUILD/verification/m53-widened-new"
+refuse_shared_rundir "$SERVER_DIR"
 FAIL=0
 REPAIRED="{'fall.fabric', 'sprint.fabric'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"

@@ -10,7 +10,7 @@
 # A dedicated server with a Fabric mixin mod compiled against vanilla (canary/stub-rebind/fabric-mixins: a name-only
 # RETURN on getDestroySpeed capturing the state, sevenfold on sponge; a name-only HEAD on randomTeleport, cancelling for
 # a tagged entity), the unmodified fabric-entity-events-v1, and a NeoForge driver that calls the methods the way the
-# merged game does:
+# game itself does:
 #   dirt speed (control), sponge speed through the moved and wrapped injection; an untagged teleport (control), a tagged
 #   one cancelled through the moved injection; a language file read through vanilla's rewrite (control) and the mod's
 #   prefixed format kept through malilib's @ModifyArgs shape, whose stub passes a non-capturing lambda (a constant) to
@@ -27,6 +27,7 @@ set -uo pipefail
 
 SERVER_DIR="$KERNEL/run/server-stub-m46"
 RESULTS="$BUILD/verification/m46-stub-rebind"
+refuse_shared_rundir "$SERVER_DIR"
 FAIL=0
 REPAIRED="{'speed.rebound', 'teleport.rebound', 'language.rebound'}"
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"

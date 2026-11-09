@@ -2,7 +2,7 @@
 # M52 — hoppers move items into and out of Fabric item storages NeoForge's hopper cannot see.
 #
 # fabric-transfer-api-v1's HopperBlockEntityMixin asks ItemStorage.SIDED after vanilla's getAttachedContainer and
-# getSourceContainer; the merged hopper is NeoForge's, which calls neither, so it never attached. NeoForge sees a
+# getSourceContainer; NeoForge's hopper calls neither, so it never attached. NeoForge sees a
 # Fabric storage only through the kernel's capability bridge, which exposes slotted storages on block entities: an
 # unslotted storage, one on a block with no block entity, or any with the bridge off, never met a hopper.
 #
@@ -25,7 +25,7 @@
 #   3. off — both of those off: exactly the unslotted and block-only moves (and the pickup stop) fail; the slotted
 #      storage, refused faces, locked hoppers and vanilla chests hold.
 #   4. bridge-off — -Dforbric.transferBridge=off, STRICT: every case passes, the slotted one now through Fabric too.
-#   5. lithium — positive with lithium-neoforge from the merged pack, whose own hopper mixins land on the same methods
+#   5. lithium — positive with lithium-neoforge from client-merged-pack, whose own hopper mixins land on the same methods
 #      and redirect the lookup: every case passes and nothing fails to verify.
 # GATE-PARALLEL: rundirs=server-hopper-m52 mem=2000
 set -uo pipefail
@@ -33,6 +33,7 @@ set -uo pipefail
 
 SERVER_DIR="$KERNEL/run/server-hopper-m52"
 RESULTS="$BUILD/verification/m52-hopper-fabric-storage"
+refuse_shared_rundir "$SERVER_DIR"
 FAIL=0
 FAPI="$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar"
 LITHIUM="$(ls "$KERNEL"/run/client-merged-pack/mods/lithium-neoforge-*.jar 2>/dev/null | head -1)"

@@ -2,7 +2,7 @@
 # M50 — lithostitched's load predicates are read again with its Fabric build installed.
 #
 # lithostitched (Fabric build) skips a registry entry whose "predicate" fails, from an @Inject on vanilla's
-# Decoder.parse in RegistryLoadTask.PendingRegistration.loadFromResource. NeoForge's merged body decodes through
+# Decoder.parse in RegistryLoadTask.PendingRegistration.loadFromResource. NeoForge's body decodes through
 # ConditionalOps' Codec.parse — the same method, which Mixin's owner match did not see — so every gated entry loaded:
 # datapack and mod content meant only for when another mod is present (Tectonic's compat modifiers) always applied,
 # giving unwanted worldgen or a registry error that blocks the world. MixinSubtypeOwnerRetarget moves the anchor to
@@ -19,6 +19,7 @@ set -uo pipefail
 
 SERVER_DIR="$KERNEL/run/server-predicates-m50"
 RESULTS="$BUILD/verification/m50-load-predicates"
+refuse_shared_rundir "$SERVER_DIR"
 FAIL=0
 rm -rf "$RESULTS"; mkdir -p "$RESULTS"
 

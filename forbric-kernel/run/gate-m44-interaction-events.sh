@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
-# M44 — using an item on a block and picking a block, as Fabric's and NeoForge's events see them on the merged base.
+# M44 — using an item on a block and picking a block, as Fabric's and NeoForge's events see them on NeoForge's patched
+# game.
 #
-# The merged ItemStack.useOn is MinecraftForge's body: it never posted NeoForge's UseItemOnBlockEvent ITEM_AFTER_BLOCK
-# phase, and its Item.useOn calls live in ForgeHooks.onPlaceItemIntoWorld and a lambda, where fabric-api's
-# ItemEvents.USE_ON wrap could not reach them (ItemUseOnInjector restores the phase and routes both calls through one
-# ItemStack relay; MixinRelocatedCall moves the wrap there). The merged pick-block handler calls NeoForge's
-# getCloneItemStack(BlockPos, LevelReader, boolean, Player), so fabric-api's PlayerPickItemEvents.BLOCK wrap of vanilla's
-# three-argument call matched nothing (MixinWrapOperationShim binds it to NeoForge's call in its own argument order).
+# NeoForge's ItemStack.useOn posts UseItemOnBlockEvent (ITEM_BEFORE_BLOCK, ITEM_AFTER_BLOCK) itself, but its Item.useOn
+# calls live in CommonHooks.onPlaceItemIntoWorld and a lambda, where fabric-api's ItemEvents.USE_ON wrap of vanilla's
+# call in useOn could not reach them (ItemUseOnInjector routes both calls through one ItemStack relay; MixinRelocatedCall
+# moves the wrap there). NeoForge's pick-block handler calls its own getCloneItemStack(BlockPos, LevelReader, boolean,
+# Player), so fabric-api's PlayerPickItemEvents.BLOCK wrap of vanilla's three-argument call matched nothing
+# (MixinWrapOperationShim binds it to NeoForge's call in its own argument order).
 # A dedicated server with a probe mod (canary/interaction-events) and the unmodified fabric-events-interaction-v0 uses a
 # stone block item on stone with a fake player and picks blocks through the server's own packet handler:
 #   use-on — the block is placed (control); NeoForge's ITEM_BEFORE_BLOCK (control) and ITEM_AFTER_BLOCK each once, in
@@ -19,6 +20,14 @@
 #   2. off — -Dforbric.itemUseOn=off -Dforbric.mixinRelocatedCall=off -Dforbric.wrapOperationShim=off: exactly the
 #      repaired cases fail, and the controls (block placed, ITEM_BEFORE_BLOCK, a NeoForge cancel, pick-entity) still hold.
 # Not covered here: a client (the use-on lambda and client pick), and a native NeoForge or Fabric server as an oracle.
+#
+# STAGE 4 OF DROPPING MinecraftForge: on the merged base useOn was MinecraftForge's body, which never posted
+# ITEM_AFTER_BLOCK and called ForgeHooks.onPlaceItemIntoWorld; ItemUseOnInjector also re-posted the phase there, and the
+# compat claim routePlaceItemHookToNeoForge sent that MinecraftForge hook to NeoForge's (C5 critic F11 #44/#61 asked for
+# a phase that exercises it). No phase can: the claim was deleted in C3 (87014cb1) because NeoForge's own useOn calls
+# CommonHooks.onPlaceItemIntoWorld, and every placement case in phase 1 (use.place.block, use.place.fabric,
+# use.place.neoAfter, use.direct) runs through that native call; on the merged base without the claim the first
+# placement threw a BlockSnapshot ClassCastException (C3 evidence row c').
 # GATE-PARALLEL: rundirs=server-interaction-m44 mem=2000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -26,6 +35,7 @@ set -uo pipefail
 SERVER_DIR="$KERNEL/run/server-interaction-m44"
 RESULTS="$BUILD/verification/m44-interaction-events"
 FAIL=0
+refuse_shared_rundir "$SERVER_DIR"
 # use.neoCancel is a control: NeoForge's own useOn returns a cancelling listener's result itself (the merged base's
 # MinecraftForge body needed ItemUseOnInjector to put that post back; that half went with the merged base).
 REPAIRED="{'use.place.fabric', 'use.place.neoAfter', 'use.fabricOverrides', 'use.direct', 'pick.block.vanilla', 'pick.block.fabric', 'pick.block.empty', 'pick.block.includeData'}"
