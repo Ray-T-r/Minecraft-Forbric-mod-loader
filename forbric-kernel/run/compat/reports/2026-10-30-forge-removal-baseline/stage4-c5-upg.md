@@ -2,8 +2,8 @@
 
 Branch `s4-c5-upg` from `cd6d0fe8`, worktree `s4c5-upg`, ports 46740-46759. Logs: `~/Forbric-backups/stage4-notes/c5/upg/`
 (D67). This record covers the 2026-11-09 run: the 2026-11-02 work committed, then the findings of the two lane reviews
-(`c5/review-upg-A.md`, `c5/review-upg-B.md`) fixed or refuted. U1 (old kernel boots), U2 (exporter frozen and announced to
-SWAP), the canaries, gate-m58 and its calibration are NOT done; see "Open".
+(`c5/review-upg-A.md`, `c5/review-upg-B.md`) fixed or refuted. U1 and U2 were reached in wave 2 part 1, the canaries,
+gate-m58, its calibration and the nightly change in wave 2 part 2 (sections at the end); what is still open is under "Open".
 
 ## How this was measured (read first)
 
@@ -121,14 +121,88 @@ The 2026-11-02 cache tree (`build/old-kernel/187143a1…`, empty `.built`, class
 and deleted; the tree above is a fresh archive. The commands SWAP uses, the cache path, the schema version and the known
 limits are in `c5/handoff.md`, section "UPG U1/U2 (wave 2)".
 
-## Open (owner UPG unless named)
+## Wave 2, part 2 (2026-11-10): canaries, gate-m58, W5 calibration, reverse controls, nightly
 
-- Done in wave 2 part 1: the pinned-build re-check of the suite and m31, U1, U2 (above).
-- The old client launcher is not exercised yet (U1 is a server boot); gate-m58's SP arm is the first client use.
-- `build-world-upgrade-canary.sh` and the three canary sources are still only the D67 recovery copies, not proven.
-- gate-m58 with: `refuse_shared_rundir` and an env override for its rundir (D46); no-trailing-slash `.gitignore` entries
-  (D66); its evidence in its own manifest and each NeoForge mod kept only if its population command prints a success
-  line (D53); the installed-name phase green with D43 and red on a tree without it (D43, A-8); W5 calibration incl. the
-  old->old A/A run and reverse controls C1-C5.
-- The held nightly change, with or after gate-m58.
-- `c5/upg/failures-upg.txt`: the 41 names at the tip, with totals.
+Pinned build (D68), stage `.stage4`, ports 46740-46759, game JVMs through `.stage/client.sh` + `.stage/heavy.sh --exclusive`.
+Logs and evidence copies: `~/Forbric-backups/stage4-notes/c5/upg/w2/p2/` (`m58-*.out`, `m58-*.evidence/`).
+
+| sha | item | subject |
+|---|---|---|
+| `37cc189d` | W2 | `canary/world-upgrade/{common,fabric,neo}` + three scripts + README, `run/build-world-upgrade-canary.sh` (from the D67 recovery copies, changed for 26.2: PermissionSet sources, registry game-rule names, result callbacks) |
+| `6ce60ac9` | W5 | world-snapshot.py diff rules for the resave noise the A/A measured (chunk tickets, recipeBook string lists, warden tick counter, XpSeed 0 -> drawn once, session stats may only grow); schema/report/API unchanged |
+| `9c70886b` | W4 | `run/gate-m58-world-upgrade.sh` (phases main sp aa transfer energy forge installed controls) + GateArgv test |
+| `bc020d49` | D53 | the held nightly change: SLOW_GATES = soak + m58, weekday skip, Sunday --release |
+
+### gate-m58, all phases (run 4, `m58-full-4.out`): **141 PASS / 3 FAIL**
+
+| phase | result |
+|---|---|
+| main: old server + old client write S2 | every world.commands / player.commands line OK (mcwbridges 4, mcwfurnitures 3, toolbelt 2, corpse 1), both canaries wrote world and player values |
+| main: S2 -> S3 `upgrade` / S3 -> S4 `reopen` | **0 / 0 differences**; census of S2 against the new registries 0 missing (attachment_type 10, block 16, block_entity_type 8, data_component_type 10, entity_type 3, item 17); all four canary reads PASS (world + player, JSON pass); first new boot exactly one `Missing data pack forbric/carrier/1-forge-runtime-interop`, second none; no load error |
+| main: the new client's socket join (s3, s4) | **FAIL x2**: the client drops the connection on a chunk packet, `IllegalArgumentException: No value with id 43766` in `LinearPalette.read` (a block-state id the client does not have); the player logs in (its file is read and rewritten, so the S3/S4 comparisons stand) |
+| sp: old client SP -> S2c, new client SP twice -> S3c, S4c | 0 / 0 differences, census 0 missing, canary reads PASS, one Forge-carrier missing pack then none |
+| aa (C3): old kernel reopens S2 with an old client | **0 differences** under `reopen` with the merged-only keys set aside on both sides (CanUpdate 8, ForgeData 2) |
+| transfer | old `prepare` PASS (4+4 routes, 40 items, 32,417 units), new `reload` PASS (40, 32,417), no load error |
+| energy | old `prepare` PASS (2 families, 2 cells, 40,000 E), new `reload` PASS (40,000 E) |
+| forge (C5) | refusal line for `mcw-bridges-3.1.2-mc26.2forge.jar (mcwbridges)`; canary reads PASS; `--ignore-namespace mcwbridges` 0 differences; unfiltered 4, all naming mcwbridges (blocks 2, the chest's items, the `forbric/data/mcwbridges` pack); every load error / missing pack names mcwbridges or the Forge carrier |
+| installed (D43) | old world enables `forbric/carrier/2-neoforge-runtime-26.2`; new boot logs the rename, no missing/new carrier pack; list renamed in place: `[vanilla, fabric-convention-tags-v2, mod_data, forbric/carrier/2-neoforge-runtime]` |
+| C1 | exactly two differences: `blocks /minecraft:overworld 2 -60 4` and the chest's `Items[7]/count`; the boot names `acacia_bridge_piex`. Its client join hit the same chunk-packet crash (**FAIL x1**, the third) |
+| C2 | census `--drop block=mcwbridges:oak_bridge_pier` -> exit 1, `census missing: 1` naming it |
+| C4 | ForgeCaps 0 holders / 0 fired, ForgeData 1/1, CanUpdate 4/4, Forge carrier pack 1/1; the reopen needed no merged-only allowance |
+
+**Installed-name phase at the commit before D43** (`a0eeba07`, a `git archive` in scratch with this gate copied in,
+`m58-installed-pre-d43-a0eeba07.out`): **10 PASS / 4 FAIL**, exactly the four D43 checks: the new world enables
+`forbric/carrier/2-neoforge-runtime-26.2.0.93`, no rename line, `Missing data pack forbric/carrier/2-neoforge-runtime-26.2`,
+`Found new data pack forbric/carrier/2-neoforge-runtime-26.2.0.93`. At the tip the same phase is 14/0 (`m58-installed-1.out`).
+
+### W5 calibration (what the first runs measured, and what changed)
+
+| run | P/F | what it taught |
+|---|---|---|
+| installed-1 | 14/0 | — |
+| machines-forge-1 | 25/2 | the forced-chunk tickets come back in another order -> `tickets` unordered |
+| main-1 | 7/33 | waystones needs shogi (NoClassDefFoundError `ShogiStreamCodecs`, strict stop) |
+| main-2 | 48/15 | `clear @s` fails on an empty inventory, `xp set … points` above the bar is refused; new client: particle remap crash (below); a boot nobody joins leaves the old player file (C1 now joins) |
+| full-3 | 130/14 | A/A shows the session noise (recipeBook order, warden ticks, XpSeed 0 -> drawn, session stats): measured old -> old, so rules, not allowances for the upgrade; the SP save must hold only the host's files; a client that leaves before the loop looks again |
+| full-4 | 141/3 | above |
+
+Old-side key set (S2): no ForgeCaps anywhere, ForgeData only on the player (= NeoForgeData, the canary's persistent int),
+CanUpdate on the three entities and the player, `forbric/carrier/1-forge-runtime-interop` in DataPacks.Enabled, no
+`data/forge/` file, `fml.LoadingModList` equal old -> new (no Forge row to drop), no "version differences" line.
+
+### Suite, gate-m31, python tests (end of part 2)
+
+| check | result |
+|---|---|
+| full suite at `bc020d49` (pinned, `cleanTest test --continue -Pforbric.requireFixtures=all`) | **5784 tests, 0 skipped, 5 failed: exactly the 5 names of `c5/failures-wave1.txt`** (D58), 0 new; `c5/failures-upg.txt`, XML `c5/upg/w2/p2/xml/` |
+| gate-m31 / `M31_UNFIXED=1` (`GATE_PORT=46752`) | 13 PASS / 0 FAIL; 12 PASS / 1 FAIL (`every chunk carries vanilla's biomes (want 0 got 11)`) |
+| `test_world_snapshot.py` / `test_world_parity.py` / `test_gate_ports.py` / `tools/test_run_nightly.py` | 30/30 / 4/4 / 11/11 / 9/9 |
+| red checks | GateArgv red on a gate copy spelling `--palettes`; each new snapshot rule removed -> its test red; the nightly test red with gate-m58 removed (archive of HEAD); m58 installed-name phase red at `a0eeba07` |
+
+### Two defects gate-m58 found (not upgrade losses; owner: kernel / orchestrator, not UPG)
+
+1. **New-kernel client cannot join a server whose mods register particle types** (balm, sophisticatedcore): fabric-registry-sync
+   remaps `minecraft:particle_type` on the join and `Int2ObjectMapTracker.onRemap` calls `clear()` on
+   `KernelParticleProviders.IntKeyedView`, which does not implement it -> `UnsupportedOperationException`, "Registry
+   remapping failed!" (`m58-main-2.evidence/logs/s3-server.client.game.log`). The old client joined the same server. Not
+   fixed here (not UPG's file; the right fix is an adaptation decision: the view is keyed by Identifier, so a remap needs no
+   rewrite at all, and a naive `clear()` + re-put through the registry would scramble providers). gate-m58 dropped
+   waystones and sophisticatedbackpacks (+ libs) from its set for it, with the reason in the gate.
+2. **New-kernel client drops the connection on the first chunk packet** with gate-m58's set (fabric-api 0.155.2, the two
+   canaries, mcw-bridges, mcw-furniture, ToolBelt, corpse): `No value with id 43766` (block-state id) in `LinearPalette.read`,
+   on new -> new too (s4, c1; also in run 3). The old client joined the old server with the same set in every run. Not
+   diagnosed further here; a gate-m12 reproduction with this set, and with it minus mcw-furniture, is queued
+   (`m12-repro.sh`; result below or in handoff.md).
+
+## Open (owner named)
+
+- Done in wave 2 part 2: canaries (W2), gate-m58 (W4) with every phase and control C1-C5, W5 calibration incl. the A/A, the
+  installed-name phase green at the tip and red at `a0eeba07`, the nightly SLOW_GATES change, m31 re-run.
+- **gate-m58 is 141/3 at the tip, not green**: its three FAILs are the new client's socket join (defect 2 above). Owner: the
+  kernel (orchestrator to assign; MP registry/chunk sync on the genuine base). m58 goes green when that join works; nothing
+  in the gate needs to change for it. Defect 1 (particle remap `clear()`): same owner; when fixed, waystones and
+  sophisticatedbackpacks can return to the gate's set.
+- The old client was exercised (MP and SP) on the tag's kernel; an old -> old A/A in singleplayer is not run (the server
+  A/A is).
+- world-snapshot.py's rule table grew (6ce60ac9); SWAP imports the module: same schema, but a diff can now report fewer
+  differences (handoff.md, "UPG (wave 2, part 2)").
