@@ -185,6 +185,94 @@ class Classify(unittest.TestCase):
                          (rows[0]["forbric"], rows[0]["native"], rows[0]["verdict"], rows[0]["mod"]))
 
 
+class ClassifyReview(unittest.TestCase):
+    """Review A-1 / A-2 (wave 2): a key one arm's old world never had, a value only Forbric changed, an element lost
+    from a list, and a block entity named only by its position."""
+
+    def _write(self, root, f_old, f_new, n_old, n_new):
+        f, n = root / "forbric", root / "native"
+        for d, files in ((f, {"old": f_old, "neo-open": f_new}), (n, {"forge-reopen": n_old, "neo-open": n_new})):
+            d.mkdir()
+            for name, snap in files.items():
+                (d / ("%s.snapshot.json" % name)).write_text(json.dumps(snap))
+        return f, n
+
+    @staticmethod
+    def _level(**fml):
+        return ["compound", {"Data": ["compound", {"x": ["int", 1]}], "fml": ["compound", fml]}]
+
+    @staticmethod
+    def _furnace(spent, items):
+        return {"minecraft:overworld 2 -60 0": ["compound", {
+            "id": ["string", "brickfurnace:brick_furnace"], "cooking_time_spent": ["short", spent],
+            "Items": ["list", "compound", [{"Slot": ["byte", s], "id": ["string", i], "count": ["int", 1]} for s, i in items]]}]}
+
+    def test_a_key_only_natives_old_world_has_is_not_a_forbric_keep(self):
+        registries = ["compound", {"minecraft:block": ["int", 1]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            f, n = self._write(Path(tmp), _snap(level=self._level()), _snap(level=self._level()),
+                               _snap(level=self._level(Registries=registries)), _snap(level=self._level()))
+            rows = {r["key"]: r for r in fs.classify(f, n)["rows"]}
+        row = rows["level /fml/Registries"]
+        self.assertEqual(("absent", "lost", fs.NOT_IN_FORBRIC_OLD), (row["forbric"], row["native"], row["verdict"]))
+        self.assertNotIn(row["verdict"], fs.CANDIDATES)
+
+    def test_a_value_only_forbric_changed_is_a_candidate_and_names_the_block_entitys_mod(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            f, n = self._write(Path(tmp), _snap(block_entities=self._furnace(40, [])), _snap(block_entities=self._furnace(0, [])),
+                               _snap(block_entities=self._furnace(40, [])), _snap(block_entities=self._furnace(40, [])))
+            table = fs.classify(f, n)
+        row = {r["key"]: r for r in table["rows"]}["block_entities /minecraft:overworld 2 -60 0/cooking_time_spent"]
+        self.assertEqual(("changed", "kept", fs.FORBRIC_CHANGED, "brickfurnace"),
+                         (row["forbric"], row["native"], row["verdict"], row["mod"]))
+        self.assertEqual([row["key"]], table["candidates"])
+
+    def test_a_list_element_lost_is_its_own_row_by_its_key(self):
+        before = [(0, "minecraft:raw_iron"), (1, "minecraft:coal"), (2, "minecraft:iron_ingot")]
+        with tempfile.TemporaryDirectory() as tmp:
+            # Forbric loses slot 1 (the list gets shorter); native keeps every slot.
+            f, n = self._write(Path(tmp), _snap(block_entities=self._furnace(40, before)),
+                               _snap(block_entities=self._furnace(40, [before[0], before[2]])),
+                               _snap(block_entities=self._furnace(40, before)), _snap(block_entities=self._furnace(40, before)))
+            rows = {r["key"]: r for r in fs.classify(f, n)["rows"]}
+        self.assertEqual(["block_entities /minecraft:overworld 2 -60 0/Items[Slot=1]"], list(rows))
+        row = rows["block_entities /minecraft:overworld 2 -60 0/Items[Slot=1]"]
+        self.assertEqual(("lost", "kept", fs.FORBRIC_CAUSED, "brickfurnace"),
+                         (row["forbric"], row["native"], row["verdict"], row["mod"]))
+
+    def test_the_players_lost_effect_and_attribute_are_named_by_id(self):
+        player = "00000000-0000-0000-0000-000000000000"
+
+        def body(effects, attributes):
+            return ["compound", {"XpLevel": ["int", 23],
+                                 "active_effects": ["list", "compound", [{"id": ["string", e], "amplifier": ["byte", 0]} for e in effects]],
+                                 "attributes": ["list", "compound", [{"id": ["string", a], "base": ["double", 1.0]} for a in attributes]]}]
+        old = _snap(players={player: body(["tombstone:silent_bond", "tombstone:ghostly_shape"], ["forge:swim_speed", "minecraft:max_health"])})
+        with tempfile.TemporaryDirectory() as tmp:
+            f, n = self._write(Path(tmp), old, copy.deepcopy(old), _snap(), _snap())
+            client = Path(tmp) / "client.json"
+            seen = copy.deepcopy(old)
+            seen["players"][player] = body(["tombstone:ghostly_shape"], ["minecraft:max_health"])
+            client.write_text(json.dumps(seen))
+            rows = {r["key"]: r for r in fs.classify(f, n, client)["rows"]}
+        self.assertEqual({"players /<player>/active_effects[id=tombstone:silent_bond]",
+                          "players /<player>/attributes[id=forge:swim_speed]"}, set(rows))
+        for row in rows.values():
+            self.assertEqual(("lost", "n/a", fs.NO_NATIVE_LOSS), (row["forbric"], row["native"], row["verdict"]))
+
+    def test_a_whole_value_on_one_arm_covers_the_element_rows_of_the_other(self):
+        def loading(*mods):
+            return ["list", "compound", [{"ModId": ["string", m], "ModVersion": ["string", "1"]} for m in mods]]
+        lvl = lambda mods: ["compound", {"Data": ["compound", {"x": ["int", 1]}], "fml": ["compound", {"Mods": mods}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            # Forbric's list changes length (one whole-list row); native's changes in place (one row per element).
+            f, n = self._write(Path(tmp), _snap(level=lvl(loading("a", "b"))), _snap(level=lvl(loading("a"))),
+                               _snap(level=lvl(loading("a", "b"))), _snap(level=lvl(loading("a", "c"))))
+            rows = {r["key"]: r for r in fs.classify(f, n)["rows"]}
+        self.assertEqual(("changed", "changed"), (rows["level /fml/Mods"]["forbric"], rows["level /fml/Mods"]["native"]))
+        self.assertEqual(("changed", "changed"), (rows["level /fml/Mods[1]/ModId"]["forbric"], rows["level /fml/Mods[1]/ModId"]["native"]))
+
+
 class WorldFiles(unittest.TestCase):
     def test_a_mods_own_files_are_kept_changed_or_lost(self):
         with tempfile.TemporaryDirectory() as tmp:

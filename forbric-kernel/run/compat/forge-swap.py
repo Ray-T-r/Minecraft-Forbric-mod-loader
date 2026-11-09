@@ -33,8 +33,8 @@ the items it crafts are never part of a diff), is cleared before and after, and 
 mod's blocks are still there, its items still in their slots, its block can be placed, its machine still works and its
 recipe still crafts (a vanilla crafter powered by a redstone block). Each check is announced by
 `say [forge-swap] check <name> expect <regex>` so `drill` can read the answer that follows it. The player half
-(inventory, armour, ender chest, xp, tombstone's player data and effect, a grave, a filled packedup backpack) needs a
-singleplayer client: `datapack` writes a tick function that gives the player a kit once, and forge-swap-make-old.sh
+(inventory, armour, ender chest, xp, tombstone's player data and effect, a grave, and a packedup backpack the client
+tries to fill, which no run has done yet) needs a singleplayer client: `datapack` writes a tick function that gives the player a kit once, and forge-swap-make-old.sh
 drives the client. CONFIG_MARKS puts one non-default value into one config per candidate, so a NeoForge build that
 ignores the old file is visible.
 """
@@ -467,9 +467,146 @@ def _mods_named(*values):
     return found
 
 
-def losses(old, new, ws):
-    """{normalised key: (kind, mods, detail)} for one arm's swap; kind lost / changed / gained / rule."""
+# Lists whose elements are named by one of their own keys, not by their position: an inventory slot, an effect, an
+# attribute or a modifier by its id. world-snapshot.py's diff compares a list of another length as one value and a
+# list of the same length index by index, so a lost slot, effect or attribute came out as one CHANGED row of the whole
+# list (review A-2: the player's `silent_bond` effect and `forge:swim_speed` attribute were found by hand). losses()
+# re-diffs these lists element by element; an element is named `[Slot=3]` / `[id=minecraft:speed]` in the key.
+KEYED_LISTS = {"Items": "Slot", "Inventory": "Slot", "EnderItems": "Slot", "active_effects": "id", "attributes": "id",
+               "modifiers": "id"}
+_KEYED_SEGMENT = re.compile(r"/(%s)(?=$|\[)" % "|".join(KEYED_LISTS))
+_MISSING = object()
+
+
+def _compound(value):
+    """The entries of a typed compound or a plain dict (a snapshot's facet or holder), else None."""
+    if isinstance(value, list) and len(value) >= 2 and value[0] == "compound" and isinstance(value[1], dict):
+        return value[1]
+    if isinstance(value, dict):
+        return value
+    return None
+
+
+def _element_key(item, field):
+    v = item.get(field) if isinstance(item, dict) else None
+    return str(v[1]) if isinstance(v, list) and len(v) == 2 and not isinstance(v[1], (list, dict)) else None
+
+
+def _keyed(value, field):
+    """{key: element} for a typed list of compounds whose every element has a distinct `field`, else None."""
+    if not (isinstance(value, list) and len(value) == 3 and value[0] == "list" and value[1] == "compound"):
+        return None
+    out = {}
+    for item in value[2]:
+        k = _element_key(item, field)
+        if k is None or k in out:
+            return None
+        out[k] = item
+    return out
+
+
+def _get(value, path):
+    """The value at a diff path (world-snapshot.py's `/key` and `[i]`, and this file's `[field=key]` segments), or
+    _MISSING. A holder's key can hold `/` (a SavedData file), so every key the path continues from is tried."""
+    if path == "":
+        return value
+    entries = _compound(value)
+    if entries is not None and path.startswith("/"):
+        rest = path[1:]
+        for k in sorted(entries, key=len, reverse=True):
+            if rest == k or rest.startswith(k + "/") or rest.startswith(k + "["):
+                found = _get(entries[k], rest[len(k):])
+                if found is not _MISSING:
+                    return found
+        return _MISSING
+    if isinstance(value, list) and len(value) == 3 and value[0] == "list" and path.startswith("["):
+        m = re.match(r"\[(\d+)\]|\[([^=\]]+)=([^\]]*)\]", path)
+        if not m:
+            return _MISSING
+        if m.group(1) is not None:
+            i = int(m.group(1))
+            item = value[2][i] if i < len(value[2]) else _MISSING
+        else:
+            item = next((x for x in value[2] if _element_key(x, m.group(2)) == m.group(3)), _MISSING)
+        if item is _MISSING:
+            return _MISSING
+        return _get(["compound", item] if value[1] == "compound" else item, path[m.end():])
+    return _MISSING
+
+
+def _retag(element, item):
+    return ["list"] + list(item) if element == "list" else [element, item]
+
+
+def _walk_keyed(a, b, path, out):
+    """world-snapshot.py's _walk, except that a KEYED_LISTS list is compared element by element under its key (when
+    every element on both sides has a distinct one; otherwise as _walk does)."""
+    if a == b:
+        return
+    field = KEYED_LISTS.get(re.split(r"[/\]]", path)[-1])
+    ka, kb = (_keyed(a, field), _keyed(b, field)) if field else (None, None)
+    if ka is not None and kb is not None:
+        for k in sorted(set(ka) | set(kb)):
+            seg = "%s[%s=%s]" % (path, field, k)
+            if k not in kb:
+                out.append((seg, ["compound", ka[k]], None))
+            elif k not in ka:
+                out.append((seg, None, ["compound", kb[k]]))
+            else:
+                _walk_keyed(["compound", ka[k]], ["compound", kb[k]], seg, out)
+        return
+    ca, cb = _compound(a), _compound(b)
+    if ca is not None and cb is not None:
+        for k in sorted(set(ca) | set(cb)):
+            if k not in ca:
+                out.append((path + "/" + k, None, cb[k]))
+            elif k not in cb:
+                out.append((path + "/" + k, ca[k], None))
+            else:
+                _walk_keyed(ca[k], cb[k], path + "/" + k, out)
+        return
+    if isinstance(a, list) and isinstance(b, list) and len(a) == 3 and len(b) == 3 and a[0] == b[0] == "list" \
+            and a[1] == b[1] and len(a[2]) == len(b[2]):
+        for i, (x, y) in enumerate(zip(a[2], b[2])):
+            _walk_keyed(_retag(a[1], x), _retag(b[1], y), "%s[%d]" % (path, i), out)
+        return
+    out.append((path, a, b))
+
+
+def _by_element(found, na, nb):
+    """`found` with every row inside a KEYED_LISTS list replaced by that list's element-by-element rows."""
+    out, done = [], set()
+    for facet, path, a, b in found:
+        m = _KEYED_SEGMENT.search(path) if facet != "rule" else None
+        if not m:
+            out.append((facet, path, a, b))
+            continue
+        top = path[:m.end()]
+        if (facet, top) in done:
+            continue
+        done.add((facet, top))
+        va, vb = _get(na.get(facet), top), _get(nb.get(facet), top)
+        if va is _MISSING or vb is _MISSING:
+            out += [(f, p, x, y) for f, p, x, y in found
+                    if f == facet and (p == top or p.startswith(top + "[") or p.startswith(top + "/"))]
+            continue
+        rows = []
+        _walk_keyed(va, vb, top, rows)
+        out += [(facet, p, x, y) for p, x, y in rows]
+    return out
+
+
+def _normalised(snapshot, side, ws):
+    return ws.normalise(snapshot, ws.Rules("upgrade"), side)
+
+
+def losses(old, new, ws, na=None, nb=None):
+    """{normalised key: (kind, mods, detail)} for one arm's swap; kind lost / changed / gained / rule. na / nb are the
+    two snapshots under the upgrade rules (normalised here when not given)."""
     found, _rules = ws.diff(old, new, "upgrade")
+    na = na if na is not None else _normalised(old, "a", ws)
+    nb = nb if nb is not None else _normalised(new, "b", ws)
+    found = _by_element(found, na, nb)
     labels = _labels(old)
     labels.update({k: v for k, v in _labels(new).items() if k not in labels})
     out = {}
@@ -485,9 +622,52 @@ def losses(old, new, ws):
             kind = "gained"
         else:
             kind = "changed"
-        mods = _mods_named(path, a, b, label or "")
+        idents = []
+        if facet == "block_entities":
+            # A block entity's path names only its position: attribute it by its own id too (review A-2: the brick
+            # furnace and the tombstone grave came out as "vanilla").
+            holder = path[1:].split("/", 1)[0].split("[", 1)[0]
+            for side in (na, nb):
+                ident = (_compound(side.get("block_entities", {}).get(holder)) or {}).get("id")
+                if isinstance(ident, list) and len(ident) == 2 and isinstance(ident[1], str):
+                    idents.append(ident[1])
+        mods = _mods_named(path, a, b, label or "", *idents)
         out[key] = (kind, sorted(mods) or ["vanilla"], {"a": a, "b": b})
     return out
+
+
+def _by_label(snapshot):
+    """label -> [uuid] for one snapshot (the inverse of _labels)."""
+    out = {}
+    for uuid, label in _labels(snapshot).items():
+        out.setdefault(label, []).append(uuid)
+    return out
+
+
+def _present(norm, key, by_label):
+    """Whether a classify key names a value the (normalised) snapshot holds. A rule row is not a path: True."""
+    facet, _, path = key.partition(" ")
+    if facet == "rule" or facet not in norm:
+        return True
+    paths = [path]
+    for label in set(re.findall(r"<([^<>]*)>", path)):
+        paths = [p.replace("<%s>" % label, u) for p in paths for u in by_label.get(label, [])]
+    return any(_get(norm[facet], p) is not _MISSING for p in paths)
+
+
+def _state(key, found, norm, by_label):
+    """One arm's state for a classify key: its own row's kind; else the kind of a row above it (a whole value the diff
+    reported once); else "changed" when rows below it moved; else "kept" when that arm's old world holds the key and
+    "absent" when it never had it (review A-1: `fml/Registries`, which only native MinecraftForge writes, was called
+    kept on Forbric)."""
+    if key in found:
+        return found[key][0]
+    for other, row in found.items():
+        if key.startswith(other + "/") or key.startswith(other + "["):
+            return row[0]
+    if any(other.startswith(key + "/") or other.startswith(key + "[") for other in found):
+        return "changed"
+    return "kept" if _present(norm, key, by_label) else "absent"
 
 
 # A mod's own files in the world, outside what world-snapshot.py exports (data/, players/, regions): packedup's backpack
@@ -545,23 +725,60 @@ def world_files(old_world, new_world, ws=None):
     return rows
 
 
+FORBRIC_CAUSED = "FORBRIC-CAUSED"
+FORBRIC_CHANGED = "FORBRIC CHANGED (native keeps it: a Forbric-caused candidate)"
+NO_NATIVE_LOSS = "NO NATIVE ROW (judged by the mod's code)"
+NO_NATIVE_CHANGED = "NO NATIVE ROW (a value moved; judged by the mod's code)"
+NOT_IN_FORBRIC_OLD = "NOT IN FORBRIC'S OLD WORLD (neither a loss nor a keep)"
+LOADER_METADATA = "LOADER METADATA (the loader's mod list, rewritten by every save)"
+GAINED = "GAINED (not a loss)"
+CHANGED = "CHANGED (a value moved; judged)"
 VERDICTS = {
-    ("lost", "kept"): "FORBRIC-CAUSED", ("rule", "kept"): "FORBRIC-CAUSED",
+    ("lost", "kept"): FORBRIC_CAUSED, ("rule", "kept"): FORBRIC_CAUSED,
+    ("lost", "changed"): FORBRIC_CAUSED, ("rule", "changed"): FORBRIC_CAUSED,
+    ("changed", "kept"): FORBRIC_CHANGED,
     ("lost", "lost"): "MOD FORMAT (native loses it too)", ("rule", "rule"): "MOD FORMAT (native loses it too)",
+    ("lost", "rule"): "MOD FORMAT (native loses it too)", ("rule", "lost"): "MOD FORMAT (native loses it too)",
     ("kept", "lost"): "FORBRIC KEEPS (native loses)", ("kept", "rule"): "FORBRIC KEEPS (native loses)",
+    ("changed", "lost"): "FORBRIC KEEPS (native loses)", ("changed", "rule"): "FORBRIC KEEPS (native loses)",
 }
+# The verdicts that can be a loss Forbric causes: each one is fixed or shown native-identical (PLAN SWAP acceptance).
+CANDIDATES = (FORBRIC_CAUSED, FORBRIC_CHANGED, NO_NATIVE_LOSS, NO_NATIVE_CHANGED)
+
+
+def verdict(key, fk, nk, no_native):
+    """One row's verdict from the two arms' states (lost / rule / changed / gained / kept / absent)."""
+    if key.startswith("level /fml/LoadingModList"):
+        return LOADER_METADATA
+    if fk == "absent":
+        return NOT_IN_FORBRIC_OLD
+    if no_native or nk == "absent":
+        return {"lost": NO_NATIVE_LOSS, "rule": NO_NATIVE_LOSS, "changed": NO_NATIVE_CHANGED, "gained": GAINED}.get(fk, "KEPT")
+    if "gained" in (fk, nk) and not {"lost", "rule"} & {fk, nk}:
+        return GAINED
+    if (fk, nk) in VERDICTS:
+        return VERDICTS[(fk, nk)]
+    if "changed" in (fk, nk):
+        return CHANGED
+    return "%s/%s (judged)" % (fk, nk)
 
 
 def classify(forbric, native, client=None):
     """The L_F / L_N table. forbric: a `native-controls.py swap --engine forbric` result dir (old, neo-open snapshots);
     native: the `--engine native` one (forge-reopen, neo-open). A key the native arm cannot have (classicpipes, which
     native MinecraftForge 65.0.1 does not load; the player, which a native server has none of) has no native row and is
-    judged from the mod's own code."""
+    judged from the mod's own code.
+
+    Each arm's state for a key is its own diff row's kind (lost / rule / changed / gained); a key with no row of its
+    own takes the kind of a row above it (a whole value), "changed" when rows below it moved, "kept" when that arm's
+    old world holds it and "absent" when that arm's old world never had it. The verdicts in CANDIDATES are the ones a
+    Forbric-caused loss can hide behind; `candidates` lists their keys."""
     ws = _load("world_snapshot", "world-snapshot.py")
     read = lambda d, n: json.loads((d / ("%s.snapshot.json" % n)).read_text())
     f_old, f_new = read(forbric, "old"), read(forbric, "neo-open")
     n_old, n_new = read(native, "forge-reopen"), read(native, "neo-open")
-    lf, ln = losses(f_old, f_new, ws), losses(n_old, n_new, ws)
+    nf_old, nn_old = _normalised(f_old, "a", ws), _normalised(n_old, "a", ws)
+    lf, ln = losses(f_old, f_new, ws, na=nf_old), losses(n_old, n_new, ws, na=nn_old)
     player = lambda k: k.startswith(("players ", "advancements ", "stats ")) or k.startswith(("rule player ",))
     # A dedicated server never loads a player file, so its export has the old file untouched: no player row comes from
     # a server arm (native has no player at all).
@@ -571,31 +788,31 @@ def classify(forbric, native, client=None):
         # A dedicated server never loads a player file, so the player's rows come from the singleplayer client that
         # opened the old world with the NeoForge builds (its own export): only its player facets are taken.
         c_new = json.loads(Path(client).read_text())
-        lc = losses(f_old, c_new, ws)
+        lc = losses(f_old, c_new, ws, na=nf_old)
         lf.update({k: v for k, v in lc.items() if player(k)})
     native_mods = _mods_named(n_old.get("blocks", {}), n_old.get("block_entities", {}), n_old.get("entities", {}),
                               sorted(n_old.get("saved_data", {})))
+    f_labels, n_labels = _by_label(f_old), _by_label(n_old)
     rows = []
     for key in sorted(set(lf) | set(ln)):
-        fk = lf.get(key, ("kept",))[0]; nk = ln.get(key, ("kept",))[0]
+        # A key missing from one arm's diff is not "kept" by default: that arm may report it as part of a whole value,
+        # or its old world may never have had it (review A-1).
+        fk = _state(key, lf, nf_old, f_labels)
+        nk = _state(key, ln, nn_old, n_labels)
         mods = (lf.get(key) or ln.get(key))[1]
         no_native = player(key) or (mods != ["vanilla"] and not set(mods) & native_mods)
-        if "gained" in (fk, nk) and "lost" not in (fk, nk) and "rule" not in (fk, nk):
-            verdict = "GAINED (not a loss)"
-        elif "changed" in (fk, nk) and "lost" not in (fk, nk) and "rule" not in (fk, nk):
-            verdict = "CHANGED (a value moved; judged)"
-        elif no_native and nk == "kept":
-            verdict = "NO NATIVE ROW (judged by the mod's code)" if fk in ("lost", "rule") else "KEPT"
-        else:
-            verdict = VERDICTS.get((fk, nk), "%s/%s (judged)" % (fk, nk))
         rows.append({"key": key, "mod": ",".join(mods), "forbric": fk, "native": "n/a" if no_native else nk,
-                     "verdict": verdict, "forbricDetail": lf.get(key, (None, None, None))[2],
+                     "verdict": verdict(key, fk, nk, no_native), "forbricDetail": lf.get(key, (None, None, None))[2],
                      "nativeDetail": ln.get(key, (None, None, None))[2]})
     drills = {}
     for arm, d in (("forbric", forbric), ("native", native)):
         log = d / "neo-open.log"
         drills[arm] = [list(r) for r in drill(log.read_text(errors="replace"))] if log.is_file() else []
-    result = {"rows": rows, "drill": drills, "nativeMods": sorted(native_mods)}
+    counts = {}
+    for row in rows:
+        counts[row["verdict"]] = counts.get(row["verdict"], 0) + 1
+    result = {"rows": rows, "drill": drills, "nativeMods": sorted(native_mods), "counts": dict(sorted(counts.items())),
+              "candidates": [row["key"] for row in rows if row["verdict"] in CANDIDATES]}
     for arm, d in (("forbric", forbric), ("native", native)):
         inputs = json.loads((d / "inputs.json").read_text()) if (d / "inputs.json").is_file() else {}
         old_world = Path(inputs.get("oldWorld") or "/nonexistent") if arm == "forbric" else d / "forge-instance/world"
@@ -687,6 +904,9 @@ def main(argv=None):
             Path(args.out).write_text(json.dumps(table, indent=1, sort_keys=True))
         for row in table["rows"]:
             print("%-24s L_F=%-7s L_N=%-7s %-40s %s" % (row["mod"], row["forbric"], row["native"], row["verdict"], row["key"]))
+        for name, n in table["counts"].items():
+            print("[forge-swap] %3d %s" % (n, name))
+        print("[forge-swap] %d Forbric-caused candidate(s) (%s)" % (len(table["candidates"]), ", ".join(CANDIDATES)))
     return 0
 
 
