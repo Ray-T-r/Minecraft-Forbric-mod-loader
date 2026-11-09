@@ -254,7 +254,9 @@ def export(world, box=None, label=""):
 # --- rules ---------------------------------------------------------------------------------------------------------
 
 # Keys only the merged base wrote (constant-pool diff of Entity/BlockEntity merged vs genuine; nothing in chunk, level
-# or player storage classes): an upgrade drops them on resave, a reopen must never see them.
+# or player storage classes): an upgrade drops them on resave, a reopen must never see them. Dropped only when they
+# carry nothing the genuine base would have kept: a non-empty ForgeCaps (a Forge mod's capability data) or a ForgeData
+# with no NeoForgeData beside it is reported as a loss, never allowed.
 MERGED_ENTITY_KEYS = ("ForgeCaps", "ForgeData", "CanUpdate")
 MERGED_BE_KEYS = ("ForgeCaps",)
 # The MinecraftForge carrier's datapack ids (rank 1; staged forge-runtime-interop, installed forge-runtime-<mc>): Forbric no
@@ -341,6 +343,36 @@ def _sort_unordered(value, rules):
     return value
 
 
+def _nonempty(typed):
+    """Whether a typed value holds anything: a compound or list with entries, or any other value."""
+    if isinstance(typed, list) and typed and typed[0] == "compound":
+        return bool(typed[1])
+    if isinstance(typed, list) and len(typed) == 3 and typed[0] == "list":
+        return bool(typed[2])
+    return True
+
+
+def _forge_caps_lost(caps, rules, where):
+    """A non-empty ForgeCaps is a Forge mod's capability data, which the genuine base never reads: a loss, unless every
+    capability belongs to a namespace the run declared gone (--ignore-namespace)."""
+    entries = caps[1] if isinstance(caps, list) and caps and caps[0] == "compound" else None
+    if entries is None:
+        rules.violation("%s: ForgeCaps on the old side is not a compound: %s" % (where, _short(caps)))
+        return
+    lost = []
+    for name in sorted(entries):
+        gone = next((ns for ns in rules.ignore if _mentions(name, ns)), None)
+        if gone:
+            rules.count("ignore-namespace " + gone)
+        else:
+            lost.append(name)
+    if lost:
+        rules.violation("%s: ForgeCaps carries capability data the genuine base does not read (lost on upgrade): %s"
+                        % (where, ",".join(lost)))
+    else:
+        rules.count("drop merged-only ForgeCaps")
+
+
 def _drop_merged(nbt, keys, rules, side, where):
     """Upgrade: drop the merged-only keys from an old-side holder (checking ForgeData mirrored NeoForgeData first).
     Reopen, or the new side of an upgrade: any of them is a violation."""
@@ -354,8 +386,15 @@ def _drop_merged(nbt, keys, rules, side, where):
     elif present:
         if "ForgeData" in d and "NeoForgeData" in d and _canon(d["ForgeData"]) != _canon(d["NeoForgeData"]):
             rules.violation("%s: ForgeData differs from NeoForgeData on the old side" % where)
+        if "ForgeData" in d and "NeoForgeData" not in d and _nonempty(d["ForgeData"]):
+            # The merged writer fills both from one field, so this ForgeData has no copy the genuine base reads.
+            rules.violation("%s: ForgeData without NeoForgeData on the old side (lost on upgrade): %s"
+                            % (where, _short(d["ForgeData"])))
         for k in present:
-            d.pop(k)
+            value = d.pop(k)
+            if k == "ForgeCaps" and _nonempty(value):
+                _forge_caps_lost(value, rules, where)
+                continue
             rules.count("drop merged-only " + k)
     for k in ("Passengers",):
         if k in d and d[k][0] == "list" and d[k][1] == "compound":

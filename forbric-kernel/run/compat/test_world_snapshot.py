@@ -196,6 +196,36 @@ class Rules(unittest.TestCase):
         found, _ = ws.diff(old, self.new, "upgrade")
         self.assertTrue(any(f == "rule" and "ForgeData differs" in p for f, p, _, _ in found))
 
+    def test_forge_capability_data_is_a_loss_not_an_allowance(self):
+        # The merged base serialised a Forge mod's capabilities under ForgeCaps; the genuine base reads none of it.
+        old = copy.deepcopy(self.old)
+        pig = next(iter(old["entities"].values()))["nbt"]
+        pig[1]["ForgeCaps"] = C(**{"somemod:mana": C(v=I(3))})
+        found, _ = ws.diff(old, self.new, "upgrade")
+        self.assertTrue(any(f == "rule" and "ForgeCaps" in p and "somemod:mana" in p for f, p, _, _ in found), found)
+        # Empty, it is nothing to lose; and a mod meant to be gone (--ignore-namespace) takes its capability with it.
+        pig[1]["ForgeCaps"] = C()
+        found, rules = ws.diff(old, self.new, "upgrade")
+        self.assertEqual(found, [])
+        self.assertEqual(rules.used["drop merged-only ForgeCaps"], 1)
+        pig[1]["ForgeCaps"] = C(**{"somemod:mana": C(v=I(3))})
+        found, rules = ws.diff(old, self.new, "upgrade", ["somemod"])
+        self.assertEqual(found, [])
+        self.assertEqual(rules.used["ignore-namespace somemod"], 1)
+
+    def test_forge_data_without_neoforge_data_is_a_loss(self):
+        old = copy.deepcopy(self.old)
+        pig = next(iter(old["entities"].values()))["nbt"]
+        del pig[1]["NeoForgeData"]
+        new = copy.deepcopy(self.new)
+        del next(iter(new["entities"].values()))["nbt"][1]["NeoForgeData"]
+        found, _ = ws.diff(old, new, "upgrade")
+        self.assertTrue(any(f == "rule" and "ForgeData without NeoForgeData" in p for f, p, _, _ in found), found)
+        pig[1]["ForgeData"] = C()
+        found, rules = ws.diff(old, new, "upgrade")
+        self.assertEqual(found, [])
+        self.assertEqual(rules.used["drop merged-only ForgeData"], 1)
+
     def test_a_changed_slot_is_exactly_one_difference(self):
         new = copy.deepcopy(self.new)
         be = new["block_entities"]["minecraft:overworld 3 -64 0"]
