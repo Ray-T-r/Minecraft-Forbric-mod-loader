@@ -1714,10 +1714,12 @@ test	net.forbric.kernel.transform.MergedBaseFabricConditionsTest	everyConsumerIn
 test	net.forbric.kernel.transform.MergedBaseFabricConditionsTest	theFactoryIsWrappedAtItsOnlyExit()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseFabricConditionsTest	theOtherPublicFactoriesFunnelIntoTheWrappedOne()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ConditionalOps.class)
 test	net.forbric.kernel.transform.MergedBaseFeatureFlagsTest	theModdedFlagLoaderCallIsSentToTheKernel()	[fixture:staged] staged merged base absent
+test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	onNeoForgesOwnBaseTheRefreshThrowsOnTheSupplierFabricWrites()	[fixture:staged] NeoForge's staged base absent
+test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	switchedOffTheBaseIsLeftAsItIs()	[fixture:staged] NeoForge's staged base absent
+test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	theReviewedShapeIsRewrittenAndAnyOtherIsLeftWhole()	[fixture:staged] NeoForge's staged base absent
+test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	theRewrittenRefreshRebuildsTheSupplierFabricWrote()	[fixture:staged] NeoForge's staged base absent
+test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	theRewrittenRefreshStillOnlyInvalidatesNeoForgesLazy()	[fixture:staged] NeoForge's staged base absent
 test	net.forbric.kernel.transform.MergedBaseFeaturesPerStepTest	aSecondPassLeavesTheRepairedClassAlone()	[fixture:staged] staged merged base absent — skipping real-bytecode check
-test	net.forbric.kernel.transform.MergedBaseFeaturesPerStepTest	everyReaderReadsTheOneFieldTheConstructorWrites()	[fixture:staged] staged merged base absent — skipping real-bytecode check
-test	net.forbric.kernel.transform.MergedBaseFeaturesPerStepTest	invalidationGoesThroughTheGuardAndNotAThroughCast()	[fixture:staged] staged merged base absent — skipping real-bytecode check
-test	net.forbric.kernel.transform.MergedBaseFeaturesPerStepTest	readsAreRetargetedAtSupplierGet()	[fixture:java-25] actual classfile 69 needs Java 25
 test	net.forbric.kernel.transform.MergedBaseFeaturesPerStepTest	theFieldCarriesVanillasDescriptorAndOnlyThatOne()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseFeaturesPerStepTest	theFieldIsAlsoWriteableFromAnotherClass()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBaseForeignConditionsTest	aSecondPassDoesNotWrapItTwice()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/conditions/ICondition.class)

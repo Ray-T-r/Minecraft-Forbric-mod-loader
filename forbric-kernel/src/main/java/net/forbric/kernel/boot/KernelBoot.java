@@ -805,6 +805,12 @@ public final class KernelBoot {
 		// NeoForge's composter reads only its compostables data map; on a miss it asks vanilla's map too (what a
 		// Fabric mod added after bootstrap), through vanilla-shaped calls a Fabric wrap such as BCLib's binds to.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CompostablesFallbackInjector());
+		// NeoForge's modifier pass casts every generator's feature list to its own Lazy between the biome and the
+		// structure modifiers; fabric-biome-api writes a Guava supplier there when a Fabric mod adds a feature, so the
+		// cast threw and no structure modifier applied. The list a mod replaced is rebuilt instead (decision D52).
+		if (net.forbric.kernel.transform.FeaturesPerStepRefreshInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FeaturesPerStepRefreshInjector());
+		}
 		// Those data-map lookups (and the oxidation, waxing and stripping ones) end in Holder.Reference.getData, which
 		// threw for a value not registered yet; it answers "no data" there, so they fall back to vanilla's maps.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UnboundHolderDataInjector());

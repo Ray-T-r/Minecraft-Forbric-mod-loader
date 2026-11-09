@@ -247,6 +247,9 @@ public final class KernelRuntimeClasses {
 		// REWRITTEN CALL SITES, so their descriptors are the ones the base and the carrier already had — game types, not
 		// the JDK types this registry's own seams use. Listed with no calls for that reason, as KernelConfigApiBridge is.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoWorldgen", new Entry(Origin.COMPILED, List.of()));
+		// ChunkGenerator.refreshFeaturesPerStep's body when a Fabric mod replaced the feature list NeoForge casts to its Lazy;
+		// called from the instruction FeaturesPerStepRefreshInjector writes there, with that method's game-typed descriptor.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFeaturesPerStep", new Entry(Origin.COMPILED, List.of()));
 		// Called from the position check SpawnPositionCallsInjector writes into BaseSpawner.serverTick.
 		CLASSES.put("net.forbric.kernel.runtime.KernelSpawnPosition", new Entry(Origin.COMPILED, List.of()));
 		// NeoForge's coremods, done after Mixin (NativeCoremodParity) and before it (BiomeInfoRebaseInjector): the helper
