@@ -17,6 +17,7 @@ import java.net.URLClassLoader;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Enumeration;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -150,33 +151,66 @@ class ChainAnchorCensusStagedTest {
 	// NeoForge's own call sites that the merged base had lost, which the chain must leave as they are
 	// ------------------------------------------------------------------------------------------------------------
 
-	/** One NeoForge-owned static call in a base method: {@code owner.method} calls {@code hookOwner.hook hookDesc}. */
-	record NativeCall(String owner, String method, String hookOwner, String hook, String hookDesc) {
+	/**
+	 * One NeoForge-owned static call in a base method: {@code owner.method methodDesc} calls {@code hookOwner.hook hookDesc}.
+	 * The calling method is keyed by name AND descriptor, so a same-name overload (a twin the chain adds, say) that carried or
+	 * lost the call is not counted as the original.
+	 */
+	record NativeCall(String owner, String method, String methodDesc, String hookOwner, String hook, String hookDesc) {
 		String line() {
-			return owner + "." + method + " -> " + hookOwner + "." + hook + hookDesc;
+			return owner + "." + method + methodDesc + " -> " + hookOwner + "." + hook + hookDesc;
+		}
+
+		boolean in(MethodNode m) {
+			return m.name.equals(method) && m.desc.equals(methodDesc);
 		}
 	}
 
 	private static final String CLIENT_HOOKS = "net/neoforged/neoforge/client/ClientHooks";
 	private static final String EVENT_HOOKS = "net/neoforged/neoforge/event/EventHooks";
 
+	private static final String MINECRAFT = "net/minecraft/client/Minecraft";
+
 	/**
 	 * The four NeoForge hook calls the merged base had lost and the genuine base restored (Stage 4 C2): raw NeoForge 26.2.0.93
 	 * makes each once — Minecraft's constructor at bci 2371 and 2881, ReloadableServerResources' reload lambda at bci 38,
-	 * BaseFireBlock.onPlace at bci 33. No kernel transformer rewrites them today; nothing else would notice one that did.
+	 * BaseFireBlock.onPlace at bci 33. No kernel transformer rewrites these calls today.
+	 *
+	 * <p>Measured on 26.2.0.93 (C5): the chain rewrites {@code Minecraft} on both sides (its constructor among two dozen
+	 * methods, plus six added lambda thunks; on the client the entrypoint, exit, compatibility-prompt and NeoForge
+	 * client-setup hooks land there) and {@code BaseFireBlock} on both sides ({@code onPlace} itself among three methods), so
+	 * for those three calls the post-chain half reads a method the chain did change. {@code ReloadableServerResources} comes
+	 * out byte-identical on both sides; for its call the pin only guards against a future transformer, and nothing else would
+	 * notice one that dropped it.
 	 */
 	static final List<NativeCall> NATIVE_CALLS = List.of(
-			new NativeCall("net/minecraft/client/Minecraft", "<init>", CLIENT_HOOKS, "onRegisterParticleProviders",
-					"(Lnet/minecraft/client/particle/ParticleResources;)V"),
-			new NativeCall("net/minecraft/client/Minecraft", "<init>", CLIENT_HOOKS, "initClientHooks",
+			new NativeCall(MINECRAFT, "<init>", "(Lnet/minecraft/client/main/GameConfig;)V", CLIENT_HOOKS,
+					"onRegisterParticleProviders", "(Lnet/minecraft/client/particle/ParticleResources;)V"),
+			new NativeCall(MINECRAFT, "<init>", "(Lnet/minecraft/client/main/GameConfig;)V", CLIENT_HOOKS,
+					"initClientHooks",
 					"(Lnet/minecraft/client/Minecraft;Lnet/minecraft/server/packs/resources/ReloadableResourceManager;)V"),
-			new NativeCall("net/minecraft/server/ReloadableServerResources", "lambda$loadResources$2", EVENT_HOOKS, "onResourceReload",
+			new NativeCall("net/minecraft/server/ReloadableServerResources", "lambda$loadResources$2",
+					"(Lnet/minecraft/server/ReloadableServerRegistries$LoadResult;Lnet/minecraft/world/flag/FeatureFlagSet;"
+							+ "Lnet/minecraft/commands/Commands$CommandSelection;Ljava/util/List;"
+							+ "Lnet/minecraft/server/permissions/PermissionSet;Lnet/minecraft/server/packs/resources/ResourceManager;"
+							+ "Ljava/util/concurrent/Executor;Ljava/util/concurrent/Executor;Ljava/util/List;)"
+							+ "Ljava/util/concurrent/CompletionStage;",
+					EVENT_HOOKS, "onResourceReload",
 					"(Lnet/minecraft/server/ReloadableServerResources;Lnet/minecraft/core/RegistryAccess;Ljava/util/Map;)Ljava/util/List;"),
-			new NativeCall("net/minecraft/world/level/block/BaseFireBlock", "onPlace", EVENT_HOOKS, "onTrySpawnPortal",
+			new NativeCall("net/minecraft/world/level/block/BaseFireBlock", "onPlace",
+					"(Lnet/minecraft/world/level/block/state/BlockState;Lnet/minecraft/world/level/Level;"
+							+ "Lnet/minecraft/core/BlockPos;Lnet/minecraft/world/level/block/state/BlockState;Z)V",
+					EVENT_HOOKS, "onTrySpawnPortal",
 					"(Lnet/minecraft/world/level/LevelAccessor;Lnet/minecraft/core/BlockPos;Ljava/util/Optional;)Ljava/util/Optional;"));
 
 	/** Each call NeoForge's base makes once, still made once, as the same INVOKESTATIC, after the whole chain on both sides. */
 	@Test void theRestoredNeoForgeCallSitesSurviveTheChain() {
+		// What is checked is the chain's output, not its input: on the client the chain rewrites Minecraft, so the two
+		// copies of it the census kept must differ. Were out() ever the bytes the chain was handed, this half would
+		// silently become the premise again.
+		Census client = censuses.get(EnvType.CLIENT);
+		assertFalse(Arrays.equals(client.raw().get(MINECRAFT), client.out().get(MINECRAFT)),
+				"the census kept Minecraft as the chain was handed it, not as the chain left it");
 		for (Census census : censuses.values()) {
 			assertEquals(List.of(), notExactlyOnce(census.raw(), NATIVE_CALLS), census.side() + ": premise, NeoForge's own base");
 			assertEquals(List.of(), notExactlyOnce(census.out(), NATIVE_CALLS), census.side() + ": a NeoForge hook call the chain took away");
@@ -192,7 +226,7 @@ class ChainAnchorCensusStagedTest {
 		new ClassReader(copy.get(removed.owner())).accept(node, 0);
 		int taken = 0;
 		for (MethodNode m : node.methods) {
-			if (!m.name.equals(removed.method())) continue;
+			if (!removed.in(m)) continue;
 			for (AbstractInsnNode insn : m.instructions.toArray()) {
 				if (calls(insn, removed)) {
 					m.instructions.remove(insn);
@@ -207,7 +241,7 @@ class ChainAnchorCensusStagedTest {
 		assertEquals(List.of(removed.line() + ": 0 calls"), notExactlyOnce(copy, NATIVE_CALLS));
 	}
 
-	/** The calls of {@code expected} that {@code classes} does not make exactly once in the named method, with their count. */
+	/** The calls of {@code expected} that {@code classes} does not make exactly once in the named method (name and descriptor), with their count. */
 	static List<String> notExactlyOnce(Map<String, byte[]> classes, List<NativeCall> expected) {
 		List<String> out = new ArrayList<>();
 		for (NativeCall call : expected) {
@@ -220,7 +254,7 @@ class ChainAnchorCensusStagedTest {
 			new ClassReader(bytes).accept(node, 0);
 			int count = 0;
 			for (MethodNode m : node.methods) {
-				if (!m.name.equals(call.method())) continue;
+				if (!call.in(m)) continue;
 				for (AbstractInsnNode insn : m.instructions) if (calls(insn, call)) count++;
 			}
 			if (count != 1) out.add(call.line() + ": " + count + " calls");
