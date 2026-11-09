@@ -148,6 +148,24 @@ class KernelLifecycleRegistrationWindowTest {
 		assertTrue(neoForgesMap, "the map cleared is NeoForge's own, GameData.getBlockStateIDMap()");
 	}
 
+	/**
+	 * Each static hook family reports a failure at a catch of its own, because a {@code Caught} site keeps one first message
+	 * for the gates' file: {@code modifyAttributes} threw into GameData's unfreeze/snapshot site and a gate's net missed it
+	 * (G-B1's wave-2 handoff). So neither the attribute events nor the other static hooks go through invokeGameDataOn.
+	 */
+	@Test
+	void theAttributeEventsAndTheOtherStaticHooksReportAtTheirOwnCatchSites() throws Exception {
+		ClassNode node = compiled();
+		assertTrue(node != null,
+				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
+		for (String name : List.of("postAttributeEvents", "invokeStaticOn")) {
+			List<String> calls = callsIn(method(node, name));
+			assertTrue(!calls.contains("invokeGameDataOn") && !calls.contains("invokeStaticOn"),
+					name + " must not report through another hook's catch: " + calls);
+			assertTrue(calls.contains("warn") && calls.contains("invoke"), name + " invokes and reports itself: " + calls);
+		}
+	}
+
 	private static ClassNode compiled() throws Exception {
 		Path file = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");

@@ -1965,12 +1965,59 @@ public final class KernelLifecycle {
 			Caught.warn(t, "[Forbric/Attributes] DefaultAttributes could not initialise before the entity-attribute events — "
 					+ "they read it for every entity type and will fail on it too");
 		}
-		invokeStaticOn(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
+		java.lang.reflect.Method modify = staticHook(cl, "net.neoforged.neoforge.common.CommonHooks", "modifyAttributes");
+		if (modify == null) return;
+		try {
+			modify.invoke(null);
+		} catch (Throwable t) {
+			// Its own catch, so its own Caught site: see invokeStaticOn.
+			Caught.warn(t, "[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW — the "
+					+ "entity-attribute events abort at the first failing mod, and every mod after it in the list gets no "
+					+ "attributes");
+		}
 	}
 
-	/** Invokes a no-arg static hook, tolerating its absence — for reaching past a method the kernel must not call. */
+	/**
+	 * Invokes a no-arg static hook, tolerating its absence — for reaching past a method the kernel must not call.
+	 *
+	 * <p>The same contract as {@link #invokeGameDataOn}, at catch sites of its own. A {@link Caught} site is the catch that
+	 * reports, and it prints its first message once and counts the rest: while this delegated, {@code modifyAttributes}
+	 * failing after GameData's unfreeze or snapshot had failed was a count on their site, never its own line, so a gate's
+	 * net over the log missed it (G-B1's wave-2 handoff, for the kernel lane).
+	 */
 	private static void invokeStaticOn(ClassLoader cl, String className, String method) {
-		invokeGameDataOn(cl, className, method);
+		java.lang.reflect.Method hook = staticHook(cl, className, method);
+		if (hook == null) return;
+		try {
+			hook.invoke(null);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] " + className + "." + method + "() THREW — it exists and did not "
+					+ "finish, so whatever it drives is half-done (a spawn-placement event aborts at the first failing mod, "
+					+ "and every mod after it in the list is skipped)");
+		}
+	}
+
+	/**
+	 * The no-arg static {@code method} of {@code className}, or null: absent class at debug, a class without the method as
+	 * a WARN naming both ("… has no …()", which gates' fatal nets match). The invocation is left to the caller, so a
+	 * failure is reported at the caller's own catch site.
+	 */
+	private static java.lang.reflect.Method staticHook(ClassLoader cl, String className, String method) {
+		Class<?> owner;
+		try {
+			owner = Class.forName(className, false, cl);
+		} catch (ClassNotFoundException | LinkageError absent) {
+			Caught.expected(absent);
+			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", className, method);
+			return null;
+		}
+		try {
+			return owner.getMethod(method);
+		} catch (NoSuchMethodException gone) {
+			Caught.warn(gone, "[Forbric/Lifecycle] %s has no %s() — the kernel expected that hook on this carrier, and "
+					+ "whatever it does is now simply not done", className, method);
+			return null;
+		}
 	}
 
 	/**
@@ -1978,8 +2025,9 @@ public final class KernelLifecycle {
 	 *
 	 * <p><b>ABSENT and FAILED are not the same thing, and this method used to report them the same way.</b> The
 	 * absence of a class is ordinary (a test loader, a carrier without the step). A method that is THERE and THREW is the opposite of ordinary, and every caller here is a whole
-	 * feature: the registry bake, the freeze/unfreeze pair, {@code CommonHooks.modifyAttributes},
-	 * {@code SpawnPlacements.fireSpawnPlacementEvent}, {@code GameRuleCategory.registerModdedCategories}.
+	 * feature: the registry bake, the freeze/unfreeze pair, the vanilla snapshot. ({@code CommonHooks.modifyAttributes},
+	 * {@code SpawnPlacements.fireSpawnPlacementEvent} and {@code GameRuleCategory.registerModdedCategories} were callers too;
+	 * they now report at catch sites of their own, {@link #postAttributeEvents} and {@link #invokeStaticOn}.)
 	 *
 	 * <p>What that cost, and why it was invisible: {@code modifyAttributes} walks {@code ModList} in order and
 	 * {@code ModContainer.acceptEvent} rethrows the first failure as a {@code ModLoadingException}, so ONE mod
@@ -2011,8 +2059,7 @@ public final class KernelLifecycle {
 			hook.invoke(null);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] " + className + "." + method + "() THREW — it exists and did not "
-					+ "finish, so whatever it drives is half-done (an attribute/spawn-placement event aborts at the "
-					+ "first failing mod, and every mod after it in the list is skipped)");
+					+ "finish, so whatever it drives is half-done (a registry left open or unbaked, a snapshot not taken)");
 		}
 	}
 
