@@ -47,57 +47,92 @@ from pathlib import Path
 FACETS = ("biomes", "structures", "spawner_mobs", "spawner_positions", "heightmaps", "blocks", "block_entities")
 
 
-def _read(buf, off, kind):
-    if kind == 1:
-        return buf[off], off + 1
-    if kind == 2:
-        return struct.unpack_from(">h", buf, off)[0], off + 2
-    if kind == 3:
-        return struct.unpack_from(">i", buf, off)[0], off + 4
-    if kind == 4:
-        return struct.unpack_from(">q", buf, off)[0], off + 8
-    if kind == 5:
-        return struct.unpack_from(">f", buf, off)[0], off + 4
-    if kind == 6:
-        return struct.unpack_from(">d", buf, off)[0], off + 8
+# NBT tag ids, by the names the typed form uses (world-snapshot.py writes snapshots in that form).
+TAGS = {1: "byte", 2: "short", 3: "int", 4: "long", 5: "float", 6: "double", 7: "byte_array", 8: "string",
+        9: "list", 10: "compound", 11: "int_array", 12: "long_array"}
+TAG_IDS = {name: kind for kind, name in TAGS.items()}
+_SCALARS = {1: ">b", 2: ">h", 3: ">i", 4: ">q", 5: ">f", 6: ">d"}
+
+
+def read_typed(buf, off, kind):
+    """One NBT payload of tag `kind` at `off`, typed: `[tag, value]` for every value, `["list", element-tag, [...]]`
+    for a list, `["compound", {name: typed}]` for a compound; arrays keep their type. Returns (value, next offset).
+
+    The only NBT parser in the tree: the untyped view gate-m31 compares (`_read`) is derived from it, and
+    world-snapshot.py reads saves through it, because an upgrade check that cannot tell a byte from an int cannot see a
+    field change type either."""
+    if kind in _SCALARS:
+        fmt = _SCALARS[kind]
+        return [TAGS[kind], struct.unpack_from(fmt, buf, off)[0]], off + struct.calcsize(fmt)
     if kind == 7:
         n = struct.unpack_from(">i", buf, off)[0]
-        return bytes(buf[off + 4:off + 4 + n]), off + 4 + n
+        return ["byte_array", list(struct.unpack_from(">%db" % n, buf, off + 4))], off + 4 + n
     if kind == 8:
         n = struct.unpack_from(">H", buf, off)[0]
-        return buf[off + 2:off + 2 + n].decode("utf-8", "replace"), off + 2 + n
+        return ["string", buf[off + 2:off + 2 + n].decode("utf-8", "replace")], off + 2 + n
     if kind == 9:
         element = buf[off]
         n = struct.unpack_from(">i", buf, off + 1)[0]
         off += 5
         out = []
         for _ in range(n):
-            value, off = _read(buf, off, element)
-            out.append(value)
-        return out, off
+            value, off = read_typed(buf, off, element)
+            out.append(untag(value))
+        return ["list", TAGS.get(element, "end"), out], off
     if kind == 10:
         out = {}
         while True:
             element = buf[off]
             off += 1
             if element == 0:
-                return out, off
+                return ["compound", out], off
             length = struct.unpack_from(">H", buf, off)[0]
             off += 2
             name = buf[off:off + length].decode("utf-8", "replace")
             off += length
-            out[name], off = _read(buf, off, element)
+            out[name], off = read_typed(buf, off, element)
     if kind == 11:
         n = struct.unpack_from(">i", buf, off)[0]
-        return list(struct.unpack_from(">%di" % n, buf, off + 4)), off + 4 + 4 * n
+        return ["int_array", list(struct.unpack_from(">%di" % n, buf, off + 4))], off + 4 + 4 * n
     if kind == 12:
         n = struct.unpack_from(">i", buf, off)[0]
-        return list(struct.unpack_from(">%dq" % n, buf, off + 4)), off + 4 + 8 * n
+        return ["long_array", list(struct.unpack_from(">%dq" % n, buf, off + 4))], off + 4 + 8 * n
     raise ValueError("unknown NBT tag %d at %d" % (kind, off))
 
 
-def chunks(directory):
-    """Yield (cx, cz, root compound) for every readable chunk in an Anvil region directory."""
+def untag(typed):
+    """A typed value as a list element: the value alone (the list carries the tag), or `[element-tag, items]` for a
+    nested list."""
+    return typed[1:] if typed[0] == "list" else typed[1]
+
+
+def retag(element, item):
+    """The inverse of `untag` for an element of a list whose element tag is `element`."""
+    return ["list"] + list(item) if element == "list" else [element, item]
+
+
+def plain(typed):
+    """The untyped view of a typed value: what `_read` returned before the typed reader existed, value for value
+    (a byte unsigned, a byte array as bytes), so the digests gate-m31 compares are unchanged."""
+    tag, value = typed[0], typed[1]
+    if tag == "byte":
+        return value & 0xFF
+    if tag == "byte_array":
+        return bytes(v & 0xFF for v in value)
+    if tag == "compound":
+        return {name: plain(item) for name, item in value.items()}
+    if tag == "list":
+        return [plain(retag(typed[1], item)) for item in typed[2]]
+    return value
+
+
+def _read(buf, off, kind):
+    value, off = read_typed(buf, off, kind)
+    return plain(value), off
+
+
+def chunk_payloads(directory):
+    """Yield (cx, cz, compression, payload bytes) for every resident chunk in an Anvil region directory."""
     for path in sorted(Path(directory).glob("*.mca")):
         parts = path.stem.split(".")
         rx, rz = int(parts[1]), int(parts[2])
@@ -115,24 +150,43 @@ def chunks(directory):
             length = struct.unpack_from(">I", data, start)[0]
             if length < 1 or start + 4 + length > len(data):
                 continue
-            compression = data[start + 4]
-            blob = data[start + 5:start + 4 + length]
-            try:
-                if compression == 1:
-                    raw = gzip.decompress(blob)
-                elif compression == 2:
-                    raw = zlib.decompress(blob)
-                elif compression == 3:
-                    raw = blob
-                else:
-                    continue  # external .mcc payload or LZ4; not resident here
-            except (OSError, EOFError, zlib.error):
-                continue
-            if len(raw) < 4 or raw[0] != 10:
-                continue
-            name_length = struct.unpack_from(">H", raw, 1)[0]
-            root, _ = _read(raw, 3 + name_length, 10)
-            yield rx * 32 + (slot % 32), rz * 32 + (slot // 32), root
+            yield rx * 32 + (slot % 32), rz * 32 + (slot // 32), data[start + 4], data[start + 5:start + 4 + length]
+
+
+def decompress(compression, blob):
+    """The raw NBT of one chunk payload, or None (external .mcc payload, LZ4, or unreadable)."""
+    try:
+        if compression == 1:
+            return gzip.decompress(blob)
+        if compression == 2:
+            return zlib.decompress(blob)
+        if compression == 3:
+            return blob
+    except (OSError, EOFError, zlib.error):
+        return None
+    return None  # external .mcc payload or LZ4; not resident here
+
+
+def root_typed(raw):
+    """The typed root compound of a raw (uncompressed) NBT file, or None when it is not one."""
+    if raw is None or len(raw) < 4 or raw[0] != 10:
+        return None
+    name_length = struct.unpack_from(">H", raw, 1)[0]
+    return read_typed(raw, 3 + name_length, 10)[0]
+
+
+def chunks_typed(directory):
+    """Yield (cx, cz, typed root compound) for every readable chunk in an Anvil region directory."""
+    for cx, cz, compression, blob in chunk_payloads(directory):
+        root = root_typed(decompress(compression, blob))
+        if root is not None:
+            yield cx, cz, root
+
+
+def chunks(directory):
+    """Yield (cx, cz, root compound) for every readable chunk in an Anvil region directory."""
+    for cx, cz, root in chunks_typed(directory):
+        yield cx, cz, plain(root)
 
 
 def _normalise(value):
