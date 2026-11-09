@@ -118,6 +118,8 @@ Gone (4): the three deleted `MergedBaseFeaturesPerStepTest` cases and the re-pin
 
 ## Open
 
+(Superseded for the first two bullets: lane S's wave-2 record `stage4-c5-s.md` closes item 1's boot, items 2-4 and D63.)
+
 - Item 1 server boot (needs a Fabric feature-adding mod fixture and gates that build).
 - Item 2 KernelRuntimeClasses liveness (70 entries), item 3 AbiLinkAudit D21/D23 re-measure, item 4 D23 record (re-run
   d23), D63 `customPayloadInteropSeam=off` null-tolerance measurement.

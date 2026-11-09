@@ -57,6 +57,7 @@ server or client side, or listed with the caller it has. Result (table `runtime-
 | GENERATED / PACKED | 1 / 1 | LootCallbacks$ / KernelModMenuPlugin |
 
 The table is the 70 entries at `7d506522`. At the item-7 deletion the registry dropped one call (not an entry); at D69 it gained `KernelConditionSources`, a CHAIN target (`Resource.open()`); the final suite runs the test over 71 and it passes.
+(Superseded by the tip table in "S wave-2 review fixes": KernelModConfigScreens is RUNTIME, ClientSoakController DRILL.)
 Runtime evidence for the boot-side rows on a server: the item-1 default boot ran with `-Xlog:class+init`; 58 runtime
 classes were initialised (`item1/initialised-server-default.txt`), every server-side BOOT row among them
 (KernelContainers, KernelDataPackSource, KernelRegistryContent, KernelConfigLoad, KernelNeoSetup, KernelNeoRegistries,
@@ -115,8 +116,8 @@ Measurements: gate-m21 **58 PASS / 0 FAIL** (was 57/1 at the stage tip): the dua
 'forbricm21:dual_forge'`, after the kernel's `resource condition 'forbricm21:no_such_condition' in pack 'file/forbricm21' ...
 NeoForge's evaluator decides` line and NeoForge's own `Couldn't parse data file 'forbricm21:dual_forge' ... Unknown registry
 key in ResourceKey[minecraft:root / neoforge:condition_codecs]: forbricm21:no_such_condition` — the same line native NeoForge
-prints for it (G-A's `c5/g-a/d49/native-d49.log`: the native A/B). gate-m8 **20 / 0** (Terralith's `terralith:config` still
-tolerated: its data files come from fabric-resource-loader packs; no "in pack" strict line in its boot). Red control
+prints for it (G-A's `c5/g-a/d49/native-d49.log`: the native A/B). gate-m8 **20 / 0** (the claim that this shows Terralith's data files still tolerated is withdrawn: `terralith:config` is only
+in pack.mcmeta overlays; see "S wave-2 review fixes", A-3). Red control
 `M21_EXTRA_JVM=-Dforbric.neoConditions.fabricPacksOnly=off`: m21 **57 / 1**, exactly "a file whose neoforge:conditions name
 an unknown type is skipped, as native NeoForge does" (answered `Test passed`). Unit: KernelConditionKillSwitchesTest
 `outsideAFabricModsPackTheStrictCodecDecides` (no file opened → strict; world pack → strict; Fabric pack → tolerated; switch
@@ -131,7 +132,8 @@ answer); only its comment still calls dual_forge an open defect (Open). Logs `ga
   printed the rebuild line or either of its warnings (G-A's 26 genuine boots; this lane's 2 item-1 server boots, with 55
   mod blocks);
 - whole-jar search: the base and carrier fill `BlockCallbacks.BLOCKSTATE_TO_ID_MAP` only in `BlockCallbacks.onBake`,
-  which iterates the whole block registry (javap: `Registry.iterator`, every state `add`), after `onClear`;
+  which iterates the whole block registry (javap: `Registry.iterator`, every state `add`; it does not clear first, see
+  "S wave-2 review fixes", A-4);
   `GameData.freezeData` freezes every `MappedRegistry`, and `MappedRegistry.freeze` runs the bake callbacks. The merged
   base's cause (MinecraftForge's `GameData$BlockCallbacks` and its second registration wave in `Minecraft.<init>`) has
   no class here: 0 classes of base + carrier name `net/minecraftforge` (`item9-minecraftforge-in-base.out`);
@@ -204,3 +206,150 @@ item 9 (prefix restored → its case only), item 1 (switch off → the WARN).
 - PLAN S item 5 owner-gated items (O2/O3) are S2's, not run (D62/D63).
 - ci-prepared-noforge.tsv untouched (C6). stage2-measurements.md still says the seam-off null question is unmeasured; this
   record answers it (RECORD may cross-reference).
+
+## S wave-2 review fixes (2026-11-10)
+
+Reviews `c5/review-w2-s-A.md` (lens A) and `c5/review-w2-s-B.md` (lens B). Every finding was checked against the code, the
+base and new runs; logs, probes and tools are in `c5/s/w2r/`. Commits on `s4-c5-s1` after `f333f1f6`:
+
+| commit | findings |
+|---|---|
+| `36dab5d6` | A-1, A-2, B-1 (test + wording), B-3 (wording), B-8 (MergedBaseForeignConditionsTest:75) |
+| `835ec80c` | A-4, A-6 |
+| `9cbc9a9c` | B-7 (Caught-site gap G-B1 routed to the kernel lane) |
+| `fee13b0f` | A-5, B-6 |
+| `3c6a947a` | D47 rows for the new staged tests |
+| this commit | record (A-3, B-2, B-4, B-5, B-9, B-10 and the corrections below) |
+
+Each split commit compiles alone (`git archive` of 36dab5d6, 835ec80c, 9cbc9a9c → compileJava compileRuntimeJava
+compileTestJava, exit 0, `compile-*.log`).
+
+### Per finding
+
+- **A-1 confirmed, fixed (`36dab5d6`).** `scanDirectoryWithModifier` (javap, `reader-census.out`) opens and parses every
+  recipe in a first loop, posts `ModifyRecipeJsonsEvent`, then decodes in a second; at `f333f1f6` a Fabric probe mod's
+  recipe naming an unregistered type was judged as pack `forbric/carrier/2-neoforge-runtime` and skipped (`boot-prefix.log`,
+  reproducing lens A's `boot-plain.log`). New repair `tellTheConditionsWhichPackEachRecipeCameFrom`: `beginTwoPassScan` at
+  the head, `dup; parsed(Object)` after the first loop's `JsonParser.parseReader`, `dup; decoding(Object)` before the second
+  loop's `Codec.parse` (left in place for a guest's wrap), `endTwoPassScan` before each return; the one-pass
+  `scanDirectory` gets `doneReading` before each return, so no pack stays named to a later decode (the "never cleared"
+  half). An element no file produced (added in the event) gets NeoForge's verdict.
+- **A-2 confirmed, fixed (`36dab5d6`).** A Fabric pack with a mounted overlay is a `CompositePackResources`; the judged pack
+  is now its `primaryPackResources` (reflective, cached, Caught on failure). At `f333f1f6` the overlaid probe's base and
+  overlay loot tables were "not a Fabric mod's" and skipped (`boot-prefix.log`); now kept (`boot-fix.log`).
+- **A-3 / B-1 confirmed.** m8 never reached the narrowed check: Terralith's `terralith:config` is only in `pack.mcmeta`
+  overlay entries (lens B's jar scan; m8's "tolerated" line is the overlay decode). The record's §6 sentence "gate-m8 20/0
+  (Terralith's terralith:config still tolerated ...)" is withdrawn, as is the handoff's "m8 green, Fabric packs still
+  tolerated". 748f142b's message says the same and cannot be changed without rewriting history; this record supersedes it.
+  **Evidence against D69's premise, reported to the orchestrator:** D69 names "Terralith, m8's case" as the Fabric case; it
+  is not one. The narrowing itself still stands: Waystones' Fabric jar 26.2.0.12 (on disk, sweep80) carries
+  `neoforge:conditions` naming `waystones:force_spawn_in_villages` in five lithostitched worldgen modifiers, a real Fabric
+  data-file case. It could not be booted as evidence: its main entrypoint fails on the genuine stage with
+  `IllegalStateException: Block{waystones:…_waystone}[…] is defined in more than one PoI type` (same at `f333f1f6`:
+  `boot-ws-cont-prefix.log`), and the registry load then fails on its missing features whatever the leniency
+  (`boot-ws-cont*.log`) — a separate, pre-existing defect (Open). The runtime evidence for the Fabric path is the probe
+  set instead: two Fabric mods built locally, loaded through fabric-resource-loader's real pack classes.
+  New staged test `fabricResourceLoadersOwnPackTypesAreRecognisedAndTheBasesAreNot` loads `ModNioPackResources`,
+  `ModPackResources` and v0 `ModResourcePack` from the pinned Fabric API's nested jars (recognised) and the base's
+  Path/File/Vanilla/Composite packs (not). Claim text and javadoc no longer cite Terralith.
+- **A-4 confirmed, fixed (`835ec80c`).** `GameData.unfreezeData` only calls `BaseMappedRegistry.unfreeze(true)` (javap,
+  `item7/GameData.javap`), and `IdMapper.add` numbers from `nextId` (`item7/IdMapper.javap`), so the client window's
+  second bake appended every state: probe block 64733 on the client, 32366 on a dedicated server (lens A's logs).
+  `closeClientEntrypointWindow` now empties the map (`clearBlockStateIds`, the ClearableObjectIntIdentityMap's own
+  `clear()`) right before its freeze. Gate result below. Item 7's "the map always agreed" was true by count only (the
+  refill checked `size()`); §7's "after onClear" is withdrawn (`onBake` adds without clearing); the late block's 64735
+  was the doubled numbering, not a healthy reference value.
+- **A-5 / B-6 confirmed, fixed (`fee13b0f`).** KernelModConfigScreens → kind RUNTIME, caller KernelModListScreen (CHAIN
+  via ModsButton), checked by new `aRuntimeCallerIsItselfLive`; ClientSoakController → kind DRILL. The §2 table above
+  (BOOT 11 incl. KernelModConfigScreens, MOD_INSTALLED 5 incl. ClientSoakController) is superseded by the tip table below.
+- **A-6 confirmed, fixed (`835ec80c`):** onClientEntrypoints' javadoc reworded; completeBlockStateBookkeeping's too.
+- **B-2 confirmed (unmeasured reach), now measured.** A dedicated-server boot of all 62 jars of `client-neo-pack` (+
+  fabric-api 0.155.2, `-Dforbric.compatibilityPolicy=continue`) prints **0** "not a Fabric mod's" lines and 0 "Couldn't
+  parse data file" lines, and loads 4467 recipes, the same with `-Dforbric.neoConditions.fabricPacksOnly=off`
+  (`boot-neopack*.log`; both reach Done; jei does not finish loading on a dedicated server in both, unrelated). gate-m10
+  (Tectonic + lithostitched, NeoForge builds): see the gate table. m9 (client, merged pack) was not run by this lane:
+  named for the merger below. Behaviour change for RECORD: D69 makes a data file whose `neoforge:conditions` name a type
+  NeoForge's registry lacks load only from a Fabric mod's own pack; from any other pack it is skipped with NeoForge's own
+  error, as on native NeoForge; switch `-Dforbric.neoConditions.fabricPacksOnly=off` (not in released-switches; an
+  adaptation switch, S1 precedent). The earlier handoff's "adaptation ledger" pointer had no row behind it; this paragraph
+  is that row.
+- **B-3 confirmed, fixed in wording + census.** `reader-census.out` (javap per reader: open / parse / decode order):
+  PendingRegistration.loadFromResource, SimpleJsonResourceReloadListener.scanDirectory (loot via ReloadableServerRegistries,
+  advancements, LootModifierManager, AnimationLoader), DataMapLoader.readData, ModelManager's per-model lambda feeding
+  ConditionalModelLoader, SpriteSourceList.load open then decode on one thread; scanDirectoryWithModifier (recipes) is
+  the two-pass exception (A-1); loadFromNetwork decodes without ConditionalOps; overlay entries have their own scope.
+- **B-4 done.** `item7/blockstate-map-users.out` (re-run): only GameData and BlockCallbacks name BLOCKSTATE_TO_ID_MAP, only
+  Block and GameData call getBlockStateIDMap; `item7/BlockCallbacks.javap` (onBake: Registry.iterator, every state add).
+- **B-5 done.** Tip table saved at `c5/s/w2r/runtime-seams-tip.tsv` (71 rows); CHAIN list below.
+- **B-7.** Caught-site gap fixed (`9cbc9a9c`): `postAttributeEvents` and `invokeStaticOn` invoke and report at their own
+  catch; `invokeGameDataOn` keeps its own. Client BOOT rows' class-init evidence: not required by PLAN's acceptance (a
+  caller per entry); this record states it is not measured (KernelClientPackSource, KernelForeignShimKeys); no owner
+  assigned by this lane.
+- **B-8.** MergedBaseForeignConditionsTest:75's message reworded (`36dab5d6`). For T-B phase 2: this lane changed
+  AccessCensusTest, RegistryLoaderDeadBindingTest, NeoForgeLookupWithoutContextStagedTest, RuntimeSeamLivenessStagedTest,
+  KernelConditionKillSwitchesTest, MergedBaseForeignConditionsTest, KernelLifecycleRegistrationWindowTest; ChainAnchorCensus
+  StagedTest's three merged-base literals stay handed back.
+- **B-9.** S1 record now points here; ci-prepared: reasoned, not run (stated in `3c6a947a`); handoff names the
+  RuntimeSeamLivenessStagedTest rule for new registry entries.
+- **B-10 not measured.** The one-ERROR-per-unregistered-id cost of `customPayloadInteropSeam=off` is from the item-5 probe;
+  whether a live connection with the seam off logs it once per packet was not measured. §5's "its cost off is ... one
+  ERROR per unregistered-id lookup" stands as a probe result, not a per-connection one.
+
+### Liveness table at the tip (B-5)
+
+71 entries, 0 NONE: CHAIN 38, BOOT 10, GUEST 15, MOD_INSTALLED 4 (TransferIssues, RebornEnergyBridge, KernelCreativePager,
+KernelCreativePagerScreen), RUNTIME 1 (KernelModConfigScreens ← KernelModListScreen), DRILL 1 (ClientSoakController),
+GENERATED 1, PACKED 1. CHAIN (caller classes in the TSV): KernelWidenedFields, KernelSnippets, KernelNeoConditions, KernelConditionSources, KernelCreativeTabOrder, KernelFabricFuel, KernelNeoTooltips, KernelModListScreen, KernelParticleProviders, KernelNeoWorldgen, KernelServerReloadNames, KernelCompostables, KernelSpawnPosition, KernelClientReloadNames, KernelForgePipRenderers, KernelAirRefill, KernelBiomeView, KernelFluidTypes, KernelPacketContext, PairedTransactions, KernelLootBridge, KernelFeatureFlags, KernelKeyMappingMap, KernelLootModifiers, KernelSharedPredicateScopes, KernelFabricConditions, KernelPayloadCodecs, KernelFabricHopperStorage, KernelFabricFluidModels, KernelServerDuties, KernelRecipeSync, KernelFeaturesPerStep, KernelLivingDamage, KernelHudContextQuery, KernelModelFormats, BlockTransferBridge, KernelBlockSoundQuery, KernelCompatibilityPrompts.
+
+### Red checks (mutation in a scratch APFS clone, `red/*.log`)
+
+| mutation | red | everything else in the run |
+|---|---|---|
+| `decoding` names nothing | aRecipeIsJudgedByThePackItWasParsedFromNotTheLastOneOpened | green |
+| repair's `decoding` insertion removed | recipesTwoPassScanNamesEachElementsOwnPack | green |
+| `primary()` not applied | aCompositePackIsJudgedByItsPrimary | green |
+| RUNTIME row names a caller the chain does not call | aRuntimeCallerIsItselfLive | green |
+| `clearBlockStateIds` call removed | theClientWindowEmptiesTheBlockStateMapRightBeforeItsFreeze | green |
+| modifyAttributes through invokeGameDataOn again | theAttributeEventsAndTheOtherStaticHooksReportAtTheirOwnCatchSites | green |
+
+Restored: all green. Probe boots (`boot.sh`, `run-boots*.sh`): see A-1/A-2.
+
+| boot (dedicated server, fabric-api + probe-a + probe-b + world pack) | recipes | Fabric files kept | world files skipped |
+|---|---|---|---|
+| tip (`boot-fix.log`) | 1587 | 6/6 (recipe, loot, predicate; composite recipe, loot, overlay loot) | 3/3, NeoForge's own error, predicate "Can't find element" |
+| tip, `fabricPacksOnly=off` (`boot-fix-off.log`) | 1588 | 6/6 | 0/3 (all kept) |
+| `f333f1f6` (`boot-prefix.log`) | 1585 | 2/6 (probe-a's loot table and predicate; both recipes and the composite's two loot tables skipped) | 3/3 |
+
+### Suite and gates after the fixes
+
+Full suite at `fee13b0f` (the code tip; `3c6a947a` only adds ci-unstaged rows), pinned build, plain `--offline`
+(`c5/s/w2r/suite-final.log`, XML `suite-final-xml/`): **5789 tests / 0 skipped / 5 failed**, exactly the 5 names of
+`c5/failures-wave1.txt`, first 240 message characters equal to the pinned XML (`c5/pinned/xml`); 0 new, 0 gone. +7 tests:
+KernelConditionKillSwitchesTest +3, MergedBaseForeignConditionsTest +1, RuntimeSeamLivenessStagedTest +1,
+KernelLifecycleRegistrationWindowTest +2. `c5/failures-s-w2r.txt`.
+
+Gates on the genuine stage (lane env, at `fee13b0f`; no SKIP line in any):
+
+| gate | PASS / FAIL | why |
+|---|---|---|
+| m21 | 58 / 0 | D69 (dual_forge native) |
+| m8 | 20 / 0 | pack.mcmeta overlays (not the Fabric data-file path, see A-3) |
+| m10 | 24 / 0 | real NeoForge packs (Tectonic, lithostitched-neoforge) under the narrowed leniency (B-2) |
+| m26 (client lock) | 45 / 0 | A-4: NeoForge's probe block `id=32366` on the client, = the dedicated server's; late Fabric block `id=32368` (were 64733 / 64735) |
+| m12 (client lock, `--exclusive`) | 32 / 0 | A-4: a client joining a dedicated server with the ids now equal |
+| m42 / m43 (stage-tip files) | 5 / 9, 3 / 2 | the pre-G-B1 files (22 merged-base/MinecraftForge cases, "cannot read LiquidBlock.<init> from the merged base"); G-B1 re-pinned both on its branch (7b0196ee, 3bfad0f6); red whatever the kernel does, not counted |
+| m42 / m43, G-B1's files on a merge preview (this tip + `f0cb66b0..922267af`, no file in common) | 9 / 0, 5 / 0 | G-B1's handoff: re-run after S; CAUGHT none |
+
+### Open after the review fixes
+
+- **Orchestrator:** D69's premise ("Terralith, m8's case") is wrong (A-3/B-1 above); the narrowing stands on other evidence.
+- **Owner / next kernel lane:** Waystones-fabric 26.2.0.12's main entrypoint fails on the genuine stage ("defined in more
+  than one PoI type"), also at `f333f1f6`; not root-caused here.
+- **Merger:** re-run m21, m8, m10, m26, m12, G-B1's m42/m43 and m9 after S merges (m9 not run by this lane);
+  RuntimeSeamLivenessStagedTest after UPG/SWAP merge (their KernelCarrierPackIds entry needs a chain call or an ELSEWHERE row).
+- **G-A:** m26 can pin client id == dedicated-server id (32366) instead of `id >= 1`; the m21/m26 wording items above stand.
+- B-10 (seam-off ERROR rate on a live connection) and the client BOOT rows' class-init evidence: not measured.
+- `KernelLifecycle.openRegistrationWindow`'s javadoc says NeoForge's unfreeze clear-callback empties the blockstate map;
+  `unfreezeData` only calls `unfreeze(true)` (javap) — the wording is not corrected here (the main window's behaviour was not
+  re-measured), noted for the kernel lane.
+
