@@ -129,7 +129,7 @@ measured the same the same day (`c5/review-g-a-A/native-d49.log`). The lane's 20
 
 ## Open defects and items for other owners
 
-1. **m21 dual_forge (owner: to be named by the orchestrator; likely the kernel lane, S).** Forbric keeps
+1. **m21 dual_forge (owner: lane S, D69; still red at G-A's wave-2 tip, see "Wave 2").** Forbric keeps
    `forbricm21:predicate/dual_forge.json`, whose `neoforge:conditions` name `forbricm21:no_such_condition`; native
    NeoForge skips it. Cause: `ForbricMergedBaseCompatTransformer.letForeignResourceConditionsThrough` puts
    `KernelNeoConditions.lenient` before `ICondition.CODEC`, and `lenient` reads every unregistered condition type as true
@@ -144,9 +144,9 @@ measured the same the same day (`c5/review-g-a-A/native-d49.log`). The lane's 20
    still reads id 64735, as by default. NeoForge's own block callback maps each state as it registers. The refill looks
    merged-base-only; whether it goes is not G-A's call. m26 no longer asserts its line (`5b761e62`).
 3. **m0 step 2** is red for as long as the 41 known failures stand (their owners are in failures-close).
-4. **Gradle cache (orchestrator).** Every other lane's canonical suite needs the cache back or a ruled stand-in; this
+4. **Gradle cache (orchestrator; resolved by D68, wave 2 builds on the pinned versions).** Every other lane's canonical suite needs the cache back or a ruled stand-in; this
    lane's substitution and its limits are above. Ruling also needed on the wrapper download.
-5. **Not done in G-A (owner G-A unless reassigned):** the perJar flip (D42/D55) with its A/B on m21, m9 and a
+5. **Done in wave 2 (`d7f80b9a`, see "Wave 2"):** the perJar flip (D42/D55) with its A/B on m21, m9 and a
    client-merged-pack boot, `KernelModFile*` javadocs, `KernelModFilePerJarTest:67`, m21 `:280-365` (the per-jar block)
    and `GateNeoCanaryContractTest:54-61,97`; the m21 `modFilePerJar` controls after the flip.
 
@@ -165,3 +165,119 @@ measured the same the same day (`c5/review-g-a-A/native-d49.log`). The lane's 20
 | B-5 ForbricNeoLiveMod javadoc | fixed `ef8cb19f`, 14 lines kept, file 625 lines; rebuilt canary's content sha1 = Phase 0's `c0013586…` |
 | B-6 incomplete lists / notes | fixed: this record, `g-a/failures-g-a.txt`, checks/handoff/walls headings "G-A review fixes"; open list above names each item |
 | B-8 compile at every commit | fixed/measured: 14/14 (above) |
+
+## Wave 2 (2026-11-09/10): the perJar flip, and every G-A gate on the pinned build
+
+Branch `s4-c5-g-a` rebased onto the stage tip `f0cb66b0` (fast-forward: the branch was an ancestor). Pinned build (D68):
+plain `~/.gradle`, `--offline`, JUnit 5.9.2 / annotations 23.0.0, no init script, no `GRADLE_USER_HOME`; nothing was
+downloaded. Logs: `~/Forbric-backups/stage4-notes/c5/g-a/w2/` (below `w2/`), gate runs under `w2/runs/<label>/`
+(`gate.out` + the gate's own logs), runner `w2/run-gate.sh`.
+
+### Commits
+
+| sha | subject |
+|---|---|
+| `d7f80b9a` | Give every NeoForge mod of one jar that jar's one IModFile by default, as FML builds it, now that the game base is NeoForge's own |
+| (this record) | Record lane G-A's wave 2 |
+
+### First act (suite at the rebased tip)
+
+`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test --continue` in the
+worktree at `f0cb66b0`: **5772 tests, 0 skipped, 5 failed**, exactly the 5 names of `c5/failures-wave1.txt`
+(`w2/suite-first.log`, XML `w2/suite-first-xml/`).
+
+### The perJar flip (D42 F6, D55), its A/B and its red controls
+
+`KernelModFile.perJar()` is now on unless `-Dforbric.modFilePerJar=off`; with the switch off the kernel says so once
+("every NeoForge mod keeps an IModFile and file info of its own, so a jar of several mods is listed once per mod in the
+scan index (-Dforbric.modFilePerJar=off)"). Javadocs of `KernelModFile`, `KernelModFileInfo`, `KernelModInfo`,
+`KernelContainers`, `KernelDeclarationReaders` say the new default. `KernelModFilePerJarTest` pins the default (new
+`byDefaultTwoModsOfOneJarShareOneFileAndTheIndexListsTheJarOnce`) and the switch-off shape (the old default test, renamed
+`withTheSwitchOffEveryModKeeps...`); its other tests run on the default. gate-m21 lost its second boot: the default boot
+asserts "lists the canary's jar 1 time(s)" and "found its own @NeoLiveScanned" exactly once, and
+`GateNeoCanaryContractTest` follows the one-boot block (incl. a case that the per-mod shape is red on exactly those two
+checks). `ci-unstaged.tsv`: the two renamed rows replaced by three (the class's new and renamed names), measured: a
+tracked-files-only checkout without a stage skips all six tests of the class with "[fixture:staged] staged carrier
+absent" (`w2/ci-unstaged-perjar.log`); `ci-prepared.tsv` has no row for the class (it runs there).
+
+**A/B** (A = the tree before the flip, `f0cb66b0`, in an APFS clone; B = the flipped tree in the worktree; both pinned
+build, genuine stage, fresh APFS clones of `client-merged-pack` by real path for m9):
+
+| run | A (one file per mod) | B (one file per jar) | what differs |
+|---|---|---|---|
+| gate-m21 | 57 / 1 | 53 / 1 | FAIL in both = dual_forge (D69, lane S). 57→53: the second boot's Done check, its two per-jar checks and its "neither reader failed" went; the default's two checks now ask for 1. Default-boot log, as a multiset of normalised lines (`w2/norm.py`): only the canary's scan lines differ (A: "2 file(s), 10 annotation(s)", "lists forbricneolive's jar 2 time(s)" and the ModList reader's three lines twice; B: "1 file(s), 5", "1 time(s)", the reader lines once), besides the port and a night-config instance id. |
+| gate-m9 | 163 / 0 | 163 / 0 | none in the gate. Client `latest.log` (`w2/m9-ab-diff.txt`): JEI's lines are the same set (timings differ), Jade 96/96 lines, "JEI's 35 saved key binding(s) ... unchanged" PASS in both. ERROR 17/13 and "Exception" 38/27 lines differ only by network answers (A: SSL/read timeouts to Mojang auth, Realms, update checkers; B: 401s and an expired mod-data cache), splash/chat text, Mods-screen frame counts (37/29) and the order of the 10 datapack registries in "posted datapack-registry declaration" (same set). That order follows `KernelModLoader.publishedNeoMods()`, a `Map.copyOf` whose iteration order is randomised per JVM — not the flip. |
+
+Why m9 shows no difference: no NeoForge jar of `client-merged-pack` declares two mod ids (all 97 jars: at most one
+`[[mods]]` in `neoforge.mods.toml`; the 12 jars with two `@Mod` classes are main+client pairs of one id each, read from
+the annotations with `javap -v`), so one file per mod is already one per jar there. The canary is the only measured
+multi-mod jar. Nothing regressed, so the flip stays on (D42).
+
+**Red controls of the flip** (`w2/mutant-*.log`, `w2/runs/B-m21-*`):
+
+| control | result |
+|---|---|
+| mutation: `perJar()` back to the old parse (default off) | `KernelModFilePerJarTest` 4 of 6 red (the default test, the shared-file test, the walk-up and the naming test); restored: 6/6 green, files byte-identical to before (`cmp`) |
+| mutation: m21's check accepts "[12] time(s)" | `GateNeoCanaryContractTest.m21NeoBlockTellsOneJarFromTheSameJarListedOncePerMod` red, the other 6 green; restored |
+| m21 `M21_EXTRA_JVM=-Dforbric.modFilePerJar=off` | 51 / 3: exactly the two per-jar checks ("lists the canary's jar once" got 0 lines saying 1; "found in one entry" exactly 1 got 2) + dual_forge; the kernel's switch-off line printed once |
+| m21 `neoScanData=off` | 44 / 10: 9 (six reader lines, the count line, the two per-jar checks) + dual_forge (11 before the flip, when the second boot repeated two) |
+| m21 `seededScanData=off` | 49 / 5: 4 (three LoadingModList lines, "neither reader failed") + dual_forge |
+| m21 `modDataPacks=off` | 52 / 2: 1 ("the registered data loader ran", got 0) + dual_forge |
+
+m21's header carries these counts (the wave-1 placeholders are gone).
+
+### Every G-A gate on the pinned build (genuine stage, `.stage4`, fresh canary, `MC_DIR` unset, bash)
+
+Server gates and m21 ran in the worktree with the flip applied (the tree of `d7f80b9a`; m21's default run and its
+four controls ran before its header comments got the measured counts, a comment-only difference); client gates under
+`client.sh` first; m0 in an APFS clone of the worktree (it runs `cleanTest test` in its own tree). Counts are
+`^\[kernel\] PASS|FAIL|SKIP` lines of `gate.out`.
+
+| gate | PASS | FAIL | SKIP | note |
+|---|---|---|---|---|
+| m0 | 13 | 1 | 1 | FAIL = step 2: 3 of 5773 skipped — the three LiquidBounce tests ([fixture:third-party], jars absent; m0 runs without `requireFixtures`, so they skip there and step 2 counts a skip as a failure; D58, owner P1). SharedFinalSourceActualTest passes inside m0 (its step 1b captures the definitions). SKIP = step 4, C6 (D64). Steps 3, 5, 5b, 6 PASS. A first m0 run in a clone without the worktree's `.git` file had a second FAIL ("could not check the installer's bundled link baseline: fatal: not a git repository", `w2/runs/F-m0-nogit/`): harness, the clone's `.git` pointer restored, re-run as above. |
+| m7 | 28 | 0 | 0 | |
+| m8 | 20 | 0 | 0 | |
+| m10 | 24 | 0 | 0 | |
+| m11 | 14 | 0 | 0 | |
+| m15 | 22 | 0 | 0 | client |
+| m16 | 39 | 0 | 0 | client |
+| m18 | 20 | 0 | 0 | |
+| m19 | 40 | 0 | 0 | |
+| m21 | 53 | 1 | 0 | FAIL = dual_forge: D69, lane S narrows `KernelNeoConditions.lenient` and merges before G-A; m21 must be green after G-A's rebase in the merge |
+| m24 / m24b / m24c | 30 / 23 / 25 | 0 | 0 | |
+| m25 | 16 | 0 | 0 | |
+| m26 | 45 | 0 | 0 | client |
+| m28 | 15 | 0 | 0 | |
+| m29 | 38 | 0 | 0 | |
+| m30 | 28 | 0 | 0 | |
+
+Every count equals wave 1's on the substituted harness except m21 (the flip, above) and m0 (step 2 now fails on 3
+skips instead of 36 failures).
+
+### Red controls wave 1 had not shown
+
+| control | result |
+|---|---|
+| m29 `M29_POLICY=continue` | 34 / 4: exactly boot 1's four stop checks ("the report says strict decided" got CONTINUE, "strict stopped the launch with the typed policy stop" got exit 0, "and said so", "it never came up"), every refusal and report check green — as the header says |
+| m29 `M29_REFUSED=` (only the NeoForge canary in boots 1 and 2) | 16 / 22: every refusal, machine-report, load-report and stop check of both boots (en 11, zh 11) red; the control boot's 6 checks green |
+| m29 default | strict exit 78 and both refusal languages green (38/0): the typed stop, the en and zh load reports |
+| m18 control boot (in the gate, `-Dforbric.crossEcosystemPresence=off`) | the switch-off boot answers false where the default boot answers true: "a NeoForge mod is told the Fabric mod is absent", "a Fabric mod is told the NeoForge mod is absent", LoadingModList modFile=false, "0 Fabric for presence", no presence registration — all PASS, while the default boot's "sees" checks PASS |
+| m19 control boot (in the gate, arbitration off) | "the control really disabled arbitration" and "the library was then claimed twice, or tried to be" (3) PASS; the presence control ("does NOT hang on ModPresence") PASS |
+
+### Final suite
+
+The same command in an APFS clone of the worktree holding the flip commit's tree (later commits change only this
+record): **5773 tests, 0 skipped, 5 failed** — the 5 names of `c5/failures-wave1.txt`, 0 new, 0 gone, every kept row's
+first 240 message characters equal (`w2/suite-final.log`, XML `w2/suite-final-xml/`). 5772 → 5773 is
+`KernelModFilePerJarTest`'s new default test. List: `stage4-c5-g-a-open-failures.txt` beside this file and
+`c5/failures-g-a-w2.txt`.
+
+### Open after wave 2
+
+1. m21 dual_forge: lane S (D69); the merge must show m21 green after G-A rebases onto S.
+2. m0 step 2: the three LiquidBounce fixture reds (D58, P1).
+3. `KernelRegistryContent.rebuildBlockStateIds` (item 2 above): still the kernel lane's.
+4. Observation, not a G-A item: `KernelModLoader.publishedNeoMods()` is a `Map.copyOf`, so the order the kernel posts
+   per-mod events in (the datapack-registry declaration, the setup phases) changes from JVM to JVM; native FML posts in
+   its sorted mod order. No gate reads that order today. Owner: kernel lane, if it matters.
