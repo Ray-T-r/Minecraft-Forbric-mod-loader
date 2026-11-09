@@ -352,8 +352,16 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
    reports zero differences, so the `chunks:` and `full:` counts must be checked before any
    zero counts. `test_world_parity.py` checks which spawner differences count; gate-m0 runs it.
    `world-snapshot.py` is not part of the sweep either: gate-m58 (world upgrade) and gate-m59 (Forge to NeoForge
-   build swap) export a save to a typed snapshot and compare two under named rules; its docstring is the
-   operating manual. `test_world_snapshot.py` checks it, including against bytes the game wrote.
+   build swap) export a save after a clean stop to a typed JSON snapshot (`export`, schema
+   `forbric-world-snapshot/1`, frozen: level.dat, block states, biomes, block entities, chunk extras such as
+   attachments, entities, players, stats, SavedData), compare two snapshots under named rules (`diff --rules
+   upgrade|reopen`; every allowance is printed with its count, including the resave noise measured old -> old,
+   `--ignore-namespace` for a mod that is meant to be gone, `--json` for the same result as
+   `forbric-world-snapshot-diff/1`), change a copy of a save for a reverse control (`mutate`), and check that every
+   registry name a snapshot refers to is in the registry lists a canary wrote (`census`). A rule is noise only once
+   a run of the old line against itself has shown it. It reads saves through `world-parity.py`'s typed reader, the
+   tree's one NBT parser; its docstring is the operating manual, and `test_world_snapshot.py` checks it, including
+   against bytes the game wrote (`testdata/world-snapshot/`).
 9. `push-and-run.py` implements the shell entry point's orchestration and writes
    `report.md` using `report-template.md`, with commit, manifest, phase results, log
    assertions, frame verdict, region evidence and named load-report failures. Retain
