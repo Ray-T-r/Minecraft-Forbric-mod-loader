@@ -20,9 +20,10 @@
 # carry data is logged beside that as evidence of which link broke; nothing Forbric says about itself is asserted.
 #
 # THE NEGATIVE CONTROL. The same run with -Dforbric.playPayloadFallThrough=off leaves fabric-api's handler as written.
-# Expected, from the handler's code (TO MEASURE: not yet observed on NeoForge's base): the server disconnects the player
-# ("Internal Exception: java.lang.IllegalStateException: Unknown addon") when Carry On sends its key, and nothing is
-# picked up -- the drill then has no world to report on, or reports nothing carried. A gate that cannot go red without
+# Measured on NeoForge's base (C5, 2026-11-09, gate 11 PASS / 0 FAIL): the server disconnects the player ("ForbricKernel
+# lost connection: Internal Exception: java.lang.IllegalStateException: Unknown addon", and the client's "Client
+# disconnected with reason: ..." the same) when Carry On sends its key, and the drill reports no verdict at all -- it lost
+# its world before it could carry anything. The repaired run carried and put back both. A gate that cannot go red without
 # the repair is not measuring it. A disconnected client would be left on the disconnect screen with no smoke left to
 # stop it, so the control is stopped by the gate once its integrated server has stopped, and that is not counted
 # against it.

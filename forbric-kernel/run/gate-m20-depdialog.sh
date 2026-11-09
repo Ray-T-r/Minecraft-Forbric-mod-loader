@@ -23,8 +23,11 @@
 #   M20_EXTRA_JVM='-Dforbric.crossEcosystemIds=off' -> "forbriccrosseco ... requires forbric_dep_canary >=1.0.0 —
 #   not installed" is back and the cross-spelling INFO line is gone. Checks that name "1 finding(s)" in the
 #   continue step go red with them, and say so: the false accusation is a second notice row. That IS the switch
-#   working -- it puts back a finding that is not real. (Re-count the red checks when this gate is next run; the
-#   steps changed when the notice and the confirmation became one window.)
+#   working -- it puts back a finding that is not real. Measured on NeoForge's base (C5, 2026-11-09): 36 PASS / 5 FAIL,
+#   exactly "a library spelled the other ecosystem's way is resolved, not accused", "and it is nowhere in the not-installed
+#   findings" (present x2), and the continue step's three "1 finding(s)" checks ("nothing required: the one window was the
+#   fail-open notice", "it was the fail-open notice, and an unanswerable one launches anyway", "and the boot continued,
+#   which is what an unanswerable NOTICE must always mean").
 #
 # HOW A DIALOG IS TESTED WITH NOBODY TO CLICK IT: -Dforbric.dependencyDialog=dryRun runs the real path — writes
 # the real report, forks the real child JVM, reads the real exit code — with AWT disabled inside the child, so it

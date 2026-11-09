@@ -23,7 +23,10 @@
 # client left the world — this gate only looked for the interop package, so that one never counted. The kernel now
 # defines its whole jar at boot (KernelJarPreload), and the absence check below covers every kernel class.
 #
-# RED control: M22_EXTRA_JVM='-Dforbric.bootJarPreload=off' — the disconnect's KernelRegistryRevert fails again.
+# RED control: M22_EXTRA_JVM='-Dforbric.bootJarPreload=off' — the disconnect's KernelRegistryRevert fails again. Measured on
+# NeoForge's base (C5, 2026-11-09): 3 PASS / 2 FAIL, exactly "the kernel jar was defined while it was readable" and "every
+# kernel class resolved" (NoClassDefFoundError: net/forbric/kernel/boot/KernelRegistryRevert, and the exit guard's
+# net/forbric/kernel/interop/ClientShutdown$GuardOutcome); the quit itself stayed a quit (no crash report).
 # GATE-PARALLEL: clone=client-merged-pack:M22_RUNDIR mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
