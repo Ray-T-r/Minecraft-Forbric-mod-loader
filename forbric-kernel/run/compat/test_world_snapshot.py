@@ -156,8 +156,8 @@ class Export(unittest.TestCase):
         """A level.dat and a one-chunk region the game itself wrote (old kernel, flat world), not our writer."""
         level = TESTDATA / "level.dat"
         region = TESTDATA / "r.0.0.mca"
-        if not level.is_file() or not region.is_file():
-            self.skipTest("no game-written testdata")
+        # A failure, never a skip: this is the one test that reads bytes the game wrote, and the testdata is in the tree.
+        self.assertTrue(level.is_file() and region.is_file(), "game-written testdata missing: %s" % TESTDATA)
         root = ws.read_nbt_file(level)
         self.assertIn("DataPacks", root[1]["Data"][1])
         chunks = list(wp.chunks_typed(TESTDATA))
