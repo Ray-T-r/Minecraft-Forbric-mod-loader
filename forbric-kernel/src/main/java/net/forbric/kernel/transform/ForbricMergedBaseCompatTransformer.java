@@ -1411,23 +1411,23 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	static final String POI_TYPES = "net/minecraft/world/entity/ai/village/poi/PoiTypes";
 	static final String KERNEL_POI_STATES = "net/forbric/kernel/runtime/KernelPoiStates";
 	static final String REGISTER_BLOCK_STATES_DESC = "(Lnet/minecraft/core/Holder;Ljava/util/Set;)V";
-	static final String KERNEL_POI_STATES_DESC = "(Ljava/util/Map;Ljava/lang/Object;Ljava/util/Set;)Z";
+	static final String KERNEL_POI_STATES_DESC = "(Ljava/util/Map;Ljava/lang/Object;Ljava/util/Set;)V";
 
 	/**
-	 * A Fabric mod's {@code PoiTypes.registerBlockStates} takes over the states NeoForge's registry callback already mapped
-	 * to the same type, instead of refusing them.
+	 * A Fabric mod's {@code PoiTypes.registerBlockStates} maps the states NeoForge's registry callback already mapped to
+	 * the same type, instead of throwing on them.
 	 *
 	 * <p>On NeoForge's base {@code TYPE_BY_STATE} is NeoForge's {@code BLOCKSTATE_TO_POI_TYPE_MAP}, and
 	 * {@code NeoForgeRegistryCallbacks.PoiTypeCallbacks.onAdd} fills it whenever a type is added after vanilla's bootstrap.
 	 * A Fabric mod then makes vanilla's own second step, {@code registerBlockStates(holder, states)}, whose first
 	 * {@code put} finds its state under its own holder and throws "defined in more than one PoI type" (Waystones-fabric
 	 * through Balm's invoker; fabric-api's {@code PoiHelper} through vanilla's {@code register}). Native Fabric has no
-	 * callback, so that call is the only mapping there is. {@code KernelPoiStates.registerBlockStates} decides at the head of
-	 * the method: for a Fabric mod's call it maps the states itself (taking over each callback-made mapping once, and
-	 * throwing for a state another type holds or one the mod maps twice) and the method returns; for anyone else it
-	 * answers false and vanilla's body runs unchanged.
+	 * callback, so that call is the only mapping there is. {@code KernelPoiStates.beforeRegisterBlockStates} runs first:
+	 * for a Fabric mod's call it hands back the callback's mappings of this holder that no earlier call named, and
+	 * vanilla's body then runs unchanged for everyone — with its own throw for a state another type holds or one mapped
+	 * twice, and with any mixin a mod put on it.
 	 *
-	 * <p>Five instructions and a frame at the head; stack-neutral at the join, so nothing else of the method moves.
+	 * <p>Four instructions at the head, stack-neutral, no branch: nothing else of the method moves.
 	 */
 	private static boolean letAFabricModMapThePoiStatesNeoForgeMappedForIt(ClassNode node) {
 		if (!POI_TYPES.equals(node.name)) return false;
@@ -1441,16 +1441,11 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
 			if (insn instanceof MethodInsnNode call && KERNEL_POI_STATES.equals(call.owner)) return false; // idempotent
 		}
-		LabelNode vanilla = new LabelNode();
 		InsnList head = new InsnList();
 		head.add(new FieldInsnNode(Opcodes.GETSTATIC, POI_TYPES, "TYPE_BY_STATE", "Ljava/util/Map;"));
 		head.add(new VarInsnNode(Opcodes.ALOAD, 0));
 		head.add(new VarInsnNode(Opcodes.ALOAD, 1));
-		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_POI_STATES, "registerBlockStates", KERNEL_POI_STATES_DESC, false));
-		head.add(new JumpInsnNode(Opcodes.IFEQ, vanilla));
-		head.add(new InsnNode(Opcodes.RETURN));
-		head.add(vanilla);
-		head.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_POI_STATES, "beforeRegisterBlockStates", KERNEL_POI_STATES_DESC, false));
 		method.instructions.insert(head);
 		method.maxStack = Math.max(method.maxStack, 3);
 		ForbricLog.info("[Forbric/MergedBaseCompat] PoiTypes.registerBlockStates lets a Fabric mod map the block states NeoForge's "

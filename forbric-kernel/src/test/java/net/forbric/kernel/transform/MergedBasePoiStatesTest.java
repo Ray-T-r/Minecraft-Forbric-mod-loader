@@ -20,7 +20,6 @@ import org.objectweb.asm.Type;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldInsnNode;
-import org.objectweb.asm.tree.JumpInsnNode;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
@@ -31,13 +30,16 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * Lane K4 (D75): on NeoForge's base, {@code PoiTypes.registerBlockStates} first asks {@code KernelPoiStates} whether the
- * call is a Fabric mod's, and returns when it is; vanilla's body is otherwise untouched. Read from the staged genuine base,
- * whose {@code TYPE_BY_STATE} is NeoForge's {@code BLOCKSTATE_TO_POI_TYPE_MAP} and whose {@code register} still calls
- * {@code registerBlockStates} after {@code Registry.register} (so the add-callback and vanilla's call both map a state).
+ * Lane K4 (D75): on NeoForge's base, {@code PoiTypes.registerBlockStates} first calls
+ * {@code KernelPoiStates.beforeRegisterBlockStates}, and vanilla's body then runs unchanged. Read from the staged genuine
+ * base, whose {@code TYPE_BY_STATE} is NeoForge's {@code BLOCKSTATE_TO_POI_TYPE_MAP}, whose {@code register} still calls
+ * {@code registerBlockStates} after {@code Registry.register}, and whose carrier attaches NeoForge's PoI type callback to
+ * {@code POINT_OF_INTEREST_TYPE} (so the callback and vanilla's call both map a state a mod's type lists).
  */
 class MergedBasePoiStatesTest {
 	private static final String POI_TYPES = ForbricMergedBaseCompatTransformer.POI_TYPES;
+	private static final String REGISTRIES_SETUP = "net/neoforged/neoforge/registries/NeoForgeRegistriesSetup";
+	private static final String POI_CALLBACKS = "net/neoforged/neoforge/registries/NeoForgeRegistryCallbacks$PoiTypeCallbacks";
 
 	private static ClassNode read(byte[] bytes) {
 		ClassNode node = new ClassNode();
@@ -45,11 +47,15 @@ class MergedBasePoiStatesTest {
 		return node;
 	}
 
-	private static MethodNode registerBlockStates(ClassNode node) {
+	private static MethodNode method(ClassNode node, String name, String desc) {
 		for (MethodNode m : node.methods) {
-			if (m.name.equals("registerBlockStates") && m.desc.equals(ForbricMergedBaseCompatTransformer.REGISTER_BLOCK_STATES_DESC)) return m;
+			if (m.name.equals(name) && (desc == null || m.desc.equals(desc))) return m;
 		}
 		return null;
+	}
+
+	private static MethodNode registerBlockStates(ClassNode node) {
+		return method(node, "registerBlockStates", ForbricMergedBaseCompatTransformer.REGISTER_BLOCK_STATES_DESC);
 	}
 
 	private static List<AbstractInsnNode> code(MethodNode m) {
@@ -58,23 +64,48 @@ class MergedBasePoiStatesTest {
 		return out;
 	}
 
-	@Test
-	void theBaseStillMapsTwiceSoTheRepairHasSomethingToDo() throws Exception {
-		ClassNode raw = read(TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedBase(), POI_TYPES + ".class"));
-		boolean neoTable = false;
-		for (MethodNode m : raw.methods) {
-			for (AbstractInsnNode insn : m.instructions) {
-				if (m.name.equals("<clinit>") && insn instanceof MethodInsnNode call
-						&& call.owner.equals("net/neoforged/neoforge/registries/GameData")
-						&& call.name.equals("getBlockStatePointOfInterestTypeMap")) neoTable = true;
-			}
+	private static int indexOf(List<AbstractInsnNode> code, String owner, String name) {
+		for (int i = 0; i < code.size(); i++) {
+			if (code.get(i) instanceof MethodInsnNode call && call.owner.equals(owner) && call.name.equals(name)) return i;
 		}
-		assertTrue(neoTable, "TYPE_BY_STATE is NeoForge's callback map on this base — if it is not, the double mapping this "
-				+ "repair answers is gone and the repair should be re-examined (C3 checks)");
+		return -1;
 	}
 
 	@Test
-	void registerBlockStatesAsksTheKernelFirstAndOtherwiseRunsVanillasBody() throws Exception {
+	void theCallbackAndVanillasRegisterBothMapATypesStatesOnThisBase() throws Exception {
+		ClassNode raw = read(TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedBase(), POI_TYPES + ".class"));
+		List<AbstractInsnNode> clinit = code(method(raw, "<clinit>", "()V"));
+		int neoMap = indexOf(clinit, "net/neoforged/neoforge/registries/GameData", "getBlockStatePointOfInterestTypeMap");
+		assertTrue(neoMap >= 0 && clinit.get(neoMap + 1) instanceof FieldInsnNode put && put.getOpcode() == Opcodes.PUTSTATIC
+				&& put.name.equals("TYPE_BY_STATE"), "TYPE_BY_STATE is NeoForge's callback map on this base — if it is not, the "
+						+ "double mapping this repair answers is gone and the repair should be re-examined (C3 checks)");
+
+		MethodNode register = null;
+		for (MethodNode m : raw.methods) {
+			if (m.name.equals("register") && indexOf(code(m), POI_TYPES, "registerBlockStates") >= 0) register = m;
+		}
+		assertNotNull(register, "PoiTypes.register no longer calls registerBlockStates — vanilla's second step is gone");
+		List<AbstractInsnNode> steps = code(register);
+		int add = indexOf(steps, "net/minecraft/core/Registry", "register");
+		assertTrue(add >= 0 && add < indexOf(steps, POI_TYPES, "registerBlockStates"),
+				"register adds the type (the callback fires) and only then maps its states itself");
+
+		ClassNode setup = read(TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.neoCarrier(), REGISTRIES_SETUP + ".class"));
+		boolean attached = false;
+		for (MethodNode m : setup.methods) {
+			List<AbstractInsnNode> c = code(m);
+			for (int i = 0; i + 2 < c.size(); i++) {
+				if (c.get(i) instanceof FieldInsnNode registry && registry.name.equals("POINT_OF_INTEREST_TYPE")
+						&& c.get(i + 1) instanceof FieldInsnNode callback && callback.owner.equals(POI_CALLBACKS)
+						&& c.get(i + 2) instanceof MethodInsnNode call && call.name.equals("addCallback")) attached = true;
+			}
+		}
+		assertTrue(attached, "NeoForgeRegistriesSetup no longer attaches PoiTypeCallbacks to POINT_OF_INTEREST_TYPE — "
+				+ "nothing maps a type's states on add, and the repair should be re-examined");
+	}
+
+	@Test
+	void registerBlockStatesCallsTheKernelFirstAndThenRunsVanillasBody() throws Exception {
 		byte[] raw = TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.stagedBase(), POI_TYPES + ".class");
 		byte[] once = new ForbricMergedBaseCompatTransformer().transform(POI_TYPES.replace('/', '.'), raw, null);
 		ClassNode node = read(once);
@@ -87,14 +118,14 @@ class MergedBasePoiStatesTest {
 		assertTrue(code.get(1) instanceof VarInsnNode v && v.getOpcode() == Opcodes.ALOAD && v.var == 0);
 		assertTrue(code.get(2) instanceof VarInsnNode v && v.getOpcode() == Opcodes.ALOAD && v.var == 1);
 		assertTrue(code.get(3) instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC
-				&& call.owner.equals(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES) && call.name.equals("registerBlockStates")
+				&& call.owner.equals(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES)
+				&& call.name.equals("beforeRegisterBlockStates")
 				&& call.desc.equals(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES_DESC));
-		assertTrue(code.get(4) instanceof JumpInsnNode jump && jump.getOpcode() == Opcodes.IFEQ);
-		assertEquals(Opcodes.RETURN, code.get(5).getOpcode());
 
 		List<AbstractInsnNode> vanilla = code(registerBlockStates(read(raw)));
-		assertEquals(vanilla.size() + 6, code.size(), "six instructions added at the head, nothing else");
-		for (int i = 0; i < vanilla.size(); i++) assertEquals(vanilla.get(i).getOpcode(), code.get(i + 6).getOpcode());
+		assertEquals(vanilla.size() + 4, code.size(), "four instructions added at the head, nothing else: vanilla's body runs "
+				+ "for every caller, with any mixin a mod put on it");
+		for (int i = 0; i < vanilla.size(); i++) assertEquals(vanilla.get(i).getOpcode(), code.get(i + 4).getOpcode());
 		new Analyzer<>(new BasicVerifier()).analyze(node.name, method);
 		assertSame(once, new ForbricMergedBaseCompatTransformer().transform(POI_TYPES.replace('/', '.'), once, null), "a second pass stands down");
 	}
@@ -104,7 +135,7 @@ class MergedBasePoiStatesTest {
 		java.net.URL boot = net.forbric.kernel.util.ForbricLog.class.getProtectionDomain().getCodeSource().getLocation();
 		try (java.net.URLClassLoader game = net.forbric.kernel.runtime.StagedGameClassLoader.create(List.of(boot))) {
 			Method helper = Class.forName(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES.replace('/', '.'), false, game)
-					.getMethod("registerBlockStates", Map.class, Object.class, Set.class);
+					.getMethod("beforeRegisterBlockStates", Map.class, Object.class, Set.class);
 			assertTrue(Modifier.isStatic(helper.getModifiers()) && Modifier.isPublic(helper.getModifiers()));
 			assertEquals(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES_DESC, Type.getMethodDescriptor(helper));
 		}

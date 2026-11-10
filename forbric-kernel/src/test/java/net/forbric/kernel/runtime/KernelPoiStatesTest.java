@@ -2,14 +2,13 @@
 package net.forbric.kernel.runtime;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 
@@ -28,19 +27,21 @@ import org.junit.jupiter.api.Test;
  * has already put the same states under the same holder into the same map ({@code TYPE_BY_STATE} is NeoForge's
  * {@code BLOCKSTATE_TO_POI_TYPE_MAP}). Measured on the genuine stage: the callback maps waystones:wild_waystone's 320
  * states, then Balm's invoker of {@code registerBlockStates} throws "defined in more than one PoI type" on the first one.
- * The map stands in for {@code TYPE_BY_STATE}; the caller predicate stands in for the kernel loader's ecosystem record.
- * The helper is the game side's, loaded the way the game loads it (StagedGameClassLoader), and called reflectively.
+ * The map stands in for {@code TYPE_BY_STATE}, {@link #vanillasBody} for the method's own body (which runs after the
+ * kernel's call for every caller), and the caller predicate for the kernel loader's ecosystem record
+ * (KernelPoiStatesThroughPoiTypesTest covers the record and the frames). The helper is the game side's, loaded the way
+ * the game loads it (StagedGameClassLoader), and called reflectively.
  */
 class KernelPoiStatesTest {
 	private static URLClassLoader game;
-	private static Method register, bind, reset, takenOverCount;
+	private static Method before, bind, reset, takenOverCount;
 
 	@BeforeAll
 	static void gameSide() throws Exception {
 		java.net.URL boot = net.forbric.kernel.util.ForbricLog.class.getProtectionDomain().getCodeSource().getLocation();
 		game = StagedGameClassLoader.create(List.of(boot));
 		Class<?> helper = Class.forName("net.forbric.kernel.runtime.KernelPoiStates", true, game);
-		register = helper.getMethod("registerBlockStates", Map.class, Object.class, Set.class);
+		before = helper.getMethod("beforeRegisterBlockStates", Map.class, Object.class, Set.class);
 		bind = helper.getDeclaredMethod("bindFabricCodeForTest", Predicate.class);
 		reset = helper.getDeclaredMethod("resetForTest");
 		takenOverCount = helper.getDeclaredMethod("takenOver");
@@ -52,11 +53,21 @@ class KernelPoiStatesTest {
 		if (game != null) game.close();
 	}
 
-	private static boolean registerBlockStates(Map<Object, Object> map, Object poi, Set<?> states) throws Throwable {
+	/** The transformed method: the kernel's call, then vanilla's body (put each state; throw on any earlier type). */
+	private static void registerBlockStates(Map<Object, Object> map, Object poi, Set<?> states) throws Throwable {
 		try {
-			return (boolean) register.invoke(null, map, poi, states);
+			before.invoke(null, map, poi, states);
 		} catch (InvocationTargetException e) {
 			throw e.getCause();
+		}
+		vanillasBody(map, poi, states);
+	}
+
+	private static void vanillasBody(Map<Object, Object> map, Object poi, Set<?> states) {
+		for (Object state : states) {
+			if (map.put(state, poi) != null) {
+				throw new IllegalStateException(String.format(Locale.ROOT, "%s is defined in more than one PoI type", state));
+			}
 		}
 	}
 
@@ -88,10 +99,9 @@ class KernelPoiStatesTest {
 	@Test
 	void aFabricModsOwnCallTakesOverTheStatesTheCallbackMappedToItsType() throws Throwable {
 		Map<Object, Object> map = mappedByTheCallback(wild);
-		assertTrue(registerBlockStates(map, wild, new LinkedHashSet<>(states)),
-				"a Fabric caller's states are mapped by the kernel, not by vanilla's body (which throws on the first one)");
+		registerBlockStates(map, wild, new LinkedHashSet<>(states));
 		assertEquals(2, map.size());
-		for (String state : states) assertSame(wild, map.get(state), "the mapping is the type's, unchanged");
+		for (String state : states) assertSame(wild, map.get(state), "the mapping is the type's, now made by vanilla's body");
 		assertEquals(2, takenOver());
 	}
 
@@ -116,7 +126,7 @@ class KernelPoiStatesTest {
 	@Test
 	void withoutTheCallbackAFabricCallMapsExactlyAsVanillaDoes() throws Throwable {
 		Map<Object, Object> map = new HashMap<>();
-		assertTrue(registerBlockStates(map, wild, new LinkedHashSet<>(states)));
+		registerBlockStates(map, wild, new LinkedHashSet<>(states));
 		for (String state : states) assertSame(wild, map.get(state));
 		assertEquals(0, takenOver(), "nothing was there to take over");
 		assertThrows(IllegalStateException.class, () -> registerBlockStates(map, wild, Set.of(states.get(1))),
@@ -127,8 +137,20 @@ class KernelPoiStatesTest {
 	void codeThatIsNotAFabricModsGetsVanillasBodyUntouched() throws Throwable {
 		bindFabricCode(type -> false);
 		Map<Object, Object> map = mappedByTheCallback(wild);
-		assertFalse(registerBlockStates(map, wild, new LinkedHashSet<>(states)),
-				"false hands the call back to vanilla's body — NeoForge's own behaviour for NeoForge and vanilla code");
-		assertEquals(mappedByTheCallback(wild), map, "and the kernel wrote nothing");
+		assertThrows(IllegalStateException.class, () -> registerBlockStates(map, wild, new LinkedHashSet<>(states)),
+				"NeoForge's own behaviour for NeoForge and vanilla code: the call after the callback throws");
+		assertEquals(mappedByTheCallback(wild), map, "and the kernel removed nothing");
+		assertEquals(0, takenOver());
+	}
+
+	@Test
+	void aMappingAnEarlierCallMadeIsNotTheCallbacks() throws Throwable {
+		bindFabricCode(type -> false);
+		Map<Object, Object> map = new HashMap<>();
+		registerBlockStates(map, wild, new LinkedHashSet<>(states)); // vanilla's bootstrap, or a NeoForge mod's own call
+		bindFabricCode(type -> type == KernelPoiStatesTest.class);
+		assertThrows(IllegalStateException.class, () -> registerBlockStates(map, wild, new LinkedHashSet<>(states)),
+				"a Fabric mod mapping states an earlier call already mapped is vanilla's conflict, as on Fabric");
+		assertEquals(0, takenOver());
 	}
 }
