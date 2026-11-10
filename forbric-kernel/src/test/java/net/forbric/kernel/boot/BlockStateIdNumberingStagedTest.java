@@ -172,4 +172,37 @@ class BlockStateIdNumberingStagedTest {
 		}
 		assertEquals(1, attached, "one fabric-registry-sync site attaches a StateIdTracker to Block.BLOCK_STATE_REGISTRY");
 	}
+
+	/**
+	 * The sibling map has one numbering only (K1's review, B-9). fabric-registry-sync attaches a StateIdTracker to
+	 * {@code Fluid.FLUID_STATE_REGISTRY} as well, but nothing on NeoForge's side numbers that map a second time: no class
+	 * of the carrier touches it, and in the base only vanilla's own {@code Fluid} (the field) and {@code Fluids} (its
+	 * bootstrap fill) do. If NeoForge grows a fluid-state bake, this map needs the clear the block map has, and this
+	 * test says so.
+	 */
+	@Test
+	void theFluidStateMapHasNoSecondNumbering() throws IOException {
+		java.util.Set<String> writers = new java.util.TreeSet<>();
+		for (Path jar : List.of(TestFixtures.stagedBase(), TestFixtures.neoCarrier())) {
+			TestFixtures.requireFiles(Fixture.STAGED, "the genuine stage's base and carrier", jar);
+			try (ZipFile zip = new ZipFile(jar.toFile())) {
+				for (ZipEntry e : java.util.Collections.list(zip.entries())) {
+					if (!e.getName().endsWith(".class")) continue;
+					byte[] bytes;
+					try (var in = zip.getInputStream(e)) {
+						bytes = in.readAllBytes();
+					}
+					if (!new String(bytes, java.nio.charset.StandardCharsets.ISO_8859_1).contains("FLUID_STATE_REGISTRY")) continue;
+					ClassNode c = node(bytes);
+					for (MethodNode m : c.methods) {
+						for (AbstractInsnNode insn : m.instructions.toArray()) {
+							if (insn instanceof FieldInsnNode f && f.name.equals("FLUID_STATE_REGISTRY")) writers.add(c.name);
+						}
+					}
+				}
+			}
+		}
+		assertEquals(java.util.Set.of("net/minecraft/world/level/material/Fluid", "net/minecraft/world/level/material/Fluids"),
+				writers, "only vanilla's Fluid and Fluids touch the fluid-state map; anything else may number it a second time");
+	}
 }
