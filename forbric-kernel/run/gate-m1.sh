@@ -58,6 +58,12 @@ fi
 check "genuine server-loading lifecycle redirected"       "(redirected|excised) genuine loader trigger .*ServerModLoader.load" "$LOG"
 check "FABRIC references come from the vanilla-reference sidecar" "$NATIVE_REFS_FROM_SIDECAR" "$LOG"
 check "native ecosystem registration ran"                 "fired RegisterEvent x[1-9][0-9]* on [1-9][0-9]* bus" "$LOG"
+# RegisterEvent is posted by NeoForge's own GameData.postRegisterEvents (K3), with the kernel's seam on its call sites.
+# The two lines above pass without the seam too: if a NeoForge update changes the method's shape, the seam stands down,
+# the method runs as NeoForge ships it (one mod's throwing listener rolls every registry back, and a dedicated server's
+# Fabric mains run after the tail), and only this pair says so.
+check        "NeoForge's postRegisterEvents carries the kernel's seam" "GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: .* [0-9]+ tail step" "$LOG"
+check_absent "NeoForge's postRegisterEvents is the shape the seam knows" "GameData.postRegisterEvents is not the shape the kernel knows" "$LOG"
 check "server reached Done"                               "Done \(" "$LOG"
 # "Stopping the server" is the /stop command's OWN feedback (commands.stop.stopping in en_us), and the console
 # queue is drained only by tickConnection(), which runs only inside tickServer() — so that line cannot exist
