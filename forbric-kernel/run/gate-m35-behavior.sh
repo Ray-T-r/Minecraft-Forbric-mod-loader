@@ -72,12 +72,29 @@ COMPILE_GAME="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[
 # The launcher's own inputs: the game base and its carrier the probe was compiled and recorded against.
 export BASE NEO_RT
 
-kill_owned_descendants() {
-  local parent="$1" child
-  for child in $(pgrep -P "$parent" 2>/dev/null || true); do
-    kill_owned_descendants "$child"; kill -9 "$child" 2>/dev/null || true
-  done
+# A phase runs in the background as evidence.py -> the inner shell -> the server JVM. Two ways that tree outlived the
+# gate and held the port (D76): the timeout listed evidence.py's children once and killed evidence.py itself 15 s
+# later, so an evidence.py still capturing its inputs at the timeout started the server after the listing and was then
+# killed above it, leaving the shell and the JVM re-parented to launchd; and a gate stopped by a signal (heavy.sh
+# forwards TERM to the gate alone) never touched its background phase. stop_phase freezes evidence.py before it lists
+# anything, so it can start nothing while its tree is collected, and the EXIT trap below stops the phase still in
+# flight however the gate ends.
+PHASE_PID=""
+stop_phase() {
+  local pid="$1" child i
+  case "$pid" in ''|*[!0-9]*) return 0;; esac
+  kill -STOP "$pid" 2>/dev/null || return 0
+  if [ -n "$(pgrep -P "$pid" 2>/dev/null)" ]; then
+    # It waits on one child: the phase command, or a git call while it captures the inputs (a failed one ends it before
+    # the command). With that tree gone it starts nothing more, so thaw it to record the killed command and the inputs.
+    for child in $(pgrep -P "$pid" 2>/dev/null); do kill_tree "$child"; done
+    kill -CONT "$pid" 2>/dev/null
+    for i in $(seq 1 15); do _running "$pid" || break; sleep 1; done
+  fi
+  kill_tree "$pid"   # no child yet (thawed, it would start the server), or it did not finish recording in time
 }
+trap 'rc=$?; kill_tree "$PHASE_PID"; _gate_exit "$rc"' EXIT
+trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
 fresh_world() {
   if [ -d "$RUNDIR/world" ] && [ ! -f "$RUNDIR/.m35-owned" ]; then
     echo "[kernel] FAIL refusing to replace a world without M35 ownership proof"; exit 1
@@ -91,7 +108,7 @@ fresh_world() {
          if [[ "$command" != *"$KERNEL/run/compat/evidence.py"* || "$command" != *"$RESULTS/"* ]]; then
            echo "[kernel] FAIL stale PID no longer belongs to M35; refusing to kill $stale"; exit 1
          fi
-         kill_owned_descendants "$stale"; kill -9 "$stale" 2>/dev/null || true
+         kill_tree "$stale"
        fi ;;
   esac
   rm -f "$RUNDIR/.forbric-gate.pid"
@@ -113,14 +130,12 @@ run_phase() {
     --artifact "compile-game=$COMPILE_GAME" --mods "$RUNDIR/mods" --output "$RESULTS/$phase-inputs.json" \
     -- bash "$KERNEL/run/gate-m35-behavior.sh" --execute-phase "$phase" "$token" \
     > "$RESULTS/$phase-driver.log" 2>&1 &
-  pid=$!; record_server_pid "$RUNDIR" "$pid"
+  pid=$!; PHASE_PID=$pid; record_server_pid "$RUNDIR" "$pid"
   for i in $(seq 1 "${M35_TIMEOUT:-240}"); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
   if kill -0 "$pid" 2>/dev/null; then
-    echo "[kernel] FAIL M35 $phase timed out"; FAIL=1; kill_owned_descendants "$pid"
-    for i in $(seq 1 15); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-    kill -9 "$pid" 2>/dev/null || true
+    echo "[kernel] FAIL M35 $phase timed out"; FAIL=1; stop_phase "$pid"
   fi
-  wait "$pid" 2>/dev/null || true; rm -f "$RUNDIR/.forbric-gate.pid"
+  wait "$pid" 2>/dev/null || true; PHASE_PID=""; rm -f "$RUNDIR/.forbric-gate.pid"
   port_was_free "$RESULTS/$phase-inputs.log"
   if python3 - "$RESULTS" "$phase" "$token" <<'PY'
 import hashlib, json, pathlib, sys

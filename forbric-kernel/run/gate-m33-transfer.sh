@@ -92,7 +92,7 @@ fresh_world() {
          if [[ "$command" != *"$KERNEL/run/compat/evidence.py"* || "$command" != *"$RESULTS/"* ]]; then
            echo "[kernel] FAIL stale PID no longer belongs to M33; refusing to terminate it: $stale"; exit 1
          fi
-         kill_owned_descendants "$stale"; kill -9 "$stale" 2>/dev/null || true
+         kill_tree "$stale"
        fi ;;
   esac
   rm -f "$RUNDIR/.forbric-gate.pid"
@@ -104,15 +104,29 @@ fresh_world() {
   printf '\nlevel-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nmax-tick-time=-1\npause-when-empty-seconds=-1\n' >> "$RUNDIR/server.properties"
 }
 
-# Evidence owns an inner shell and the JVM below it. Recursively terminate only this run's descendants on a
-# timeout, then let evidence.py record the failed command and unchanged/different inputs.
-kill_owned_descendants() {
-  local parent="$1" child
-  for child in $(pgrep -P "$parent" 2>/dev/null || true); do
-    kill_owned_descendants "$child"
-    kill -9 "$child" 2>/dev/null || true
-  done
+# A phase runs in the background as evidence.py -> the inner shell -> the server JVM. Two ways that tree outlived the
+# gate and held the port (D76): the timeout listed evidence.py's children once and killed evidence.py itself 15 s
+# later, so an evidence.py still capturing its inputs at the timeout started the server after the listing and was then
+# killed above it, leaving the shell and the JVM re-parented to launchd; and a gate stopped by a signal (heavy.sh
+# forwards TERM to the gate alone) never touched its background phase. stop_phase freezes evidence.py before it lists
+# anything, so it can start nothing while its tree is collected, and the EXIT trap below stops the phase still in
+# flight however the gate ends.
+PHASE_PID=""
+stop_phase() {
+  local pid="$1" child i
+  case "$pid" in ''|*[!0-9]*) return 0;; esac
+  kill -STOP "$pid" 2>/dev/null || return 0
+  if [ -n "$(pgrep -P "$pid" 2>/dev/null)" ]; then
+    # It waits on one child: the phase command, or a git call while it captures the inputs (a failed one ends it before
+    # the command). With that tree gone it starts nothing more, so thaw it to record the killed command and the inputs.
+    for child in $(pgrep -P "$pid" 2>/dev/null); do kill_tree "$child"; done
+    kill -CONT "$pid" 2>/dev/null
+    for i in $(seq 1 15); do _running "$pid" || break; sleep 1; done
+  fi
+  kill_tree "$pid"   # no child yet (thawed, it would start the server), or it did not finish recording in time
 }
+trap 'rc=$?; kill_tree "$PHASE_PID"; _gate_exit "$rc"' EXIT
+trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
 run_phase() {
   local phase="$1" bridge="$2" token pid i
   python3 -c 'import uuid; print(uuid.uuid4())' > "$RUNDIR/.m33-owned"
@@ -126,18 +140,16 @@ run_phase() {
     --artifact "fabric-api=$FAPI" --mods "$RUNDIR/mods" --output "$RESULTS/$phase-inputs.json" \
     -- bash "$KERNEL/run/gate-m33-transfer.sh" --execute-phase "$phase" "$token" "$bridge" \
     > "$RESULTS/$phase-driver.log" 2>&1 &
-  pid=$!; record_server_pid "$RUNDIR" "$pid"
+  pid=$!; PHASE_PID=$pid; record_server_pid "$RUNDIR" "$pid"
   for i in $(seq 1 "${M33_TIMEOUT:-240}"); do
     kill -0 "$pid" 2>/dev/null || break
     sleep 1
   done
   if kill -0 "$pid" 2>/dev/null; then
     echo "[kernel] FAIL M33 phase $phase timed out"; FAIL=1
-    kill_owned_descendants "$pid"
-    for i in $(seq 1 15); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
-    kill -9 "$pid" 2>/dev/null || true
+    stop_phase "$pid"
   fi
-  wait "$pid" 2>/dev/null || true
+  wait "$pid" 2>/dev/null || true; PHASE_PID=""
   rm -f "$RUNDIR/.forbric-gate.pid"
   port_was_free "$RESULTS/$phase-inputs.log"
 }
