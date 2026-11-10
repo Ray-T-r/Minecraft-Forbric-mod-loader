@@ -739,23 +739,12 @@ public final class KernelLifecycle {
 		try {
 			n = postRegisterEvents(cl, window);
 		} catch (Throwable t) {
-			if (rolledBackToVanilla(t)) {
-				// NeoForge's own roll-back: something inside its per-registry try threw (with the seam, never the kernel's
-				// delivery — a guest handler woven there, or the event's own construction), so it logged "Rolling back to
-				// VANILLA state", called RegistryManager.revertToVanilla() and threw before its tail. Native NeoForge stops
-				// at its loading-error screen here; the kernel has none and carries on, so say what that state is.
-				StringBuilder causes = new StringBuilder();
-				for (Throwable cause : t.getSuppressed()) causes.append("\n  - ").append(cause);
-				Caught.error(t, "[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents failed for %d registr(ies) and "
-						+ "rolled EVERY registry back to vanilla (RegistryManager.revertToVanilla): no NeoForge mod has any "
-						+ "registered content, and its tail (attribute events, spawn placements, block entity blocks, "
-						+ "creative-tab sort, tooltip appenders) did not run. Native NeoForge stops at its loading-error screen "
-						+ "here. Cause(s):%s", t.getSuppressed().length, causes);
-			} else {
-				Caught.warn(t, "[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content "
-						+ "through DeferredRegister or RegisterEvent will have none of it. The rest of the "
-						+ "registration window below still runs");
-			}
+			// Either way every NeoForge mod is left without what it registers through RegisterEvent, so ERROR. When the throw
+			// is NeoForge's own roll-back — something inside its per-registry try threw (with the seam, never the kernel's
+			// delivery: a guest handler woven there, or the event's own construction), so it logged "Rolling back to VANILLA
+			// state", called RegistryManager.revertToVanilla() and threw before its tail — say so: native NeoForge stops at
+			// its loading-error screen here; the kernel has none and carries on.
+			Caught.error(t, "%s", registerEventFailure(t));
 		} finally {
 			// Not reached through the seam (NeoForge's method threw before its tail, or the seam was not applied): the
 			// Fabric mains still run in this window, after NeoForge's.
@@ -764,6 +753,20 @@ public final class KernelLifecycle {
 		ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)]",
 				n, window.containers(), Math.max(0, window.containers() - 1));
 		return n;
+	}
+
+	/** What {@link #dispatchRegisterEvents} reports when NeoForge's {@code postRegisterEvents} threw. */
+	static String registerEventFailure(Throwable t) {
+		if (!rolledBackToVanilla(t)) {
+			return "[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content through DeferredRegister or "
+					+ "RegisterEvent will have none of it. The rest of the registration window below still runs";
+		}
+		StringBuilder causes = new StringBuilder();
+		for (Throwable cause : t.getSuppressed()) causes.append("\n  - ").append(cause);
+		return "[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents failed for " + t.getSuppressed().length
+				+ " registr(ies) and rolled EVERY registry back to vanilla (RegistryManager.revertToVanilla): no NeoForge mod has "
+				+ "any registered content, and its tail (attribute events, spawn placements, block entity blocks, creative-tab "
+				+ "sort, tooltip appenders) did not run. Native NeoForge stops at its loading-error screen here. Cause(s):" + causes;
 	}
 
 	/**
