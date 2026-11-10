@@ -20,13 +20,18 @@
 # Nothing else in the kernel rewrites BaseFireBlock.onPlace, BaseSpawner or LivingEntity.completeUsingItem for a probe
 # with no mixins (VanillaEarlyReturns and NativeValueStores act only on guest-mixin targets).
 #
-# The red control is a premise control (D48): the probe's `withhold` phase keeps every NeoForge listener counting its
-# event but withholds its answer, and exactly portal-neo-veto, the four spawner-* cases and item-result must fail, each
-# for its pinned reason (the failure text and the game state the probe recorded); portal-allow, which asks only that
-# NeoForge's event fired once, holds. Five of the six are game behaviour. spawner-nonempty-input is not: no finalization
-# runs in either phase, the world inserts the mob and Entity.load sees the spawner's tag in both, and its red is the
-# probe reading back the replacement SpawnGroupData its own listener withheld (pinned as "probe-side read-back only").
-# It stays in the set PLAN names (D48); whether it should leave the set is the orchestrator's call (review A-1, wave 2).
+# The red control is a premise control (D48, amended by D72): the probe's `withhold` phase keeps every NeoForge listener
+# counting its event but withholds its answer, and exactly five cases must fail, each for its pinned reason (the failure
+# text and the game state the probe recorded): portal-neo-veto, spawner-data, spawner-neo-cancel-finalize,
+# spawner-neo-veto-spawn and item-result. portal-allow, which asks only that NeoForge's event fired once, holds.
+# Why spawner-nonempty-input, the sixth case PLAN named, is not in the set (D72): a red control that is red for a
+# probe-side reason shows nothing. In that case no finalization runs in either phase (BaseSpawner finalizes only a bare
+# {id} entity tag), the world inserts the mob and Entity.load sees the spawner's tag in both, so none of NeoForge's
+# answers reaches the game there; its withhold red (measured in wave 2) came only from the probe reading back the
+# replacement SpawnGroupData its own listener had withheld. That read-back is phase-aware now -- it expects what native
+# leaves in the event after the post: the listener's answer in positive, none in withhold (BaseSpawner hands the event
+# null and EventHooks pops finalizeSpawn's return, javap) -- so the case passes in withhold, and the gate pins its game
+# state there equal to positive's (no finalization, inserted, the tag's marker 35, no SpawnGroupData in the event).
 # GATE-PARALLEL: rundirs=server-behavior-m35 mem=2000
 set -uo pipefail
 GATE_PORT="${GATE_PORT:-25595}"
@@ -135,7 +140,7 @@ red = phase == 'withhold'
 expected = {
     'positive': set(), 'spawn-position-off': set(),
     'withhold': {'portal-neo-veto', 'spawner-data', 'spawner-neo-cancel-finalize', 'spawner-neo-veto-spawn',
-                 'spawner-nonempty-input', 'item-result'},
+                 'item-result'},
 }[phase]
 assert failures == expected, (phase, failures, expected, proof)
 assert proof['pass'] is (not red), proof
@@ -161,8 +166,12 @@ if red:
     why('spawner-data', "NeoForge's replacement SpawnGroupData did not reach finalizer", finalizations=1, neoDataUsed=False)
     why('spawner-neo-cancel-finalize', 'finalization count differs', finalizations=1)
     why('spawner-neo-veto-spawn', 'event cancellation and world-insertion veto were conflated', worldInsertion=True)
-    # Not game behaviour (review A-1): the game state is positive's, the red is the probe's own read-back.
-    why('spawner-nonempty-input', 'probe-side read-back only', finalizations=0, worldInsertion=True, valueInputMarker=35)
+    # Not in the set (D72): no answer of NeoForge's reaches the game in this case, so withhold must leave it as positive
+    # does -- and its phase-aware read-back finds no SpawnGroupData in the event, which is what native leaves there.
+    nonempty = rows['spawner-nonempty-input']
+    for key, value in {'pass': True, 'finalizations': 0, 'worldInsertion': True, 'valueInputMarker': 35,
+                       'eventDataAfter': 'none'}.items():
+        assert nonempty.get(key) == value, ('spawner-nonempty-input', key, value, nonempty)
     item = rows['item-result']
     assert 'detail' not in item and item.get('held') == '1 minecraft:bucket', ('item-result reason differs', item)
 # Every listener was asked in both phases: a withheld answer is not a missing event.
@@ -182,7 +191,7 @@ for phase in positive spawn-position-off withhold; do
   run_phase "$phase"
 done
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] ✅ M35 WORLD BEHAVIOR GATE GREEN — 7 positive cases, the same 7 on NeoForge's own spawner hook, and the withhold premise control red on exactly its six, each for its pinned reason"
+  echo "[kernel] ✅ M35 WORLD BEHAVIOR GATE GREEN — 7 positive cases, the same 7 on NeoForge's own spawner hook, and the withhold premise control red on exactly its five, each for its pinned reason"
 else
   echo "[kernel] ❌ M35 GATE RED — inspect $RESULTS"
 fi

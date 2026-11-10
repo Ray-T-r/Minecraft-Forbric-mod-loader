@@ -46,9 +46,11 @@ import net.neoforged.neoforge.event.level.BlockEvent;
  * no finalize cancel or spawn veto, no result stack. The cases that judge an answer reaching the game must then fail
  * (portal-neo-veto, the four spawner cases, item-result) while portal-allow, which asks only that the event fired, holds.
  * It proves the positive phase's verdicts come from NeoForge's listeners through the live game callers and not from the
- * world doing the same thing on its own. One of the six is not game behaviour: in spawner-nonempty-input no finalization
- * runs in either phase, and its withhold red is the probe reading back the replacement SpawnGroupData its own listener did
- * not set; its failure text says so.
+ * world doing the same thing on its own. spawner-nonempty-input passes in both phases (D72): no finalization runs there in
+ * either (BaseSpawner finalizes only a bare {id} entity tag), so no answer of NeoForge's reaches the game in that case, and
+ * the event read-back is phase-aware -- it expects what native leaves in the event, the listener's NEO_DATA in positive
+ * and nothing (null, what BaseSpawner hands the event) in withhold. Before, its withhold red was only the probe reading
+ * back the answer its own listener had withheld.
  *
  * <p>Phase {@code spawn-position-off} behaves as {@code positive}; the gate runs it with
  * {@code -Dforbric.spawnPositionCalls=off}, so BaseSpawner.serverTick keeps NeoForge's own position-check hook instead of
@@ -213,18 +215,22 @@ public final class WorldProbe {
             String inputId = mob.loadedInput == null ? null : mob.loadedInput.getStringOr("id", "");
             int inputMarker = mob.loadedInput == null ? -1 : mob.loadedInput.getIntOr("m35_marker", -1);
             evidence.put("valueInputId", inputId); evidence.put("valueInputMarker", inputMarker);
-            evidence.put("eventDataAfter", neoFinalize == null ? "no event" : neoFinalize.getSpawnData() == NEO_DATA ? "NeoForge's" : String.valueOf(neoFinalize.getSpawnData()));
+            SpawnGroupData eventData = neoFinalize == null ? null : neoFinalize.getSpawnData();
+            evidence.put("eventDataAfter", neoFinalize == null ? "no event" : eventData == NEO_DATA ? "NeoForge's"
+                    : eventData == RETURNED_DATA ? "the finalizer's return" : eventData == null ? "none" : String.valueOf(eventData));
             int expectedFinal = mode.contains("cancel-finalize") || mode.equals("nonempty-input") ? 0 : 1;
             require(spawnerNeo == 1, "spawner callback count differs");
             require(mob.finalizations == expectedFinal, "finalization count differs");
             require(added == !mode.contains("veto-spawn"), "event cancellation and world-insertion veto were conflated");
             if (expectedFinal == 1) require(mob.finalizedWith == NEO_DATA, "NeoForge's replacement SpawnGroupData did not reach finalizer");
             require(MOB_ID.toString().equals(inputId), "actual nonempty entity ValueInput was not observed by Entity.load");
-            // EventHooks.finalizeMobSpawnSpawner discards finalizeSpawn's return (javap: invokevirtual finalizeSpawn; pop).
-            // In withhold the listener never set NEO_DATA, so this read-back fails whatever the game does: say so.
-            require(neoFinalize != null && neoFinalize.getSpawnData() == NEO_DATA, withheld()
-                    ? "probe-side read-back only: the event carries no replacement SpawnGroupData because the probe's listener withheld it"
-                    : "native discarded finalizer return was written back into the event");
+            // EventHooks.finalizeMobSpawnSpawner discards finalizeSpawn's return (javap: invokevirtual finalizeSpawn; pop), and
+            // BaseSpawner.serverTick hands the event no SpawnGroupData (javap: aconst_null before finalizeMobSpawnSpawner). So
+            // after the post the event holds only the listener's answer: NEO_DATA in positive, none in withhold (D72).
+            require(neoFinalize != null && eventData != RETURNED_DATA, "native discarded finalizer return was written back into the event");
+            require(eventData == (withheld() ? null : NEO_DATA), withheld()
+                    ? "the event carries a SpawnGroupData although BaseSpawner hands it none and the probe's listener withheld its answer"
+                    : "NeoForge's replacement SpawnGroupData did not stay in the event");
             if (mode.equals("nonempty-input")) require(inputMarker == 35, "the spawner's custom entity tag field did not reach Entity.load");
             pass = true;
         } catch (Throwable failure) { evidence.put("detail", failure.toString()); failure.printStackTrace(); }
