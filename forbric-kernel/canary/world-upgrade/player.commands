@@ -5,7 +5,9 @@ item replace entity @s hotbar.0 with minecraft:iron_pickaxe[minecraft:damage=5,m
 item replace entity @s hotbar.1 with minecraft:paper[forbricupgradeneo:stamp=1010] 2
 item replace entity @s hotbar.2 with minecraft:paper[forbricupgradefabric:stamp=2010] 3
 item replace entity @s hotbar.3 with mcwbridges:acacia_bridge_pier 6
+item replace entity @s hotbar.4 with sophisticatedbackpacks:backpack 1
 item replace entity @s hotbar.5 with toolbelt:belt 1
+item replace entity @s hotbar.6 with waystones:andesite_waystone 2
 item replace entity @s inventory.0 with minecraft:bread 12
 item replace entity @s inventory.1 with minecraft:written_book[minecraft:written_book_content={title:"Mine",author:"m58",pages:["mine"]}] 1
 item replace entity @s armor.head with minecraft:iron_helmet 1

@@ -1,9 +1,7 @@
 # gate-m58's world script: run once, as the server, by forbricupgradeneo in phase write (UpgradeProbe.SCRIPT_TICK ticks
 # after the start, in the force-loaded chunks -2..2). Every line must print "[M58Upgrade] OK command"; a line that
 # fails is a thing that is not in the world, and the gate goes red on it (D53: a real mod stays in the set only when its
-# population command succeeds; waystones and sophisticatedbackpacks populate fine but are written in held.commands instead,
-# because a new client cannot join a server that has them, see the gate). Flat world: grass at y=-61, so y=-60 is the
-# first air block.
+# population command succeeds). Flat world: grass at y=-61, so y=-60 is the first air block.
 #
 # Noise off: no clock, no weather, no random ticks, no natural spawns. (Game rules are content too: level.dat must keep them.)
 gamerule minecraft:keep_inventory true
@@ -53,6 +51,9 @@ setblock 2 -60 4 mcwbridges:acacia_bridge_pier
 setblock 4 -60 4 mcwfurnitures:oak_drawer[facing=north]
 item replace block 4 -60 4 container.0 with minecraft:emerald 9
 summon corpse:corpse 9 -60 9
+item replace block 0 -60 0 container.10 with sophisticatedbackpacks:backpack 1
+item replace block 0 -60 0 container.12 with waystones:andesite_waystone 1
+setblock 6 -60 4 waystones:andesite_waystone[half=lower]
 #
 # Scoreboard, team, command storage, bossbar.
 scoreboard objectives add m58 dummy
