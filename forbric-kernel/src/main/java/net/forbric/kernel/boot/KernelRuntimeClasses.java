@@ -271,6 +271,10 @@ public final class KernelRuntimeClasses {
 		// Which pack the data file being decoded came from, so that leniency applies to a Fabric mod's pack only (D69);
 		// called from the instruction the compat transformer puts at the head of Resource.open().
 		CLASSES.put("net.forbric.kernel.runtime.KernelConditionSources", new Entry(Origin.COMPILED, List.of()));
+		// A Fabric mod's PoiTypes.registerBlockStates on the states NeoForge's PoiType add-callback already mapped to the same
+		// type; asked by the instruction the compat transformer puts at the head of that method.
+		CLASSES.put("net.forbric.kernel.runtime.KernelPoiStates", new Entry(Origin.COMPILED, List.of(
+				new Call("registerBlockStates", boolean.class, java.util.Map.class, Object.class, java.util.Set.class))));
 		// The reordering Operation a wrapped @WrapOperation handler receives; called from the outer handler
 		// MixinWrapOperationShim writes into a guest mixin, so there is no boot-side entry point.
 		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));

@@ -84,7 +84,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps", "letAFabricModMapThePoiStatesNeoForgeMappedForIt");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -173,6 +173,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 				"System.out and System.err are never routed into log4j, so every line a mod PRINTS rather than logs "
 						+ "is absent from latest.log — including the debug output a mod is told to turn on when it "
 						+ "misbehaves"));
+		out.add(fixed("letAFabricModMapThePoiStatesNeoForgeMappedForIt", POI_TYPES,
+				"a Fabric mod's PoiTypes.registerBlockStates throws \"defined in more than one PoI type\" on the states NeoForge's "
+						+ "registry callback mapped for the same type, and its main entrypoint dies there (Waystones-fabric)"));
 		return List.copyOf(out);
 	}
 
@@ -230,6 +233,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "dropTheKeyModifierSuffixBeforeParsingAKeyName",
 					dropTheKeyModifierSuffixBeforeParsingAKeyName(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
+			changed |= claim(reporter, "letAFabricModMapThePoiStatesNeoForgeMappedForIt", letAFabricModMapThePoiStatesNeoForgeMappedForIt(node));
 
 			byte[] result = classBytes;
 			if (changed) {
@@ -1401,6 +1405,57 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] FeatureFlags now asks the kernel for NeoForge mods' declared feature flags — "
 				+ "NeoForge's own loader walks jar contents the kernel's mod files do not carry, so those flags were never "
 				+ "registered and a mod asking for its own died in its static initialiser");
+		return true;
+	}
+
+	static final String POI_TYPES = "net/minecraft/world/entity/ai/village/poi/PoiTypes";
+	static final String KERNEL_POI_STATES = "net/forbric/kernel/runtime/KernelPoiStates";
+	static final String REGISTER_BLOCK_STATES_DESC = "(Lnet/minecraft/core/Holder;Ljava/util/Set;)V";
+	static final String KERNEL_POI_STATES_DESC = "(Ljava/util/Map;Ljava/lang/Object;Ljava/util/Set;)Z";
+
+	/**
+	 * A Fabric mod's {@code PoiTypes.registerBlockStates} takes over the states NeoForge's registry callback already mapped
+	 * to the same type, instead of refusing them.
+	 *
+	 * <p>On NeoForge's base {@code TYPE_BY_STATE} is NeoForge's {@code BLOCKSTATE_TO_POI_TYPE_MAP}, and
+	 * {@code NeoForgeRegistryCallbacks.PoiTypeCallbacks.onAdd} fills it whenever a type is added after vanilla's bootstrap.
+	 * A Fabric mod then makes vanilla's own second step, {@code registerBlockStates(holder, states)}, whose first
+	 * {@code put} finds its state under its own holder and throws "defined in more than one PoI type" (Waystones-fabric
+	 * through Balm's invoker; fabric-api's {@code PoiHelper} through vanilla's {@code register}). Native Fabric has no
+	 * callback, so that call is the only mapping there is. {@code KernelPoiStates.registerBlockStates} decides at the head of
+	 * the method: for a Fabric mod's call it maps the states itself (taking over each callback-made mapping once, and
+	 * throwing for a state another type holds or one the mod maps twice) and the method returns; for anyone else it
+	 * answers false and vanilla's body runs unchanged.
+	 *
+	 * <p>Five instructions and a frame at the head; stack-neutral at the join, so nothing else of the method moves.
+	 */
+	private static boolean letAFabricModMapThePoiStatesNeoForgeMappedForIt(ClassNode node) {
+		if (!POI_TYPES.equals(node.name)) return false;
+		MethodNode method = findMethod(node, "registerBlockStates", REGISTER_BLOCK_STATES_DESC);
+		if (method == null || (method.access & Opcodes.ACC_STATIC) == 0) return false;
+		boolean hasTable = false;
+		for (FieldNode field : node.fields) {
+			if ("TYPE_BY_STATE".equals(field.name) && "Ljava/util/Map;".equals(field.desc)) hasTable = true;
+		}
+		if (!hasTable) return false;
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (insn instanceof MethodInsnNode call && KERNEL_POI_STATES.equals(call.owner)) return false; // idempotent
+		}
+		LabelNode vanilla = new LabelNode();
+		InsnList head = new InsnList();
+		head.add(new FieldInsnNode(Opcodes.GETSTATIC, POI_TYPES, "TYPE_BY_STATE", "Ljava/util/Map;"));
+		head.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		head.add(new VarInsnNode(Opcodes.ALOAD, 1));
+		head.add(new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_POI_STATES, "registerBlockStates", KERNEL_POI_STATES_DESC, false));
+		head.add(new JumpInsnNode(Opcodes.IFEQ, vanilla));
+		head.add(new InsnNode(Opcodes.RETURN));
+		head.add(vanilla);
+		head.add(new FrameNode(Opcodes.F_SAME, 0, null, 0, null));
+		method.instructions.insert(head);
+		method.maxStack = Math.max(method.maxStack, 3);
+		ForbricLog.info("[Forbric/MergedBaseCompat] PoiTypes.registerBlockStates lets a Fabric mod map the block states NeoForge's "
+				+ "registry callback already mapped to its type — the callback does vanilla's second step when the type is added, "
+				+ "so a Fabric mod's own call threw \"defined in more than one PoI type\" on its own states");
 		return true;
 	}
 
