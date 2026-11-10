@@ -240,7 +240,10 @@ public final class KernelRuntimeClasses {
 		// twin) and NeoForge's Identifier-keyed one — and only NeoForge's is written. This turns the other into a live
 		// view of it, because fabric-api reads that field DIRECTLY.
 		CLASSES.put("net.forbric.kernel.runtime.KernelParticleProviders", new Entry(Origin.COMPILED, List.of(
-				new Call("intKeyedView", Object.class, java.util.Map.class))));
+				new Call("intKeyedView", Object.class, java.util.Map.class),
+				// Asked at the head of fabric-registry-sync's Int2ObjectMapTracker.register (ParticleViewTrackerInjector):
+				// the view's int keys follow the registry by construction, so its remap tracker is not attached.
+				new Call("followsTheRegistry", boolean.class, Object.class, String.class))));
 		// NeoForge re-types KeyMapping's vanilla MAP to its own KeyMappingLookup and keeps neither
 		// vanilla's descriptor nor a value for it; a mod reading it as a Map died. The transformer adds the field back
 		// and this is its value: a view of vanilla's ALL by key.

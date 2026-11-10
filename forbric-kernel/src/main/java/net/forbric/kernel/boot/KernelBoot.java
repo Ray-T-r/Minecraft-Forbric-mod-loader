@@ -543,6 +543,13 @@ public final class KernelBoot {
 			}));
 		}
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer());
+		// Both sides: fabric-registry-sync's int-map remap tracker is not attached to the particle provider view the
+		// transformer above installs, whose int keys are the particle registry's ids at every read; re-keying it on a
+		// remap moved providers twice and threw from its clear() (a client could not join a server whose mods register
+		// particle types). -Dforbric.particleViewDetach=off attaches it as written.
+		if (net.forbric.kernel.transform.ParticleViewTrackerInjector.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ParticleViewTrackerInjector());
+		}
 		// Both sides: a game local whose variable-table range starts after reads of it starts at its declaring store again,
 		// so a mod's @Local / @ModifyVariable finds it where vanilla's compiler had it in scope. On NeoForge's base the one
 		// such local is left by the kernel's own NativeTagTrackerSourceInjector rewrite of EntityFluidInteraction. Just

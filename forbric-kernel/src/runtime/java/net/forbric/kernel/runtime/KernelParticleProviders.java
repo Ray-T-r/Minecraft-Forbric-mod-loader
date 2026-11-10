@@ -17,6 +17,8 @@
 package net.forbric.kernel.runtime;
 
 import java.util.Map;
+import java.util.function.IntFunction;
+import java.util.function.ToIntFunction;
 
 import it.unimi.dsi.fastutil.ints.AbstractInt2ObjectMap;
 import it.unimi.dsi.fastutil.ints.Int2ObjectMap;
@@ -51,8 +53,27 @@ import net.minecraft.resources.Identifier;
  * <p>The view holds the live map BY REFERENCE, which is sound because {@code providers:Ljava/util/Map;} is final
  * and has exactly one {@code PUTFIELD} in the whole class, in {@code <init>}; nothing, reload included, replaces
  * it. The transformer that installs this refuses to run if that ever stops being true.
+ *
+ * <p><b>Why fabric-registry-sync's remap tracker is not attached to it ({@link #followsTheRegistry}).</b> On native
+ * Fabric this field is a real {@code Int2ObjectOpenHashMap}, and fabric-registry-sync's client
+ * {@code ParticleResourcesMixin} hands it to {@code Int2ObjectMapTracker.register} at the end of {@code <init>} so a
+ * registry remap (a server's ids on join, the client's own again on disconnect) re-keys it: the tracker copies the
+ * map, {@code clear()}s it, and puts every value back under {@code getRawIdChangeMap().get(oldKey)}. That protocol
+ * assumes the map's keys are STALE when the remap event fires — still the old ids — and they are on native Fabric,
+ * because {@code MappedRegistry.remap} rebuilds {@code byId}/{@code toId} first and fires
+ * {@code RegistryIdRemapCallback} after (fabric-registry-sync 7.1.0, {@code MappedRegistryMixin.remap}). This view
+ * has no stored int keys: every key is the particle registry's id for the type AT THE TIME OF THE CALL, so by the
+ * time the event fires the view already answers the new ids. The tracker's copy would read new ids as old ones and
+ * re-key them a second time, moving providers onto other particle types wherever an id changed — so the right
+ * {@code clear()} for it does not exist, and the old one threw ({@code UnsupportedOperationException}, "Registry
+ * remapping failed!", the client never joined a server whose mods register particle types). What a native remap
+ * achieves — every provider reachable under the id the remapped registry now gives its type, NeoForge's map
+ * untouched as native NeoForge leaves it — is what this view already is, with no work; so the tracker has nothing
+ * to do and is not attached ({@code ParticleViewTrackerInjector}). NeoForge's own registry sync needs no tracker for
+ * the same reason: its map is keyed by name.
  */
 public final class KernelParticleProviders {
+	private static volatile boolean announcedDetach;
 
 	private KernelParticleProviders() {
 	}
@@ -66,9 +87,47 @@ public final class KernelParticleProviders {
 	 * {@code CHECKCAST}.
 	 */
 	public static Object intKeyedView(Map<?, ?> byName) {
+		return intKeyedView(byName, KernelParticleProviders::particleKey, KernelParticleProviders::particleId);
+	}
+
+	/**
+	 * The same view over another id table: {@code keyOf} answers the name an int id stands for now (null for none),
+	 * {@code idOf} the id a name has now (negative for none). The particle registry in the game; a table a test can
+	 * remap without a bootstrapped game.
+	 */
+	static Object intKeyedView(Map<?, ?> byName, IntFunction<Identifier> keyOf, ToIntFunction<Identifier> idOf) {
 		@SuppressWarnings("unchecked")
 		Map<Identifier, Object> live = (Map<Identifier, Object>) byName;
-		return new IntKeyedView(live);
+		return new IntKeyedView(live, keyOf, idOf);
+	}
+
+	/**
+	 * Asked at the head of fabric-registry-sync's {@code Int2ObjectMapTracker.register(Registry, String,
+	 * Int2ObjectMap)} ({@code ParticleViewTrackerInjector}): {@code true} when {@code map} is one of these views, whose
+	 * int keys are the registry's current ids by construction, so a remap tracker would re-key it twice (see the class
+	 * comment). The register then returns without attaching anything. Any other map — a raw-id map as on native
+	 * Fabric — answers {@code false} and is tracked exactly as fabric-registry-sync tracks it.
+	 */
+	public static boolean followsTheRegistry(Object map, String trackerName) {
+		if (!(map instanceof IntKeyedView)) return false;
+		if (!announcedDetach) {
+			announcedDetach = true;
+			System.out.println("[Forbric/Particles] fabric-registry-sync's remap tracker for " + trackerName + " is not "
+					+ "attached: that map is the kernel's view of NeoForge's Identifier-keyed provider map, whose int keys "
+					+ "are the particle registry's ids at every read, so a remap leaves every provider under its type's new "
+					+ "id with nothing to re-key");
+		}
+		return true;
+	}
+
+	private static Identifier particleKey(int id) {
+		ParticleType<?> type = BuiltInRegistries.PARTICLE_TYPE.byId(id);
+		return type == null ? null : BuiltInRegistries.PARTICLE_TYPE.getKey(type);
+	}
+
+	private static int particleId(Identifier key) {
+		ParticleType<?> type = BuiltInRegistries.PARTICLE_TYPE.getValue(key);
+		return type == null ? -1 : BuiltInRegistries.PARTICLE_TYPE.getId(type);
 	}
 
 	/**
@@ -76,11 +135,16 @@ public final class KernelParticleProviders {
 	 *
 	 * <p>Deliberately not spelled with its nested name anywhere in {@code src/main}: the registry test scans for
 	 * {@code net.forbric.kernel.runtime.<Name>} and would then demand its own entry for this class.
+	 *
+	 * <p>{@code clear()} stays unsupported: emptying this face would empty NeoForge's own provider map, which nothing
+	 * on either side asks for, and the one caller that did — the remap tracker — must not be attached (class comment).
 	 */
 	static final class IntKeyedView extends AbstractInt2ObjectMap<Object> {
 		private static final long serialVersionUID = 1L;
 
 		private final Map<Identifier, Object> byName;
+		private final transient IntFunction<Identifier> keyOf;
+		private final transient ToIntFunction<Identifier> idOf;
 		/**
 		 * Entries whose int key names no registered particle type. They cannot be translated, and dropping them
 		 * would lose a registration silently; they live here instead, readable through this face only.
@@ -88,13 +152,14 @@ public final class KernelParticleProviders {
 		private final Int2ObjectOpenHashMap<Object> untranslatable = new Int2ObjectOpenHashMap<>();
 		private boolean warned;
 
-		IntKeyedView(Map<Identifier, Object> byName) {
+		IntKeyedView(Map<Identifier, Object> byName, IntFunction<Identifier> keyOf, ToIntFunction<Identifier> idOf) {
 			this.byName = byName;
+			this.keyOf = keyOf;
+			this.idOf = idOf;
 		}
 
 		private Identifier key(int id) {
-			ParticleType<?> type = BuiltInRegistries.PARTICLE_TYPE.byId(id);
-			return type == null ? null : BuiltInRegistries.PARTICLE_TYPE.getKey(type);
+			return keyOf.apply(id);
 		}
 
 		@Override
@@ -139,18 +204,16 @@ public final class KernelParticleProviders {
 		}
 
 		/**
-		 * Iteration translates back the other way. Particle ids are assigned when the built-in registry freezes at
-		 * bootstrap, long before {@code Minecraft.<init>}, so the round trip is stable by the time anything here
-		 * runs; an entry whose {@code Identifier} is no longer registered is skipped rather than reported as id 0.
+		 * Iteration translates back the other way, through the registry's ids as they are now; an entry whose
+		 * {@code Identifier} is no longer registered is skipped rather than reported as id 0.
 		 */
 		@Override
 		public ObjectSet<Int2ObjectMap.Entry<Object>> int2ObjectEntrySet() {
 			ObjectSet<Int2ObjectMap.Entry<Object>> out = new ObjectOpenHashSet<>();
 			for (Map.Entry<Identifier, Object> e : byName.entrySet()) {
-				ParticleType<?> type = BuiltInRegistries.PARTICLE_TYPE.getValue(e.getKey());
-				if (type == null) continue;
-				out.add(new AbstractInt2ObjectMap.BasicEntry<>(
-						BuiltInRegistries.PARTICLE_TYPE.getId(type), e.getValue()));
+				int id = idOf.applyAsInt(e.getKey());
+				if (id < 0) continue;
+				out.add(new AbstractInt2ObjectMap.BasicEntry<>(id, e.getValue()));
 			}
 			for (Int2ObjectMap.Entry<Object> e : untranslatable.int2ObjectEntrySet()) {
 				out.add(new AbstractInt2ObjectMap.BasicEntry<>(e.getIntKey(), e.getValue()));
