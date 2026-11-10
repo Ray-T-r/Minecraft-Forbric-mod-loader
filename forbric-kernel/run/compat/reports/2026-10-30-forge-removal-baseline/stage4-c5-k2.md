@@ -41,7 +41,8 @@ Why it is new in Stage 4 (the pre-Stage-4 arm). On the merged base the particle 
 `NamespacedWrapper`. Fabric's remap was staged into `GameData.injectSnapshot`, and
 `KernelForgeWrapperSync.announceRemapToFabric` (cf0498eb) fired `onRemap` only when an id actually moved
 (`if (changed == 0) return;`). Same mod set on both ends, nothing moved, the tracker never ran. UPG's old client
-(merged base, kernel 187143a1) joined with these mods with no remap error (`m58-main-2.evidence/logs/s2-server.client.game.log`:
+(merged base, kernel 187143a1) joined with these mods with no remap error (`c5/upg/w2/p2/m58-main-2.evidence/logs/s2-server.client.game.log`, UPG's run, not
+one of K2's:
 "flushing the Forge-wrapped registries' staged ids", no `Registry remapping failed`). On the genuine base the registry is
 NeoForge's own `MappedRegistry`, and fabric's `remap` fires the event on every sync. The defect was latent before:
 a moved id, or the disconnect `unmap` (open-defects audit 2026-10-02), would have hit the same `clear()`.
@@ -55,9 +56,9 @@ Native arms:
   view gives the same answer with no work (`theViewAnswersTheNewIdsBeforeTheRemapEventFires`).
 
 What would falsify this. If the view were stale when the event fires (still answering old ids), the tracker would be
-right and the view would need a real `clear()`. The staged test checks the opposite directly. With the ids
-reassigned and no event fired, the view already answers the new ids, and the old id of `balm:a` answers another
-type's provider.
+right and the view would need a real `clear()`. `theViewAnswersTheNewIdsBeforeTheRemapEventFires` shows the premise only
+on the test's own model of `remap` (it rebuilds the ids first because the test says so). The game's order is pinned on
+the real bytes by `theRealRemapRebuildsTheIdsTheViewReadsBeforeItFiresTheEvent` (review fix, below).
 
 ## Fix (`8acc7f5f`)
 
@@ -113,8 +114,8 @@ Red controls:
 In `accept-after` the session then dies on the first chunk: `IllegalArgumentException: No value with id 37849` at
 `LinearPalette.read`. That is the same stack as UPG's `43766`, so it is K1's block-state id defect (D75), not the
 particle remap. Its 5 FAILs are that crash (no protocol error, survived simulation, left cleanly, watchers, no client
-crash). In these live runs the server and the client gave the type the same id. Ids that actually move are covered by
-the staged test.
+crash). In these live runs the server and the client gave the type the same id. Ids that actually move: the staged
+test, and review A's live run `c5/review-k2-A/rv-fix.*` (below).
 
 Suite (`jar cleanTest test --continue`, pinned `--offline`): baseline at 0daa5b0b was 5789 / 0 skipped / 5 failed.
 The fix tree is 5795 / 0 / 5, with the same 5 names as `failures-wave1.txt` and 0 new.
@@ -127,7 +128,8 @@ Gates (fix tree; counts are `^[kernel] PASS` / `^[kernel] FAIL` lines; reference
 | m26 (client lock) | 45 / 0 | 45 / 0 (S) | |
 | m9 (client lock, APFS clone of client-merged-pack) | 163 / 0 | 163 / 0 (merger, wave 1) | the client log shows the tracker not attached; it carries no particle-type mod whose ids move |
 
-Ports 46880–46899 were free at the end. The scratch clones were deleted.
+Ports 46880–46899 were free at the end. The scratch clones were deleted; the extracted jars and sources under the
+session scratchpad's `k2/` were not, until the review fixes (B-6).
 
 ## Sibling trackers (fabric-api 0.155.2, every caller of `impl/registry/sync/trackers/*`)
 
@@ -160,3 +162,103 @@ Ports 46880–46899 were free at the end. The scratch clones were deleted.
 
 - K1: block-state id desync on a socket join with waystones/sophisticatedbackpacks (owner K1).
 - UPG: return the held mods to phase main after K1 (owner UPG).
+
+## K2 review fixes (2026-11-11)
+
+Reviews `c5/review-k2-A.md` (adversarial) and `c5/review-k2-B.md` (completeness). Evidence: `c5/k2/review/`, plus the new
+`c5/k2/{ws,sb}-after.*`. Each finding was checked again before acting on it.
+
+| finding | verdict | commit / evidence |
+|---|---|---|
+| A-1 the premise test cannot fail against the game | confirmed, fixed | `1c0b1ede`: `theRealRemapRebuildsTheIdsTheViewReadsBeforeItFiresTheEvent` |
+| A-2 no live run checked providers after ids moved | confirmed, fixed in the record | review A's `rv-fix.*` cited (below); the disconnect half is still unmeasured |
+| B-1 no ci-unstaged rows for the new tests | confirmed, fixed | `36bcba32`: 7 rows, measured |
+| B-2 no in-repo gate runs the fix; handoff incomplete | confirmed, fixed | `5ca22051`: gate-m12 carries a particle type; UPG handoff completed |
+| B-3 "only after K1" for the waystones group not measured | confirmed, measured | `ws-after` 32/0, `sb-after` 32/0 |
+| B-4 KernelBoot comment overclaims | confirmed, fixed | `1c0b1ede` |
+| B-5 evidence path incomplete | confirmed, fixed | this record, Root cause |
+| B-6 scratch files left behind | confirmed, fixed | the session scratchpad's `k2/` deleted |
+
+**A-1.** The javap reading confirmed it (fabric-registry-sync 7.1.0 `MappedRegistryMixin.remap`: `byId.clear`/`toId.clear` at
+799–811, then `byId.set`/`toId.put` in the loop up to 1041, then `fabric_getRemapEvent` at 1045 and `onRemap` at 1065). The
+new test reads the real bytes. It reads `MappedRegistryMixin` from the pinned fabric-api's nested fabric-registry-sync, and
+`MappedRegistry` from the genuine base. It asserts four things:
+- every `getfield byId|toId` in `remap(Object2IntMap, RemapMode)` comes before the `fabric_getRemapEvent` call;
+- there is a `set` on byId and a `put` on toId before that call;
+- the base's `getId(T)` reads only `toId`, and `byId(int)` reads only `byId`;
+- the mixin's `byId`/`toId` have the base's descriptors.
+
+A copy of `remap` with the event call moved to the head is judged out of order. That is the test's own red control, inside
+the test. The premise test's javadoc now says it holds on the test's model. 7/7 pass (`review/focused-1.log`).
+
+**A-2.** Review A's `c5/review-k2-A/rv-fix.*` was run on this fix tree with fabric-api 0.155.2 and a scratch probe (`k2rv`).
+The probe registers three particle types in reverse order on the client, so the server's sync moves two of them (client
+125/126/127, server 127/126/125). Recounted here:
+- m12 32 / 0;
+- 0 `Registry remapping failed` / `UnsupportedOperationException`;
+- `K2RV post … ok=3/3` after the ids moved: each provider under its type's new id, the same object in the view and in
+  NeoForge's map.
+
+Not measured: provider placement after the disconnect remaps back. That run's evidence is only that the error is absent and
+the disconnect is clean.
+
+**B-1.** Measured on a plain `git clone` of `1c0b1ede` in scratch, with no `.dev` and no `run/client-merged-pack`, so there
+is no fabric-api anywhere, as on the CI runner. All of stagedRoot, mcLibraries, fabricApi and rebornEnergy pointed nowhere.
+Result: 7 tests, 7 skipped without a message, the class's `@BeforeAll` abort (`review/unstaged-measure.log`, `unstaged-xml/`).
+A first clone made with `cp` kept the merged pack's symlink, so fabric-api was found there; two tests ran and five skipped on
+`[fixture:staged]`. That is the wrong profile, so it was discarded.
+
+The whole ci-unstaged ratchet (`build -Pforbric.skipBaseline=ci-unstaged`) also ran on that clone, at `36bcba32`
+(`review/unstaged-ratchet.log`):
+- ParticleViewRemapStagedTest is in neither of its lists, so its seven rows match.
+- The ratchet still fails on this machine: 12 new skips, all other lanes' tests from the base (MixinFluidReactionHeadTest ×5,
+  KernelItemDamageTest ×2, AxeStripCallbacksInjectorTest, ForeignFluidTypeInjectorTest, GenuineNativeReferencesStagedTest,
+  ItemUseOnInjectorTest, NativeCoremodParityTest).
+- It also reports 296 rows that no longer skip, plus 78 failed tests. A local machine is not the CI runner, so none of these
+  is a CI result.
+
+No ci-prepared or ci-prepared-noforge row: that profile prepares the pinned fabric-api and the stage. With
+`requireFixtures=all` on the genuine stage all seven run and pass. This is reasoned from the profile and was not run in it.
+
+**B-2.**
+- gate-m12's default set gains `sophisticatedcore-26.2-1.5.0.2337.jar`, from the merged pack that gate-m58 also reads.
+- Two checks, asked of the default set only:
+  - a mod registered a particle type (`[Forbric/Lifecycle] registered content: …particle_type=N`), which is the denominator
+    for the existing `no registry mismatch` absence;
+  - the kernel reported the tracker not attached.
+- `M12_MODS` runs skip them, because a set chosen to split one ecosystem from the other need not carry a particle type.
+
+| run | m12 |
+|---|---|
+| new default set | 34 / 0 (`review/m12-new-default.*`) |
+| same, `-Dforbric.particleViewDetach=off` | 21 / 13: `Registry remapping failed` ×2, never configured, the not-attached check red (`review/m12-new-default-switchoff.*`) |
+
+m12's reference count moves from 32 to 34.
+
+**B-3.** One run each, on gate-m12's harness with fabric-api 0.155.2 + balm (repro.sh always carries balm):
+
+| run | added mods | m12 | modded particle types | `No value with id` |
+|---|---|---|---|---|
+| `ws-after` | shogi, waystones | 32 / 0 | 0 | 0 |
+| `sb-after` | sophisticatedcore, sophisticatedbackpacks | 32 / 0 | 1 (`jukebox_note`) | 0 |
+| `accept-after` (earlier) | all four | 27 / 5 | 1 | K1's `37849` |
+
+What this shows:
+- The particle remap never blocked the waystones group: it has no particle type, and balm registers none. D74's premise
+  for that group and gate-m58's "Measured out" sentence ("balm and sophisticatedcore register particle types") are wrong
+  about balm.
+- Each group joins a fresh world on its own. Only all six together died on K1's chunk crash, in one run.
+- Whether either group joins phase main's populated world is not shown. That world also carries mcw-furniture's blocks, and
+  K1's crash is in block-state ids, so the m12 result cannot be carried over.
+
+**Suite and gates after the review fixes** (tip `5ca22051`, then the record):
+
+| run | result |
+|---|---|
+| full suite (`jar cleanTest test --continue`, pinned props, `requireFixtures=all`) | 5796 tests / 0 skipped / 5 failed, the same 5 names as failures-wave1.txt, 0 new (`review/suite.log`, `suite-xml/`); +1 test is the new pin |
+| ParticleViewRemapStagedTest | 7 / 0 / 0 |
+| gate-m12, new default set | 34 / 0 |
+| gate-m12, switch off | 21 / 13 (red control) |
+
+The kernel's code changed only in a comment, so m26 and m9 (45/0, 163/0 on `8acc7f5f`) were not rerun. Ports 46880–46899
+were free at the end. The scratch clones are deleted.
