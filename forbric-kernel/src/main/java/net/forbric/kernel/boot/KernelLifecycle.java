@@ -970,6 +970,7 @@ public final class KernelLifecycle {
 			Caught.warn(t, "[Forbric/Lifecycle] could not re-freeze the registries — they stay writable for the "
 					+ "rest of this run");
 		}
+		verifyBlockStateIds(cl, "registration window");
 		try {
 			completeBlockStateBookkeeping(cl);
 		} catch (Throwable t) {
@@ -2407,6 +2408,64 @@ public final class KernelLifecycle {
 		}
 	}
 
+	/**
+	 * Checks, after a freeze the kernel drove, that NeoForge's blockstate→id map holds every block state of the registry
+	 * exactly once, numbered 0..n-1: {@code nextId == size()} and {@code size()} equal to the states of every registered
+	 * block. That is what NeoForge's single bake leaves natively, and what a peer's chunks are decoded against. Lane K1's
+	 * defect broke it silently (fabric-registry-sync's tracker had appended the window's states before the bake appended
+	 * the whole registry, so a dedicated server held 34392 states at ids up to 36417 and only a socket join with a mod's
+	 * block in view showed it); so does a clear whose freeze never ran its bake (the registry already frozen, or
+	 * {@code freezeData} throwing before the block registry), which leaves the map empty. One line either way: the count
+	 * when it holds, a {@link Caught.Invariant} at WARN when it does not. Never thrown.
+	 */
+	static void verifyBlockStateIds(ClassLoader cl, String window) {
+		try {
+			Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
+			Object map = gameData.getMethod("getBlockStateIDMap").invoke(null);
+			Class<?> idMapper = Class.forName("net.minecraft.core.IdMapper", false, cl);
+			Field next = idMapper.getDeclaredField("nextId");
+			next.setAccessible(true);
+			int nextId = next.getInt(map);
+			int mapped = (Integer) idMapper.getMethod("size").invoke(map);
+			Class<?> builtIn = Class.forName("net.minecraft.core.registries.BuiltInRegistries", false, cl);
+			Object blocks = builtIn.getField("BLOCK").get(null);
+			Class<?> block = Class.forName("net.minecraft.world.level.block.Block", false, cl);
+			java.lang.reflect.Method definition = block.getMethod("getStateDefinition");
+			java.lang.reflect.Method possible = null;
+			int states = 0;
+			for (Object b : (Iterable<?>) blocks) {
+				Object def = definition.invoke(b);
+				if (possible == null) possible = def.getClass().getMethod("getPossibleStates");
+				states += ((java.util.Collection<?>) possible.invoke(def)).size();
+			}
+			String problem = blockStateIdProblem(nextId, mapped, states);
+			if (problem != null) throw new Caught.Invariant(problem);
+			ForbricLog.info("[Forbric/Lifecycle] block-state ids after the %s freeze: %d states, each numbered once "
+					+ "(0..%d)", window, states, states - 1);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] NeoForge's blockstate->id map is not one id per block state after the %s "
+					+ "freeze — a peer decodes this side's block-state ids as other blocks, or cannot decode them", window);
+		}
+	}
+
+	/**
+	 * What is wrong with a blockstate→id map whose next id is {@code nextId}, that maps {@code mapped} distinct states,
+	 * for a registry whose blocks have {@code states} states between them; {@code null} when it is one id per state.
+	 */
+	static String blockStateIdProblem(int nextId, int mapped, int states) {
+		if (nextId == mapped && mapped == states) return null;
+		StringBuilder why = new StringBuilder("blockstate->id map: next id ").append(nextId).append(", ").append(mapped)
+				.append(" state(s) mapped, ").append(states).append(" registered");
+		if (nextId > mapped) {
+			why.append("; ").append(nextId - mapped).append(" id(s) are stale slots of a state numbered again later, so "
+					+ "every later id is offset (a numbering appended after another)");
+		}
+		if (mapped < states) why.append("; ").append(states - mapped).append(" registered state(s) have no id");
+		if (mapped > states) why.append("; ").append(mapped - states).append(" mapped state(s) belong to no registered block");
+		if (nextId < mapped) why.append("; ids were assigned out of order");
+		return why.toString();
+	}
+
 	/** Test seam. */
 	static void forgetFabricFreezePoint() {
 		FABRIC_FREEZE_HOOKS_RUN.clear();
@@ -2432,5 +2491,6 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not re-close after the Fabric client entrypoints");
 		}
+		verifyBlockStateIds(cl, "client entrypoint window");
 	}
 }
