@@ -302,18 +302,12 @@ mod_namespace() {
 # write_checks <log> <who> <player: yes|no> <world-script|-> <player-script> [populated jars...] — the side that wrote
 # this save (<who>: "old server", "new server", "old client") wrote everything it was asked to. Every jar listed must
 # have at least one OK line of the world script naming its namespace (D53: a mod stays in the set only while its
-# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1). WC_BOX_FORCED=yes: the save is a
-# copy of S2, whose writer force-loaded the box, so the canary's forceload must fail with vanilla's "nothing changed" and
-# only that way (phase held).
+# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1). Every writer runs on a fresh
+# world, so the canary's forceload of the export box must succeed.
 write_checks() {
-  local log="$1" who="$2" player="$3" script="$4" pscript="$5" jar ns n except=""; shift 5
-  if [ "$script" != - ] && [ "${WC_BOX_FORCED:-}" = yes ]; then
-    check_exactly "the export box was force-loaded already (S2's tickets): the $who's forceload changed nothing" "\[M58Upgrade\] FAIL command \(canary\) forceload" "$log" 1
-    check "vanilla said the forceload changed nothing" "No chunks were marked for force loading" "$log"
-    except='\[M58Upgrade\] FAIL command \(canary\) forceload'
-  fi
+  local log="$1" who="$2" player="$3" script="$4" pscript="$5" jar ns n; shift 5
   if [ "$script" != - ]; then
-    [ "${WC_BOX_FORCED:-}" = yes ] || check "the $who force-loaded the export box" "\[M58Upgrade\] OK command \(canary\) forceload" "$log"
+    check "the $who force-loaded the export box" "\[M58Upgrade\] OK command \(canary\) forceload" "$log"
     check "the world script $script ran with no failed line" "\[M58Upgrade\] ran [1-9][0-9]* command\(s\) from $script, 0 failed" "$log"
     for jar in "$@"; do
       ns="$(mod_namespace "$jar")"
@@ -330,7 +324,7 @@ write_checks() {
     check "the NeoForge canary wrote the player's values" "\[M58Upgrade\] wrote neo player values" "$log"
     check "the Fabric canary wrote the player's values" "\[M58Upgrade\] wrote fabric player values" "$log"
   fi
-  check_absent "nothing the $who was asked to write failed" "\[M58Upgrade\] (FAIL|DISARMED)" "$log" "$except"
+  check_absent "nothing the $who was asked to write failed" "\[M58Upgrade\] (FAIL|DISARMED)" "$log"
 }
 
 # The load errors a new boot of an upgraded save must not log (raw log; the MinecraftForge carrier's one missing pack is
