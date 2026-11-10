@@ -170,12 +170,16 @@ gate was run. Notes and logs: `~/Forbric-backups/stage4-notes/c5/t-a/w2/`.
 | `f1f32d6a` | census WOVEN claims | Give FabricCommonPayloadMixinAdapter and MixinPrivateDefaultCollision the real-weave scenarios the census claimed |
 | `aa551185` | static `staged()` fields | Read the staged native references of the three spelling tests on first use |
 | `9b96c4cc` | MixinSharedResultTransportTest vacuity | Check the unperturbed crafting group is transported before the three remaining rejection tests |
-| (the commit that adds this section) | this record | Record lane T-A's C5 wave 2 |
+| `c0473e08` | this record | Record lane T-A's C5 wave 2 |
 
 Only test sources, weave fixtures and this record change: no kernel code, gate, build.gradle, TestFixtures or TSV.
-`compileJava compileRuntimeJava compileTestJava` green on the whole wave-2 edit set before the first commit
-(`w2/compile2.log`; that tree is the tip's) and at the tip (the suite below compiles it); the earlier commits hold subsets of
-it whose new test files nothing else references.
+`compileJava compileRuntimeJava compileTestJava` green on the whole wave-2 edit set before the first commit: `w2/tt1.log`
+(exit 0, `BUILD SUCCESSFUL`, 435 tests over the nine touched classes, 0 failed; that tree is the tip's), and at the tip
+(the suite below compiles it). `w2/compile2.log` shows no outcome (no task lines, no `BUILD SUCCESSFUL`, no exit code) and
+is not evidence (review B-3). That each intermediate commit compiles is by inspection, not measured: the earlier commits
+hold subsets of the edit set whose new test files nothing else references, and the APIs they call (the WeaveHarness API,
+the `PROPERTY`/`MOB_PROPERTY` constants, `assertTransportedUnperturbed()`, `notWovenYet(String...)`, `Switch.own(String...)`)
+all exist at `f0cb66b0` (review B checked the same).
 
 ### First act
 
@@ -273,6 +277,36 @@ and the census line are the ones those child runs printed (stdout in the suite's
 None. T-A owns no gate file (PLAN §2 "Lane T-A", §9 coverage: the 60 gates are G-A/G-B1/G-B2/G-C's) and changed none;
 no gate was started, so there are no `[kernel] PASS`/`FAIL` counts to report.
 
+### T-A wave-2 review fixes (2026-11-10)
+
+Reviews of `f0cb66b0..c0473e08`: lens A (`c5/review-w2-t-a-A.md`, 2 low findings) and lens B (`c5/review-w2-t-a-B.md`,
+B-1..B-3 plus two nits). Each finding was checked against the tree before it was acted on.
+
+| finding | outcome | sha / evidence |
+|---|---|---|
+| A-1 fixture `self()` said "not @Unique", the real fabric-entity-events-v1 5.0.5 method is `@Unique` | fixed: annotation added, javadoc says why it still clashes (Mixin renames a `@Unique` method only for a clash with a method the target declares itself; NeoForge's `LivingEntity` declares no `self()`) | `5a04f35f`; `MixinPrivateDefaultCollisionWeaveTest` 3/3, probe lines unchanged |
+| A-2 payload fixture's `ServerConfigurationPacketListenerImpl` only inherited the common handler | fixed: models NeoForge's override (query payload answered at bci 0-32, everything else to super at bci 35, javap of the genuine base), adds a fourth probe row `configuration.query=neoforge-query` | `a7763554`; `FabricCommonPayloadMixinAdapterWeaveTest` 3/3, `play.neoforge` still flips to `disconnect(Unknown addon)` under `-Dforbric.playPayloadFallThrough=off` |
+| B-1 KernelFluidReactions / KernelMobShears unit tests have no owner | recorded, not a code change: the row in "Open after wave 2" cites the source (`c3/record/stage4-c3-regress-server.md:95`) and asks for the orchestrator's ruling; none exists in DECISIONS up to D78 | this record |
+| B-2 merged-base wording in the three spelling tests T-A changed | fixed: the 7 `merged[ -](base\|game)` matches plus two "staged merged BuiltInRegistries" lines reworded; class name, `merged()` helpers and `MERGED` stay for Stage 6. The `ci-unstaged.tsv` reason column of those 15 rows still says "staged merged base" (as 120 other rows do); the ratchet keys on the first three columns, so no CI result changes (open row below) | `71adf4f7`; the three classes green |
+| B-3 the cited `w2/compile2.log` shows no outcome | fixed in this record: the compile claim now cites `w2/tt1.log` and the suite, and says the per-commit claim is by inspection | this record ("Commits" above) |
+| B-4 2d6e8d77's subject overstates what C3 added | no change: history is not rewritten; this record never repeated that wording | — |
+| B-5 report wording "7, 6 and 8 cases" | no change: the record already says AdapterPointSpellingTest's 6 are container `initializationError` entries | — |
+
+Commits after the record commit: `5a04f35f` (A-1), `a7763554` (A-2), `71adf4f7` (B-2), and the commit that adds this
+section (B-1, B-3 and this table). Only test sources, weave fixtures and this record change; no gate, TSV, kernel code
+or build file, so no gate is owed.
+
+Suite at `71adf4f7` (code tip; the record commit changes no source): `heavy.sh ./gradlew --no-daemon $(cat
+.stage4/props.txt) -Pforbric.requireFixtures=all cleanTest test --continue`, pinned build (D68) -> **5784 tests, 0 skipped,
+5 failed**, against `c5/failures-wave1.txt` **0 new, 0 gone, 5 kept** (`t-a/w2/review-fixes/suite2/`, `suite2.log`).
+The probe lines in its XML: `configuration.query=neoforge-query` (both runs), `play.neoforge=neoforge` /
+`disconnect(Unknown addon)`, `neoforge=neoforge:axolotl` / `AbstractMethodError`, and the census line unchanged
+(`config-time 1/1, getClassNode 81/81, post-Mixin 6/6`). An earlier run of this step at the same commit (21:28, cut off;
+`t-a/w2/review-fixes/suite.log`) had also printed `LibStopWhenReadyContractTest >
+aBootSlowerThanTheTimerGetsTheLineOnlyAfterDoneAndTheSettle()` FAILED at line 52 (a wall-clock assertion: `stop - done >= 2.0` s);
+it passed 9/9 in this run, and T-A changed nothing it reads (`run/lib.sh`). Recorded as a load-sensitive
+timing case, not a T-A result.
+
 ### Open after wave 2
 
 | item | owner |
@@ -281,5 +315,7 @@ no gate was started, so there are no `[kernel] PASS`/`FAIL` counts to report.
 | SharedFinalSourceActualTest x2: opt-in fixture `.stage4/run/shared-final-definitions` absent (D58) | owner |
 | `FabricRegistryLoaderMixinAdapter.java:128` clause `deadCallees.contains(bound)` unreachable on NeoForge's class (wave 1, M3b) | owner / S2 |
 | `ci-prepared-noforge.tsv:681` stale apoli row (+ wave 1's two names) | C6 |
-| `MERGED` constants, `Draw.merged()`, "in the merged method" display names, "the staged merged base" fixture texts in the three spelling tests | Stage 6 / T-B phase 2 |
-| Unit tests for KernelFluidReactions / KernelMobShears (c3 critic B5, "need a live Level/registry"): the runtime halves now run inside the weave scenarios (`KernelMobShears` in `MixinShearsRelayMobsWeaveTest`; `KernelFluidReactions` already in `MixinFluidReactionWeaveTest`), not in a unit test of their own | not assigned in C5 (recorded only) |
+| `MERGED` constants, `Draw.merged()`, "in the merged method" display names, the `merged()` helpers and the class name `MergedBaseGateSpellingTest` (the prose and skip-reason texts of the three spelling tests were reworded by `71adf4f7`, review B-2) | Stage 6 (names); T-B phase 2 for files no C5 lane changed |
+| Unit tests for KernelFluidReactions / KernelMobShears (c3 critic B5, `c3/record/stage4-c3-regress-server.md:95` "DEFERRED → C5"; PLAN §0 dropped this half when it moved `c3/critic.md:293-295` into T-A): the runtime halves now run inside the weave scenarios (`KernelMobShears` in `MixinShearsRelayMobsWeaveTest`; `KernelFluidReactions` already in `MixinFluidReactionWeaveTest`), not in a unit test of their own | **orchestrator ruling owed** (review B-1): either the weave coverage meets c3 B5 and the item closes, or an owner is named (C6 or Stage 6). No ruling in DECISIONS up to D78. |
+| `LibStopWhenReadyContractTest.aBootSlowerThanTheTimerGetsTheLineOnlyAfterDoneAndTheSettle()` failed once at `71adf4f7` (cut-off run, `t-a/w2/review-fixes/suite.log`) and passed in the final run: a wall-clock assertion on `run/lib.sh`, which no C5 lane in T-A changed; not reproduced, not investigated further | owner of `run/lib.sh` (gates) |
+| `ci-unstaged.tsv` fourth column (skip reason) of the 15 rows of `MergedBaseGateSpellingTest` / `FabricFreezeHookSpellingTest` still reads "the staged merged base: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar"; the tests now print "the staged base: …/neoforge-patched/patched-mc-neoforge-26.2.jar". The path was already stale before `71adf4f7` (BASE_JAR changed earlier in Stage 4), as in the 120 other rows of `ci-unstaged.tsv` that name the staged merged base. `tools/junit_report.py` `ratchet()` keys on the first three columns only, so no CI result changes | whoever regenerates the TSVs (C6) |
