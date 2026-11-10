@@ -84,7 +84,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps", "letAFabricModMapThePoiStatesNeoForgeMappedForIt", "pointNeoForgesPoiWritersAtTheLiveTable");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "wrapTheStreamsVanillaWraps", "letAFabricModMapThePoiStatesNeoForgeMappedForIt", "pointNeoForgesPoiWritersAtTheLiveTable");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -108,6 +108,9 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letDungeonsGenerateWithoutTheDataMap", MONSTER_ROOM_FEATURE,
 				"every dungeon draws its mob from NeoForge's weighted data map instead of vanilla's four-entry table, so the "
 						+ "same seed puts a different mob in its spawners than vanilla does (gate-m31)"));
+		// A repair switched off by its own property declares a scanned claim: one that stays REQUIRED while its repair is
+		// off reports the switch as a broken anchor. The lesson is J11's: a conditional repair declares a conditional
+		// claim, or the census stops meaning what it says.
 		out.add(randomSourcePrecisionEnabled()
 				? new Claim(claimId("restoreDoublePrecisionToTheRandomSources"), AnchorSet.of(
 						new AnchorSet.Anchor(XOROSHIRO_RANDOM_SOURCE.replace('/', '.'), AnchorSet.Severity.REQUIRED,
@@ -162,13 +165,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letModdedFeatureFlagsRegister", FEATURE_FLAGS,
 				"NeoForge mods' declared feature flags are never registered — a mod asking for its own flag dies in its static "
 						+ "initialiser and its datapack then fails the whole registry load"));
-		// Both of these are switched off by their own property, and a claim that stays REQUIRED while its repair is
-		// off reports the switch as a broken anchor. The lesson is J11's: a conditional repair declares a
-		// conditional claim, or the census stops meaning what it says.
-		out.add(keyModifierSuffixEnabled()
-				? fixed("dropTheKeyModifierSuffixBeforeParsingAKeyName", INPUT_CONSTANTS,
-						"one modded key bound with a modifier throws out of options.txt parsing — the player loses EVERY setting")
-				: scanned("dropTheKeyModifierSuffixBeforeParsingAKeyName", "-D" + KEY_SUFFIX_PROPERTY + "=off"));
 		out.add(fixed("wrapTheStreamsVanillaWraps", BOOTSTRAP,
 				"System.out and System.err are never routed into log4j, so every line a mod PRINTS rather than logs "
 						+ "is absent from latest.log — including the debug output a mod is told to turn on when it "
@@ -237,8 +233,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 			changed |= claim(reporter, "vetoUnjudgeableOverlayConditions", vetoUnjudgeableOverlayConditions(node));
 			changed |= claim(reporter, "hideTheLegacyLootModifierIndexFromTheDirectoryScan", hideTheLegacyLootModifierIndexFromTheDirectoryScan(node));
 			changed |= claim(reporter, "letModdedFeatureFlagsRegister", letModdedFeatureFlagsRegister(node));
-			changed |= claim(reporter, "dropTheKeyModifierSuffixBeforeParsingAKeyName",
-					dropTheKeyModifierSuffixBeforeParsingAKeyName(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= claim(reporter, "letAFabricModMapThePoiStatesNeoForgeMappedForIt", letAFabricModMapThePoiStatesNeoForgeMappedForIt(node));
 			changed |= claim(reporter, "pointNeoForgesPoiWritersAtTheLiveTable", pointNeoForgesPoiWritersAtTheLiveTable(node));
@@ -1506,63 +1500,6 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] %s writes the PoI table PoiTypes reads (%d read(s) of NeoForge's map) — a "
 				+ "Fabric mod that replaces PoiTypes.TYPE_BY_STATE left NeoForge's writers filling a map nobody reads",
 				node.name.substring(node.name.lastIndexOf('/') + 1), pointed);
-		return true;
-	}
-
-	static final String INPUT_CONSTANTS = "com/mojang/blaze3d/platform/InputConstants";
-	/** {@code -Dforbric.keyModifierSuffix=off} hands the whole value back to vanilla's parse, which throws on it. */
-	static final String KEY_SUFFIX_PROPERTY = "forbric.keyModifierSuffix";
-
-	static boolean keyModifierSuffixEnabled() {
-		return !"off".equalsIgnoreCase(System.getProperty(KEY_SUFFIX_PROPERTY, "on"));
-	}
-
-	/**
-	 * {@code InputConstants.getKey} must not be handed MinecraftForge's {@code ":MODIFIER"} suffix.
-	 *
-	 * <p>MinecraftForge extends a key binding with a modifier and WRITES it into options.txt as
-	 * {@code key_key.jei.toggleOverlay:key.keyboard.o:CONTROL_OR_COMMAND}. Its own
-	 * {@code Options.processOptionsKeysOnly} then reads that value and calls {@code InputConstants.getKey(value)}
-	 * with the whole string BEFORE splitting the modifier off — and vanilla's {@code getKey} does
-	 * {@code Integer.parseInt("o:CONTROL_OR_COMMAND")}. That is MinecraftForge's own code, unchanged by the merge:
-	 * the same instruction order is in the forge-patched base, so this is not a merge artifact and switching it off
-	 * does not restore anything.
-	 *
-	 * <p>What it costs is out of all proportion to one key: {@code Options.load} wraps the whole file in one
-	 * try/catch, so a single modded binding with a modifier makes the client log "Failed to load options" and the
-	 * player loses EVERY setting — video, controls, language, and the accessibility-onboarding flag, which then
-	 * sits in front of the game on the next launch. JEI binds three of them by default.
-	 *
-	 * <p>The repair is the smallest thing that can be said: {@code name = name.split(":")[0]} at method entry. No
-	 * key name in {@code Key.NAME_MAP} contains a colon, so a name without one is unchanged, and MinecraftForge's
-	 * own modifier parse two instructions later still reads the suffix off the original value. Branch-free on
-	 * purpose — this transformer writes with {@code ClassWriter(0)} and computes no frames.
-	 */
-	private static boolean dropTheKeyModifierSuffixBeforeParsingAKeyName(ClassNode node) {
-		if (!INPUT_CONSTANTS.equals(node.name) || !keyModifierSuffixEnabled()) return false;
-		MethodNode getKey = findMethod(node, "getKey", "(Ljava/lang/String;)Lcom/mojang/blaze3d/platform/InputConstants$Key;");
-		if (getKey == null || getKey.instructions.size() == 0) return false;
-		// Idempotent: the first instruction of a repaired method is the ALOAD 0 of this prologue followed by the
-		// split. Re-running the pass over an already-written class must not stack a second copy.
-		for (AbstractInsnNode insn = getKey.instructions.getFirst(); insn != null; insn = insn.getNext()) {
-			if (insn instanceof MethodInsnNode call && "java/lang/String".equals(call.owner)
-					&& "split".equals(call.name)) {
-				return false;
-			}
-		}
-		InsnList prologue = new InsnList();
-		prologue.add(new VarInsnNode(Opcodes.ALOAD, 0));
-		prologue.add(new LdcInsnNode(":"));
-		prologue.add(new MethodInsnNode(Opcodes.INVOKEVIRTUAL, "java/lang/String", "split",
-				"(Ljava/lang/String;)[Ljava/lang/String;", false));
-		prologue.add(new InsnNode(Opcodes.ICONST_0));
-		prologue.add(new InsnNode(Opcodes.AALOAD));
-		prologue.add(new VarInsnNode(Opcodes.ASTORE, 0));
-		getKey.instructions.insert(prologue);
-		getKey.maxStack = Math.max(getKey.maxStack, 2);
-		ForbricLog.info("[Forbric/MergedBaseCompat] InputConstants.getKey now drops MinecraftForge's \":MODIFIER\" "
-				+ "suffix before parsing a key name — one modded binding with a modifier used to throw out of "
-				+ "options.txt parsing, and Options.load wraps the WHOLE file, so the player lost every setting");
 		return true;
 	}
 

@@ -44,8 +44,9 @@ refuse_shared_rundir "$RUNDIR"
 # whole value to vanilla's InputConstants.getKey, which throws on the suffix; Options.load wraps the whole file, so the
 # player lost every setting AND the client then SAVED the defaults over the file (this fixture lost three of JEI's that
 # way). On NeoForge's base its own Options.processOptions splits ":<modifier>" off before getKey (javap, C5 wave 2), so
-# with -Dforbric.keyModifierSuffix=off the load below stays green; whether the repair stays waits on the D25 ruling.
-# The binding is still seeded every run so the load and the JEI comparison below always have a modified key to read.
+# the kernel's repair for it is gone (C5 wave 2b, D73; KeyModifierSplitStagedTest holds every getKey call on the base and
+# carrier to a split or colon-free name). The binding is still seeded every run, so the survival checks below (the load,
+# and JEI's own bindings, five of them with :SHIFT, written back unchanged) always have a modified key to read.
 # M9_KEY_MODIFIER_SEED_BEGIN — the contract test runs this exact step against a fixture options.txt.
 python3 - "$RUNDIR/options.txt" <<'PY_SEED' || exit 3
 from pathlib import Path
@@ -107,12 +108,11 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 # without a switch was 163 PASS / 0 FAIL). "STRICT stop" means a required mixin (or, for fabricMainInConstructor, a
 # required entrypoint) was lost, so this STRICT client stopped at ~60 s before any world: every in-world check went red
 # with the named ones, which is the switch working.
-#   -Dforbric.keyModifierSuffix=off -> 1 red, the repair's own line ("the key-modifier suffix is dropped before the name
-#                                      is parsed"). "options.txt loads with modded modifier bindings in it" stays green:
-#                                      NeoForge's Options.processOptions splits ":<modifier>" off before InputConstants.getKey
-#                                      (javap) and KeyModifier.valueFromString falls back to NONE, so on this base the
-#                                      fixture's CONTROL_OR_COMMAND binding never reaches the repaired call (C5 reported
-#                                      this against D25; the merged base's 2 red included the options-load check).
+#   -Dforbric.keyModifierSuffix is RETIRED (C5 wave 2b, D73): measured off in wave 2, only the repair's own line went red
+#                                      ("options.txt loads with modded modifier bindings in it" and JEI's bindings stayed
+#                                      green), because NeoForge's Options.processOptions splits ":<modifier>" off before
+#                                      InputConstants.getKey. The repair and its line are gone; the merged base's 2 red
+#                                      (512c5e9a) included the options-load check, which stays as the survival check.
 #   -Dforbric.carrierLanguages=off -> 1 red ("NeoForge's own screens have their text"). The merged base's second red,
 #                                      "and MinecraftForge's do too", went with the MinecraftForge carrier in Stage 4.
 #   -Dforbric.modDataPacks=off     -> 3 red: "the carrier sits below the mods" (no mod pack above it), "loot-modifier scan
@@ -245,11 +245,9 @@ check_absent "no atlas was refused by the GPU" 'mipLevels must be at most' "$LOG
 # On the merged base MinecraftForge handed a modified binding's whole value (key.keyboard.o:CONTROL_OR_COMMAND) to
 # InputConstants.getKey before splitting the modifier off, vanilla's Integer.parseInt threw, and Options.load (one
 # try/catch around the WHOLE file) cost the player every setting; this fixture lost three of JEI's that way. On
-# NeoForge's base the game splits the modifier off first (see the seed step above), so with the repair switched off
-# only its own line goes red (C5 wave 2) and the load check below is not that repair's control. Both checks stay as
-# they are until the D25 ruling: delete the repair, or name a path that still reaches getKey with a suffix.
-check "the key-modifier suffix is dropped before the name is parsed" \
-  'Forbric/MergedBaseCompat\] InputConstants.getKey now drops' "$LOG"
+# NeoForge's base the game splits the modifier off first (see the seed step above), so the kernel's repair and the check
+# on its line went in C5 wave 2b (D73). What is left is the survival check: the file loads with the seeded binding and
+# JEI's own modifier bindings in it, and the game writes JEI's back unchanged.
 check_absent "options.txt loads with modded modifier bindings in it" 'Failed to load options' "$LOG"
 # …and a NeoForge mod's own bindings survive the load and the save after it (Stage 2's ForgeOptionsInjector re-read only
 # keys on the merged base; NeoForge's own Options load reads the whole file once the mods' keys exist).

@@ -215,6 +215,8 @@ public final class ForbricSwitches {
 			// Stage 4: repairs of merged-base damage that NeoForge's own base does not have.
 			Map.entry("forbric.mipmapLowering", "NeoForge's own SpriteLoader lowers an atlas's mip level exactly as vanilla's does, with "
 					+ "no setting gating it, so there is no allocation left to bound"),
+			Map.entry("forbric.keyModifierSuffix", "NeoForge's own Options.processOptions splits a binding's \":MODIFIER\" off before "
+					+ "it asks InputConstants.getKey for the key, so no key name with a suffix reaches the parse it guarded"),
 			Map.entry("forbric.lootPoolFields", "NeoForge's own LootPool has one name field and one codec that reads only its own fields, "
 					+ "so there is no second family's field for a constructor to fill"),
 			Map.entry("forbric.nativeEntryRelay", "NeoForge's own base still asks a native decision method where vanilla does (LiquidBlock.onPlace "
