@@ -1550,12 +1550,12 @@ test	net.forbric.kernel.runtime.KernelNeoConditionsOverlayTest	aForeignCondition
 test	net.forbric.kernel.runtime.KernelNeoConditionsOverlayTest	switchedOffTheOverlayScopeIsIdentity()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelNeoConfigLoadShapeTest	theEarlyPassOpensPerConfigAndBothPassesMarkTheCatalogue()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelNeoWorldgenTest	theWatchRegistersThreeLowestPriorityListenersThroughTheFourArgumentOverload()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.runtime.KernelPoiStatesTest	aFabricModsOwnCallTakesOverTheStatesTheCallbackMappedToItsType()	[fixture:staged] the staged game is absent
-test	net.forbric.kernel.runtime.KernelPoiStatesTest	aMappingAnEarlierCallMadeIsNotTheCallbacks()	[fixture:staged] the staged game is absent
-test	net.forbric.kernel.runtime.KernelPoiStatesTest	aStateAnotherTypeHoldsStillThrows()	[fixture:staged] the staged game is absent
-test	net.forbric.kernel.runtime.KernelPoiStatesTest	codeThatIsNotAFabricModsGetsVanillasBodyUntouched()	[fixture:staged] the staged game is absent
-test	net.forbric.kernel.runtime.KernelPoiStatesTest	mappingTheSameStatesTwiceStillThrowsAsOnFabric()	[fixture:staged] the staged game is absent
-test	net.forbric.kernel.runtime.KernelPoiStatesTest	withoutTheCallbackAFabricCallMapsExactlyAsVanillaDoes()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	aFabricModsOwnCallTakesOverTheStatesTheCallbackMappedToItsType()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	aMappingAnEarlierCallMadeIsNotTheCallbacks()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	aStateAnotherTypeHoldsStillThrows()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	codeThatIsNotAFabricModsGetsVanillasBodyUntouched()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	mappingTheSameStatesTwiceStillThrowsAsOnFabric()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	withoutTheCallbackAFabricCallMapsExactlyAsVanillaDoes()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.runtime.KernelPoiStatesThroughPoiTypesTest	aFabricModMappingItsStatesTwiceStillGetsVanillasThrow()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/entity/ai/village/poi/PoiTypes.class)
 test	net.forbric.kernel.runtime.KernelPoiStatesThroughPoiTypesTest	aFabricModsCallMapsTheCallbacksStatesByEveryRouteIntoPoiTypes()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/entity/ai/village/poi/PoiTypes.class)
 test	net.forbric.kernel.runtime.KernelPoiStatesThroughPoiTypesTest	aNeoForgeModsCallByTheSameRoutesKeepsNeoForgesThrow()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/entity/ai/village/poi/PoiTypes.class)
