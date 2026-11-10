@@ -1843,6 +1843,13 @@ test	net.forbric.kernel.transform.PackMetadataFailSoftInjectorTest	isIdempotent(
 test	net.forbric.kernel.transform.PackMetadataFailSoftInjectorTest	theHandAuthoredHandlerFrameHasTheRightShape()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.PackMetadataFailSoftInjectorTest	transformedMethodsAnalyseCleanly()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.PackMetadataFailSoftInjectorTest	wrapsTheParseInsteadOfReimplementingIt()	[fixture:staged] staged merged base absent — skipping real-bytecode check
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	aRawIdMapIsStillReKeyedOnRemapAsOnNativeFabric()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	afterARemapEveryProviderAnswersUnderItsTypesNewIdAndNeoForgesMapIsIntact()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	onlyTheTrackersRegisterGetsTheGuardAndASecondPassStandsDown()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	switchedOffTheTrackerIsAttachedAsWritten()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	theRealRemapRebuildsTheIdsTheViewReadsBeforeItFiresTheEvent()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	theTrackerAsWrittenThrowsOnTheViewsClear()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
+test	net.forbric.kernel.transform.ParticleViewRemapStagedTest	theViewAnswersTheNewIdsBeforeTheRemapEventFires()	skipped without a message (a class-level abort, e.g. in @BeforeAll)
 test	net.forbric.kernel.transform.PayloadCodecFunnelInjectorTest	neoForgesOverloadGoesThroughVanillasAndVanillasHandsBack()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.RecipeSyncFailSoftInjectorTest	thePayloadIsFilteredBetweenItsCreationAndItsSending()	[fixture:staged] neoforge runtime not staged: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	aRegistriesThatTookFabricsModifierHandsFabricRegistriesVanillasDirectory()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes check
