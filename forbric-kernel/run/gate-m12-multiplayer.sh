@@ -127,8 +127,28 @@ if [ "$READY" -ne 1 ]; then
   step "M12 result"; echo "[kernel] ❌ M12 GATE RED — see $SLOG"; exit 1
 fi
 
+# Block-state ids over the wire (Stage 4 C5 lane K1). Before anyone joins, the server places a NeoForge mod's block and a
+# vanilla block at world spawn, so the client receives them in CHUNK data, numbered by the server's blockstate->id map and
+# decoded by the client's -- a block_update after the join would hide nothing a chunk shows. A dedicated server with
+# fabric-api numbered every state twice (fabric-registry-sync's tracker during the registration window, then NeoForge's
+# bake after it), so its ids were the native ones plus that count: the pier went out as 35212 against the client's 34392
+# states and the client died on "No value with id"; a vanilla block decoded as a different one. Only when mcw-bridges is
+# in the set (the default's), since the pier is its block.
+PROBE_NEO="mcwbridges:acacia_bridge_pier"; PROBE_VANILLA="minecraft:diamond_block"; PROBE_JVM=""
+case " ${MODS[*]} " in *mcw-bridges*)
+  # The spawn chunk is loaded for the placement only (forceload), and let go again, so the session ticks what it did.
+  echo "setworldspawn 0 100 0" >&9; echo "forceload add -1 -1 1 1" >&9
+  for i in $(seq 1 30); do grep -aq 'Marked .* to be force loaded\|already marked' "$SLOG" && break; sleep 0.5; done
+  for i in $(seq 1 10); do
+    [ "$(grep -ac 'Changed the block' "$SLOG")" -ge 2 ] && break
+    echo "setblock 0 300 0 $PROBE_NEO" >&9; echo "setblock 2 300 0 $PROBE_VANILLA" >&9; sleep 1
+  done
+  echo "forceload remove -1 -1 1 1" >&9
+  PROBE_JVM="-Dforbric.clientSmokeProbe=0,300,0;2,300,0 -Dforbric.clientSmokeProbeTicks=100" ;;
+esac
+
 step "connect a real client to 127.0.0.1:$PORT"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 ${M12_EXTRA_JVM:-}" \
+FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 $PROBE_JVM ${M12_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!
@@ -249,6 +269,21 @@ else
 fi
 check_absent "nobody was told the server requires a mod they have" \
   "This server requires" "$SLOG"
+
+step "a NeoForge mod's block placed before the join decodes as itself on the client (must PASS)"
+# RED, measured 2026-11-11 (c5/k1/gates): 28 PASS / 9 FAIL at the stage tip 7aaebbec, before lane K1's fix, and the same
+# 28 / 9 with only the fix's clear taken out of KernelLifecycle.closeRegistrationWindow: the client dies on the chunk
+# ("No value with id 35212", Network Protocol Error), so these four and the protocol, play-on, clean-leave, watcher and
+# crash checks go red; with the fix 37 / 0.
+if [ -n "$PROBE_JVM" ]; then
+  check "the server placed both blocks before the join" "Changed the block" "$SLOG" 2
+  check "the client read both blocks back" "ClientSmoke\] block at \([02] 300 0\)" "$CLOG" 2
+  check_absent "no block-state id the client cannot map" "No value with id" "$CLOG"
+  check "the NeoForge mod's block reads back as itself" "block at \(0 300 0\) is $PROBE_NEO " "$CLOG"
+  check "the vanilla control reads back as itself" "block at \(2 300 0\) is $PROBE_VANILLA " "$CLOG"
+else
+  echo "[kernel] (no mcw-bridges in this M12_MODS set: no block read-back)"
+fi
 
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
