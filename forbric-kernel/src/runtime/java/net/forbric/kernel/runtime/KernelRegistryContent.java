@@ -112,8 +112,12 @@ public final class KernelRegistryContent {
 	 * four special tabs (hotbar / search / op / inventory) on every call and never clears. The special tabs'
 	 * screen column is {@code indexOf % (size/2) + 5}, so a duplicated list (size 8) yields columns 5..8 and the
 	 * tab-sprite array (length 7) overflows: {@code ArrayIndexOutOfBoundsException: Index 7} in
-	 * {@code extractTabButton} the moment the creative screen renders. The baseline bring-up already sorted once,
-	 * so the kernel's re-sort is always a SECOND call — the list is cleared first to make the call idempotent.
+	 * {@code extractTabButton} the moment the creative screen renders. Since lane K3, NeoForge's own
+	 * {@code GameData.postRegisterEvents} tail runs {@code sortTabs()} once (after every RegisterEvent and, on a dedicated
+	 * server, every Fabric main), so the kernel's re-sort is a SECOND call — the list is cleared first to make the call
+	 * idempotent. With this re-sort switched off, a dedicated server (packedup + supermartijn642corelib) ended with the same
+	 * {@code DEFAULT_TABS} (4) and {@code SORTED_TABS} (11) as native NeoForge 26.2.0.93; whether a client still needs it is
+	 * not measured (K3 review fixes, open item for the orchestrator).
 	 */
 	public static void sortCreativeTabs() {
 		try {
