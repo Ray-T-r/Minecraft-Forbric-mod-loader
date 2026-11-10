@@ -74,6 +74,9 @@ class FabricMainEntrypointWindowTest {
 				&& java.util.Arrays.stream(content.instructions.toArray()).anyMatch(i -> i instanceof MethodInsnNode c
 						&& "dispatchRegisterEvents".equals(c.name)),
 				"KernelLifecycle.registerNeoForgeContent must hand its Fabric step to dispatchRegisterEvents");
+		assertEquals(List.of("runFabricMainsInTheWindow"), RegistrationWindowFabricStep.calls(),
+				"the Fabric step registerNeoForgeContent hands to dispatchRegisterEvents must be runFabricMainsInTheWindow, "
+						+ "or a dedicated server runs no Fabric main");
 		MethodNode window = method("runFabricMainsInTheWindow");
 		assertTrue(window != null,
 				"KernelLifecycle.runFabricMainsInTheWindow not found in the compiled src/main classes, which exist "

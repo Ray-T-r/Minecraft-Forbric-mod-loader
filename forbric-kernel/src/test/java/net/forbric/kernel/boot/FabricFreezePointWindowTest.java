@@ -167,6 +167,11 @@ class FabricFreezePointWindowTest {
 		assertEquals(Set.of(List.of(OPEN_ROOT, MAINS, HEAD, CLOSE_ROOT, RETURN)), inWindow.exits(),
 				"runFabricMainsInTheWindow on a dedicated server, run through");
 
+		// The walk below does not enter the lambda registerNeoForgeContent hands to dispatchRegisterEvents; this follows it.
+		assertEquals(List.of("runFabricMainsInTheWindow"), RegistrationWindowFabricStep.calls(),
+				"the Fabric step of the RegisterEvent dispatch must be runFabricMainsInTheWindow, or a dedicated server "
+						+ "never reaches the HEAD half");
+
 		MethodNode method = method("registerNeoForgeContent");
 		Walk run = walk(method, method.instructions.getFirst(), Set.of(DISPATCH, MAINS, HEAD, CLOSE_WINDOW, TAIL), false, false);
 		assertEquals(Set.of(
