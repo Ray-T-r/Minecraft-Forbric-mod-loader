@@ -59,11 +59,17 @@ DL="$RUN_OLD/downloads"
 # module under test, mcw-bridges registers 303 blocks/items (a registry payload worth syncing), and collective is
 # a universal jar so multi-loader arbitration runs on both ends. Since Stage 3 of dropping MinecraftForge mcw-bridges
 # is its NeoForge build, same version ($NEO_BUILDS): the MinecraftForge build is refused, and a refusal stops the
-# dedicated server.
+# dedicated server. sophisticatedcore (NeoForge) registers a particle type (jukebox_note), which puts a modded entry in
+# minecraft:particle_type, so fabric-registry-sync's client remap runs over that registry on the join and again on the
+# disconnect. Without one no remap reaches the particle registry and this gate cannot see what it does to the particle
+# provider map: with fabric-registry-sync's Int2ObjectMapTracker attached to the kernel's view of NeoForge's
+# Identifier-keyed providers, the remap threw from the view's clear() and no client joined a server whose mods register
+# particle types (Stage 4 lane K2; -Dforbric.particleViewDetach=off puts that back).
 MODS=(
   "$DL/fabric-26.2/fabric-api-0.154.0+26.2.jar"
   "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$DL/forge-26.2/collective-26.2.0-8.39.jar"
+  "$KERNEL/run/client-merged-pack/mods/sophisticatedcore-26.2-1.5.0.2337.jar"
 )
 # M12_MODS replaces that set wholesale (space-separated paths). The reason it exists: when this gate goes red the
 # first question is always "is it the Fabric + NeoForge combination or the plumbing?", and the only way to answer it
@@ -163,6 +169,16 @@ step "the configuration phase and registry sync completed (must PASS)"
 # This is the surface no other gate reaches: known-pack negotiation, then registry + tag sync over the wire.
 check "client finished configuring"  "ClientSmoke\] joined world via quick-play"        "$CLOG"
 check_absent "no registry mismatch"  "Registry (mismatch|remapping failed)|Received unknown|Missing registry"  "$CLOG"
+# The particle registry was in that sync (a mod registered a particle type, the denominator for the line above), and the
+# particle provider map came through it as NeoForge keeps it: by name, with no int-keyed tracker re-keying the kernel's
+# view of it (the absence above is the remap itself not failing). Asked of the default set only: an M12_MODS set chosen
+# to split one ecosystem from the other need not carry a particle type, and that is not what such a run is asking.
+if [ -z "${M12_MODS:-}" ]; then
+  check "a mod registered a particle type, so the remap reaches the particle registry" \
+    "Forbric/Lifecycle\] registered content: .*particle_type=[1-9]" "$CLOG"
+  check "the remap tracker is not attached to the particle provider view" \
+    "Forbric/Particles\] fabric-registry-sync's remap tracker for ParticleEngine.providers is not attached" "$CLOG"
+fi
 check_absent "no unknown payload"    "Unknown custom packet|Unregistered payload|Payload may not be sent"      "$CLOG"
 check_absent "no protocol error"     "Network Protocol Error|Incompatible client|Outdated (client|server)"     "$CLOG"
 # The second bug this gate found: the server could not ENCODE neoforge:recipe_content, because NeoForge's own
