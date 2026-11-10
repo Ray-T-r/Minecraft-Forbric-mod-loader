@@ -133,19 +133,57 @@ class KernelLifecycleRegistrationWindowTest {
 		ClassNode node = compiled();
 		assertTrue(node != null,
 				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
-		MethodNode close = method(node, "closeClientEntrypointWindow");
-		int clear = firstCall(close, "clearBlockStateIds"), freeze = firstCall(close, "freeze");
-		assertTrue(clear >= 0, "the client window must empty the blockstate map before re-freezing");
-		assertTrue(freeze > clear, "and empty it BEFORE the freeze, whose bake refills it");
-		List<String> between = new ArrayList<>();
-		AbstractInsnNode[] insns = close.instructions.toArray();
-		for (int i = clear + 1; i < freeze; i++) if (insns[i] instanceof MethodInsnNode call) between.add(call.name);
-		assertTrue(between.isEmpty(), "nothing runs between the clear and the freeze: " + between);
+		emptiesTheMapRightBeforeTheFreeze(method(node, "closeClientEntrypointWindow"), "the client window");
 		boolean neoForgesMap = false;
 		for (AbstractInsnNode insn : method(node, "clearBlockStateIds").instructions.toArray()) {
 			if (insn instanceof org.objectweb.asm.tree.LdcInsnNode ldc && "getBlockStateIDMap".equals(ldc.cst)) neoForgesMap = true;
 		}
 		assertTrue(neoForgesMap, "the map cleared is NeoForge's own, GameData.getBlockStateIDMap()");
+	}
+
+	/**
+	 * The main registration window empties NeoForge's blockstate→id map right before the freeze that closes it, as the
+	 * client window does: fabric-registry-sync's StateIdTracker has added each block's states to that map as the window
+	 * registered it, and the freeze's bake appends the whole registry after whatever is there, so without the clear every
+	 * block-state id on a dedicated server was its native NeoForge id plus the count Fabric's tracker added (lane K1: a
+	 * mcw-bridges pier at 35212 against native 33186; a Forbric client joining died on "No value with id"). The premise,
+	 * on the real bytes, is BlockStateIdNumberingStagedTest's.
+	 */
+	@Test
+	void theRegistrationWindowEmptiesTheBlockStateMapRightBeforeItsFreeze() throws Exception {
+		ClassNode node = compiled();
+		assertTrue(node != null,
+				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
+		emptiesTheMapRightBeforeTheFreeze(method(node, "closeRegistrationWindow"), "the registration window");
+	}
+
+	/** Every freeze the kernel drives is the one right after a clear: the only callers of freeze are the two closes. */
+	@Test
+	void everyFreezeTheKernelDrivesIsTheOneRightAfterAClear() throws Exception {
+		ClassNode node = compiled();
+		assertTrue(node != null,
+				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
+		List<String> callers = new ArrayList<>();
+		for (MethodNode m : node.methods) {
+			for (AbstractInsnNode insn : m.instructions.toArray()) {
+				if (insn instanceof MethodInsnNode call && call.owner.equals(node.name) && call.name.equals("freeze")) {
+					callers.add(m.name);
+				}
+			}
+		}
+		callers.sort(null);
+		assertTrue(callers.equals(List.of("closeClientEntrypointWindow", "closeRegistrationWindow")),
+				"freeze(cl) is called only where a clear precedes it; a new caller needs the clear too: " + callers);
+	}
+
+	private static void emptiesTheMapRightBeforeTheFreeze(MethodNode close, String what) {
+		int clear = firstCall(close, "clearBlockStateIds"), freeze = firstCall(close, "freeze");
+		assertTrue(clear >= 0, what + " must empty the blockstate map before freezing");
+		assertTrue(freeze > clear, what + " must empty it BEFORE the freeze, whose bake refills it");
+		List<String> between = new ArrayList<>();
+		AbstractInsnNode[] insns = close.instructions.toArray();
+		for (int i = clear + 1; i < freeze; i++) if (insns[i] instanceof MethodInsnNode call) between.add(call.name);
+		assertTrue(between.isEmpty(), "nothing runs between the clear and the freeze in " + what + ": " + between);
 	}
 
 	/**

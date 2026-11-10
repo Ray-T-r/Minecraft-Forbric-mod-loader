@@ -269,8 +269,11 @@ public final class KernelLifecycle {
 	 * {@code Minecraft.<init>}); NeoForge's own {@code BlockCallbacks.onBake}, which the {@code freeze} right before each
 	 * call of this runs, adds the state of every block in the registry, so on NeoForge's base the map always held every
 	 * registered state and the rebuild, which checked only that count, never ran (Stage 4 C5, lane S: no boot printed it;
-	 * switch {@code forbric.blockStateIdRefill} retired). That the ids themselves were native is a separate matter: the
-	 * client's second bake appended them again until {@link #clearBlockStateIds} (lane S's wave-2 review, lens A).
+	 * switch {@code forbric.blockStateIdRefill} retired; it compared counts only, so it could not see ids that were all
+	 * there but offset). That the ids themselves were native is a separate matter: the client's second bake appended
+	 * them again until {@link #clearBlockStateIds} (lane S's wave-2 review, lens A), and on every side the main window's
+	 * bake appended them after the states fabric-registry-sync's tracker had already added during the window, until the
+	 * same clear moved in front of that freeze too (lane K1).
 	 */
 	private static void completeBlockStateBookkeeping(ClassLoader cl) {
 		// Vanilla fills every block state's cache in Bootstrap, before any mod has registered a block, and the kernel
@@ -924,11 +927,10 @@ public final class KernelLifecycle {
 	/**
 	 * Opens the main registration window.
 	 *
-	 * <p>First the post-Bootstrap vanilla registry state is captured for NeoForge. NeoForge's unfreeze clear-callback
-	 * empties its blockstate→id map, and {@code BlockCallbacks.onBake} only re-adds blocks that {@code onAdd} saw
-	 * during the window (none of vanilla's) — so without a snapshot to restore from, the map stays empty and the first
-	 * clientbound {@code block_update} cannot encode ("Can't find id for Block{minecraft:lava}"). Then
-	 * {@code unfreezeData}, which clears the vanilla {@code frozen} flag.
+	 * <p>First the post-Bootstrap vanilla registry state is captured for NeoForge. Then {@code unfreezeData}, which
+	 * clears the vanilla {@code frozen} flag and nothing else: on NeoForge's base it leaves the blockstate→id map as it
+	 * is (empty after Bootstrap on a server, measured), and {@code BlockCallbacks.onBake} walks the whole block registry
+	 * at the freeze that closes the window, after {@link #closeRegistrationWindow} has emptied the map.
 	 */
 	static void openRegistrationWindow(ClassLoader cl) {
 		invokeGameDataOn(cl, ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), "vanillaSnapshot");
@@ -942,7 +944,8 @@ public final class KernelLifecycle {
 	 * folded: {@code linkBlockItems} links any block item still missing from {@code Item.BY_BLOCK} (normally none: the
 	 * item registry's add-callback links each one as it is added; without either, {@code Block.asItem()} is AIR and a
 	 * mod's creative tab collapses to empty), {@code freeze} also latches {@code registriesLoaded} (and its bake
-	 * re-adds every block's blockstate ids), {@code completeBlockStateBookkeeping} fills the state caches, and
+	 * numbers every block's states, from the map {@link #clearBlockStateIds} has just emptied),
+	 * {@code completeBlockStateBookkeeping} fills the state caches, and
 	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
 	 *
 	 * <p>Best-effort as a whole AND per step, because this runs in a finally: it must not replace the exception
@@ -955,6 +958,12 @@ public final class KernelLifecycle {
 			Caught.warn(t, "[Forbric/Lifecycle] could not link block->item mappings while closing the registration "
 					+ "window");
 		}
+		// Right before the freeze, as at the client window's close: the freeze's bake must number every state once, from
+		// an empty map, as NeoForge's single bake does natively. fabric-registry-sync's StateIdTracker has appended each
+		// block's states to this same map as the window registered it (Fabric numbers states that way), so without the
+		// clear the bake appended the whole registry after them and every id on a dedicated server was its native id
+		// plus that count (Stage 4 C5 lane K1).
+		clearBlockStateIds(cl);
 		try {
 			freeze(cl);
 		} catch (Throwable t) {
@@ -2378,7 +2387,11 @@ public final class KernelLifecycle {
 	/**
 	 * Empties NeoForge's blockstate→id map ({@code GameData.getBlockStateIDMap()}, a {@code ClearableObjectIntIdentityMap}
 	 * whose {@code clear()} is the one {@code BlockCallbacks.onClear} calls), so the bake of the freeze that follows numbers
-	 * every state once. Reported, never thrown: a map left full keeps the doubled ids, as before.
+	 * every state once, in registry order, as NeoForge's own single bake does. Called right before each freeze the kernel
+	 * drives: the one that closes the registration window ({@link #closeRegistrationWindow}) and the one that closes the
+	 * client entrypoint window ({@link #closeClientEntrypointWindow}). Whatever was appended before it — the previous bake,
+	 * or fabric-registry-sync's {@code StateIdTracker}, which adds each block's states as the block is registered — is
+	 * renumbered by that bake. Reported, never thrown: a map left full keeps the offset ids, as before.
 	 */
 	static void clearBlockStateIds(ClassLoader cl) {
 		try {
@@ -2388,8 +2401,9 @@ public final class KernelLifecycle {
 			clear.setAccessible(true);
 			clear.invoke(map);
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not empty NeoForge's blockstate->id map before the client re-freeze — "
-					+ "its bake appends every state again, so each id on this client is offset by the state count");
+			Caught.warn(t, "[Forbric/Lifecycle] could not empty NeoForge's blockstate->id map before a registry freeze — "
+					+ "its bake appends every state after the ones already there, so each block-state id on this side is "
+					+ "offset and a peer decodes the wrong blocks");
 		}
 	}
 
