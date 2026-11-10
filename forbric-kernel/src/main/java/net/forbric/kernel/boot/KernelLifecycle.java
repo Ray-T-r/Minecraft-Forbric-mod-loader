@@ -646,8 +646,8 @@ public final class KernelLifecycle {
 			// handler declared on an @EventBusSubscriber receives it too.
 			fireSetupPhase(cl, KernelModLoader.publishedNeoMods(), ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
 
-			// NeoForge's 2-arg RegisterEvent on each IEventBus: the baseline's, then every mod's, all inside the one
-			// unfreeze/freeze window below.
+			// The baseline's bus, then every mod's: NewRegistryEvent goes to the mods' buses below, all inside the one
+			// unfreeze/freeze window. RegisterEvent goes to the same containers, through NeoForge's own method.
 			List<Object> buses = new ArrayList<>();
 			buses.add(baselineBus);
 			buses.addAll(registrationBuses(mods, KernelModLoader.classlessNeoMods().values()));
@@ -676,82 +676,15 @@ public final class KernelLifecycle {
 			// seed time; posting there re-collects them and fill() dies on "Attempted duplicate registration".
 			net.forbric.api.ProtocolExtensions.forLoader(cl).beforeConfigurationLoading();
 			postNeoNewRegistryEvent(cl, buses.subList(1, buses.size()));
-			// Isolated for the same reason KernelEventSubscribers.registerAll above is, and this one is wider.
-			// fireRegisterEvents resolves a GAME-side class reflectively, so a LinkageError inside it escapes to
-			// the outer catch and skips EVERYTHING below: the Fabric mods' main entrypoints, the attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the
-			// modded creative-tab categories. The one WARN that reported it said "could not register ecosystem
-			// content", which names none of that -- it blames the window for what one call inside it did.
-			int n = 0;
-			try {
-				n = fireRegisterEvents(cl, buses);
-			} catch (Throwable t) {
-				Caught.warn(t, "[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content "
-						+ "through DeferredRegister or RegisterEvent will have none of it. The rest of the "
-						+ "registration window below still runs");
-			}
-			// Fabric mods' onInitialize() calls Registry.register(...) directly, so it belongs in this same unfrozen
-			// span. It runs BEFORE the bake below so the bake sees Fabric-registered content. The root registry is
-			// opened right here because NewRegistryEvent.fill() above re-froze it: a Fabric mod declaring its own
-			// registry goes through FabricRegistryBuilder, which is a plain Registry.register into that root.
-			rootRegistry(cl, true);
-			try {
-				try {
-					// On a client these now run from onClientEntrypoints, inside Minecraft.<init>, where Fabric runs
-					// them and where Minecraft.getInstance() is live. Here they would see a null instance, and a mod
-					// that caches it caches null for the whole process. The dedicated server keeps this window: it has
-					// no Minecraft to wait for, and Fabric's own startServer runs main just as early there.
-					if (!side.isClient() || !KernelFabricEcosystem.mainsRunInConstructor()) {
-						KernelFabricEcosystem.runMainEntrypoints();
-					}
-				} finally {
-					// Fabric's registry freeze, as a server with fabric-api has it: after every main, the root still
-					// open. Only the Fabric injectors on BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter
-					// moved run here; the HEAD half now, the TAIL half once the window below is frozen. A client
-					// does both in onClientEntrypoints, after its client entrypoints, as Fabric does.
-					if (!side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
-				}
-			} finally {
-				rootRegistry(cl, false);
-				// No late-config pass here. It used to sit in this finally, and the comment that justified it said
-				// the quiet part: these entrypoints run BEFORE loadEarlyConfigs, "so a config registered here would
-				// in fact be caught by it". It was caught by it — TWICE. This pass opened each one, and
-				// loadEarlyConfigs then ran ConfigTracker.loadConfigs over the WHOLE type, which re-opens a config
-				// that already has one: "Opening a config that was already loaded" per config, ModConfigEvent.Loading
-				// delivered a second time (a Loading handler that appends to a list or registers a listener does it
-				// twice), the file re-read and a second watcher installed. The late pass now runs AFTER the setup
-				// lifecycle instead, where it is the "only what is still unopened" pass it claims to be — see
-				// driveNativeRegistration.
-			}
-			// A DeferredRegister's holders bind during their OWN registry's RegisterEvent above, so a mod reading
-			// another mod's holder during RegisterEvent depends on the dispatch order.
-			// NeoForge's postRegisterEvents is NOT the bake — it is the dispatch loop the kernel REPLACES: it walks
-			// getRegistrationOrder() and re-fires RegisterEvent through ModLoader.postEventWrapContainerInModOrder.
-			// While ModList was empty that was a silent no-op, so calling it looked harmless. Once the kernel
-			// publishes its mods (KernelModLoader.publishNeoModList) it double-fires every DeferredRegister —
-			// "Adding duplicate key 'neoforge:condition_codecs / balm:config'" — and its own error path then calls
-			// RegistryManager.revertToVanilla(), ROLLING BACK the NeoForge registries: 21 baseline entries
-			// (attribute_type, ticket_type, slot_display, entity_sub_predicate_type, …) silently disappeared.
-			// Only its tail is wanted, so call that directly.
-			postAttributeEvents(cl);
-			// The rest of postRegisterEvents' tail, in its order. Cheap calls, and each one is a whole feature that
-			// simply did not exist: without fireSpawnPlacementEvent a mod's mob has no spawn rules and never
-			// generates, without BlockEntityTypeAddBlocksEvent a mod cannot attach its blocks to a vanilla block
-			// entity, and without registerModdedCategories its gamerules have no category to sit in.
-			// (CreativeModeTabRegistry.sortTabs is the kernel's sortNeoCreativeTabs, below, after the freeze.)
-			invokeStaticOn(cl, "net.minecraft.world.entity.SpawnPlacements", "fireSpawnPlacementEvent");
-			postModBusEvent(cl, "net.neoforged.neoforge.event.BlockEntityTypeAddBlocksEvent");
-			invokeStaticOn(cl, "net.minecraft.world.level.gamerules.GameRuleCategory", "registerModdedCategories");
-			// Last in postRegisterEvents: NeoForge builds its item tooltip appenders — every vanilla component line
-			// (enchantments, lore, attributes, durability, …) and every mod's. Left out of this copy of the tail,
-			// NeoForge's ItemStack dispatcher walked three empty lists and tooltips showed only the name.
-			if (!"off".equalsIgnoreCase(System.getProperty(NEO_TOOLTIP_APPENDERS, "on"))) {
-				invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelNeoTooltips", "init");
-			} else {
-				ForbricLog.warn("[Forbric/Tooltips] NeoForge's tooltip appenders left unbuilt with -D%s=off — item "
-						+ "tooltips show no component lines", NEO_TOOLTIP_APPENDERS);
-			}
-			ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)]",
-					n, buses.size(), buses.size() - 1);
+			// RegisterEvent is posted by NeoForge's OWN GameData.postRegisterEvents, so every mixin and transformer aimed at it
+			// runs. The kernel used to post it itself and copy the method's tail, and a mod hooking the method was woven into
+			// a method nobody called: supermartijn642corelib fills its @RegistryEntryAcceptor fields from a mixin there, so
+			// packedup's menu type stayed null and its client died at startup ("Container screen registered with null menu
+			// type!"). RegisterEventsSeam meets the kernel's needs at the method's own call sites: each mod contained when its
+			// listener throws, the Fabric mains (runFabricMainsInTheWindow) where the dispatch loop ends, before NeoForge's
+			// tail, and each tail step reporting its own failure. dispatchRegisterEvents never throws, as
+			// KernelEventSubscribers.registerAll above does not: a LinkageError there must not skip the rest of the window.
+			dispatchRegisterEvents(cl, () -> runFabricMainsInTheWindow(cl, side));
 			logRegisteredContent(cl);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not register ecosystem content");
@@ -763,6 +696,196 @@ public final class KernelLifecycle {
 		}
 	}
 
+
+	/**
+	 * The Fabric main entrypoints in the registration window, with the root open (NeoForge's {@code NewRegistryEvent.fill}
+	 * re-froze it, and a Fabric mod declaring its own registry registers into it). Runs where NeoForge's
+	 * {@code GameData.postRegisterEvents} ends its dispatch loop ({@link #onRegisterEventsDispatched}), before its tail —
+	 * where it ran between the kernel's own dispatch and its copy of that tail — so the attribute events and every other
+	 * tail step see what the Fabric mods registered.
+	 */
+	private static void runFabricMainsInTheWindow(ClassLoader cl, Side side) {
+		rootRegistry(cl, true);
+		try {
+			try {
+				// On a client these now run from onClientEntrypoints, inside Minecraft.<init>, where Fabric runs
+				// them and where Minecraft.getInstance() is live. Here they would see a null instance, and a mod
+				// that caches it caches null for the whole process. The dedicated server keeps this window: it has
+				// no Minecraft to wait for, and Fabric's own startServer runs main just as early there.
+				if (!side.isClient() || !KernelFabricEcosystem.mainsRunInConstructor()) {
+					KernelFabricEcosystem.runMainEntrypoints();
+				}
+			} finally {
+				// Fabric's registry freeze, as a server with fabric-api has it: after every main, the root still
+				// open. Only the Fabric injectors on BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter
+				// moved run here; the HEAD half now, the TAIL half once the window below is frozen. A client
+				// does both in onClientEntrypoints, after its client entrypoints, as Fabric does.
+				if (!side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
+			}
+		} finally {
+			rootRegistry(cl, false);
+		}
+	}
+
+	/**
+	 * {@code RegisterEvent} for every registry, by NeoForge's own {@code GameData.postRegisterEvents}, with
+	 * {@code afterDispatch} run once where its dispatch loop ends (or right after it, when the method never got there).
+	 * Never throws: a failure here must not skip the rest of the registration window. Returns how many registries it
+	 * posted for.
+	 */
+	static int dispatchRegisterEvents(ClassLoader cl, Runnable afterDispatch) {
+		RegisterEventsWindow window = new RegisterEventsWindow(afterDispatch);
+		int n = 0;
+		try {
+			n = postRegisterEvents(cl, window);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content "
+					+ "through DeferredRegister or RegisterEvent will have none of it. The rest of the "
+					+ "registration window below still runs");
+		} finally {
+			// Not reached through the seam (NeoForge's method threw before its tail, or the seam was not applied): the
+			// Fabric mains still run in this window, after NeoForge's.
+			window.runAfterDispatch();
+		}
+		ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)]",
+				n, window.containers(), Math.max(0, window.containers() - 1));
+		return n;
+	}
+
+	/** One registration window's call of {@code GameData.postRegisterEvents}: its after-dispatch step and its counts. */
+	static final class RegisterEventsWindow {
+		private final Runnable afterDispatch;
+		private boolean afterDispatchRan;
+		private int events;
+		private int containers;
+
+		RegisterEventsWindow(Runnable afterDispatch) {
+			this.afterDispatch = afterDispatch;
+		}
+
+		/** Once per window, whichever reaches it first: the seam at the end of NeoForge's loop, or the kernel after it. */
+		synchronized void runAfterDispatch() {
+			if (afterDispatchRan) return;
+			afterDispatchRan = true;
+			try {
+				afterDispatch.run();
+			} catch (Throwable t) {
+				Caught.warn(t, "[Forbric/Lifecycle] the Fabric main entrypoints did not finish in the registration window — "
+						+ "NeoForge's tail (attribute events, spawn placements, block entity blocks) still runs");
+			}
+		}
+
+		int containers() {
+			return containers;
+		}
+	}
+
+	/** The window whose {@code GameData.postRegisterEvents} call is in progress; null outside it. */
+	private static volatile RegisterEventsWindow registerEventsWindow;
+
+	/**
+	 * Calls NeoForge's own {@code GameData.postRegisterEvents} — the dispatch of {@code RegisterEvent} for every registry
+	 * in {@code GameData.getRegistrationOrder()}, then its tail — and returns how many registries it posted for.
+	 *
+	 * <p>The class is defined first, so Mixin and {@code RegisterEventsSeam} have run on it before the kernel decides how
+	 * to call it. Without the seam NeoForge's own {@code ModLoader} delivers the event, and it walks {@code ModList}: the
+	 * baseline joins it first, or NeoForge's own {@code DeferredRegister}s would never be told to register.
+	 */
+	private static int postRegisterEvents(ClassLoader cl, RegisterEventsWindow window) throws Exception {
+		Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), true, cl);
+		boolean seam = net.forbric.kernel.transform.RegisterEventsSeam.applied();
+		if (!seam) publishModBusDelivery(cl);
+		int registries = ((java.util.Collection<?>) gameData.getMethod("getRegistrationOrder").invoke(null)).size();
+		registerEventsWindow = window;
+		try {
+			gameData.getMethod("postRegisterEvents").invoke(null);
+		} catch (java.lang.reflect.InvocationTargetException failed) {
+			throw failed.getCause() instanceof Exception e ? e : failed;
+		} finally {
+			registerEventsWindow = null;
+		}
+		ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent in NeoForge's registration order — NeoForge's own "
+				+ "GameData.postRegisterEvents walked %d registr(ies), every mixin on it applied%s", registries,
+				seam ? "" : " (without the kernel's seam: a failing listener rolls the registries back, as on NeoForge)");
+		if (!seam) window.containers = modListSize(cl);
+		return seam ? window.events : registries;
+	}
+
+	private static int modListSize(ClassLoader cl) {
+		try {
+			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE), false, cl);
+			Object modList = modListCls.getMethod("get").invoke(null);
+			return (int) modListCls.getMethod("size").invoke(modList);
+		} catch (Throwable t) {
+			Caught.expected(t);
+			return 0;
+		}
+	}
+
+	/**
+	 * {@code GameData.postRegisterEvents}' {@code ModLoader.postEventWrapContainerInModOrder(event)}, rewritten by
+	 * {@code RegisterEventsSeam} to come here: the same delivery — priority phase by phase, each container in mod order with
+	 * itself the active container — to NeoForge's baseline and every NeoForge mod the kernel loaded, in {@code ModList}'s
+	 * order. A mod whose listener throws loses that registry, and every other mod still gets it: NeoForge turns the throw
+	 * into its loading-error screen, which the kernel does not have.
+	 */
+	public static void onRegisterEvent(Object event) {
+		RegisterEventsWindow window = registerEventsWindow;
+		ClassLoader cl = event.getClass().getClassLoader();
+		String key;
+		try {
+			key = String.valueOf(event.getClass().getMethod("getRegistryKey").invoke(event));
+		} catch (Throwable t) {
+			Caught.expected(t);
+			key = "?";
+		}
+		String registry = key;
+		int delivered = deliverInModOrder(cl, event, true, id -> "[Forbric/Lifecycle] a NeoForge mod's RegisterEvent listener "
+				+ "failed on " + registry + " — " + id + "'s remaining content for it is skipped, every other mod and the "
+				+ "baseline still register");
+		if (window != null) {
+			synchronized (window) {
+				window.events++;
+				window.containers = Math.max(window.containers, delivered);
+			}
+		}
+	}
+
+	/** Where NeoForge's dispatch loop ends and its tail begins ({@code RegisterEventsSeam}): the window's Fabric step. */
+	public static void onRegisterEventsDispatched() {
+		RegisterEventsWindow window = registerEventsWindow;
+		if (window != null) window.runAfterDispatch();
+	}
+
+	/**
+	 * One no-argument static step of {@code GameData.postRegisterEvents}' tail, called here by {@code RegisterEventsSeam}
+	 * and run as NeoForge wrote it, with its failure reported at the step's own catch site: the attribute events through
+	 * {@link #postAttributeEvents}, NeoForge's tooltip appenders through {@code KernelNeoTooltips} (and only with
+	 * {@code -Dforbric.neoTooltipAppenders} on), every other step through {@link #invokeStaticOn}.
+	 */
+	public static void onRegisterEventsTailStep(Class<?> owner, String method) {
+		ClassLoader cl = owner.getClassLoader();
+		String name = owner.getName();
+		if (name.equals("net.neoforged.neoforge.common.CommonHooks") && method.equals("modifyAttributes")) {
+			postAttributeEvents(cl);
+		} else if (name.equals("net.neoforged.neoforge.common.tooltip.ItemTooltipHandler") && method.equals("init")) {
+			// Last in postRegisterEvents: NeoForge builds its item tooltip appenders — every vanilla component line
+			// (enchantments, lore, attributes, durability, …) and every mod's. KernelNeoTooltips.init calls it once.
+			if (!"off".equalsIgnoreCase(System.getProperty(NEO_TOOLTIP_APPENDERS, "on"))) {
+				invokeStaticOn(cl, "net.forbric.kernel.runtime.KernelNeoTooltips", "init");
+			} else {
+				ForbricLog.warn("[Forbric/Tooltips] NeoForge's tooltip appenders left unbuilt with -D%s=off — item "
+						+ "tooltips show no component lines", NEO_TOOLTIP_APPENDERS);
+			}
+		} else {
+			invokeStaticOn(cl, name, method);
+		}
+	}
+
+	/** {@code GameData.postRegisterEvents}' {@code ModLoader.postEvent(event)} (BlockEntityTypeAddBlocksEvent), per container. */
+	public static void onRegisterEventsModBusEvent(Object event) {
+		postModBusEvent(event);
+	}
 
 	/**
 	 * Opens the main registration window.
@@ -1527,6 +1650,71 @@ public final class KernelLifecycle {
 		return deliverModBusEvent(cl, acceptEvent, event, event.getClass().getName());
 	}
 
+	/**
+	 * {@code ModLoader.postEventWrapContainerInModOrder} with each container contained: for every priority phase, every
+	 * container in turn — NeoForge's baseline first, then the NeoForge mods the kernel loaded in {@code ModList}'s order
+	 * (presence aliases have no listener of their own and are left out) — with that container active while it takes the
+	 * event when {@code activeContainer} is set, as NeoForge's wrap does. A container that throws is reported once and
+	 * skipped for the event's remaining phases. Returns how many containers took it.
+	 */
+	private static int deliverInModOrder(ClassLoader cl, Object event, boolean activeContainer,
+			java.util.function.Function<String, String> failure) {
+		java.util.Map<Object, String> ordered = new java.util.LinkedHashMap<>();
+		if (baselineContainer != null) ordered.put(baselineContainer, "neoforge");
+		java.util.Map<Object, String> published = new java.util.IdentityHashMap<>();
+		KernelModLoader.publishedNeoMods().forEach((id, identity) -> published.put(identity.container(), id));
+		try {
+			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE), false, cl);
+			Object modList = modListCls.getMethod("get").invoke(null);
+			for (Object c : (List<?>) modListCls.getMethod("getSortedMods").invoke(modList)) {
+				String id = published.get(c);
+				if (id != null && !ordered.containsKey(c)) ordered.put(c, id);
+			}
+		} catch (Throwable t) {
+			Caught.expected(t);
+		}
+		published.forEach((c, id) -> ordered.putIfAbsent(c, id));
+
+		Method phased;
+		Object[] phases;
+		Method setActive = null;
+		Object context = null;
+		try {
+			Class<?> eventBase = Class.forName("net.neoforged.bus.api.Event", false, cl);
+			Class<?> priority = Class.forName("net.neoforged.bus.api.EventPriority", false, cl);
+			phased = modContainerClass(cl).getMethod("acceptEvent", priority, eventBase);
+			phases = priority.getEnumConstants();
+			if (activeContainer) {
+				Class<?> loading = Class.forName("net.neoforged.fml.ModLoadingContext", false, cl);
+				context = loading.getMethod("get").invoke(null);
+				setActive = loading.getMethod("setActiveContainer", modContainerClass(cl));
+			}
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] no NeoForge mod container to post %s through", event.getClass().getName());
+			return 0;
+		}
+		java.util.Set<Object> failed = java.util.Collections.newSetFromMap(new java.util.IdentityHashMap<>());
+		for (Object phase : phases) {
+			for (java.util.Map.Entry<Object, String> e : ordered.entrySet()) {
+				if (failed.contains(e.getKey())) continue;
+				try {
+					if (setActive != null) setActive.invoke(context, e.getKey());
+					try {
+						phased.invoke(e.getKey(), phase, event);
+					} finally {
+						if (setActive != null) setActive.invoke(context, (Object) null);
+					}
+				} catch (Throwable perMod) {
+					failed.add(e.getKey());
+					Throwable cause = perMod instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null
+							? ite.getCause() : perMod;
+					Caught.warn(cause, failure.apply(e.getValue()));
+				}
+			}
+		}
+		return ordered.size() - failed.size();
+	}
+
 	private static int deliverModBusEvent(ClassLoader cl, Method acceptEvent, Object event, String eventClassName) {
 		java.util.Map<String, Object> byId = new java.util.LinkedHashMap<>();
 		if (baselineContainer != null) byId.put("neoforge", baselineContainer);
@@ -1659,91 +1847,6 @@ public final class KernelLifecycle {
 	/** The game-side {@code net.neoforged.fml.ModContainer} class. */
 	private static Class<?> modContainerClass(ClassLoader cl) throws ClassNotFoundException {
 		return Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
-	}
-
-	/** Fires RegisterEvent for every registry (vanilla BuiltInRegistries + NeoForgeRegistries) on each bus. */
-	/**
-	 * Sorts the collected registries into NeoForge's OWN registration order, read from NeoForge at runtime.
-	 *
-	 * <p>The kernel used to fire {@code RegisterEvent} in the order the registries were COLLECTED, which is the
-	 * order {@code BuiltInRegistries} happens to declare its static fields in. NeoForge does not: its
-	 * {@code GameData.getRegistrationOrder()} hoists three registries to the front —
-	 * {@code minecraft:attribute}, {@code minecraft:data_component_type} and {@code minecraft:particle_type} —
-	 * before vanilla's own order and then everything else. Those three are hoisted precisely because a mod's block
-	 * and item definitions REFERENCE them while being constructed.
-	 *
-	 * <p>What the field order cost: {@code BuiltInRegistries} declares {@code ITEM} 57 fields before
-	 * {@code DATA_COMPONENT_TYPE}, so a {@code DeferredRegister} item whose builder reads its own mod's
-	 * {@code DataComponentType} threw "Trying to access unbound value" from {@code DeferredHolder.value()} — and
-	 * because one throw ends that mod's listener, EVERY item it had not registered yet was skipped. Waystones
-	 * registered 31 of its 31 blocks and 11 of its 48 items; the other 37 (warp stones, scrolls, shards, and every
-	 * portstone/sharestone block item) simply were not there. It stayed invisible while nothing read a Forge-family
-	 * mod's {@code data/}, and surfaced the moment {@link KernelDataPacks} did: waystones adds those item ids to the
-	 * VANILLA {@code minecraft:enchantable/durability} tag, the tag dropped for dangling references, and vanilla's
-	 * own mending/unbreaking/vanishing_curse failed to parse with it.
-	 *
-	 * <p>Read from NeoForge rather than hardcoded here: it is their contract, it has changed before, and a list
-	 * copied into the kernel would go stale silently. Unknown registries — a mod's own, mostly — keep their relative
-	 * order at the end, which is where NeoForge puts them too. Fail soft: no order available means today's order.
-	 */
-	private static List<Object> inNeoForgeRegistrationOrder(ClassLoader cl, Class<?> registryCls,
-			List<Object> registries) {
-		if ("off".equalsIgnoreCase(System.getProperty("forbric.neoRegistrationOrder", "on"))) {
-			ForbricLog.warn("[Forbric/Lifecycle] NeoForge registration order DISABLED "
-					+ "(-Dforbric.neoRegistrationOrder=off) — RegisterEvent fires in field-declaration order, so a "
-					+ "mod whose items read their own data components loses them");
-			return registries;
-		}
-		try {
-			Class<?> gameData = Class.forName(ForeignType.GAME_DATA.binary(Ecosystem.NEOFORGE), false, cl);
-			Object order = gameData.getMethod("getRegistrationOrder").invoke(null);
-			if (!(order instanceof java.util.Collection<?> ids) || ids.isEmpty()) return registries;
-
-			Map<String, Integer> rank = new java.util.HashMap<>();
-			int next = 0;
-			for (Object id : ids) rank.putIfAbsent(String.valueOf(id), next++);
-			int unranked = rank.size();
-
-			Method keyM = registryCls.getMethod("key");
-			Map<Object, Integer> ranked = new java.util.IdentityHashMap<>();
-			for (Object registry : registries) {
-				Object key = keyM.invoke(registry);
-				Object id = key.getClass().getMethod("identifier").invoke(key);
-				ranked.put(registry, rank.getOrDefault(String.valueOf(id), unranked));
-			}
-
-			List<Object> sorted = new ArrayList<>(registries);
-			// Stable, so everything NeoForge does not rank keeps the collection order the gates have proven.
-			sorted.sort(java.util.Comparator.comparingInt(r -> ranked.getOrDefault(r, unranked)));
-
-			int moved = 0;
-			for (int i = 0; i < sorted.size(); i++) {
-				if (sorted.get(i) != registries.get(i)) moved++;
-			}
-			if (moved > 0) {
-				ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent in NeoForge's registration order, not "
-						+ "BuiltInRegistries' field order — %d registr(ies) moved. attribute, data_component_type and "
-						+ "particle_type go first because mods' block and item builders read them", moved);
-			}
-			return sorted;
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] no NeoForge registration order available — firing RegisterEvent in "
-					+ "collection order; a mod whose items read their own data components may lose them");
-			return registries;
-		}
-	}
-
-	private static int fireRegisterEvents(ClassLoader cl, List<Object> buses) throws Exception {
-		boolean neoOrder = !"off".equalsIgnoreCase(System.getProperty("forbric.neoRegistrationOrder", "on"));
-		if (!neoOrder) {
-			ForbricLog.warn("[Forbric/Lifecycle] NeoForge registration order DISABLED "
-					+ "(-Dforbric.neoRegistrationOrder=off) — RegisterEvent fires in field-declaration order, so a "
-					+ "mod whose items read their own data components loses them");
-		}
-		Class<?> gameSide = neoRegistryClass(cl);
-		Object registries = gameSide.getMethod("collect", boolean.class).invoke(null, neoOrder);
-		return (int) gameSide.getMethod("fireRegisterEvents", List.class, List.class)
-				.invoke(null, buses, registries);
 	}
 
 	/** The game-side half of NeoForge's registry phase. */

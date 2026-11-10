@@ -1,0 +1,1 @@
+{"required": true, "package": "fixture.registerevents.mixin", "compatibilityLevel": "JAVA_21", "mixins": ["GameDataMixin"], "injectors": {"defaultRequire": 1}}

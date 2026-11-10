@@ -173,12 +173,10 @@ public final class KernelRuntimeClasses {
 		// The NeoForge setup phases: NeoForge dispatches on a per-mod IEventBus. See KernelNeoSetup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoSetup", new Entry(Origin.COMPILED, List.of(
 				new Call("firePhase", int.class, Map.class, net.forbric.api.ForeignType.class, String.class))));
-		// NeoForge's registry phase: NewRegistryEvent, then RegisterEvent for every registry in NeoForge's own
-		// order. Which buses and which order stay boot-side, as does the unfreeze/freeze window it all runs inside.
-		// See KernelNeoRegistries.
+		// NeoForge's registry phase: NewRegistryEvent on the mods' buses. RegisterEvent is posted by NeoForge's own
+		// GameData.postRegisterEvents (RegisterEventsSeam); which buses stay boot-side, as does the unfreeze/freeze
+		// window it all runs inside. See KernelNeoRegistries.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoRegistries", new Entry(Origin.COMPILED, List.of(
-				new Call("collect", List.class, boolean.class),
-				new Call("fireRegisterEvents", int.class, List.class, List.class),
 				new Call("postNewRegistryEvent", int.class, List.class))));
 		// Materialises the kernel's own annotation scan into NeoForge's ModFileScanData. The scan itself is
 		// boot-side bytecode work; only this last step needs game types. See ModFileScanner.
@@ -193,7 +191,7 @@ public final class KernelRuntimeClasses {
 		// Vanilla's compostables map behind NeoForge's data map: NeoForge's ComposterBlock's bootStrap records vanilla's
 		// own entries and its four composter sites ask the rest (CompostablesFallbackInjector); no boot-side call.
 		CLASSES.put("net.forbric.kernel.runtime.KernelCompostables", new Entry(Origin.COMPILED, List.of()));
-		// NeoForge's item tooltip appenders, built once from the kernel's copy of postRegisterEvents' tail; also the
+		// NeoForge's item tooltip appenders, built once from postRegisterEvents' own tail step (RegisterEventsSeam); also the
 		// per-container delivery NeoTooltipAppendersInjector sends ItemTooltipHandler.init's event through.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoTooltips", new Entry(Origin.COMPILED, List.of(
 				new Call("init", void.class))));

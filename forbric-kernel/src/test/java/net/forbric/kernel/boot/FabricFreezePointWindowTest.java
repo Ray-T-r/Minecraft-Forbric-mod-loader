@@ -98,6 +98,7 @@ class FabricFreezePointWindowTest {
 	private static final String OPEN_ROOT = "open root";
 	private static final String CLOSE_ROOT = "close root";
 	private static final String CLOSE_WINDOW = "close window";
+	private static final String DISPATCH = "RegisterEvent dispatch";
 	private static final String RETURN = "return";
 	private static final String THROW = "throw";
 
@@ -154,37 +155,50 @@ class FabricFreezePointWindowTest {
 	/**
 	 * A server freezes where Fabric's {@code MainMixin.afterModInit} does: after every main, inside the span the root
 	 * registry is open for them — Create Fly creates its registries there when fabric-api is absent — and the TAIL
-	 * half only once the registration window is frozen again.
+	 * half only once the registration window is frozen again. Since K3 the mains run from
+	 * {@code runFabricMainsInTheWindow}, which NeoForge's own {@code GameData.postRegisterEvents} reaches where its
+	 * dispatch loop ends ({@code dispatchRegisterEvents}, through {@code RegisterEventsSeam}); the TAIL half stays in
+	 * {@code registerNeoForgeContent}'s finally, after that dispatch.
 	 */
 	@Test
 	void theServerReachesHeadAfterItsMainsWithTheRootOpenAndTailAfterTheWindowFreezes() throws Exception {
+		MethodNode mains = method("runFabricMainsInTheWindow");
+		Walk inWindow = walk(mains, mains.instructions.getFirst(), Set.of(OPEN_ROOT, MAINS, HEAD, CLOSE_ROOT), false, false);
+		assertEquals(Set.of(List.of(OPEN_ROOT, MAINS, HEAD, CLOSE_ROOT, RETURN)), inWindow.exits(),
+				"runFabricMainsInTheWindow on a dedicated server, run through");
+
 		MethodNode method = method("registerNeoForgeContent");
-
-		Walk run = walk(method, method.instructions.getFirst(),
-				Set.of(OPEN_ROOT, MAINS, HEAD, CLOSE_ROOT, CLOSE_WINDOW, TAIL), false, false);
-
+		Walk run = walk(method, method.instructions.getFirst(), Set.of(DISPATCH, MAINS, HEAD, CLOSE_WINDOW, TAIL), false, false);
 		assertEquals(Set.of(
-				List.of(OPEN_ROOT, MAINS, HEAD, CLOSE_ROOT, CLOSE_WINDOW, TAIL, RETURN),
+				List.of(DISPATCH, CLOSE_WINDOW, TAIL, RETURN),
 				// The `if (closeWindow)` the bytecode cannot see is always true here.
-				List.of(OPEN_ROOT, MAINS, HEAD, CLOSE_ROOT, TAIL, RETURN)), run.exits(),
-				"registerNeoForgeContent on a dedicated server, run through");
+				List.of(DISPATCH, TAIL, RETURN)), run.exits(),
+				"registerNeoForgeContent on a dedicated server, run through: the mains and the HEAD half only inside the "
+						+ "RegisterEvent dispatch, the TAIL half after the window closes");
 	}
 
 	@Test
 	void everyWayOutOfTheServerMainsReachesBothHalvesInOrder() throws Exception {
-		MethodNode method = method("registerNeoForgeContent");
+		MethodNode method = method("runFabricMainsInTheWindow");
 		AbstractInsnNode mains = onlyCall(method, "runMainEntrypoints");
 
-		Walk out = walk(method, mains, Set.of(HEAD, CLOSE_ROOT, CLOSE_WINDOW, TAIL), false, true);
+		Walk out = walk(method, mains, Set.of(HEAD, CLOSE_ROOT), false, true);
 
-		assertEquals(Set.of(
-				List.of(HEAD, CLOSE_ROOT, CLOSE_WINDOW, TAIL, RETURN),
-				List.of(HEAD, CLOSE_ROOT, TAIL, RETURN),
-				List.of(HEAD, CLOSE_ROOT, CLOSE_WINDOW, TAIL, THROW),
-				List.of(HEAD, CLOSE_ROOT, TAIL, THROW)), out.exits(),
-				"every path from runMainEntrypoints to the end of registerNeoForgeContent on a dedicated server, a "
+		assertEquals(Set.of(List.of(HEAD, CLOSE_ROOT, RETURN), List.of(HEAD, CLOSE_ROOT, THROW)), out.exits(),
+				"every path from runMainEntrypoints to the end of runFabricMainsInTheWindow on a dedicated server, a "
 						+ "throwing one included");
 		assertTrue(out.visited().containsAll(calls(method, "fabricFreezePoint")),
+				"a copy of a finally was never walked, so never checked");
+
+		MethodNode window = method("registerNeoForgeContent");
+		Walk after = walk(window, onlyCall(window, "dispatchRegisterEvents"), Set.of(CLOSE_WINDOW, TAIL), false, true);
+		assertEquals(Set.of(
+				List.of(CLOSE_WINDOW, TAIL, RETURN),
+				List.of(TAIL, RETURN),
+				List.of(CLOSE_WINDOW, TAIL, THROW),
+				List.of(TAIL, THROW)), after.exits(),
+				"every path from the RegisterEvent dispatch to the end of registerNeoForgeContent reaches the TAIL half");
+		assertTrue(after.visited().containsAll(calls(window, "fabricFreezePoint")),
 				"a copy of a finally was never walked, so never checked");
 	}
 
@@ -207,6 +221,11 @@ class FabricFreezePointWindowTest {
 		List<AbstractInsnNode> sites = calls(method, "fabricFreezePoint");
 		assertFalse(sites.isEmpty(), "registerNeoForgeContent no longer calls the freeze point at all");
 		assertFalse(sites.stream().anyMatch(client.visited()::contains), "a client reaches a fabricFreezePoint call");
+
+		MethodNode mains = method("runFabricMainsInTheWindow");
+		Walk clientMains = walk(mains, mains.instructions.getFirst(), Set.of(HEAD, TAIL), true, true);
+		assertEquals(Set.of(List.of(RETURN), List.of(THROW)), clientMains.exits(),
+				"on a client the Fabric step of the RegisterEvent dispatch must reach neither half of the freeze point");
 	}
 
 	@Test
@@ -533,6 +552,7 @@ class FabricFreezePointWindowTest {
 			case "rootRegistry" -> argument != null && argument.getOpcode() == Opcodes.ICONST_1 ? OPEN_ROOT
 					: argument != null && argument.getOpcode() == Opcodes.ICONST_0 ? CLOSE_ROOT : "rootRegistry(?)";
 			case "closeClientEntrypointWindow", "closeRegistrationWindow" -> CLOSE_WINDOW;
+			case "dispatchRegisterEvents" -> DISPATCH;
 			default -> null;
 		};
 	}

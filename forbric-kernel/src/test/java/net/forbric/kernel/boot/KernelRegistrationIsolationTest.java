@@ -44,22 +44,20 @@ class KernelRegistrationIsolationTest {
 			Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main").normalize();
 
 	@Test
-	void fireRegisterEventsCannotTakeTheRestOfTheWindowWithIt() throws Exception {
-		// It resolves a GAME-side class reflectively, so a LinkageError inside it reaches the window's outer
-		// catch and skips everything after: the Fabric main entrypoints, the attribute events, the spawn-placement event, BlockEntityTypeAddBlocksEvent and the modded creative-tab
-		// categories. The one WARN that reported it blamed the window rather than the call.
+	void theRegisterEventDispatchCannotTakeTheRestOfTheWindowWithIt() throws Exception {
+		// NeoForge's GameData.postRegisterEvents is called reflectively, so a LinkageError or NeoForge's own roll-back
+		// throw reaches dispatchRegisterEvents. It must stop there: the window's outer catch would skip the Fabric main
+		// entrypoints (run from the finally, if the seam never reached them), the content report and everything after.
+		// The handler that covers the call must NOT also cover the finally's Fabric step, or a failure takes it too.
+		MethodNode dispatch = method("net/forbric/kernel/boot/KernelLifecycle", "dispatchRegisterEvents");
+		assertTrue(dispatch != null,
+				"KernelLifecycle.dispatchRegisterEvents not found in the compiled src/main classes, which exist before any "
+						+ "test runs");
+		assertTrue(caughtAndIsolatedFrom(dispatch, "postRegisterEvents", "runAfterDispatch"),
+				"postRegisterEvents must sit in a Throwable handler of its own that does not also cover the Fabric step");
 		MethodNode window = method("net/forbric/kernel/boot/KernelLifecycle", "registerNeoForgeContent");
-		assertTrue(window != null,
-				"KernelLifecycle.registerNeoForgeContent not found in the compiled src/main classes, which exist "
-						+ "before any test runs");
-
-		// "Is it inside SOME try block" is not the question, and asking it is how this assertion was toothless
-		// for its first draft: the whole window body already sits in one. The question is whether the handler
-		// that covers this call ALSO covers the work that has to survive it. NeoForge's entity-attribute events
-		// (postAttributeEvents) are that work.
-		assertTrue(isolatedFrom(window, "fireRegisterEvents", "postAttributeEvents"),
-				"fireRegisterEvents must sit in a handler that does NOT also cover postAttributeEvents, or a "
-						+ "LinkageError inside it still takes the attribute events and everything after them");
+		assertTrue(window != null && indexOfCall(window, "dispatchRegisterEvents") >= 0,
+				"registerNeoForgeContent must dispatch RegisterEvent through dispatchRegisterEvents");
 	}
 
 	@Test
@@ -71,8 +69,22 @@ class KernelRegistrationIsolationTest {
 				"KernelLifecycle.registerNeoForgeContent not found in the compiled src/main classes, which exist "
 						+ "before any test runs");
 
-		assertTrue(isolatedFrom(window, "registerAll", "postAttributeEvents"),
+		assertTrue(isolatedFrom(window, "registerAll", "dispatchRegisterEvents"),
 				"KernelEventSubscribers.registerAll is guarded for the same reason and its comment says so");
+	}
+
+	/** True when a catch-all (Throwable) handler covers {@code calleeName} and does NOT cover {@code survivorName}. */
+	private static boolean caughtAndIsolatedFrom(MethodNode method, String calleeName, String survivorName) {
+		int at = indexOfCall(method, calleeName);
+		int survivor = indexOfCall(method, survivorName);
+		if (at < 0 || survivor < 0) return false;
+		for (TryCatchBlockNode block : method.tryCatchBlocks) {
+			if (!"java/lang/Throwable".equals(block.type)) continue;
+			int start = method.instructions.indexOf(block.start);
+			int end = method.instructions.indexOf(block.end);
+			if (at > start && at < end && !(survivor > start && survivor < end)) return true;
+		}
+		return false;
 	}
 
 	/**

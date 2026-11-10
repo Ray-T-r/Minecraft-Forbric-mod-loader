@@ -33,8 +33,9 @@ import net.neoforged.neoforge.event.RegisterTooltipAppendersEvent;
  * <p>NeoForge's {@code ItemStack.addDetailsToTooltip} is a dispatcher: it walks the head, middle and tail
  * appender lists {@code ItemTooltipHandler.init} fills — every vanilla component line (enchantments, lore, attribute
  * modifiers, potion effects, durability, …) and every mod's. Its only caller is {@code GameData.postRegisterEvents},
- * which the kernel replaces with its own copy of the tail, and that copy left it out: tooltips showed the name and
- * the item's own lines and nothing else. The kernel's tail calls {@link #init} in its place.
+ * whose tail the kernel once copied, and that copy left it out: tooltips showed the name and the item's own lines and
+ * nothing else. The method runs as NeoForge ships it now, and RegisterEventsSeam hands its {@code init} step to
+ * {@code KernelLifecycle.onRegisterEventsTailStep}, which calls {@link #init} (once, and only with the switch on).
  *
  * <p>{@code init} posts {@code RegisterTooltipAppendersEvent} through {@code ModLoader.postEvent}, which stops at the
  * first mod that throws and cost every later mod its appenders; NeoTooltipAppendersInjector sends it through the

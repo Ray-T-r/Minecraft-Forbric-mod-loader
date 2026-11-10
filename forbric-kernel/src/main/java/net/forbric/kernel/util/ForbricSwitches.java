@@ -59,6 +59,8 @@ public final class ForbricSwitches {
 
 	/** Retired name → why setting it changes nothing. */
 	static final Map<String, String> RETIRED = Map.ofEntries(
+			Map.entry("forbric.neoRegistrationOrder", "RegisterEvent is posted by NeoForge's own GameData.postRegisterEvents, which "
+					+ "walks NeoForge's registration order itself; the kernel has no order of its own left to switch off"),
 			Map.entry("forbric.dragonParts", "the multipart entity hierarchy is the base's own (NeoForge's PartEntity), "
 					+ "so there is no runtime rewrite left to switch off"),
 			Map.entry("forbric.fluidInteractionCallbacks", "a fluid callback on vanilla's spread decision is no longer moved onto the carriers' "

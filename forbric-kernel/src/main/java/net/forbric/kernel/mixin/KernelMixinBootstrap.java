@@ -167,6 +167,10 @@ public final class KernelMixinBootstrap {
 			byte[] woven = net.forbric.kernel.transform.NativeCoremodParity.apply(name,
 					MixinWeaverSlot.currentOr(transformer).transformClassBytes(name, name, bytes));
 			woven = PostMixinFixups.apply(name, woven);
+			// After every mixin on NeoForge's GameData.postRegisterEvents has bound to the calls it names: the kernel's needs
+			// at those calls (RegisterEventsSeam). Not behind PostMixinFixups' switch: without it the method's dispatch is
+			// NeoForge's own, unguarded.
+			woven = net.forbric.kernel.transform.RegisterEventsSeam.afterMixin(name, woven);
 			woven = UncalledValueRelay.apply(name, bytes, woven);
 			woven = conflicts.transform(name, bytes, woven);
 			woven = codecReturns.transform(name, woven, null);

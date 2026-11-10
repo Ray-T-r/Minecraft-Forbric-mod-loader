@@ -120,9 +120,11 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #                                      judged" (both read mods' own data).
 #   -Dforbric.aliasPresenceParity=off -> 2 red ("registry alias parity restored", and "no alias warns that its target is
 #                                      missing": 134 such warnings, as C3 counted).
-#   -Dforbric.neoRegistrationOrder=off -> 35 red: "NeoForge registration order", "no unbound data component" (16),
-#                                      "no RegisterEvent listener failed" (8), "no tag lost to a dangling id" (60) and the
-#                                      world: the client never joins (the registry load fails), so every in-world check.
+#   -Dforbric.neoRegistrationOrder is RETIRED (K3): RegisterEvent is posted by NeoForge's own GameData.postRegisterEvents,
+#                                      which walks NeoForge's registration order itself, so the kernel has no order of its
+#                                      own to switch off. Its red (35, measured on the merged base and C4) showed what field
+#                                      order costs; "NeoForge registration order" now checks the line that says NeoForge's
+#                                      method posted it, and "no unbound data component" is the symptom check.
 #   -Dforbric.lootModifierIndex=off -> 2 red: "no data file fails to parse" names neoforge:global_loot_modifiers again,
 #                                      and "loot-modifier scan ran and hid the legacy index" is gone.
 #   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
@@ -368,9 +370,9 @@ check "field-drift audit ran over the whole pack" "Forbric/FieldDrift\] scanned 
 check_absent "no pack jar reads a re-typed vanilla field" "Forbric/FieldDrift\] .* reads .* \(cost" "$LOG"
 
 step "a NeoForge mod's own content and data actually arrived (must PASS)"
-# Three fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off,
-# -Dforbric.aliasPresenceParity=off, -Dforbric.neoRegistrationOrder=off each turn this gate RED (measured on NeoForge's
-# base: 3, 2 and 35 red, listed in the recipe list at the top).
+# Fixes that only this pack exercises, each demonstrable: -Dforbric.modDataPacks=off and -Dforbric.aliasPresenceParity=off
+# each turn this gate RED (measured on NeoForge's base: 3 and 2 red, listed in the recipe list at the top). The registration
+# order is NeoForge's own since K3 (GameData.postRegisterEvents posts RegisterEvent), so it has no switch any more.
 check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* datapack"             "$LOG"
 # The carrier is where the c: convention-tag skeleton lives — tag files that exist in NO other jar, and that every
 # cross-mod recipe is written against. Assert the NUMBER: the line keeps printing when the count goes to zero. One

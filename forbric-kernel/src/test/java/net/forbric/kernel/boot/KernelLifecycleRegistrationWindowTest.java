@@ -81,7 +81,7 @@ class KernelLifecycleRegistrationWindowTest {
 				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
 		MethodNode content = method(node, "registerNeoForgeContent");
 		int open = firstCall(content, "openRegistrationWindow");
-		int register = firstCall(content, "fireRegisterEvents");
+		int register = firstCall(content, "dispatchRegisterEvents");
 		assertTrue(open >= 0, "registerNeoForgeContent must open its window through openRegistrationWindow");
 		assertTrue(register > open, "the window must be open before RegisterEvent fires");
 		MethodNode opening = method(node, "openRegistrationWindow");
