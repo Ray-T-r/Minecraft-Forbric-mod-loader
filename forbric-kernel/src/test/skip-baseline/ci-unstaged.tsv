@@ -1550,6 +1550,11 @@ test	net.forbric.kernel.runtime.KernelNeoConditionsOverlayTest	aForeignCondition
 test	net.forbric.kernel.runtime.KernelNeoConditionsOverlayTest	switchedOffTheOverlayScopeIsIdentity()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.runtime.KernelNeoConfigLoadShapeTest	theEarlyPassOpensPerConfigAndBothPassesMarkTheCatalogue()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.runtime.KernelNeoWorldgenTest	theWatchRegistersThreeLowestPriorityListenersThroughTheFourArgumentOverload()	[fixture:staged] the staged artifacts are absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	aFabricModsOwnCallTakesOverTheStatesTheCallbackMappedToItsType()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	aStateAnotherTypeHoldsStillThrows()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	codeThatIsNotAFabricModsGetsVanillasBodyUntouched()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	mappingTheSameStatesTwiceStillThrowsAsOnFabric()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.KernelPoiStatesTest	withoutTheCallbackAFabricCallMapsExactlyAsVanillaDoes()	[fixture:staged] the staged game is absent
 test	net.forbric.kernel.runtime.KernelRuntimePackMetadataTest	theRuntimePackMetadataParsesStrictlyAndCoversTheGamesResourceVersion()	[fixture:staged] the staged merged game is absent
 test	net.forbric.kernel.runtime.KernelShearsTest	askedAboutAnythingElseItMakesTheVanillaCall()	[fixture:game-side] game-side classes required
 test	net.forbric.kernel.runtime.KernelShearsTest	askedAboutShearsItAsksTheCarrierAboutTheStackItWasHanded()	[fixture:game-side] game-side classes required
@@ -1762,6 +1767,9 @@ test	net.forbric.kernel.transform.MergedBasePipBridgeTest	theBridgeDescriptorMat
 test	net.forbric.kernel.transform.MergedBasePipBridgeTest	thePooledLookupFallsThroughInsteadOfGivingUp()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBasePipBridgeTest	transformedMethodsAnalyseCleanly()	[fixture:staged] staged merged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.MergedBasePipelineDriftTest	everyNumericDifferenceFromVanillaIsOneTheKernelRepairs()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
+test	net.forbric.kernel.transform.MergedBasePoiStatesTest	registerBlockStatesAsksTheKernelFirstAndOtherwiseRunsVanillasBody()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/entity/ai/village/poi/PoiTypes.class)
+test	net.forbric.kernel.transform.MergedBasePoiStatesTest	theBaseStillMapsTwiceSoTheRepairHasSomethingToDo()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/entity/ai/village/poi/PoiTypes.class)
+test	net.forbric.kernel.transform.MergedBasePoiStatesTest	theInsertedCallNamesTheRuntimeHelpersRealMethod()	[fixture:staged] the staged game is absent
 test	net.forbric.kernel.transform.MergedBaseRandomSourcePrecisionTest	theMergedBaseScalesItsRandomBitsInFloatAndTheRepairPutsItBackInDouble()	[fixture:staged] merged base not staged: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseRepairClaimsStagedTest	everyClaimLandsOnItsStagedTargetAndTheLedgerIsClean()	[fixture:staged] staged merged base or carriers absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseRepairClaimsStagedTest	whenOneRepairDeclinesTheLedgerNamesExactlyThatClaim()	[fixture:staged] staged merged base or carriers absent: $ROOT/forbric-loader/run/merged-base/patched-mc-merged-26.2.jar
