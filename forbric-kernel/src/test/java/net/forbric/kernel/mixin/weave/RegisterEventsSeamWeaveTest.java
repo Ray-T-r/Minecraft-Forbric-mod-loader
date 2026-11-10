@@ -47,11 +47,13 @@ class RegisterEventsSeamWeaveTest {
 	@TempDir static Path work;
 	private static WeaveHarness.Result seam;
 	private static WeaveHarness.Result spawnThrows;
+	private static WeaveHarness.Result guestThrows;
 
 	@BeforeAll static void weaveAll() throws Exception {
 		Path fixture = WeaveHarness.fixture(work, MOD, sources(), Map.of(CONFIG, SOURCES.resolve(CONFIG)));
-		seam = run(fixture, "seam", "false");
-		spawnThrows = run(fixture, "spawn-throws", "true");
+		seam = run(fixture, "seam", "false", "false");
+		spawnThrows = run(fixture, "spawn-throws", "true", "false");
+		guestThrows = run(fixture, "guest-throws", "false", "true");
 	}
 
 	@Test void theGuestsMixinRunsOnceAtHeadAndOncePerRegistry() {
@@ -76,6 +78,33 @@ class RegisterEventsSeamWeaveTest {
 		assertEquals(1, occurrences(trace, "kernel:fabric-mains"), seam.describe());
 		assertTrue(seam.printed("[Forbric/Lifecycle] fired RegisterEvent x3 on 4 bus(es) [NeoForge baseline + 3 mod(s)]"),
 				seam.describe());
+		// ModLoader.postEvent walks ModList.sortedContainers phase by phase, none of them active: the tail's mod-bus event
+		// goes the same way, not in the hash order of the kernel's published-mod map.
+		assertEquals(List.of("neoforge:BlockEntityTypeAddBlocksEvent(not active)", "first:BlockEntityTypeAddBlocksEvent(not active)",
+				"thrower:BlockEntityTypeAddBlocksEvent(not active)", "last:BlockEntityTypeAddBlocksEvent(not active)"),
+				Arrays.stream(trace.split(",")).filter(s -> s.contains(":BlockEntityTypeAddBlocksEvent")).toList(),
+				seam.describe());
+	}
+
+	/**
+	 * A throw inside NeoForge's per-registry try but outside the kernel's delivery — here a guest handler woven after the
+	 * dispatch call — is NeoForge's own: every registry still gets its event, then NeoForge rolls every registry back to
+	 * vanilla and throws before its tail. The kernel carries on (it has no loading-error screen), so the Fabric step still
+	 * runs once, and what it says names the roll-back and its cause rather than "could not fire RegisterEvent".
+	 */
+	@Test void aGuestThrowInsideNeoForgesTryIsNeoForgesRollBackAndIsNamedSo() {
+		String trace = trace(guestThrows);
+		assertTrue(trace.startsWith("posted=0 "), guestThrows.describe());
+		assertEquals(1, occurrences(trace, "revertToVanilla"), guestThrows.describe());
+		assertEquals(List.of("mixin:after:a", "mixin:after:c"),
+				Arrays.stream(trace.split(",")).filter(s -> s.startsWith("mixin:after:")).toList(), guestThrows.describe());
+		assertTrue(trace.indexOf("revertToVanilla") < trace.indexOf("kernel:fabric-mains"), guestThrows.describe());
+		assertEquals(1, occurrences(trace, "kernel:fabric-mains"), guestThrows.describe());
+		assertEquals(0, occurrences(trace, "tail:"), "NeoForge throws before its tail — " + guestThrows.describe());
+		assertTrue(guestThrows.printed("[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents failed for 1 registr(ies) "
+				+ "and rolled EVERY registry back to vanilla"), guestThrows.describe());
+		assertTrue(guestThrows.printed("the guest's handler failed on b"), guestThrows.describe());
+		assertTrue(!guestThrows.printed("could not fire RegisterEvent"), guestThrows.describe());
 	}
 
 	@Test void aTailStepThatThrowsCostsOnlyItself() {
@@ -88,10 +117,12 @@ class RegisterEventsSeamWeaveTest {
 				spawnThrows.describe());
 	}
 
-	private static WeaveHarness.Result run(Path fixture, String label, String spawnThrowsProperty) throws Exception {
+	private static WeaveHarness.Result run(Path fixture, String label, String spawnThrowsProperty, String guestThrowsProperty)
+			throws Exception {
 		return WeaveHarness.run(work, label, fixture, CONFIG, MOD, Ecosystem.NEOFORGE, EnvType.SERVER,
 				"fixture.registerevents.Probe", "run",
-				Map.of(KernelLifecycle.NEO_TOOLTIP_APPENDERS, "off", "fixture.registerevents.spawnThrows", spawnThrowsProperty));
+				Map.of(KernelLifecycle.NEO_TOOLTIP_APPENDERS, "off", "fixture.registerevents.spawnThrows", spawnThrowsProperty,
+						"fixture.registerevents.guestThrows", guestThrowsProperty));
 	}
 
 	private static String trace(WeaveHarness.Result run) {

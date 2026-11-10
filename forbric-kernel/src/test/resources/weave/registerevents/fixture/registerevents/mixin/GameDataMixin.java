@@ -14,7 +14,8 @@ import net.neoforged.neoforge.registries.RegisterEvent;
 /**
  * A guest mixin on NeoForge's GameData.postRegisterEvents: one injector at HEAD, and supermartijn642corelib's
  * GameDataMixin shape — a @ModifyVariable on the event local's STORE and an @Inject after the
- * ModLoader.postEventWrapContainerInModOrder call that reads it back, once per registry.
+ * ModLoader.postEventWrapContainerInModOrder call that reads it back, once per registry. The second can be told to throw
+ * on one registry, as a guest handler woven inside NeoForge's per-registry try might.
  */
 @Mixin(value = GameData.class, remap = false)
 public class GameDataMixin {
@@ -36,6 +37,11 @@ public class GameDataMixin {
 			target = "Lnet/neoforged/fml/ModLoader;postEventWrapContainerInModOrder(Lnet/neoforged/bus/api/Event;)V",
 			shift = At.Shift.AFTER), remap = false)
 	private static void afterDispatch(CallbackInfo info) {
+		// With -Dfixture.registerevents.guestThrows, this handler throws on registry b: inside NeoForge's per-registry try
+		// but outside the kernel's delivery, so NeoForge's own roll-back runs.
+		if (Boolean.getBoolean("fixture.registerevents.guestThrows") && "b".equals(registerEvent.getRegistryKey())) {
+			throw new IllegalStateException("the guest's handler failed on b");
+		}
 		Trace.add("mixin:after:" + registerEvent.getRegistryKey());
 	}
 }
