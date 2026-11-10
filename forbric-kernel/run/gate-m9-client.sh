@@ -123,8 +123,8 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #   -Dforbric.neoRegistrationOrder is RETIRED (K3): RegisterEvent is posted by NeoForge's own GameData.postRegisterEvents,
 #                                      which walks NeoForge's registration order itself, so the kernel has no order of its
 #                                      own to switch off. Its red (35, measured on the merged base and C4) showed what field
-#                                      order costs; "NeoForge registration order" now checks the line that says NeoForge's
-#                                      method posted it, and "no unbound data component" is the symptom check.
+#                                      order costs; "no unbound data component" is the symptom check, and the client's seam
+#                                      pair below (C5 wave 2b) replaced the presence check of the method's own line.
 #   -Dforbric.lootModifierIndex=off -> 2 red: "no data file fails to parse" names neoforge:global_loot_modifiers again,
 #                                      and "loot-modifier scan ran and hid the legacy index" is gone.
 #   -Dforbric.blockStateCaches=off -> 1 red ("every block state's cache is computed"). Off, a block a mod
@@ -389,7 +389,17 @@ check "the carrier sits below the mods" "datapack\(s\) to the server PackReposit
 # says so from the log's side: 134 such lines in this gate's log with -Dforbric.aliasPresenceParity=off (C3).
 check "registry alias parity restored" "Forbric/Aliases\] post-mixin repair: net.minecraft.core.MappedRegistry.addAlias no longer warns" "$LOG"
 check_absent "no alias warns that its target is missing" "but the latter doesn't exist" "$LOG"
-check "NeoForge registration order"    "fired RegisterEvent in NeoForge.s registration order"  "$LOG"
+# RegisterEvent is posted by NeoForge's own GameData.postRegisterEvents (K3), with the kernel's seam on its call sites.
+# The method's own line ("fired RegisterEvent in NeoForge's registration order") prints whether the seam applied or not,
+# so a check on it could not go red (K3 review B-3); this gate checked it until C5 wave 2b. gate-m1 checks the seam on a
+# dedicated server; this pair is the CLIENT's, after Mixin has woven whatever this pack aims at the method: if that
+# leaves a shape the seam does not know, the seam stands down and NeoForge's method runs as shipped (one mod's throwing
+# listener rolls every registry back), and only this pair says so. RED, measured C5 wave 2b on a clone with the seam
+# never applied (K3's no-seam mutation, c5/g-c/w2b/m9-noseam): see the record.
+check "the client's postRegisterEvents carries the kernel's seam" \
+  "GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: .* [0-9]+ tail step" "$LOG"
+check_absent "the client's postRegisterEvents is the shape the seam knows" \
+  "GameData.postRegisterEvents is not the shape the kernel knows" "$LOG"
 # A mod whose items name their own data components: with RegisterEvent in field order the item registry is filled
 # 57 registries too early, DeferredHolder.value() throws, and the mod loses every item it had not reached yet.
 check_absent "no unbound data component" "Trying to access unbound value"                      "$LOG"
