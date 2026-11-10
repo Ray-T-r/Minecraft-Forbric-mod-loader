@@ -20,15 +20,18 @@
 #
 # THE NEGATIVE CONTROL (D48): M14_EXTRA_JVM=-Dforbric.fabricRegistryInitialization=off keeps fabric-registry-sync's
 # BootstrapMixin / MainMixin / client MinecraftMixin suppressed, so fabric-api's sync never tracks the block-state id
-# list. Measured on NeoForge's base (C5, 2026-11-09): 32 PASS / 1 FAIL, exactly one red, "the shared mod's block reads back
-# as itself", with the item, the vanilla control, the join, the capture line, the id move and put-back, the revert and the
-# clean leave green; the same gate without the switch is 33 PASS / 0 FAIL. What the client read back is NOT the expected
-# outcome of an unsynced list: a native one (vanilla, then the canary, then mcwbridges) would put the server's bridge id on
-# a neighbouring canary or mcwbridges state, but this client read a VANILLA block (minecraft:note_block[...]). Its own
-# block-state id list is not native -- the same defect gate-m13 shows on a vanilla server (a NeoForge mod's states at
-# vanilla ids), escalated to a kernel lane in C5 wave 2. Re-measure this control after that fix; expect a mcwbridges or
-# canary state in the read-back. (A C5 planning run's 32/5 against the gate before this rewrite counted the four MinecraftForge-wrapper checks
-# deleted below; its log was lost with the old scratchpad, D67, and this run replaces it.)
+# list. Measured on NeoForge's base (C5, 2026-11-11, lane K1's review, c5/k1/gates/rf-m14-*): 33 PASS / 1 FAIL, exactly
+# one red, "the shared mod's block reads back as itself, state and all": the client reads
+# mcwbridges:andesite_bridge[connection=base] where the server holds [connection=middle_ns] (the server confirms its
+# state, "Test passed"), with the item, the vanilla control, the join, the capture line, the id move and put-back, the
+# revert and the clean leave green; the same gate without the switch is 34 PASS / 0 FAIL. That is the expected outcome of
+# an unsynced list: the client's own block-state list is native (vanilla, then the canary, then mcwbridges), so the
+# server's id lands on a neighbouring state of the SAME block, which a name-only check passed (33/0 at lane K1, review
+# A-1); hence the full state. The same 33/1 and [connection=base] at the stage tip 7aaebbec, before lane K1's clear, so
+# what changed the read-back since the 2026-11-09 measurement (32/1, a VANILLA block, minecraft:note_block[...], when the
+# client's own list put a NeoForge mod's states at vanilla ids) is lane S's clear before the client window's freeze
+# (835ec80c; inferred, not measured without it). (A C5 planning run's 32/5 against the gate before this rewrite counted
+# the four MinecraftForge-wrapper checks deleted below; its log was lost with the old scratchpad, D67.)
 # (On the merged base the control was -Dforbric.forgeWrapperSync=off and the red was the item, held as a MOSSY
 # COBBLESTONE bridge: seventeen of the registries were MinecraftForge wrappers whose fields fabric-api's remap never
 # filled. The wrappers, their sync and its four checks went with MinecraftForge in Stage 4.)
@@ -73,6 +76,11 @@ CANARY="$KERNEL/run/canary/forbricfabriclive.jar"
 PLAYER="ForbricKernel"
 # A block the shared mod registers, and a vanilla control. Placed by the server, read back by the client.
 MOD_BLOCK="mcwbridges:andesite_bridge"
+# The full state the server holds after the setblock (its shape update gives the bridge a connection). The block probe
+# compares it whole: an unsynced state id usually lands on a neighbouring state of the SAME block, which a name-only check
+# passes (K1's review A-1). The server is asked whether it holds exactly this state, so the expectation is measured on the
+# server, not assumed.
+MOD_STATE="[connection=middle_ns]"
 MOD_ITEM="mcwbridges:andesite_bridge"
 VANILLA_BLOCK="minecraft:diamond_block"
 for f in "$LAUNCHER" "$FABRIC_API" "$SHARED" "$CANARY" "$UNIVERSAL_SOURCE"; do
@@ -155,7 +163,8 @@ for i in $(seq 1 300); do
   if [ "$PLACED" -eq 0 ] && grep -q 'ClientSmoke\] joined world' "$CGAME" 2>/dev/null; then
     echo "setblock 0 -57 4 $MOD_BLOCK" >&9; sleep 0.3
     echo "setblock 0 -57 6 $VANILLA_BLOCK" >&9; sleep 0.3
-    echo "give $PLAYER $MOD_ITEM 1" >&9
+    echo "give $PLAYER $MOD_ITEM 1" >&9; sleep 0.3
+    echo "execute if block 0 -57 4 $MOD_BLOCK$MOD_STATE" >&9
     PLACED=1; echo "[kernel] placed $MOD_BLOCK and $VANILLA_BLOCK, gave $MOD_ITEM at ~${i}s"
   fi
   grep -qE 'ClientSmoke\] clean disconnect observed|Game crashed|Mod Loading has failed|Network Protocol Error|Failed to connect|Client disconnected with reason' \
@@ -217,7 +226,9 @@ check "the probe item was given"       "Gave 1"                                 
 # deleted with MinecraftForge in Stage 4; the read-backs below and the id move/put-back are what they were for.)
 check "the client's pre-connection ids were captured" \
   "Forbric/RegistrySync\] captured the pre-connection ids of [1-9][0-9]* synced registr\(ies\)" "$CGAME"
-check "the shared mod's block reads back as itself" "block at \(0 -57 4\) is $MOD_BLOCK"   "$CGAME"
+check "the server holds the shared mod's block in the expected state" "Test passed" "$SLOG"
+check "the shared mod's block reads back as itself, state and all" \
+  "block at \(0 -57 4\) is $MOD_BLOCK .*state Block\{$MOD_BLOCK\}$(printf '%s' "$MOD_STATE" | sed 's/[][]/\\&/g')$" "$CGAME"
 check "the shared mod's item reads back as itself"  "hotbar slot 0 holds $MOD_ITEM "        "$CGAME"
 check "the vanilla control reads back as itself"    "block at \(0 -57 6\) is $VANILLA_BLOCK" "$CGAME"
 
