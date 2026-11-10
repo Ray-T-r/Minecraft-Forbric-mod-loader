@@ -18,7 +18,9 @@
 #              S2 -> S3 under the `upgrade` rules and S3 -> S4 under `reopen` must show 0 differences; every name S2
 #              refers to must be in the new registries (census); each canary reads back every value as written; the
 #              first new boot logs exactly one "Missing data pack" line, for the MinecraftForge carrier, and the second
-#              none; no other load error names anything.
+#              none; no other load error names anything. Every new client, here and in every phase below, logs no failed
+#              registry remap and no block-state id it cannot map, and leaves the particle provider view untracked (D74:
+#              what kept waystones and sophisticatedbackpacks out of this phase until K1 and K2).
 #   sp         the same save as a singleplayer world: an old client opens it (its own player is written there), then a
 #              new client twice -> S2c, S3c, S4c, the same rules.
 #   aa         reverse control C3, the A/A: the OLD kernel reopens a copy of S2 with an old client joining -> S2aa, and
@@ -93,7 +95,8 @@ FORGE_BRIDGES="${M58_FORGE_BRIDGES:-$RUN_OLD/downloads/forge-26.2/mcw-bridges-3.
 # waystones and sophisticatedbackpacks were held out of phase main (D74, a singleplayer phase `held`) while a new client
 # died joining a server with them: on fabric-registry-sync's particle remap, which sophisticatedcore's particle type reaches
 # (lane K2; balm, shogi and waystones register none, D80), and on the block-state ids of a dedicated server with
-# fabric-api (lane K1). Both are fixed, so they are back in main and phase held is gone.
+# fabric-api (lane K1). Both are fixed, so they are back in main and phase held is gone; every new client's log is asked
+# for the absence of both failures (new_client_checks).
 REAL_MODS=(
   "$NEO_BUILDS/mcw-bridges-3.1.2-mc26.2neoforge.jar"
   "$NEO_MODS/mcw-furniture-3.4.2-mc26.2neoforge.jar"
@@ -359,6 +362,26 @@ boot_checks() {  # boot_checks <log> <side>
   else check "the new launcher booted NeoForge's patched game" "\[kernel-launch\] base = .*patched-mc-neoforge-26\.2\.jar" "$1"; fi
 }
 
+# new_client_checks <client game log> <mp|sp> — what kept waystones and sophisticatedbackpacks out of phase main (D74)
+# stays out of every new client's log: fabric-registry-sync's remap failing on the kernel's particle provider view (K2:
+# "Registry remapping failed!", UnsupportedOperationException from its clear()) and a block-state id the client cannot map
+# (K1: "No value with id", the dedicated server's offset numbering). The particle provider view was asked to the remap
+# tracker and left untracked (K2's line, present on every new client, singleplayer too). Over the socket a mod registered
+# a particle type (sophisticatedcore), so the server's sync reaches the particle registry: the denominator for the first
+# absence. The old kernel predates both fixes and is not asked.
+new_client_checks() {
+  local log="$1" how="$2" where
+  where="$(basename "${log%.client.game.log}")"
+  if [ "$how" = mp ]; then
+    check "a mod registered a particle type, so the join's remap reaches the particle registry ($where)" \
+      "Forbric/Lifecycle\] registered content: .*particle_type=[1-9]" "$log"
+  fi
+  check "the remap tracker is not attached to the particle provider view ($where)" \
+    "Forbric/Particles\] fabric-registry-sync's remap tracker for ParticleEngine.providers is not attached" "$log"
+  check_absent "the new client's registry remap did not fail ($where)" "Registry remapping failed|UnsupportedOperationException" "$log"
+  check_absent "the new client mapped every block-state id it was sent ($where)" "No value with id" "$log"
+}
+
 # server_round <side> <dir> <label> <phase> <client-dir|-> [canary script properties...] — one server boot, an optional
 # client joining it over the socket, a clean stop. Logs: $LOGS/<label>.server.log and .client.log; canary JSON: $RESULTS/<label>.
 server_round() {
@@ -378,6 +401,7 @@ server_round() {
   if [ "$cli" != - ]; then
     if run_client "$side" "$cli" "$clog" mp; then echo "[kernel] PASS the $side client joined $label over the socket and left cleanly"
     else echo "[kernel] FAIL the $side client of $label did not join and leave cleanly ($clog)"; FAIL=1; fi
+    if [ "$side" = new ]; then new_client_checks "${clog%.log}.game.log" mp; fi
     wait_log "$log" 30 'left the game' >/dev/null
   fi
   stop_server "$dir" "$log"
@@ -392,6 +416,7 @@ sp_round() {
   jvm="$(canary_jvm "$phase" "$dir" "$dir/saves/UpgradeSP" "$out" "$@")"
   if run_client "$side" "$dir" "$log" sp $jvm; then echo "[kernel] PASS the $side client opened UpgradeSP ($label), saved it and left cleanly"
   else echo "[kernel] FAIL the $side client did not open and save UpgradeSP ($label; $log)"; FAIL=1; fi
+  if [ "$side" = new ]; then new_client_checks "${log%.log}.game.log" sp; fi
 }
 
 MAIN_MODS=("$FAPI" "${UPGRADE_JARS[@]}" "${REAL_MODS[@]}" "${LIB_MODS[@]}")
