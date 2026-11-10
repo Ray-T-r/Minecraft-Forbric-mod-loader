@@ -545,8 +545,8 @@ public final class KernelBoot {
 		chain.register(TransformPhase.COREMOD, new ForbricMergedBaseCompatTransformer());
 		// Both sides: fabric-registry-sync's int-map remap tracker is not attached to the particle provider view the
 		// transformer above installs, whose int keys are the particle registry's ids at every read; re-keying it on a
-		// remap moved providers twice and threw from its clear() (a client could not join a server whose mods register
-		// particle types). -Dforbric.particleViewDetach=off attaches it as written.
+		// remap would move providers twice, and as written it threw from the view's clear() (a client could not join a
+		// server whose mods register particle types). -Dforbric.particleViewDetach=off attaches it as written.
 		if (net.forbric.kernel.transform.ParticleViewTrackerInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.ParticleViewTrackerInjector());
 		}

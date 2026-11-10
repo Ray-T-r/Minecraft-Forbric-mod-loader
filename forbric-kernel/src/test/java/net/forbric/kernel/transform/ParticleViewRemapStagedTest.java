@@ -32,8 +32,12 @@ import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.InsnList;
 import org.objectweb.asm.tree.MethodInsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
@@ -59,8 +63,13 @@ class ParticleViewRemapStagedTest {
 	/** The server's order: every modded id moves, flame keeps 0. */
 	private static final List<String> REMAPPED = List.of("minecraft:flame", "sophisticatedcore:c", "balm:a", "balm:b");
 
+	/** fabric-registry-sync's mixin into MappedRegistry, whose remap(Object2IntMap, RemapMode) is the order in question. */
+	private static final String REGISTRY_MIXIN = "net/fabricmc/fabric/mixin/registry/sync/MappedRegistryMixin";
+	private static final String REMAP_EVENT = "fabric_getRemapEvent";
+
 	private static Path nested;
 	private static byte[] trackerBytes;
+	private static byte[] registryMixinBytes;
 
 	@BeforeAll static void extractFabricModules() throws IOException {
 		Path api = TestFixtures.fabricApi();
@@ -78,12 +87,14 @@ class ParticleViewRemapStagedTest {
 					try (ZipInputStream inner = new ZipInputStream(Files.newInputStream(out))) {
 						for (ZipEntry e = inner.getNextEntry(); e != null; e = inner.getNextEntry()) {
 							if (e.getName().equals(ParticleViewTrackerInjector.TRACKER + ".class")) trackerBytes = inner.readAllBytes();
+							if (e.getName().equals(REGISTRY_MIXIN + ".class")) registryMixinBytes = inner.readAllBytes();
 						}
 					}
 				}
 			}
 		}
 		assertNotNull(trackerBytes, "fabric-registry-sync nests " + TRACKER);
+		assertNotNull(registryMixinBytes, "fabric-registry-sync nests " + REGISTRY_MIXIN);
 	}
 
 	@AfterAll static void cleanUp() throws IOException {
@@ -140,9 +151,11 @@ class ParticleViewRemapStagedTest {
 	}
 
 	/**
-	 * The premise of not tracking it, and what would falsify it: the view is never stale. Once the registry has its new
-	 * ids — before the remap event fires — the view already answers them, so a tracker that re-keys it applies the
-	 * change a second time. (If this ever failed, the view would need the tracker after all.)
+	 * The premise of not tracking it, on this test's model of {@code remap}: once the registry has its new ids, the view
+	 * answers them with no event fired, so a tracker that re-keys it applies the change a second time. This cannot fail
+	 * against the game by itself (the model rebuilds the ids first because the test says so); that the game's
+	 * {@code remap} rebuilds them before the event fires, and that the view reads the fields it rebuilds, is pinned on
+	 * the real bytes by {@link #theRealRemapRebuildsTheIdsTheViewReadsBeforeItFiresTheEvent}.
 	 */
 	@Test void theViewAnswersTheNewIdsBeforeTheRemapEventFires() throws Exception {
 		try (World world = world(detached())) {
@@ -157,6 +170,92 @@ class ParticleViewRemapStagedTest {
 			assertFalse(world.provider("balm:a") == view.get(before.get("balm:a")),
 					"the old id of balm:a now names another type, and answers that type's provider");
 		}
+	}
+
+	/**
+	 * The order the premise above rests on, on the real bytes, where a reordering upstream would show. fabric-registry-sync
+	 * 7.1.0's {@code MappedRegistryMixin.remap} clears and refills {@code byId}/{@code toId} and only then calls
+	 * {@code fabric_getRemapEvent().invoker().onRemap(...)}; the genuine base's {@code MappedRegistry.getId(T)} reads
+	 * {@code toId} and {@code byId(int)} reads {@code byId}, the two fields the mixin shadows with the same descriptors,
+	 * which is what the view's ids are in the game. If the event moved before the rebuild, the view would be stale when
+	 * the tracker runs and detaching it would be wrong. The order check is shown able to fail: the same method with the
+	 * event call moved to its head is judged out of order.
+	 */
+	@Test void theRealRemapRebuildsTheIdsTheViewReadsBeforeItFiresTheEvent() throws Exception {
+		Path base = TestFixtures.stagedBase();
+		TestFixtures.requireFiles(Fixture.STAGED, "NeoForge's base", base);
+		ClassNode registry;
+		try (ZipFile zip = new ZipFile(base.toFile())) {
+			ZipEntry entry = zip.getEntry("net/minecraft/core/MappedRegistry.class");
+			assertNotNull(entry, base + " holds net/minecraft/core/MappedRegistry");
+			try (var in = zip.getInputStream(entry)) {
+				registry = node(in.readAllBytes());
+			}
+		}
+		assertEquals(List.of("toId"), fieldsRead(method(registry, "getId", "(Ljava/lang/Object;)I")),
+				"the base's MappedRegistry.getId(T) answers from toId");
+		assertEquals(List.of("byId", "byId"), fieldsRead(method(registry, "byId", "(I)Ljava/lang/Object;")),
+				"the base's MappedRegistry.byId(int) answers from byId");
+		ClassNode mixin = node(registryMixinBytes);
+		for (String field : List.of("byId", "toId")) {
+			assertEquals(field(registry, field).desc, field(mixin, field).desc, "the mixin's " + field + " shadows the base's");
+		}
+		MethodNode remap = method(mixin, "remap",
+				"(Lit/unimi/dsi/fastutil/objects/Object2IntMap;Lnet/fabricmc/fabric/impl/registry/sync/RemappableRegistry$RemapMode;)V");
+		assertTrue(rebuildsTheIdsBeforeTheEvent(remap.instructions),
+				"fabric-registry-sync's remap writes byId/toId (set, put) and reads them for the last time before it fires the remap event");
+
+		InsnList reordered = new InsnList();
+		InsnList rest = new InsnList();
+		boolean inEvent = false;
+		for (AbstractInsnNode insn : remap.instructions.toArray()) {
+			remap.instructions.remove(insn);
+			if (insn instanceof MethodInsnNode call && call.name.equals(REMAP_EVENT)) {
+				inEvent = true;
+				AbstractInsnNode receiver = rest.getLast();
+				rest.remove(receiver);
+				reordered.add(receiver);
+			}
+			(inEvent ? reordered : rest).add(insn);
+			if (insn instanceof MethodInsnNode call && call.name.equals("onRemap")) inEvent = false;
+		}
+		reordered.add(rest);
+		assertFalse(rebuildsTheIdsBeforeTheEvent(reordered), "the check fails on a remap that fires the event before the rebuild");
+	}
+
+	/** Whether every touch of byId/toId comes before the remap event call, with a write to each among them. */
+	private static boolean rebuildsTheIdsBeforeTheEvent(InsnList instructions) {
+		int index = 0, event = -1, lastTouch = -1;
+		boolean setById = false, putToId = false;
+		for (AbstractInsnNode insn : instructions) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD
+					&& (field.name.equals("byId") || field.name.equals("toId"))) lastTouch = index;
+			if (insn instanceof MethodInsnNode call) {
+				if (call.name.equals(REMAP_EVENT) && event < 0) event = index;
+				if (event < 0 && call.owner.equals("it/unimi/dsi/fastutil/objects/ObjectList") && call.name.equals("set")) setById = true;
+				if (event < 0 && call.owner.equals("it/unimi/dsi/fastutil/objects/Reference2IntMap") && call.name.equals("put")) putToId = true;
+			}
+			index++;
+		}
+		return event >= 0 && lastTouch >= 0 && lastTouch < event && setById && putToId;
+	}
+
+	private static List<String> fieldsRead(MethodNode method) {
+		List<String> out = new ArrayList<>();
+		for (AbstractInsnNode insn : method.instructions) {
+			if (insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETFIELD) out.add(field.name);
+		}
+		return out;
+	}
+
+	private static MethodNode method(ClassNode owner, String name, String desc) {
+		return owner.methods.stream().filter(m -> m.name.equals(name) && m.desc.equals(desc)).findFirst()
+				.orElseThrow(() -> new AssertionError(owner.name + " has no " + name + desc));
+	}
+
+	private static FieldNode field(ClassNode owner, String name) {
+		return owner.fields.stream().filter(f -> f.name.equals(name)).findFirst()
+				.orElseThrow(() -> new AssertionError(owner.name + " has no field " + name));
 	}
 
 	@Test void switchedOffTheTrackerIsAttachedAsWritten() throws Exception {
