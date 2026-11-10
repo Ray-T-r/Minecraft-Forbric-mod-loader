@@ -69,7 +69,8 @@ public final class KernelModLoader {
 	public record NeoIdentity(Object bus, Object container) {}
 
 	/**
-	 * The NeoForge mods this kernel loaded, by mod id — their bus and container, as published to {@code ModList}.
+	 * The NeoForge mods this kernel loaded, by mod id — their bus and container, as published to {@code ModList}, and in
+	 * {@code ModList}'s order (see {@link #published}).
 	 *
 	 * <p>Exposed so the lifecycle can post the FML setup events ({@code FMLCommonSetupEvent},
 	 * {@code FMLClientSetupEvent}, {@code FMLLoadCompleteEvent}) at every mod, which needs exactly this pairing.
@@ -233,7 +234,7 @@ public final class KernelModLoader {
 		published.putAll(classless);
 		published.putAll(aliases);
 
-		publishedNeo = Map.copyOf(withClassless(neo, classless));
+		publishedNeo = published(neo, classless);
 		publishNeoModList(cl, published, false);
 
 		// Phase 3 — construct.
@@ -282,7 +283,7 @@ public final class KernelModLoader {
 		if (neoNeedsWithdrawal(neo.keySet(), neoBuilt)) {
 			List<String> droppedNeo = new ArrayList<>();
 			Map<String, NeoIdentity> keptNeo = keepConstructed(neo, neoBuilt, droppedNeo);
-			publishedNeo = Map.copyOf(withClassless(keptNeo, classless));
+			publishedNeo = published(keptNeo, classless);
 
 			Map<String, NeoIdentity> republish = new LinkedHashMap<>(keptNeo);
 			// A declared-only mod has no constructor that could have thrown, so it stays whatever else went.
@@ -548,6 +549,23 @@ public final class KernelModLoader {
 		Map<String, T> out = new LinkedHashMap<>(constructed);
 		out.putAll(classless);
 		return out;
+	}
+
+	/**
+	 * {@link #publishedNeoMods()}: {@link #withClassless} read-only, in the order given — the order the same containers
+	 * go into {@code ModList} ({@code publishNeoModList} is handed them in it), so walking this map is walking
+	 * {@code ModList.getSortedMods()} without the presence aliases.
+	 *
+	 * <p>It was a {@code Map.copyOf}, whose iteration order is a hash order salted per JVM. Every NeoForge setup phase
+	 * ({@code FMLConstructModEvent} to {@code FMLLoadCompleteEvent}, {@code KernelNeoSetup.firePhase}) walks this map, so
+	 * a mod could take its common setup before a library it depends on, in an order that changed from one launch to
+	 * the next. Native NeoForge dispatches those phases over {@code ModList.getSortedMods()} with each container waiting
+	 * for its dependencies' ({@code ModLoader.dispatchParallelTask}), so a dependency always finishes first; walking
+	 * ModList's dependency-sorted order one container at a time is an order native NeoForge can produce, and the only
+	 * one that keeps that guarantee without its thread pool. Stage 4 C5 lane K3b.
+	 */
+	static <T> Map<String, T> published(Map<String, T> constructed, Map<String, T> classless) {
+		return java.util.Collections.unmodifiableMap(withClassless(constructed, classless));
 	}
 
 	/**
