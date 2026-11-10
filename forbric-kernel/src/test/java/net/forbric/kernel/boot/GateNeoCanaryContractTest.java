@@ -161,6 +161,26 @@ class GateNeoCanaryContractTest {
 				"the late-block probe never failed");
 	}
 
+	/**
+	 * Phase 1c of gate-m26 (C5 wave 2b, lane K1's open item): the client's id for the NeoForge canary's block must be the
+	 * one a dedicated server with the same canaries prints. A state numbered twice still round-trips, so the id checks
+	 * above stay green on a client whose numbering drifted from a server's; only this comparison sees it.
+	 */
+	@Test
+	void m26ServerIdsAreGreenOnlyWhenBothEndsPrintOneAndTheSameId() throws Exception {
+		String line = "[ForbricNeoLive/BLOCKID] forbricneolive:probe_block id=%s roundTrip=Block{forbricneolive:probe_block}\n";
+		String same = "the client numbers forbricneolive:probe_block as the dedicated server does";
+		assertGreen(m26ServerIds(line.formatted("32366"), line.formatted("32366")));
+		// A client's stdout log repeats every latest.log line, and the gate appends both: one id printed twice is one id.
+		assertGreen(m26ServerIds(line.formatted("32366") + line.formatted("32366"), line.formatted("32366")));
+		assertRed(m26ServerIds(line.formatted("64734"), line.formatted("32366")), same);
+		assertRed(m26ServerIds(line.formatted("32366"), ""), same);
+		assertRed(m26ServerIds("", line.formatted("32366")), same);
+		assertRed(m26ServerIds(line.formatted("32366") + line.formatted("64734"), line.formatted("32366")), same);
+		// AIR on both ends agrees and is still wrong.
+		assertRed(m26ServerIds(line.formatted("0"), line.formatted("0")), same);
+	}
+
 	// --- gate-m26's options seed and session block: shared contracts that outlive every canary --------------------
 	// Restored from ForgeRegistrationA2ContractTest when Stage 4 deleted the MinecraftForge canary: these three never
 	// read that canary, and nothing else runs M26_OPTIONS or M26_SESSION_ASSERTIONS. C5 re-pins them with the gate.
@@ -256,7 +276,17 @@ class GateNeoCanaryContractTest {
 	private Result m26Fabric(String log) throws Exception { return block(M26, "M26_FABRIC_ASSERTIONS", log); }
 	private Result m26(String log) throws Exception { return block(M26, "M26_NEO_ASSERTIONS", log); }
 
+	private Result m26ServerIds(String clientLog, String serverLog) throws Exception {
+		Path server = temporary.resolve("server.log");
+		Files.writeString(server, serverLog);
+		return block(M26, "M26_SERVER_IDS", clientLog, java.util.Map.of("SERVER_LOG", server.toString()));
+	}
+
 	private Result block(Path gate, String name, String log) throws Exception {
+		return block(gate, name, log, java.util.Map.of());
+	}
+
+	private Result block(Path gate, String name, String log, java.util.Map<String, String> env) throws Exception {
 		Path file = temporary.resolve("gate.log");
 		Files.writeString(file, log);
 		String script = Files.readString(gate);
@@ -265,6 +295,7 @@ class GateNeoCanaryContractTest {
 		assertTrue(begin >= 0 && end > begin, "missing executable gate contract " + name);
 		ProcessBuilder builder = new ProcessBuilder("bash", "-c", ". run/lib.sh\n" + script.substring(begin, end) + "\nexit \"$FAIL\"");
 		builder.environment().put("LOG", file.toString());
+		builder.environment().putAll(env);
 		Process process = builder.redirectErrorStream(true).start();
 		assertTrue(process.waitFor(15, TimeUnit.SECONDS), "offline gate contract timed out");
 		return new Result(process.exitValue(), new String(process.getInputStream().readAllBytes(), StandardCharsets.UTF_8));

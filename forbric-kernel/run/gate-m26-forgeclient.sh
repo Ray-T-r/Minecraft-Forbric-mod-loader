@@ -42,15 +42,27 @@
 #   -Dforbric.forgeClientInit / forgeOverlayLayers / forgeFluidModels / forgePipRenderers / forgeCtorGameInstance /
 #   forgeCreativeTabs recipes are retired switches (D29). The fixed rundirs take M26_RUNDIR / M26_PROMPT_DIR and refuse
 #   a shared fixture (D46). The file keeps its name until Stage 6 (D4).
-# GATE-PARALLEL: rundirs=client-forge-registration,client-forge-refusal mem=3000
+# Phase 1c (C5 wave 2b, lane K1's open item) boots a DEDICATED Forbric server with the same two canaries and asks it for
+#   the NeoForge canary's block-state id: the client must number the block as the server does. The id is NeoForge's own
+#   numbering on each side (its block bake at every freeze); a socket join sends block states by these ids, and nothing
+#   syncs them. The client's numbering runs through one more freeze than the server's (the client entrypoint window,
+#   where the Fabric canary's late block registers), so it is the client that can drift. The probe block is registered in
+#   the first wave on both ends, so its id is the same on both: 32366 (K1 by dump; this gate 47 PASS / 0 FAIL, wave 2b).
+#   RED, measured in wave 2b on a clone without lane S's clear before the client window's freeze (835ec80c;
+#   c5/g-c/w2b/gates/m26-noclientclear): 46 PASS / 1 FAIL, exactly this check (client 64733, server 32366), with the
+#   kernel's own CAUGHT "not one id per block state after the client entrypoint window freeze" in the client log. The
+#   id >= 1 and round-trip checks above stay green on that clone: a state numbered twice still round-trips.
+# GATE-PARALLEL: rundirs=client-forge-registration,client-forge-refusal,server-forge-registration mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 LOG="$BUILD/gate-m26-forgeclient.log"
 RUNDIR="${M26_RUNDIR:-$KERNEL/run/client-forge-registration}"
 PROMPT_DIR="${M26_PROMPT_DIR:-$KERNEL/run/client-forge-refusal}"
+SERVER_DIR="${M26_SERVER_DIR:-$KERNEL/run/server-forge-registration}"
 refuse_shared_rundir "$RUNDIR"
 refuse_shared_rundir "$PROMPT_DIR"
+refuse_shared_rundir "$SERVER_DIR"
 WORLD="ForgeClientProbe"
 FABRIC="$KERNEL/run/canary/forbricfabriclive.jar"
 mkdir -p "$BUILD" "$RUNDIR/quickPlay" "$RUNDIR/empty-mods"
@@ -172,6 +184,44 @@ check "the picture-in-picture bridge gave the orphaned map its only writer" \
 check "the NeoForge canary placed its water source" \
   'ForbricNeoLive/FLUID\] water at -?[0-9]+ -?[0-9]+ -?[0-9]+: Block\{minecraft:water\}' "$LOG"
 # M26_SESSION_ASSERTIONS_END
+
+step "1c. a dedicated server with the same canaries numbers the NeoForge canary's block as the client does (must PASS)"
+SERVER_LOG="$BUILD/gate-m26-server.log"
+reap_stale_server "$SERVER_DIR"
+rm -rf "$SERVER_DIR"; mkdir -p "$SERVER_DIR/mods"
+# The jars the client ran, as staged above. Port 0: nothing connects, so the system picks a free port and no two runs
+# can collide on one.
+cp "$RUNDIR/mods/forbricneolive.jar" "$RUNDIR/mods/forbricfabriclive.jar" "$SERVER_DIR/mods/" || exit 3
+printf 'eula=true\n' > "$SERVER_DIR/eula.txt"
+printf 'server-ip=127.0.0.1\nserver-port=0\nonline-mode=false\nlevel-name=M26Server\nlevel-type=minecraft\\:flat\ngenerate-structures=false\nview-distance=2\nsimulation-distance=2\nmax-tick-time=-1\nsync-chunk-writes=false\n' \
+  > "$SERVER_DIR/server.properties"
+SERVER_FIFO="$SERVER_DIR/.stdin"; rm -f "$SERVER_FIFO"; mkfifo "$SERVER_FIFO"
+: > "$SERVER_LOG"
+FORBRIC_JVM="${M26_EXTRA_JVM:-}" RUNDIR="$SERVER_DIR" "$KERNEL/run/launch-kernel-server.sh" < "$SERVER_FIFO" > "$SERVER_LOG" 2>&1 &
+SERVER_PID=$!
+record_server_pid "$SERVER_DIR" "$SERVER_PID"
+exec 8>"$SERVER_FIFO"
+for i in $(seq 1 240); do
+  kill -0 "$SERVER_PID" 2>/dev/null || { echo "[kernel] the dedicated server left on its own after ~${i}s"; break; }
+  grep -aqE 'Done \(' "$SERVER_LOG" && grep -aq 'ForbricNeoLive/BLOCKID\]' "$SERVER_LOG" && break
+  sleep 1
+done
+echo "stop" >&8
+exec 8>&-
+await_server "$SERVER_PID" "$SERVER_LOG" 90
+rm -f "$SERVER_FIFO" "$(_pidfile "$SERVER_DIR")"
+check "the dedicated server with the same canaries reached Done" 'Done \(' "$SERVER_LOG"
+# M26_SERVER_IDS_BEGIN — the client's id for the NeoForge canary's block equals a dedicated server's.
+# Each side prints the id once, at its ServerStartedEvent (the client's integrated server shares the client's map).
+probe_ids() { grep -aoE 'ForbricNeoLive/BLOCKID\] forbricneolive:probe_block id=[0-9]+' "$1" 2>/dev/null | grep -oE '[0-9]+$' | sort -u | paste -sd' ' -; }
+CLIENT_PROBE_ID="$(probe_ids "$LOG")"; SERVER_PROBE_ID="$(probe_ids "$SERVER_LOG")"
+if [[ "$CLIENT_PROBE_ID" =~ ^[1-9][0-9]*$ ]] && [ "$CLIENT_PROBE_ID" = "$SERVER_PROBE_ID" ]; then
+  echo "[kernel] PASS the client numbers forbricneolive:probe_block as the dedicated server does (id $CLIENT_PROBE_ID on both)"
+else
+  echo "[kernel] FAIL the client numbers forbricneolive:probe_block as the dedicated server does (client: ${CLIENT_PROBE_ID:-none}, server: ${SERVER_PROBE_ID:-none})"
+  FAIL=1
+fi
+# M26_SERVER_IDS_END
 
 # M26_REFUSAL_BEGIN — phase 2 (header): a MinecraftForge-only mod on a client is put to the player, not swallowed.
 step "2. a MinecraftForge-only mod on a client: the refusal is asked about in the game (must PASS)"
