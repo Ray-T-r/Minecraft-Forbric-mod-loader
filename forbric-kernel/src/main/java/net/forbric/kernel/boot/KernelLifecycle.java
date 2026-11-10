@@ -609,14 +609,13 @@ public final class KernelLifecycle {
 			List<KernelModLoader.ConstructedMod> mods =
 					KernelModLoader.constructMods(cl, modJars, side);
 
-			// Load the config specs those constructors just registered, BEFORE any RegisterEvent fires. Genuine
-			// NeoForge loads STARTUP/COMMON right after construction and only then posts the registry events, and
-			// mods rely on that: Mob Champions' MobChampionsEffects.<clinit> runs from its RegisterEvent listener
-			// and reads a config value, so with the load still pending it threw "Cannot get config value before
-			// config is loaded" — which, before the isolation below, aborted the whole window and left even the
-			// NeoForge baseline unregistered (later surfacing as an unbound neoforge:fluid_type/water). Re-run after
-			// the client baseline in driveNativeRegistration too, for specs registered later; loading twice is
-			// harmless (each type is attempted independently and a redundant load is swallowed).
+			// No config is loaded in this window. COMMON (and, on a client, CLIENT) configs load at step 2c,
+			// loadEarlyConfigs, after registerNeoForgeContent has returned — where native NeoForge loads them too:
+			// CommonModLoader.begin runs "Registry initialization" (NewRegistryEvent, RegisterEvent, freeze) and only
+			// then "Config loading" (javap of 26.2.0.93). STARTUP configs load when they are registered. So a
+			// registry-phase listener that reads a COMMON value throws "Cannot get config value before config is
+			// loaded" here as it does natively. This comment used to say the opposite; the logs say otherwise
+			// ("loaded NeoForge configs" follows "fired RegisterEvent" on a server and a client, Stage 4 C5 K3b).
 			// Wire every mod's @EventBusSubscriber classes NOW, while the registration window is still ahead of
 			// them. Genuine FML does this inside ModContainer.constructMod(), i.e. before registry init, so a
 			// subscriber-declared handler is attached by the time any registration event is posted. The kernel used
@@ -626,10 +625,11 @@ public final class KernelLifecycle {
 			// their entities came out attribute-less — 2250 "Entity <id> has no attributes" errors per freeze, and
 			// mobs that cannot spawn. The same was true of any RegisterEvent handler declared that way.
 			//
-			// AFTER loadEarlyConfigs, not before: this class-loads every subscriber, and a <clinit> that reads a
-			// config value must not run ahead of the specs. Still strictly later than genuine NeoForge, which loads
-			// these classes during construction — so nothing that survives real NeoForge can fail for being early
-			// here. Both game buses stay unstarted until startGameBuses, so early registration is buffered, not lost.
+			// This class-loads every subscriber before the COMMON/CLIENT configs load (step 2c), as native NeoForge
+			// does: it loads these classes during construction, before its "Config loading" task, so a <clinit> that
+			// reads such a value fails there too. Still later than genuine NeoForge, so nothing that survives real
+			// NeoForge can fail for being early here. Both game buses stay unstarted until startGameBuses, so early
+			// registration is buffered, not lost.
 			//
 			// Isolated: this now sits inside registerNeoForgeContent's try, and an escape would abort the whole
 			// registration window and be reported as "could not register ecosystem content", blaming the wrong
