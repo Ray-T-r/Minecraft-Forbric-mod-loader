@@ -272,9 +272,12 @@ public final class KernelRuntimeClasses {
 		// called from the instruction the compat transformer puts at the head of Resource.open().
 		CLASSES.put("net.forbric.kernel.runtime.KernelConditionSources", new Entry(Origin.COMPILED, List.of()));
 		// A Fabric mod's PoiTypes.registerBlockStates on the states NeoForge's PoiType add-callback already mapped to the same
-		// type; called by the instruction the compat transformer puts at the head of that method.
+		// type; called by the instruction the compat transformer puts at the head of that method. And the PoI table NeoForge's
+		// own writers (the callback, PoiTypeExtender) write when a mod replaced PoiTypes.TYPE_BY_STATE; called after each
+		// read of NeoForge's map there.
 		CLASSES.put("net.forbric.kernel.runtime.KernelPoiStates", new Entry(Origin.COMPILED, List.of(
-				new Call("beforeRegisterBlockStates", void.class, java.util.Map.class, Object.class, java.util.Set.class))));
+				new Call("beforeRegisterBlockStates", void.class, java.util.Map.class, Object.class, java.util.Set.class),
+				new Call("liveTable", java.util.Map.class, java.util.Map.class))));
 		// The reordering Operation a wrapped @WrapOperation handler receives; called from the outer handler
 		// MixinWrapOperationShim writes into a guest mixin, so there is no boot-side entry point.
 		CLASSES.put("net.forbric.kernel.runtime.KernelWrapOperations", new Entry(Origin.COMPILED, List.of()));

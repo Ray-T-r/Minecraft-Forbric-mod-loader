@@ -1,6 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.runtime;
 
+import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.IdentityHashMap;
@@ -11,6 +12,7 @@ import java.util.function.Predicate;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.kernel.classloading.ForbricClassLoader;
+import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
@@ -37,6 +39,11 @@ import net.forbric.kernel.util.ForbricLog;
  * Anything else stays in place, so vanilla's own throw still answers a state another type holds, or states a mod maps
  * twice. For code that is not a Fabric mod's it changes nothing: NeoForge's behaviour, where such a call after the
  * callback is attached throws.
+ *
+ * <p>NeoForge's own writers assume {@code TYPE_BY_STATE} is their map. A Fabric mod may replace the field (lithium-fabric
+ * swaps in a copy at the end of {@code <clinit>}; lithium-neoforge does not); NeoForge's callback and
+ * {@code PoiTypeExtender} would then write a map nobody reads, and every PoI type a NeoForge mod registers would be
+ * invisible to {@code PoiTypes.forState}. {@link #liveTable} gives those writers the table {@code PoiTypes} reads.
  */
 public final class KernelPoiStates {
 	private static final String POI_TYPES = "net.minecraft.world.entity.ai.village.poi.PoiTypes";
@@ -51,6 +58,10 @@ public final class KernelPoiStates {
 
 	/** Whether a class is a Fabric mod's code; substitutable so a unit test needs no kernel class loader. */
 	private static volatile Predicate<Class<?>> fabricCode = KernelPoiStates::loadedAsFabric;
+
+	private static volatile Field table;
+	private static volatile boolean tableUnreadable;
+	private static volatile Object toldOfTable;
 
 	private KernelPoiStates() {
 	}
@@ -88,6 +99,41 @@ public final class KernelPoiStates {
 		}
 	}
 
+	/**
+	 * The table {@code PoiTypes} reads, for NeoForge's writers of {@code BLOCKSTATE_TO_POI_TYPE_MAP}: that map itself
+	 * while it is {@code TYPE_BY_STATE} (always, unless a mod replaced the field), else the table that replaced it.
+	 */
+	public static Map<Object, Object> liveTable(Map<Object, Object> neoForges) {
+		Map<Object, Object> live = typeByState();
+		if (live == null || live == neoForges) return neoForges;
+		if (toldOfTable != live) {
+			toldOfTable = live;
+			ForbricLog.info("[Forbric/PoI] PoiTypes.TYPE_BY_STATE is no longer NeoForge's map (a mod replaced it with a %s); "
+					+ "NeoForge's PoI type callback and PoiTypeExtender write into that table instead, so the PoI types NeoForge "
+					+ "mods register stay visible to PoiTypes.forState", live.getClass().getName());
+		}
+		return live;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<Object, Object> typeByState() {
+		if (tableUnreadable) return null;
+		try {
+			Field field = table;
+			if (field == null) {
+				field = Class.forName(POI_TYPES, false, KernelPoiStates.class.getClassLoader()).getDeclaredField("TYPE_BY_STATE");
+				field.setAccessible(true);
+				table = field;
+			}
+			return (Map<Object, Object>) field.get(null);
+		} catch (ReflectiveOperationException | RuntimeException unreadable) {
+			tableUnreadable = true;
+			Caught.warn(unreadable, "[Forbric/PoI] cannot read PoiTypes.TYPE_BY_STATE — NeoForge's PoI writers keep writing "
+					+ "their own map, which is that table unless a mod replaced it");
+			return null;
+		}
+	}
+
 	/** The first frame that is neither this class nor {@code PoiTypes} (vanilla's register, or a mod's invoker in it). */
 	private static Class<?> caller() {
 		return CALLER.walk(frames -> frames
@@ -107,11 +153,14 @@ public final class KernelPoiStates {
 		fabricCode = isFabricCode;
 	}
 
-	/** Test seam: forget every named state. */
+	/** Test seam: forget every named state and the table read. */
 	static void resetForTest() {
 		synchronized (NAMED) {
 			NAMED.clear();
 			takenOver = 0;
 		}
+		table = null;
+		tableUnreadable = false;
+		toldOfTable = null;
 	}
 }

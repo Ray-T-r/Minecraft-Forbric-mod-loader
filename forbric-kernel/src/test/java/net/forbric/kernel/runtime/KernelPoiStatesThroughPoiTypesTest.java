@@ -61,7 +61,8 @@ import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
  * ({@code BlockState} to {@code Object}, {@code Util.pauseInIde} to identity, a bare {@code Holder} interface), then
  * transformed by the real compat transformer; the routes in are the three call shapes measured on the genuine stage.
  * The callers are classes of a jar the loader records as a Fabric mod's, and the same code in a jar it records as a
- * NeoForge mod's.
+ * NeoForge mod's. The same harness checks {@code liveTable}, which NeoForge's own writers of the map ask for the table
+ * {@code PoiTypes} reads, against a {@code TYPE_BY_STATE} a mod replaced (as lithium-fabric does).
  */
 class KernelPoiStatesThroughPoiTypesTest {
 	private static final String POI_TYPES = "net/minecraft/world/entity/ai/village/poi/PoiTypes";
@@ -299,6 +300,34 @@ class KernelPoiStatesThroughPoiTypesTest {
 		assertFalse((boolean) fabric.invoke(null, poiTypes), "the base, which no mod owns");
 		assertFalse((boolean) fabric.invoke(null, getClass()), "a class another loader defined");
 		assertFalse((boolean) fabric.invoke(null, String.class));
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<Object, Object> liveTable(Map<Object, Object> neoForges) throws Exception {
+		Method live = loader.loadClass("net.forbric.kernel.runtime.KernelPoiStates").getMethod("liveTable", Map.class);
+		return (Map<Object, Object>) live.invoke(null, neoForges);
+	}
+
+	@Test
+	void whileTypeByStateIsNeoForgesMapNeoForgesWritersWriteIt() throws Exception {
+		Map<Object, Object> neoForges = typeByState();
+		assertSame(neoForges, liveTable(neoForges), "the native NeoForge case: nothing changes");
+	}
+
+	@Test
+	void whenAModReplacedTypeByStateNeoForgesWritersWriteTheReplacement() throws Throwable {
+		Map<Object, Object> neoForges = typeByState();
+		Map<Object, Object> lithiums = new LinkedHashMap<>(neoForges); // lithium-fabric's PoiTypesMixin, at the end of <clinit>
+		poiTypes.getField("TYPE_BY_STATE").set(null, lithiums);
+		assertSame(lithiums, liveTable(neoForges), "NeoForge's callback and PoiTypeExtender write the table PoiTypes reads");
+		assertSame(lithiums, liveTable(lithiums));
+
+		Object type = holder("k4fabric:after_lithium");
+		Object state = new String("Block{k4fabric:after_lithium}");
+		liveTable(neoForges).put(state, type); // what the callback's onAdd now does
+		call(fabricCaller, 1, type, new LinkedHashSet<>(List.of(state)));
+		assertSame(type, lithiums.get(state), "and a Fabric mod's own call on that table still maps its state");
+		assertEquals(1, takenOver());
 	}
 
 	@Test

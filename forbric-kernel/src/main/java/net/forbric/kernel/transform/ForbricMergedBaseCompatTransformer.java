@@ -84,7 +84,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	}
 
 	/** The repairs {@link #transform} runs, in its order; a test pins the two lists against each other. */
-	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps", "letAFabricModMapThePoiStatesNeoForgeMappedForIt");
+	static final List<String> REPAIRS = List.of("addBlockStateModelConflictResolvers", "addBlockStateAppearanceResolver", "giveKeyMappingItsVanillaMap", "giveTheVanillaParticleMapAViewOfTheLiveOne", "letDungeonsGenerateWithoutTheDataMap", "restoreDoublePrecisionToTheRandomSources", "convertRadiansWithVanillasFoldedConstant", "callVanillasWriteByteAgain", "saveTheHeightmapsVanillaSaves", "guardNeoForgesWorldModifierPass", "letForeignResourceConditionsThrough", "tellTheConditionsWhichPackAFileIsReadFrom", "tellTheConditionsWhichPackEachRecipeCameFrom", "letFabricResourceConditionsDecide", "translateAGuestsPrivateSkipMarker", "nameTheReloadListenersNeoForgeRefusesToName", "bridgeOrphanedPipRenderers", "dropTheWindowTitlesLoaderBrand", "keepTheSaveOffTheTeardownsFailurePath", "vetoUnjudgeableOverlayConditions", "hideTheLegacyLootModifierIndexFromTheDirectoryScan", "letModdedFeatureFlagsRegister", "dropTheKeyModifierSuffixBeforeParsingAKeyName", "wrapTheStreamsVanillaWraps", "letAFabricModMapThePoiStatesNeoForgeMappedForIt", "pointNeoForgesPoiWritersAtTheLiveTable");
 
 	/**
 	 * One claim per repair, in {@link #REPAIRS} order. A repair with one fixed target declares it REQUIRED with
@@ -176,6 +176,13 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		out.add(fixed("letAFabricModMapThePoiStatesNeoForgeMappedForIt", POI_TYPES,
 				"a Fabric mod's PoiTypes.registerBlockStates throws \"defined in more than one PoI type\" on the states NeoForge's "
 						+ "registry callback mapped for the same type, and its main entrypoint dies there (Waystones-fabric)"));
+		out.add(new Claim(claimId("pointNeoForgesPoiWritersAtTheLiveTable"), AnchorSet.of(
+				new AnchorSet.Anchor(POI_TYPE_CALLBACKS.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"with a Fabric mod that replaces PoiTypes.TYPE_BY_STATE (lithium-fabric), every PoI type a NeoForge mod "
+								+ "registers is mapped into a map nobody reads — villagers and PoiTypes.forState never see it"),
+				new AnchorSet.Anchor(POI_TYPE_EXTENDER.replace('/', '.'), AnchorSet.Severity.REQUIRED,
+						"with a Fabric mod that replaces PoiTypes.TYPE_BY_STATE, the block states NeoForge mods add to existing "
+								+ "PoI types through ExtendPoiTypesEvent never reach the table PoiTypes reads"))));
 		return List.copyOf(out);
 	}
 
@@ -234,6 +241,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 					dropTheKeyModifierSuffixBeforeParsingAKeyName(node));
 			changed |= claim(reporter, "wrapTheStreamsVanillaWraps", wrapTheStreamsVanillaWraps(node));
 			changed |= claim(reporter, "letAFabricModMapThePoiStatesNeoForgeMappedForIt", letAFabricModMapThePoiStatesNeoForgeMappedForIt(node));
+			changed |= claim(reporter, "pointNeoForgesPoiWritersAtTheLiveTable", pointNeoForgesPoiWritersAtTheLiveTable(node));
 
 			byte[] result = classBytes;
 			if (changed) {
@@ -1451,6 +1459,53 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 		ForbricLog.info("[Forbric/MergedBaseCompat] PoiTypes.registerBlockStates lets a Fabric mod map the block states NeoForge's "
 				+ "registry callback already mapped to its type — the callback does vanilla's second step when the type is added, "
 				+ "so a Fabric mod's own call threw \"defined in more than one PoI type\" on its own states");
+		return true;
+	}
+
+	static final String POI_TYPE_CALLBACKS = "net/neoforged/neoforge/registries/NeoForgeRegistryCallbacks$PoiTypeCallbacks";
+	static final String POI_TYPE_EXTENDER = "net/neoforged/neoforge/common/world/poi/PoiTypeExtender";
+	static final String NEO_GAME_DATA = "net/neoforged/neoforge/registries/GameData";
+	static final String LIVE_TABLE_DESC = "(Ljava/util/Map;)Ljava/util/Map;";
+
+	/**
+	 * NeoForge's writers of the block-state-to-PoI-type table write the table {@code PoiTypes} reads, even when a mod has
+	 * replaced {@code PoiTypes.TYPE_BY_STATE}.
+	 *
+	 * <p>NeoForge keeps the table in {@code PoiTypeCallbacks.BLOCKSTATE_TO_POI_TYPE_MAP}, {@code PoiTypes.<clinit>} stores
+	 * that same map as {@code TYPE_BY_STATE}, and NeoForge's writers — the PoI type callback's {@code onAdd} and
+	 * {@code onClear}, and {@code PoiTypeExtender} (ExtendPoiTypesEvent) — write it by that name. A Fabric mod may replace
+	 * the field: lithium-fabric's {@code PoiTypesMixin} swaps in a copy at the end of {@code <clinit>} (lithium-neoforge
+	 * ships no such mixin, because natively the map is shared). The writers then fill a map nobody reads, and every PoI
+	 * type a NeoForge mod registers is invisible to {@code PoiTypes.forState} (measured: waystones-neoforge with
+	 * lithium-fabric, 0 of its 640 states in the table). Each read of the map in those writers is followed by
+	 * {@code KernelPoiStates.liveTable(map)}, which answers that map itself while it is {@code TYPE_BY_STATE} (always,
+	 * without such a mod) and the table that replaced it otherwise. Static initialisers are left alone: they run before
+	 * {@code PoiTypes} exists.
+	 *
+	 * <p>One instruction after each read, Map in and Map out: stack-neutral, nothing else of the method moves.
+	 */
+	private static boolean pointNeoForgesPoiWritersAtTheLiveTable(ClassNode node) {
+		boolean callbacks = POI_TYPE_CALLBACKS.equals(node.name);
+		if (!callbacks && !POI_TYPE_EXTENDER.equals(node.name)) return false;
+		int pointed = 0;
+		for (MethodNode method : node.methods) {
+			if ("<clinit>".equals(method.name)) continue;
+			for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+				boolean read = callbacks
+						? insn instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC && POI_TYPE_CALLBACKS.equals(field.owner)
+								&& "BLOCKSTATE_TO_POI_TYPE_MAP".equals(field.name) && "Ljava/util/Map;".equals(field.desc)
+						: insn instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESTATIC && NEO_GAME_DATA.equals(call.owner)
+								&& "getBlockStatePointOfInterestTypeMap".equals(call.name) && "()Ljava/util/Map;".equals(call.desc);
+				if (!read) continue;
+				if (insn.getNext() instanceof MethodInsnNode next && KERNEL_POI_STATES.equals(next.owner)) continue; // idempotent
+				method.instructions.insert(insn, new MethodInsnNode(Opcodes.INVOKESTATIC, KERNEL_POI_STATES, "liveTable", LIVE_TABLE_DESC, false));
+				pointed++;
+			}
+		}
+		if (pointed == 0) return false;
+		ForbricLog.info("[Forbric/MergedBaseCompat] %s writes the PoI table PoiTypes reads (%d read(s) of NeoForge's map) — a "
+				+ "Fabric mod that replaces PoiTypes.TYPE_BY_STATE left NeoForge's writers filling a map nobody reads",
+				node.name.substring(node.name.lastIndexOf('/') + 1), pointed);
 		return true;
 	}
 

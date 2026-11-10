@@ -34,7 +34,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@code KernelPoiStates.beforeRegisterBlockStates}, and vanilla's body then runs unchanged. Read from the staged genuine
  * base, whose {@code TYPE_BY_STATE} is NeoForge's {@code BLOCKSTATE_TO_POI_TYPE_MAP}, whose {@code register} still calls
  * {@code registerBlockStates} after {@code Registry.register}, and whose carrier attaches NeoForge's PoI type callback to
- * {@code POINT_OF_INTEREST_TYPE} (so the callback and vanilla's call both map a state a mod's type lists).
+ * {@code POINT_OF_INTEREST_TYPE} (so the callback and vanilla's call both map a state a mod's type lists). And NeoForge's
+ * own writers of that map ask {@code KernelPoiStates.liveTable} for the table {@code PoiTypes} actually reads.
  */
 class MergedBasePoiStatesTest {
 	private static final String POI_TYPES = ForbricMergedBaseCompatTransformer.POI_TYPES;
@@ -131,6 +132,42 @@ class MergedBasePoiStatesTest {
 	}
 
 	@Test
+	void neoForgesPoiWritersAskForTheLiveTableAfterEveryReadOfTheirMap() throws Exception {
+		String[][] writers = {
+				{ForbricMergedBaseCompatTransformer.POI_TYPE_CALLBACKS, "GETSTATIC BLOCKSTATE_TO_POI_TYPE_MAP"},
+				{ForbricMergedBaseCompatTransformer.POI_TYPE_EXTENDER, "INVOKESTATIC getBlockStatePointOfInterestTypeMap"}};
+		for (String[] writer : writers) {
+			byte[] raw = TestFixtures.requireEntry(Fixture.STAGED, TestFixtures.neoCarrier(), writer[0] + ".class");
+			byte[] once = new ForbricMergedBaseCompatTransformer().transform(writer[0].replace('/', '.'), raw, null);
+			ClassNode before = read(raw), after = read(once);
+			int reads = 0;
+			for (MethodNode m : after.methods) {
+				List<AbstractInsnNode> code = code(m);
+				List<AbstractInsnNode> vanilla = code(method(before, m.name, m.desc));
+				int here = 0;
+				for (int i = 0; i < code.size(); i++) {
+					boolean read = code.get(i) instanceof FieldInsnNode f && f.name.equals("BLOCKSTATE_TO_POI_TYPE_MAP")
+							|| code.get(i) instanceof MethodInsnNode c && c.name.equals("getBlockStatePointOfInterestTypeMap");
+					if (!read) continue;
+					if (m.name.equals("<clinit>")) continue;
+					assertTrue(i + 1 < code.size() && code.get(i + 1) instanceof MethodInsnNode live
+							&& live.getOpcode() == Opcodes.INVOKESTATIC
+							&& live.owner.equals(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES) && live.name.equals("liveTable")
+							&& live.desc.equals(ForbricMergedBaseCompatTransformer.LIVE_TABLE_DESC),
+							writer[0] + "." + m.name + ": a read of NeoForge's map that writes it without asking for the live table — with "
+									+ "lithium-fabric that write goes to a map nobody reads");
+					here++;
+				}
+				reads += here;
+				assertEquals(vanilla.size() + (m.name.equals("<clinit>") ? 0 : here), code.size(), m.name + ": one call per read, nothing else");
+				new Analyzer<>(new BasicVerifier()).analyze(after.name, m);
+			}
+			assertTrue(reads > 0, writer[0] + " no longer has " + writer[1] + " — NeoForge's PoI writers moved; re-examine the repair");
+			assertSame(once, new ForbricMergedBaseCompatTransformer().transform(writer[0].replace('/', '.'), once, null), "a second pass stands down");
+		}
+	}
+
+	@Test
 	void theInsertedCallNamesTheRuntimeHelpersRealMethod() throws Exception {
 		java.net.URL boot = net.forbric.kernel.util.ForbricLog.class.getProtectionDomain().getCodeSource().getLocation();
 		try (java.net.URLClassLoader game = net.forbric.kernel.runtime.StagedGameClassLoader.create(List.of(boot))) {
@@ -138,6 +175,10 @@ class MergedBasePoiStatesTest {
 					.getMethod("beforeRegisterBlockStates", Map.class, Object.class, Set.class);
 			assertTrue(Modifier.isStatic(helper.getModifiers()) && Modifier.isPublic(helper.getModifiers()));
 			assertEquals(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES_DESC, Type.getMethodDescriptor(helper));
+			Method live = Class.forName(ForbricMergedBaseCompatTransformer.KERNEL_POI_STATES.replace('/', '.'), false, game)
+					.getMethod("liveTable", Map.class);
+			assertTrue(Modifier.isStatic(live.getModifiers()) && Modifier.isPublic(live.getModifiers()));
+			assertEquals(ForbricMergedBaseCompatTransformer.LIVE_TABLE_DESC, Type.getMethodDescriptor(live));
 		}
 	}
 }
