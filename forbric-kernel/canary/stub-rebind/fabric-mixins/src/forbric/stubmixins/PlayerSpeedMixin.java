@@ -10,7 +10,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfoReturnable;
 
 /**
  * The shape architectury and Collective write against vanilla: a name-only RETURN injection into getDestroySpeed that
- * captures the block state. On the merged base Mixin binds it to the carrier's getDestroySpeed(BlockState) stub, which
+ * captures the block state. On NeoForge's base Mixin binds it to its getDestroySpeed(BlockState) stub, which
  * nothing calls.
  */
 @Mixin(Player.class)

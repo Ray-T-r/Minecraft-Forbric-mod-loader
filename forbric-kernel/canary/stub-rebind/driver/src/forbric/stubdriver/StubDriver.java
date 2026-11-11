@@ -35,21 +35,21 @@ public final class StubDriver {
   ServerLevel level=server.overworld();
   FakePlayer player=new FakePlayer(level,new GameProfile(UUID.fromString("3b7e2f1a-9c4d-4e8b-a1f0-6d5c4b3a2e1f"),"StubProbe"));
   BlockPos pos=new BlockPos(0,100,0);
-  // The merged game calls the two-argument getDestroySpeed(state, pos); the injection was written for the one-argument one.
+  // NeoForge's game calls the two-argument getDestroySpeed(state, pos); the injection was written for the one-argument one.
   // Dirt and sponge both break at 1 by hand, so the injection's sevenfold is the ratio (the absolute depends on footing).
   float[] dirt={0f};
   test("speed.control",()->{dirt[0]=player.getDestroySpeed(Blocks.DIRT.defaultBlockState(),pos);return expect(dirt[0]>0f,"dirt speed "+dirt[0]);});
   test("speed.rebound",()->{float sponge=player.getDestroySpeed(Blocks.SPONGE.defaultBlockState(),pos);
    return expect(Math.abs(sponge-7f*dirt[0])<1e-4f,"sponge speed "+sponge+" vs dirt "+dirt[0]+" (the Fabric mod's RETURN injection makes it sevenfold)");});
   // randomTeleport: the game calls NeoForge's overload that also takes the item; the Fabric HEAD injection was written
-  // for vanilla's four-argument one, which on the merged base is the carrier's stub.
+  // for vanilla's four-argument one, which on NeoForge's base is a stub forwarding to it.
   test("teleport.control",()->{level.setBlock(new BlockPos(3,100,3),Blocks.STONE.defaultBlockState(),3);player.snapTo(0.5,120,0.5);player.removeTag("forbric_pinned");
    // randomTeleport's own answer: a fake player's position does not follow a player teleport (no real connection).
    boolean moved=teleport(player,3.5,101,3.5);return expect(moved,"an unpinned teleport failed");});
   test("teleport.rebound",()->{player.snapTo(0.5,120,0.5);player.addTag("forbric_pinned");
    boolean moved=teleport(player,3.5,101,3.5);player.removeTag("forbric_pinned");
    return expect(!moved,"a pinned player teleported");});
-  // Language.loadFromJson: the Fabric mod's @ModifyArgs was written for vanilla's two-argument body; on the merged base
+  // Language.loadFromJson: the Fabric mod's @ModifyArgs was written for vanilla's two-argument body; on NeoForge's base
   // that is a stub, and the entries are read in NeoForge's three-argument one — which ClientLanguage calls.
   String json="{\"forbricstub.fmt\":\"[%02d|%.2f]\",\"other.fmt\":\"[%02d|%.2f]\",\"forbricstub.obj\":{\"text\":\"x\"}}";
   Map<String,String> two=new HashMap<>(),three=new HashMap<>();Map<String,net.minecraft.network.chat.Component> components=new HashMap<>();
@@ -63,7 +63,7 @@ public final class StubDriver {
    return expect(c!=null&&"x".equals(c.getString())&&"x".equals(three.get("forbricstub.obj")),"an object entry: "+components+" "+three);});
  }
  private static java.io.InputStream stream(String json){return new java.io.ByteArrayInputStream(json.getBytes(java.nio.charset.StandardCharsets.UTF_8));}
- /** NeoForge's randomTeleport(x, y, z, particles, item), by descriptor: what chorus fruit calls on the merged base. */
+ /** NeoForge's randomTeleport(x, y, z, particles, item), by descriptor: what chorus fruit calls on NeoForge's base. */
  private static boolean teleport(FakePlayer player,double x,double y,double z)throws Exception{
   java.lang.reflect.Method m=net.minecraft.world.entity.LivingEntity.class.getDeclaredMethod("randomTeleport",double.class,double.class,double.class,boolean.class,net.minecraft.world.item.ItemStack.class);
   m.setAccessible(true);return (Boolean)m.invoke(player,x,y,z,false,net.minecraft.world.item.ItemStack.EMPTY);

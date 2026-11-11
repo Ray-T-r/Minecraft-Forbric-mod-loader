@@ -108,7 +108,7 @@ public final class BreakAndLoot {
   mode="xp";
   test("xp.neoDecision",()->{String r=mine.apply(Blocks.LAPIS_ORE.defaultBlockState(),pick.copy());return expect(r.equals("broken=true xp=50 drops=[minecraft:lapis_ore=50]"),r);});
   mode="";
-  // A Fabric mod's hooks in vanilla's tryDropExperience (canary forbricxprelay), which the merged game never calls: natively a
+  // A Fabric mod's hooks in vanilla's tryDropExperience (canary forbricxprelay), which NeoForge's game never calls: natively a
   // redstone ore break drops its 1..5 plus a hundred (a @ModifyVariable at the store), and nether quartz ore none (a HEAD cancel
   // handed every argument, the provider included). The kernel relays the woven method to the drops event's value.
   test("xp.fabricReplace",()->{StringBuilder all=new StringBuilder();

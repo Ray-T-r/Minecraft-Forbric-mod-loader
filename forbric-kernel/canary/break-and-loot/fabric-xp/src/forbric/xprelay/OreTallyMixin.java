@@ -11,7 +11,7 @@ import org.spongepowered.asm.mixin.injection.ModifyVariable;
 
 /**
  * Replaces redstone ore's experience where vanilla stores it in tryDropExperience: a hundred more. Natively (Fabric) a redstone
- * ore break drops 101..105; on the merged base nothing calls tryDropExperience, so this ran only through the kernel's relay.
+ * ore break drops 101..105; on NeoForge's base nothing calls tryDropExperience, so this ran only through the kernel's relay.
  */
 @Mixin(Block.class)
 public abstract class OreTallyMixin {

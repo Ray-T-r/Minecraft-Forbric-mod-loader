@@ -36,7 +36,7 @@ import net.neoforged.neoforge.registries.DeferredHolder;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
 /**
- * Item tooltips rendered on a dedicated server through the merged ItemStack: vanilla's component lines (lore,
+ * Item tooltips rendered on a dedicated server through NeoForge's ItemStack: vanilla's component lines (lore,
  * enchantments, attribute modifiers, durability), a NeoForge mod's appender placed before lore, a Fabric mod's
  * component tooltip providers (canary/tooltips/fabric) in each position fabric-item-api offers, and controls that hold
  * with or without any of them (the name, the advanced id line, a plain stick, a hidden and an absent provider).

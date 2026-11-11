@@ -13,7 +13,7 @@ import org.spongepowered.asm.mixin.injection.invoke.arg.Args;
 
 /**
  * malilib's shape: keys under this mod's prefix keep their number formats (%02d, %.2f) instead of vanilla's rewrite
- * to %s. On the merged base loadFromJson(InputStream, BiConsumer) is a stub passing a no-op component consumer to
+ * to %s. On NeoForge's base loadFromJson(InputStream, BiConsumer) is a stub passing a no-op component consumer to
  * NeoForge's three-argument body, which is where the entries are read and the one the game calls.
  */
 @Mixin(Language.class)
