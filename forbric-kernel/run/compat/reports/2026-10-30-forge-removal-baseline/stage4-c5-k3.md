@@ -356,3 +356,169 @@ default root as `KernelModLoaderClasslessTest`'s rows have it.
 3. (G-C / gate owners) No gate joins a dedicated server with a Fabric mod that has a creative tab, so the client-window sort is
    pinned by the unit shape test and these measured arms only. A Fabric creative tab on the m12 or m14 client (fixture or
    canary) plus a smoke read of `SORTED_TABS` at the join would make it a gate check.
+
+## K3b wave 2b review fixes (2026-11-11)
+
+Reviews `c5/review-k3b-w2b-A.md` (A-1..A-3) and `c5/review-k3b-w2b-B.md` (B-1..B-7). Branch `s4-c5-k3`, on a4981568:
+8db54acf, c80e5c84, 07b16ecb, c7b18b7b, fcf90fda, 61b9945b, and this record. Evidence:
+`~/Forbric-backups/stage4-notes/c5/k3b/w2b/review-fixes/` (mut-*.diff/log/xml/summary, tip-xml/, ci-measure.log + ci-xml/,
+native-src/, gates/{tip,tip2,mut-common-first}/, suite/, suite-c7b18b7b/). Nine findings: seven fixed, two answered in
+this record (B-5, B-6); none refuted.
+
+### Per finding
+
+- **A-1 fixed (8db54acf).** Verified first: `published(neo, classless)` and the ModList publish put every mod with no `@Mod`
+  class after every constructed mod, whatever the dependencies said (code read at a4981568; K3b's 25fbc88f did not touch
+  the ModList order). The m9 pack shows it: the in-tree client-merged-pack log of an earlier m9 run (2026-11-01, the same
+  publish code) has ModList `…, lambdynlights, stellarity, lambdynlights_api, spruceui, shogi_api, apollib,
+  yumi_mc_core`, while lambdynlights' `neoforge.mods.toml` requires lambdynlights_api and spruceui. The fix applies the guiding rule (option (a) of the review):
+  `dependencyOrder()` (`ModConstructionOrder.of` over the published mod metadata) is computed once. It orders the `@Mod`
+  classes' construction, as before. `published(constructed, classless, order)` now places every container, declared-only
+  ones included, in that order, in `publishedNeoMods()` and in ModList alike. With no metadata, or under
+  `-Dforbric.modOrder=name`, nothing changes. On the withdrawal re-publish the same order is applied. Measured at the new
+  tip (m9, `gates/tip/m9-client.latest.log`): `…, lambdynlights_api, … spruceui, lambdynlights, yumi_mc_core` (yumi_mc_core
+  is a presence alias; aliases still go last and take no setup phase). This changes the order in which setup phases,
+  `RegisterEvent` (deliverInModOrder reads ModList) and `DataPackRegistryEvent.NewRegistry` reach the declared-only mods.
+  Tests: `KernelModLoaderPublishedOrderTest.aModWithNoModClassStandsInTheDependencyOrder` (unit) and
+  `aDeclaredOnlyLibraryIsPublishedBeforeTheModThatRequiresIt` (staged). In the staged case one jar declares `ordertest_dep`
+  (an `@Mod`, which requires `ordertest_lib`), `ordertest_free` (an `@Mod`) and `ordertest_lib` (no class), and the test
+  expects free, lib, dep in the map and in ModList. Red controls:
+  - the call site back to the old two-argument `published` (`mut-a1-callsite.*`): the staged case is red, "expected
+    [ordertest_free, ordertest_lib, ordertest_dep] but was [ordertest_free, ordertest_dep, ordertest_lib]";
+  - `published` ignoring the order (`mut-a1-ignore-order.*`): 2/4 red, the unit and the staged case.
+
+  Not covered by the review's suggested shape: no staged case fires a setup phase at a classless mod with a subscriber. The
+  map that `firePhase` walks is the one pinned, and `walkingThePublishedModsIsWalkingModList` already pins that walk.
+  Remaining native-order difference: `NewRegistryEvent` goes to `registrationBuses(mods, classless)`, so constructed mods
+  first, then the declared-only ones. Native NeoForge posts it in ModList order (`RegistryManager.postNewRegistryEvent` ->
+  `ModLoader.postEventWrapContainerInModOrder`, `native-src/neoforge-config-and-registry-order.txt`). Not changed (open
+  item 3).
+- **A-2 fixed (c80e5c84, comments only).** All three were confirmed wrong at a4981568:
+  - `openLateConfigs`' javadoc and `KernelConfigLoad.openLate`'s said "before mod content registration"; the early pass
+    runs at step 2c, after it.
+  - Step 3b2 said the early pass ran before `FMLConstructModEvent`. That event fires inside `registerNeoForgeContent`
+    (`fireSetupPhase(... FML_CONSTRUCT_MOD_EVENT ...)`), before step 2c, so a config registered from it is loaded by the
+    early pass. Only common setup and later phases are late.
+- **A-3 fixed (07b16ecb; fcf90fda).** javap of the carrier, `CommonModLoader.lambda$begin$1`: `if dist == CLIENT:
+  loadConfigs(CLIENT)`, then `loadConfigs(COMMON)` (`native-src/`). The type list moved into `KernelLifecycle.earlyConfigTypes`,
+  now `CLIENT, COMMON` on the client and `COMMON` on a server.
+  - New test `KernelLifecycleEarlyConfigOrderTest`: a literal case, plus a staged case that reads the `ModConfig.Type`
+    constants of the one `CommonModLoader` method that calls `ConfigTracker.loadConfigs` and compares the kernel's list with
+    them.
+  - `KernelLifecycleLateConfigTest.theEarlyPassDoesNotNameStartup` read only `loadEarlyConfigs`' constants, which would
+    have gone vacuous. It now reads both methods, asserts that `loadEarlyConfigs` calls `earlyConfigTypes`, and calls it per
+    side.
+  - Red controls (`mut-a3-*`):
+    - COMMON first: EarlyConfigOrderTest 2/2 red.
+    - STARTUP added: EarlyConfigOrderTest 2/2 and the STARTUP check red.
+    - A literal list in `loadEarlyConfigs` that bypasses `earlyConfigTypes`: the STARTUP check red.
+  - Two checks spelled the old order and went red at 07b16ecb: gate-m9's "the early pass loads both boot-time config
+    types" grepped `loaded NeoForge configs (COMMON+CLIENT)` (m9 162/1), and `KernelLifecycleConfigPassesTest` was red in
+    2 cases (suite at c7b18b7b: 5865/0/7). fcf90fda makes both expect `CLIENT+COMMON`. The m9 check now also guards the
+    order:
+    - tip 61b9945b: 163/0 (`gates/tip2`);
+    - an APFS clone with only `earlyConfigTypes` back to COMMON first (`mut-m9-common-first.diff`): 162/1, red on exactly
+      that check (`gates/mut-common-first`).
+
+    Every client log at the tip says `loaded NeoForge configs (CLIENT+COMMON)`: m26 ×2, m55's three phases, m9. Servers
+    say `(COMMON)`, unchanged.
+- **B-1 fixed (61b9945b + this record).** "Native Fabric shows them from the start" was not measured. It is replaced by what
+  was read from source (`native-src/vanilla-CreativeModeTabs.txt`, `native-src/fabric-pager.txt`):
+  - Vanilla 26.2 `CreativeModeTabs.tabs()` streams `BuiltInRegistries.CREATIVE_MODE_TAB` on every call (`streamAllTabs`).
+  - fabric-creative-tab-api-v1 5.0.14's pager (`CreativeModeInventoryScreenMixin.getTabsOnPage` / `hasAdditionalPages` /
+    `hasGroupForPage`, `FabricCreativeGuiComponents`) reads `tabs()`.
+  - So natively a registered Fabric tab is in the list the strip reads, and there is no sorted copy to miss. Where Fabric
+    assigns a page (`CreativeModeTabsMixin.paginateTabs`) was not traced.
+
+  No native Fabric client arm and no native NeoForge client arm were run: the only native arm is the NeoForge dedicated
+  server. The e785444a commit body keeps the sentence; this record and the corrected code comment carry the correction.
+- **B-2 fixed (61b9945b + this record).** The tab contents and the search tab were not measured. Every arm's probe prints
+  `ITEMS …=0`, because display items are built only when the screen opens. "Searchable" in e785444a's body and in §1
+  check 2 above means only "in the `CREATIVE_MODE_TAB` registry", which the probe did read. The code comment now says that.
+- **B-3 fixed (this record, handoff).** A third walker of `publishedNeoMods()` changed order with 25fbc88f:
+  `registerDataPackRegistries` posts `DataPackRegistryEvent.NewRegistry` per mod over it, now in ModList order. Native
+  posts it through `ModLoader.postEventWrapContainerInModOrder` (javap, same file), so this is native-equivalent. The
+  `published` javadoc now names it (8db54acf).
+- **B-4 fixed (evidence).** The lane's m55 run at e785444a left its three per-phase client logs in
+  `build/verification/m55-creative-search/`. They are now copied to `c5/k3b/w2b/gates/tip-client/m55-phase-logs/`
+  (PROVENANCE.txt; `resort-lines.txt`: baseline, refreshed and withheld each log `re-sorted NeoForge creative tabs
+  10 -> 10`), and the last-phase run-dir log is beside them. So "each phase" in the gate table above holds. This run's m55
+  phase logs are in `review-fixes/gates/tip/m55-phase-logs/` (each: `10 -> 10`, `CLIENT+COMMON`).
+- **B-5 answered (this record).** The C3 caller check's evidence is in this record, not in e785444a's body. The new symptom
+  check (probe `k3btabs.jar` on `SORTED_TABS`) was shown red on the genuine base, not on cf0498eb: `tabs/mp-on` and
+  `tabs/mp-off` (no sort at the client window's close) leave mcwstairs out of the strip on a join, and `tabs/mp-fix` has
+  it. That stands in for the merged-base validation because the defect it detects exists only after the C3 deletion
+  point moved: on cf0498eb the re-sort in `closeRegistrationWindow` and NeoForge's tail sort both ran, and neither covers
+  `Minecraft.<init>`. The question there is whether the probe sees a late tab, and the genuine-base mp-on arm shows it
+  does.
+- **B-6 answered (this record, handoff).** Open item 3 (no gate joins a server with a Fabric creative tab) is now assigned
+  to **the orchestrator**, likely as a later G-C item: add a Fabric creative tab to the m12 or m14 client (fixture or
+  canary), plus a smoke read of `SORTED_TABS` at the join. For the merger: merge-k.md's open rows "B-7" and "K3
+  unchanged items" are resolved by K3b. The config-order part is now fixed (A-3). B-8/A-4 stays open.
+- **B-7 fixed.** `/private/tmp/claude-501/k3bscratch/` (one draft, record-k3b.md) is deleted.
+
+### Results at the tip
+
+- **Targeted, at the worktree before commit** (`review-fixes/tip-xml/`): KernelModLoaderPublishedOrderTest 4/4,
+  KernelLifecycleEarlyConfigOrderTest 2/2, KernelLifecycleLateConfigTest 6/6, KernelModLoaderClasslessTest 8/8,
+  KernelLifecycleRegistrationWindowTest 8/8, ModConstructionOrderTest 19/19.
+- **ci-unstaged** (APFS clone at 07b16ecb's tree, staged root pointed nowhere, no requireFixtures, `ci-measure.log`,
+  `ci-xml/`):
+  - `aDeclaredOnlyLibraryIsPublishedBeforeTheModThatRequiresIt` skips "[fixture:staged] staged runtime classes/carrier
+    absent".
+  - `theClientsOrderIsTheCarriersOwn` skips "[fixture:staged] staged NeoForge carrier absent".
+  - Every other new case runs.
+  - Two rows were added in sort order (c7b18b7b); no existing row was changed.
+- **Suite** (`suite.sh` on an APFS clone, src identical to the worktree at 61b9945b, `review-fixes/suite/`): **5865 tests /
+  0 skipped / 5 failed**, the five names of failures-k.txt, so 0 new. Name diff against the lane's e785444a run: 0 gone, 4
+  new (the two new PublishedOrder cases, the two EarlyConfigOrder cases). The intermediate run at c7b18b7b
+  (`suite-c7b18b7b/`) was 5865/0/7: the two KernelLifecycleConfigPassesTest reds fixed by fcf90fda.
+- **Gates**, in the K3 worktree on 07b16ecb's code (m9 also at 61b9945b), one at a time, counting `^[kernel] PASS/FAIL`.
+  Gates whose reach changed: classless mods present (m9, m10-overlay), client config order (m26, m55, m9), config gates
+  (m2, m7-neo).
+
+  | gate | PASS / FAIL | e785444a |
+  |---|---|---|
+  | m10-overlay | 24 / 0 | 24/0 |
+  | m2 | 29 / 0 | 29/0 |
+  | m7-neo | 28 / 0 | 28/0 |
+  | m26-forgeclient | 45 / 0 | 45/0 |
+  | m55-creative-search | 23 / 0 | 23/0 |
+  | m9-client at 07b16ecb | 162 / 1 (the config-order check, fixed by fcf90fda) | 163/0 |
+  | m9-client at 61b9945b | **163 / 0** | 163/0 |
+  | m9-client, COMMON first (control) | 162 / 1 | — |
+
+  m1, m2b, m4, m4-canary, m21 and m25 were not re-run. They are servers (A-3 does not reach them), and none of their
+  run-dir logs lists a declared-only NeoForge mod (the kernel's "declare no @Mod class" line): server-fabric-api,
+  server-tri, server-tri-real, server-forgesetup and server-worldgen-canaries from the lane's e785444a runs, and
+  server-kernel from this run's m2. Only client-merged-pack (m9) and server-overlay (m10) have one. So A-1 reorders
+  nothing there. 61b9945b is comment-only, so the 07b16ecb runs stand for it.
+
+### For other lanes (replaces the K3b list above where they differ)
+
+- **Merger.** Changed files beyond K3b's:
+  - `KernelModLoader.java`: `dependencyOrder`, three-argument `published`, construction and publish order.
+  - `KernelLifecycle.java`: `earlyConfigTypes`, three comments; the creative-tab sort comment.
+  - `KernelConfigLoad.java`: a comment.
+  - `gate-m9-client.sh`: one check's pattern, now `CLIENT+COMMON`.
+  - Tests: KernelModLoaderPublishedOrderTest, KernelLifecycleLateConfigTest, KernelLifecycleConfigPassesTest, and the new
+    KernelLifecycleEarlyConfigOrderTest.
+  - `ci-unstaged.tsv`: +2 rows, so +3 with K3b's.
+  - Suite count: +4 over K3b, so 5858 -> 5865.
+
+  Mark merge-k's "B-7" and "K3 unchanged items" rows resolved. B-8/A-4 stays open.
+- **G-C:** gate-m9 changed in one check (pattern only); no overlap with G-C's m9 seam pair. Nothing else.
+- **G-B2, UPG, SWAP:** nothing.
+- **T-B phase 2:** one new test class (2 cases) and two more PublishedOrder cases, with their ci-unstaged rows. The
+  ci-prepared-noforge profile was not measured.
+
+### Open items
+
+1. (orchestrator, unchanged) K3 B-8/A-4: a throwing RegisterEvent listener is contained, where native NeoForge rolls
+   back and stops.
+2. (orchestrator; G-C as a later item) No gate joins a dedicated server with a Fabric creative tab: B-6 above.
+3. (orchestrator / kernel, new, low) `NewRegistryEvent` reaches the declared-only mods after every constructed mod
+   (`registrationBuses`), where native NeoForge walks ModList. No declared-only jar the review scanned has any subscriber
+   (review A, `scanlist.py`).
+4. (orchestrator, optional) A native Fabric client arm (fabric-api + mcw-stairs) and a native NeoForge client arm were not
+   run. B-1's native-Fabric statement rests on the javap read above.
