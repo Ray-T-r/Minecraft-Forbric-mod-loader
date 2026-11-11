@@ -29,7 +29,7 @@ import org.objectweb.asm.tree.ClassNode;
 
 /**
  * The creative pager on the REAL merged screen, in a real JVM: the merged {@code CreativeModeInventoryScreen}, put
- * through fabric-api's own class tweaker and the bridge, linked — and so verified — against the merged game, NeoForge's
+ * through fabric-api's own class tweaker and the bridge, linked — and so verified — against the patched game, NeoForge's
  * carrier and fabric-api's interface, then called the way owo-lib and a Fabric mod call it, and paged with NeoForge's
  * own button lambdas.
  *
@@ -143,7 +143,7 @@ class KernelCreativePagerMergedScreenTest {
 		return (sun.misc.Unsafe) f.get(null);
 	}
 
-	/** The merged game, both carriers, the libraries they link against, the compiled pager, and the bridged screen. */
+	/** The staged game, the NeoForge carrier, the libraries they link against, the compiled pager, and the bridged screen. */
 	private static URLClassLoader gameLoader() throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.test.runtimeClasses", "build/classes/java/runtime"));
 		Path merged = RUN.resolve(TestFixtures.BASE_JAR);
@@ -188,7 +188,7 @@ class KernelCreativePagerMergedScreenTest {
 		byte[] bytes;
 		try (ZipFile zip = new ZipFile(merged.toFile())) {
 			ZipEntry entry = zip.getEntry(SCREEN.replace('.', '/') + ".class");
-			assertNotNull(entry, "the merged base has no creative screen");
+			assertNotNull(entry, "the staged base has no creative screen");
 			bytes = zip.getInputStream(entry).readAllBytes();
 		}
 		byte[] tweaked = CreativePagerFixtures.classTweaked(SCREEN, bytes);

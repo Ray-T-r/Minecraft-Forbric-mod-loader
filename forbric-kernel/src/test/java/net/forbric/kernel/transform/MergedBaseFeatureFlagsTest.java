@@ -45,7 +45,7 @@ class MergedBaseFeatureFlagsTest {
 
 	@Test
 	void theModdedFlagLoaderCallIsSentToTheKernel() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged base absent");
 		byte[] original;
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			ZipEntry entry = zip.getEntry(ForbricMergedBaseCompatTransformer.FEATURE_FLAGS + ".class");

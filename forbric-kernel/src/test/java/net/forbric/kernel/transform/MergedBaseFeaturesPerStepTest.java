@@ -37,7 +37,7 @@ class MergedBaseFeaturesPerStepTest {
         String file="accessWidener v2 official\naccessible field "+OWNER+" featuresPerStep "+SUPPLIER+"\nmutable field "+OWNER+" featuresPerStep "+SUPPLIER+"\n";
         return ClassTweakerTransformer.create(List.of(file.getBytes(java.nio.charset.StandardCharsets.UTF_8)),(n,b)->{}).transform(BINARY,original(),null);
     }
-    private static byte[] original()throws IOException{TestFixtures.requireFile(Fixture.STAGED, MERGED,"staged merged base absent — skipping real-bytecode check");return read(MERGED,OWNER);}
+    private static byte[] original()throws IOException{TestFixtures.requireFile(Fixture.STAGED, MERGED,"staged base absent — skipping real-bytecode check");return read(MERGED,OWNER);}
     private static byte[] read(Path jar,String owner)throws IOException{try(ZipFile zip=new ZipFile(jar.toFile())){var entry=zip.getEntry(owner+".class");assertNotNull(entry,owner);try(var input=zip.getInputStream(entry)){return input.readAllBytes();}}}
     private static ClassNode node(byte[] bytes){ClassNode node=new ClassNode();new ClassReader(bytes).accept(node,0);return node;}
 }

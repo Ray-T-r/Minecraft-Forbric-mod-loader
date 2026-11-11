@@ -29,7 +29,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
 
 /**
- * {@link UncalledDecisionEntries} on the unmodified Create Fly redstone-connection hook against the staged merged base and the
+ * {@link UncalledDecisionEntries} on the unmodified Create Fly redstone-connection hook against the staged base and the
  * native references it carries. Natively {@code RedStoneWireBlock.getConnectingSide} asks the static
  * {@code shouldConnectTo(state, direction)} once and {@code shouldConnectTo(state)} (which forwards {@code (state, null)})
  * twice; NeoForge asks the neighbour's {@code state.canRedstoneConnectTo(level, pos, direction)} at the same three places, and

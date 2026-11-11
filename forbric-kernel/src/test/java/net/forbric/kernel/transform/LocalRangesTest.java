@@ -137,7 +137,7 @@ class LocalRangesTest {
 		assertEquals(0, LocalRanges.widen(OWNER, method));
 	}
 
-	/** Through {@link LocalRanges#transform}: a merged game class is rewritten, a mod's class (attributed) is not read. */
+	/** Through {@link LocalRanges#transform}: a game class is rewritten, a mod's class (attributed) is not read. */
 	@Test void onlyMergedGameClassesAreTouched() {
 		LabelNode start = new LabelNode(), end = new LabelNode();
 		MethodNode method = method("(I)I", code -> {

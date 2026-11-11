@@ -79,7 +79,7 @@ class MixinDefaultPredicateTransportTest {
 	private record Context(Function<String,ClassNode>current,Function<String,ClassNode>nativeClasses){}
 	private static Context context()throws Exception{
 		String configured=System.getProperty("forbric.predicateBase");Path base=configured==null?TestFixtures.stagedBase():Path.of(configured);
-		TestFixtures.requireFile(Fixture.STAGED, base,"native-referenced merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, base,"native-referenced staged base required");
 		ZipFile game=new ZipFile(base.toFile());OPEN.add(game);
 		Path runtime=TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);TestFixtures.requireFile(Fixture.STAGED, runtime,"actual carrier required");ZipFile carrier=new ZipFile(runtime.toFile());OPEN.add(carrier);
 		NativeGameReferences references=new NativeGameReferences(name->read(game,name),null,TestFixtures.launchSources(base));ClassNode host=references.get(Ecosystem.FABRIC,HOST);TestFixtures.require(Fixture.STAGED,host!=null,"hash-pinned native host required (old bases deliberately cannot transport predicates)");

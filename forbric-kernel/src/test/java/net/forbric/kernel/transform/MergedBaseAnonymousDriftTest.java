@@ -45,7 +45,7 @@ import org.objectweb.asm.tree.MethodNode;
 import net.forbric.kernel.mixin.MergedBaseAnonymousDrift;
 
 /**
- * Derives the three anonymous-drift buckets from stock 26.2 and the merged base and asserts they EQUAL the
+ * Derives the three anonymous-drift buckets from stock 26.2 and the staged base and asserts they EQUAL the
  * pinned constants. The identity of an anonymous class is its non-{@code <init>} method set (name + descriptor)
  * plus its superclass; the constructor descriptor and the {@code val$} captures are javac's plumbing.
  */
@@ -67,7 +67,7 @@ class MergedBaseAnonymousDriftTest {
 	@Test
 	void theThreeBucketsAreExactlyThePinnedConstants() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged base absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Map<String, Shape> vanillaShapes = shapes(vanilla), mergedShapes = shapes(MERGED);
 		assertTrue(vanillaShapes.size() > 500, "this does not look like a full vanilla jar (" + vanillaShapes.size() + " anonymous classes)");
@@ -96,7 +96,7 @@ class MergedBaseAnonymousDriftTest {
 			java.util.Collections.sort(candidates);
 			if (candidates.isEmpty()) reshaped.add(name); else relocated.put(name, candidates);
 		}
-		assertEquals(0, missing, "vanilla anonymous classes absent from the merged base");
+		assertEquals(0, missing, "vanilla anonymous classes absent from the staged base");
 		assertEquals(new TreeMap<>(MergedBaseAnonymousDrift.RELOCATED), relocated, "RELOCATED: vanilla $N whose body lives at another $M");
 		assertEquals(new TreeSet<>(MergedBaseAnonymousDrift.RESHAPED), reshaped, "RESHAPED: vanilla $N whose body exists nowhere in the outer class");
 		assertEquals(new TreeSet<>(MergedBaseAnonymousDrift.CAPTURE_ONLY), captureOnly, "CAPTURE_ONLY: same methods, different constructor or captures — never flagged");

@@ -21,7 +21,7 @@ import org.objectweb.asm.tree.MethodNode;
 import org.objectweb.asm.tree.VarInsnNode;
 
 /**
- * An AFTER callback whose call the merged game moved into a static helper follows the call as Mixin binds the injector
+ * An AFTER callback whose call the patched game moved into a static helper follows the call as Mixin binds the injector
  * and resolves its point, however either is written. The host is the method the selectors bind in the class the mod was
  * compiled against — owner-qualified, dotted, spaced, doubled or a bare name binding the first method of that name — and
  * the call is the one the point selects there, its owner or descriptor left out where that method decides it. Before,

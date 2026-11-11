@@ -220,7 +220,7 @@ class MixinBlockInteractionCaptureTest {
 	}
 
 	/**
-	 * Written with vanilla's descriptor, the selector names a method the merged game declares under another one: it moves
+	 * Written with vanilla's descriptor, the selector names a method the patched game declares under another one: it moves
 	 * to NeoForge's lambda. Written as a bare name, it already binds NeoForge's lambda, the first of that name, and does not
 	 * move. Either way NeoForge's lambda takes its event between the state and the position: Mixin would append that
 	 * event where the handler takes the position, so each appended value names its slot there.

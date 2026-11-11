@@ -209,7 +209,7 @@ class MixinPlatformIdentityTest {
 
 	@Test void codeNoSingleModOwnsIsToldTheKernelsName() throws Throwable {
 		String unknown = every("unknown(Forbric)", "other", "other", "Forbric");
-		assertEquals(unknown, asked(game(jar)), "a jar no selected mod owns: the merged base, a carrier, a library");
+		assertEquals(unknown, asked(game(jar)), "a jar no selected mod owns: the staged base, a carrier, a library");
 		assertEquals(unknown, asked(game(jar, Ecosystem.FABRIC, Ecosystem.NEOFORGE)), "a jar two ecosystems claim");
 		assertEquals("Forbric", new ForbricMixinService().getName(), "the kernel's own call, and Mixin's");
 		assertEquals("Forbric", java.util.Optional.of(new ForbricMixinService()).map(IMixinService::getName).orElseThrow(),

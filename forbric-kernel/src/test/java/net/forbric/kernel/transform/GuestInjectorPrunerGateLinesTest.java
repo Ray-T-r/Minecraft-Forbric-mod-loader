@@ -95,12 +95,12 @@ class GuestInjectorPrunerGateLinesTest {
 		byte[] bytes = readFromNestedJar(fabricApi, module, entry);
 		TestFixtures.require(Fixture.THIRD_PARTY, bytes != null, mixin + " absent from the nested " + module + " module");
 		// The pruner proves each protocol against the merged target it lands in, so without the base it rightly prunes nothing.
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent: " + MERGED_BASE);
 		net.forbric.kernel.mixin.MixinStubRebind.noteEcosystem(mixin.replace('.', '/'), net.forbric.api.Ecosystem.FABRIC, module + ".mixins.json");
 		return bytes;
 	}
 
-	/** The pruner reading the staged merged base, NeoForge's carrier appenders as the kernel splices them, and fabric-api's providers. */
+	/** The pruner reading the staged base, NeoForge's carrier appenders as the kernel splices them, and fabric-api's providers. */
 	private static GuestInjectorPruner pruner() {
 		return new GuestInjectorPruner(owner -> {
 			try {

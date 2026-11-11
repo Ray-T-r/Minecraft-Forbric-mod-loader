@@ -426,10 +426,10 @@ class NativeOnlyMethodsCensusTest {
 		for (Map.Entry<String, Path> library : libraries.entrySet()) {
 			assertTrue(table.libraries().contains(NativeAbsentTargets.membersDigest(library.getValue())), library.getKey());
 			Map<String, byte[]> classes = classes(library.getValue());
-			// The jar that serves such a class is the library's own, never the merged base or a platform's game.
+			// The jar that serves such a class is the library's own, never the staged base or a platform's game.
 			for (String name : classes.keySet()) {
 				String owner = name.substring(0, name.length() - ".class".length());
-				assertFalse(merged.containsKey(name), library.getKey() + "'s " + name + " is in the merged base too");
+				assertFalse(merged.containsKey(name), library.getKey() + "'s " + name + " is in the staged base too");
 				for (Map.Entry<Ecosystem, Map<String, Set<String>>> platform : platforms.entrySet()) {
 					assertFalse(platform.getValue().containsKey(owner), library.getKey() + "'s " + name + " is in "
 							+ platform.getKey().displayName() + "'s game too");

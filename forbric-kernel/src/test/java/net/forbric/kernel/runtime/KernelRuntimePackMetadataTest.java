@@ -42,7 +42,7 @@ import org.junit.jupiter.api.Test;
  * forbric/forbric-kernel-runtime" with a {@code JsonParseException} stack, and NeoForge's reader then fell back.
  * The pack still loaded — its compatibility is forced — so this was noise, but it was noise that looked like a
  * Forbric failure in every log a player sends. Parsed here with the game's own strict codec, with no fallback, and
- * checked against the resource version the merged game itself reports.
+ * checked against the resource version the patched game itself reports.
  */
 class KernelRuntimePackMetadataTest {
 	@Test
@@ -79,7 +79,7 @@ class KernelRuntimePackMetadataTest {
 		}
 	}
 
-	/** {@code resource_major} and {@code resource_minor} from the merged game's own version.json. */
+	/** {@code resource_major} and {@code resource_minor} from the patched game's own version.json. */
 	private static int[] resourceVersion() throws IOException {
 		try (ZipFile jar = new ZipFile(merged().toFile())) {
 			String text = new String(jar.getInputStream(jar.getEntry("version.json")).readAllBytes(), StandardCharsets.UTF_8);
@@ -98,13 +98,13 @@ class KernelRuntimePackMetadataTest {
 	}
 
 	/**
-	 * The merged game plus Minecraft 26.2's own library set, read from the launcher's version JSON — the list the
+	 * The patched game plus Minecraft 26.2's own library set, read from the launcher's version JSON — the list the
 	 * build resolves for the game side's test linkage too. The pack codec reaches {@code ExtraCodecs}, whose
 	 * static initialiser touches half a dozen libraries, so a hand-picked list is one class away from breaking.
 	 */
 	private static URLClassLoader gameLoader() throws Exception {
 		Path merged = merged();
-		TestFixtures.requireFile(Fixture.STAGED, merged, "the staged merged game is absent");
+		TestFixtures.requireFile(Fixture.STAGED, merged, "the staged game is absent");
 		Path libraries = TestFixtures.minecraftDir().resolve("libraries");
 		Path versionJson = libraries.getParent().resolve("versions/26.2/26.2.json");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(versionJson), "no 26.2 version JSON beside the local Minecraft libraries");

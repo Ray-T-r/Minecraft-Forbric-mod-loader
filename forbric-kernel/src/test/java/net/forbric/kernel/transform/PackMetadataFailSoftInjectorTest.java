@@ -52,7 +52,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 import net.fabricmc.api.EnvType;
 
 /**
- * Verifies the fail-soft wrap in REAL merged-base bytecode: the pack-dropping throw at
+ * Verifies the fail-soft wrap in REAL staged-base bytecode: the pack-dropping throw at
  * {@code ResourceMetadata$…getSection} is caught and answered with {@code Optional.empty()}, and the vanilla parse
  * survives the move byte for byte.
  *
@@ -143,7 +143,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void exactlyOneNestMemberParsesJson() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		List<String> matched = new ArrayList<>();
 		for (String member : nestMembers()) {
@@ -160,7 +160,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void wrapsTheParseInsteadOfReimplementingIt() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		String target = jsonBackedMember();
 		ClassNode node = transformed(target);
@@ -195,7 +195,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void transformedMethodsAnalyseCleanly() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		ClassNode node = transformed(jsonBackedMember());
 
@@ -210,7 +210,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void theHandAuthoredHandlerFrameHasTheRightShape() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		ClassNode node = transformed(jsonBackedMember());
 		MethodNode getSection = method(node, "getSection");
@@ -232,7 +232,7 @@ class PackMetadataFailSoftInjectorTest {
 
 	@Test
 	void isIdempotent() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 
 		String target = jsonBackedMember();
 		byte[] once = new PackMetadataFailSoftInjector().transform(dotted(target), readClass(target), null);
@@ -344,14 +344,14 @@ class PackMetadataFailSoftInjectorTest {
 				if (name.startsWith(NEST) && name.endsWith(".class")) members.add(name);
 			}
 		}
-		assertTrue(!members.isEmpty(), "content drift: ResourceMetadata nest not found in the staged merged base");
+		assertTrue(!members.isEmpty(), "content drift: ResourceMetadata nest not found in the staged base");
 		return members;
 	}
 
 	private static byte[] readClass(String entry) throws Exception {
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry found = zip.getEntry(entry);
-			assertNotNull(found, entry + " missing from the staged merged base");
+			assertNotNull(found, entry + " missing from the staged base");
 			try (InputStream in = zip.getInputStream(found)) {
 				return in.readAllBytes();
 			}

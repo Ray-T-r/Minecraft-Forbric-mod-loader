@@ -213,7 +213,7 @@ class MixinNativePredicateSeamSpellingTest {
 		MixinPlayerWorldCallbackAdapter.set(MixinFit.atNodes(MixinFit.injectorOf(handler)).getFirst(), "target", target);
 	}
 
-	/** The staged merged base and runtimes, vanilla as fabric-api was compiled against it, and the renamed released wrap. */
+	/** The staged base and runtimes, vanilla as fabric-api was compiled against it, and the renamed released wrap. */
 	private record Inputs(Function<String, ClassNode> classes, Function<String, ClassNode> natives, byte[] releasedBytes,
 			String handlerName, List<String> releasedSelectors) {
 		ClassNode mixin() { return parse(releasedBytes); }

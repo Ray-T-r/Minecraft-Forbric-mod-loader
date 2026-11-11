@@ -20,7 +20,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * On the staged merged base, vanilla's {@code BucketItem.playEmptySound} stores its sound once and hands it straight to
+ * On the staged base, vanilla's {@code BucketItem.playEmptySound} stores its sound once and hands it straight to
  * {@code playSound}; the merged method stores it three times on the carriers' paths. A modifier written for the one native
  * store (as a guest names it: {@code name = "soundEvent"}) moves to the {@code playSound} read — the one read that comes
  * after all three stores. The test names the local as a guest's {@code @ModifyVariable} does; nothing in the proof names a

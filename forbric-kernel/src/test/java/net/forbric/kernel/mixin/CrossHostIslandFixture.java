@@ -5,7 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * For a test outside this package that runs the cross-host predicate island: plans it, as the kernel does at mixin time, from
- * the actual fabric-api drowning modifier, the staged merged base and the given NeoForge breathing hook (the bytes the island
+ * the actual fabric-api drowning modifier, the staged base and the given NeoForge breathing hook (the bytes the island
  * injector will then transform), so {@code CrossHostPredicateIslandInjector} has a registered plan to put into that hook.
  * Needs the same staged fixtures as {@link MixinCrossHostPredicateIslandTest}.
  */

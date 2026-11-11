@@ -118,7 +118,7 @@ class MergedBaseFrameRecomputerTest {
 	/** Reads class bytes out of the staged jars, exactly as the loader's resource lookup would. */
 	private Function<String, byte[]> resolver() throws IOException {
 		TestFixtures.requireFiles(Fixture.STAGED,
-				"staged merged base and carriers absent — skipping the real-hierarchy check", MERGED, NEO_RT);
+				"staged base and carriers absent — skipping the real-hierarchy check", MERGED, NEO_RT);
 		List<ZipFile> jars = new ArrayList<>();
 		for (Path p : List.of(MERGED, NEO_RT)) {
 			ZipFile jar = new ZipFile(p.toFile());

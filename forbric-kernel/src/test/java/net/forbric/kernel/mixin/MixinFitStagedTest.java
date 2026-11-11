@@ -32,7 +32,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 import org.junit.jupiter.api.Test;
 
-/** The three anchor kinds over REAL fabric-api mixins and the RAW merged base — the verdicts before any repair. */
+/** The three anchor kinds over REAL fabric-api mixins and the RAW staged base — the verdicts before any repair. */
 class MixinFitStagedTest {
 	static final Path MERGED_BASE = TestFixtures.stagedBase().normalize();
 	static final Path CLIENT_MODS = Path.of(System.getProperty("user.dir"), "run", "client-kernel", "mods").normalize();
@@ -87,7 +87,7 @@ class MixinFitStagedTest {
 	// ---------------------------------------------------------------------------------------------------------------
 
 	static Function<String, byte[]> rawResolver() {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		return name -> {
 			try {
 				return readFromJar(MERGED_BASE, name);

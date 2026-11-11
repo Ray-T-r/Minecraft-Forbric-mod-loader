@@ -64,12 +64,12 @@ class MergedBaseDegreeConstantTest {
 		assertEquals(57.2957763671875, FOLDED, 0.0,
 				"the repair's constant must be the float-folded one, not the double quotient");
 		assertNotEquals(HALF_TURN / PI_AS_FLOAT, FOLDED,
-				"if these were equal there would be no defect; the merged base's run-time quotient is 57.29577791868205");
+				"if these were equal there would be no defect; the base's run-time quotient is 57.29577791868205");
 	}
 
 	@Test
 	void theMergedEntityDividesByPiAndTheRepairFoldsItBack() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "base not staged: " + MERGED_BASE);
 		byte[] before = entry(MERGED_BASE, ENTITY + ".class");
 		assertTrue(sites(read(before)) > 0, "the merged Entity no longer divides by pi at run time — if the build "
 				+ "pipeline started folding this, delete the repair rather than leaving a claim on a shape that is gone");
@@ -82,7 +82,7 @@ class MergedBaseDegreeConstantTest {
 
 	@Test
 	void vanillaCarriesTheSameLiteralAndNeverTheExpression() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 		ClassNode vanilla = read(entry(VANILLA, ENTITY + ".class"));
 		assertEquals(0, sites(vanilla), "vanilla does not carry the unfolded expression; if it does, the premise "

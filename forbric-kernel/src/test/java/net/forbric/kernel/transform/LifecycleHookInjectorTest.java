@@ -45,7 +45,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * Verifies against the REAL merged-base bytecode that {@link LifecycleHookInjector} excises the genuine
+ * Verifies against the REAL staged-base bytecode that {@link LifecycleHookInjector} excises the genuine
  * FancyModLoader server-loading trigger from {@code net.minecraft.server.Main.main} — the kernel owns the
  * lifecycle, no genuine loader runs.
  */

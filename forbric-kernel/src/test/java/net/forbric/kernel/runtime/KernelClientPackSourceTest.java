@@ -69,7 +69,7 @@ class KernelClientPackSourceTest {
 			+ "Lnet/minecraft/server/packs/repository/PackCompatibility;Lnet/minecraft/world/flag/FeatureFlagSet;"
 			+ "Ljava/util/List;Z)V";
 	/**
-	 * The two places the merged base asks FML something on this path, and there is no FML in a unit test: the
+	 * The two places the staged base asks FML something on this path, and there is no FML in a unit test: the
 	 * SharedConstants initialiser asks whether this is production, and FeatureFlags' initialiser (reached through
 	 * the feature-flags metadata section) asks for modded flags. They answer as a production game with none.
 	 */

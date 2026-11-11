@@ -23,13 +23,13 @@ import net.forbric.kernel.mixin.MixinStubRebind;
 
 /**
  * MixinStubRebind through the real weave: a Fabric mod's injectors, which Mixin binds to a carrier's forwarding stub,
- * land on the body the merged game actually calls.
+ * land on the body the game actually calls.
  *
  * <p>The fixture's {@code LivingEntity} has the shape of the carrier-stubs.txt row
  * {@code randomTeleport(DDDZ)Z -> (DDDZLItemStack;)Z neo=stub}: vanilla's signature, declared first, only
  * forwards to the widened overload, which carries the body. The mixin names {@code randomTeleport} alone, as it would
  * against vanilla, with a HEAD that captures vanilla's four arguments and an INVOKE anchor only the body has. The probe
- * calls the body (the merged game's caller) and then the stub (an old caller), and returns both traces.
+ * calls the body (the game's caller) and then the stub (an old caller), and returns both traces.
  * <ul>
  *   <li>fabric — both handlers move: HEAD runs on either call, still handed vanilla's arguments, and the anchor fires;</li>
  *   <li>fabric-off — {@code -Dforbric.mixinStubRebind=off}, the control: HEAD runs only when the stub is called, the

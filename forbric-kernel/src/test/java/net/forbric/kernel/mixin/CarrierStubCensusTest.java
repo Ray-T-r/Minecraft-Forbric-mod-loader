@@ -52,11 +52,11 @@ class CarrierStubCensusTest {
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
 		TestFixtures.requireFile(Fixture.STAGED, BASE, "the base and the vanilla jar required");
 		Path twinned = TestFixtures.twinnedBase();
-		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
+		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "staged base and vanilla jar required");
 		// The rows themselves need only the base and vanilla; each row's neo= column needs NeoForge's patched game.
 		boolean carriers = Files.isRegularFile(NEO);
 		Map<String, ClassNode> vanilla = read(VANILLA, true);
-		// Who calls what, by name and descriptor whatever the owner: in vanilla, and in the merged game the kernel runs.
+		// Who calls what, by name and descriptor whatever the owner: in vanilla, and in the patched game the kernel runs.
 		Map<String, Set<String>> vanillaCalls = callers(List.of(VANILLA));
 		Map<String, Set<String>> mergedCalls = null;   // read on the first stub that works an argument out
 		TreeSet<String> rows = new TreeSet<>();
@@ -73,12 +73,12 @@ class CarrierStubCensusTest {
 					MixinStubRebind.Delegation delegation = MixinStubRebind.delegation(merged, stub);
 					if (delegation == null) continue;
 					// A stub that works an argument out heads a row only where the carrier pointed vanilla's own calls at
-					// the body and nothing else: every caller of the body in the merged game is a method that calls the
+					// the body and nothing else: every caller of the body in the patched game is a method that calls the
 					// stub's signature in vanilla. There a mod's injector runs exactly where it runs on vanilla; left on
 					// the stub, nothing reaches it (see MixinStubRebind.Delegation).
 					if (delegation.computed()) {
 						if (mergedCalls == null) {
-							TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the merged game's callers include the kernel's");
+							TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the patched game's callers include the kernel's");
 							mergedCalls = callers(List.of(twinned, NEO_RUNTIME, KERNEL_MAIN, KERNEL_RUNTIME));
 						}
 						String self = merged.name + "#" + stub.name + stub.desc;

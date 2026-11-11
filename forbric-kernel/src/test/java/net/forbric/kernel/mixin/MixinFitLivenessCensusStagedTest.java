@@ -44,7 +44,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * Census: every guest mixin of the five compatibility packs, judged as KernelGuestMixinAdapter judges it (MixinFit, then
  * MixinRetarget's plan when that leaves fewer misses) with {@code forbric.mixinFit.liveness} on and off, against the
- * staged merged base and carriers. Pins exactly which mixins change verdict, and says what the final-class ledger will
+ * staged base and carriers. Pins exactly which mixins change verdict, and says what the final-class ledger will
  * do with each injector that never runs: a Mixin injector with a mandatory count is a CONFIRMED row on the mod
  * ("partly did not run"), a MixinExtras one a SUSPECTED note, one with a zero count nothing.
  *
@@ -54,7 +54,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * {@code build/reports/mixin-liveness-census.txt}.
  *
  * <p>And the same judgment set against stock 26.2 ({@link #vanillaAnchorsTheMergedBaseLostArePinned}): every anchor a
- * Fabric mixin names that resolves on vanilla and does not on the merged base after the kernel's transforms and anchor
+ * Fabric mixin names that resolves on vanilla and does not on the staged base after the kernel's transforms and anchor
  * movers — a call whose owner the merge's field widening changed, a call a carrier widened or replaced, a method it
  * reshaped (a name that now binds an overload the handler was not written for), a field it re-typed. That is the class
  * debugify's, CreativeCore's and MoogsStructureLib's mixins fell into (each reached Done on native Fabric and stopped on
@@ -122,7 +122,7 @@ class MixinFitLivenessCensusStagedTest {
 	 */
 	private static final int EXPECTED_IN_PACKS = 25;
 
-	/** The merged base's native references, bound for the census as ForbricMixinService.bind binds them before Mixin starts. */
+	/** The staged base's native references, bound for the census as ForbricMixinService.bind binds them before Mixin starts. */
 	private net.forbric.kernel.classloading.ForbricClassLoader references;
 
 	@AfterEach
@@ -141,7 +141,7 @@ class MixinFitLivenessCensusStagedTest {
 	void exactlyThePinnedMixinsChangeVerdict() throws Exception {
 		for (Path p : List.of(MERGED, NEO_RUNTIME)) TestFixtures.requireFile(Fixture.STAGED, p, p + " required");
 		for (Path p : PACKS.values()) TestFixtures.require(Fixture.THIRD_PARTY, Files.isDirectory(p), p + " required (symlink it from the main checkout)");
-		// KernelGuestMixinAdapter judges with the merged base's native references bound: MixinStubRebind's move of a
+		// KernelGuestMixinAdapter judges with the staged base's native references bound: MixinStubRebind's move of a
 		// state-sharing @Redirect counts the calls it replaces against the mod's own platform there, and MixinFit asks the
 		// same move before it calls a stub's injector one that never runs. Unbound, the census would judge a game no boot has.
 		references = new net.forbric.kernel.classloading.ForbricClassLoader(new java.net.URL[] {MERGED.toUri().toURL()}, getClass().getClassLoader());
@@ -394,13 +394,13 @@ class MixinFitLivenessCensusStagedTest {
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
-	// Vanilla anchors the merged base lost
+	// Vanilla anchors the staged base lost
 
 	/** {@code "name=dir;name=dir"}: census these corpora too — the pure-Fabric A/B set, the compat packs — report only. */
 	private static final String ANCHOR_PACKS = "FORBRIC_ANCHOR_PACKS";
 
 	/**
-	 * fabric-api's anchors that resolve on stock 26.2 and not on the merged base as the kernel's verdict judges it, as
+	 * fabric-api's anchors that resolve on stock 26.2 and not on the staged base as the kernel's verdict judges it, as
 	 * {@code config:mixin | anchor} — 66 of them. Each is a loss the kernel replaces elsewhere (its networking codec and
 	 * configuration wraps are PayloadInterop's, its fuel, hopper, use-on and sound hooks
 	 * bridges or adapters of their own that the verdict does not ask, its item tooltip hooks the Fabric tooltip bridge's
@@ -530,7 +530,7 @@ class MixinFitLivenessCensusStagedTest {
 			}
 			lost.put(corpus.getKey(), lines);
 		}
-		StringBuilder summary = new StringBuilder("vanilla anchor census: anchors that resolve on stock 26.2 and not on the merged base\n");
+		StringBuilder summary = new StringBuilder("vanilla anchor census: anchors that resolve on stock 26.2 and not on the staged base\n");
 		for (var corpus : lost.entrySet()) summary.append("  ").append(corpus.getKey()).append(": ").append(corpus.getValue().size()).append('\n');
 		report.insert(0, summary.append('\n'));
 		Files.createDirectories(Path.of("build/reports"));
@@ -646,7 +646,7 @@ class MixinFitLivenessCensusStagedTest {
 		return writer.toByteArray();
 	}
 
-	/** What a mixin names that resolves on vanilla and not on the merged base, judged as KernelGuestMixinAdapter judges it. */
+	/** What a mixin names that resolves on vanilla and not on the staged base, judged as KernelGuestMixinAdapter judges it. */
 	static List<String> lostAnchors(byte[] mixin, Function<String, byte[]> vanilla, Function<String, byte[]> merged) {
 		System.setProperty(MixinFit.LIVENESS_PROPERTY, "off");
 		Set<String> natively = new LinkedHashSet<>(MixinFit.evaluate(mixin, vanilla).unresolved());

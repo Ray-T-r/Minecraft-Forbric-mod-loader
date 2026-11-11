@@ -98,7 +98,7 @@ class ClientSmokeTickInjectorTest {
 		assertTrue(tick.instructions.get(1) instanceof MethodInsnNode call && HOOK_OWNER.equals(call.owner));
 	}
 
-	/** On the real merged base too, since that is the class the gates actually transform. */
+	/** On the real staged base too, since that is the class the gates actually transform. */
 	@Test
 	void theRealMinecraftGainsExactlyOneHook() throws Exception {
 		byte[] real = mergedBaseMinecraft();

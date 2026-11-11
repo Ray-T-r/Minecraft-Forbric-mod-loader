@@ -29,7 +29,7 @@ import org.objectweb.asm.tree.LocalVariableNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * Re-derives {@code lambda-permutations.txt} — every vanilla lambda the merged base still declares under the same name
+ * Re-derives {@code lambda-permutations.txt} — every vanilla lambda the staged base still declares under the same name
  * with the same parameters in ANOTHER ORDER — and asserts the shipped table equals it.
  *
  * <p>javac orders a lambda's captured values by first use, so a carrier patch that uses one of them earlier moves it:
@@ -43,8 +43,8 @@ class LambdaPermutationCensusTest {
 	private static final Path VANILLA = TestFixtures.vanillaJar();
 
 	@Test void theShippedTableIsExactlyWhatTheArtifactsSay() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base and vanilla jar required");
-		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "merged base and vanilla jar required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged base and vanilla jar required");
+		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "staged base and vanilla jar required");
 		Map<String, ClassNode> vanilla = read(VANILLA);
 		TreeSet<String> rows = new TreeSet<>();
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {

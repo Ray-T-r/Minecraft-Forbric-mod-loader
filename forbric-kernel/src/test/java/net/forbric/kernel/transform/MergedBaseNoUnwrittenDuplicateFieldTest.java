@@ -63,7 +63,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 
 	@Test
 	void everyDuplicatedFieldNameHasAWriterForEveryOneOfItsTypes() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping whole-artifact scan");
 
 		List<String> dead = new ArrayList<>();
 		int scanned = 0;
@@ -84,7 +84,7 @@ class MergedBaseNoUnwrittenDuplicateFieldTest {
 				collectDeadVariants(node, dead);
 			}
 		}
-		assertTrue(scanned > 1000, "content drift: this does not look like a full merged base (" + scanned + " classes)");
+		assertTrue(scanned > 1000, "content drift: this does not look like a full staged base (" + scanned + " classes)");
 		assertTrue(dead.isEmpty(),
 				"these merged fields exist in more than one type and at least one of those types is never written, "
 						+ "so it is null for every reader — in the class and in every mod — and nothing throws where "

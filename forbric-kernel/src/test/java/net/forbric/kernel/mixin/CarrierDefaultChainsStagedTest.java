@@ -30,7 +30,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
 
 /**
- * {@link CarrierDefaultChains} on the unmodified upstream fabric-api sound mixin against the staged merged base and the native
+ * {@link CarrierDefaultChains} on the unmodified upstream fabric-api sound mixin against the staged base and the native
  * references it carries. Natively {@code SoundEngine.play} asks {@code soundBuffers.getStream(path, looping)} and fabric-api
  * redirects that; NeoForge asks the sound ({@code SoundInstance.getStream}), whose default asks the buffers. The redirect
  * moves onto the sound's call, its handler kept as written; the mechanism is given no name: the mixin renamed, with one more
@@ -53,7 +53,7 @@ class CarrierDefaultChainsStagedTest {
 		return jar;
 	}
 
-	/** Every class of the merged base and both carriers, as the mixin service hands them to the adapters. */
+	/** Every class of the staged base and the NeoForge carrier, as the mixin service hands them to the adapters. */
 	private static Function<String, ClassNode> game() {
 		List<Path> jars = List.of(merged(), TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR));
 		Map<String, ClassNode> read = new HashMap<>();

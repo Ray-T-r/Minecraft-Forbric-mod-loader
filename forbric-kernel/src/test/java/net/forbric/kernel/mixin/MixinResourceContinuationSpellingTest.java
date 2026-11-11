@@ -22,7 +22,7 @@ import org.objectweb.asm.tree.MethodNode;
 
 /**
  * fabric-api's sign-texture namespace wrap, renamed to an unrelated mixin and written the other ways Mixin reads the
- * same thing, still follows the identifier into the merged game's continuation. Its host is the one constructor its
+ * same thing, still follows the identifier into the patched game's continuation. Its host is the one constructor its
  * selector binds in the merged class, the same one it binds in the class the mod was compiled against — owner-qualified,
  * dotted or doubled — and its point the one call it selects there: spaced, dotted, or without the owner or descriptor
  * that constructor decides. Before, the selector array had to be one string, compared with {@code name}/{@code name +

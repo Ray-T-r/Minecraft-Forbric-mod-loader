@@ -44,7 +44,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * Every fixed-target claim of the compat transformer, fed its real target from the staged merged base or carrier:
+ * Every fixed-target claim of the compat transformer, fed its real target from the staged base or carrier:
  * the ledger is clean and every claim is a hit. Then one target is mutated so exactly one repair declines, and the
  * ledger names that claim and no other — which is the whole reason claims exist.
  */
@@ -58,7 +58,7 @@ class MergedBaseRepairClaimsStagedTest {
 
 	@Test
 	void everyClaimLandsOnItsStagedTargetAndTheLedgerIsClean() throws Exception {
-		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", JARS.toArray(Path[]::new));
+		TestFixtures.requireFiles(Fixture.STAGED, "staged base or carriers absent", JARS.toArray(Path[]::new));
 		TransformChain chain = new TransformChain();
 		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 		chain.register(TransformPhase.COREMOD, compat);
@@ -76,7 +76,7 @@ class MergedBaseRepairClaimsStagedTest {
 
 	@Test
 	void whenOneRepairDeclinesTheLedgerNamesExactlyThatClaim() throws Exception {
-		TestFixtures.requireFiles(Fixture.STAGED, "staged merged base or carriers absent", JARS.toArray(Path[]::new));
+		TestFixtures.requireFiles(Fixture.STAGED, "staged base or carriers absent", JARS.toArray(Path[]::new));
 		TransformChain chain = new TransformChain();
 		ForbricMergedBaseCompatTransformer compat = new ForbricMergedBaseCompatTransformer();
 		chain.register(TransformPhase.COREMOD, compat);

@@ -41,7 +41,7 @@ class VanillaDamageReadInjectorTest {
 	 * ahead of, went with MinecraftForge.)
 	 */
 	@Test void livingEntityReadsBeforeArmour() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, "net/minecraft/world/entity/LivingEntity");
 		byte[] seamed = original;
 		byte[] out = new VanillaDamageReadInjector().transform("net.minecraft.world.entity.LivingEntity", seamed, null);
@@ -63,7 +63,7 @@ class VanillaDamageReadInjectorTest {
 	}
 
 	@Test void playerOverridesTheSameWayAndGetsTheSameRead() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "base not staged: " + MERGED);
 		byte[] original = NativeCoremodParityTest.read(MERGED, "net/minecraft/world/entity/player/Player");
 		byte[] out = new VanillaDamageReadInjector().transform("net.minecraft.world.entity.player.Player", original, null);
 		assertNotSame(original, out);

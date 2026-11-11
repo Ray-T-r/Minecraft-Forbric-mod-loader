@@ -40,7 +40,7 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.FieldNode;
 
 /**
- * A whole-artifact detector for a vanilla field whose vanilla DESCRIPTOR the merged base no longer offers.
+ * A whole-artifact detector for a vanilla field whose vanilla DESCRIPTOR the staged base no longer offers.
  *
  * <h2>Why this is not {@link MergedBaseNoUnwrittenDuplicateFieldTest}</h2>
  *
@@ -88,7 +88,7 @@ class MergedBaseNoVanishedVanillaFieldTest {
 
 	@Test
 	void noVanillaFieldDescriptorHasVanishedBeyondTheKnownSet() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping whole-artifact scan");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping whole-artifact scan");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA),
 				"stock 26.2 absent at " + VANILLA + " — set MC_DIR to a Minecraft install to run this scan");
 
@@ -129,7 +129,7 @@ class MergedBaseNoVanishedVanillaFieldTest {
 		List<String> unexpected = new ArrayList<>(vanished);
 		unexpected.removeAll(KNOWN.keySet());
 		assertEquals(List.of(), unexpected,
-				"a vanilla field's own descriptor no longer exists in the merged base. A mod compiled against "
+				"a vanilla field's own descriptor no longer exists in the staged base. A mod compiled against "
 						+ "vanilla gets NoSuchFieldError there, or an @Accessor that cannot bind — which is a "
 						+ "warning and a feature silently gone. Repair it the way ChunkGenerator.featuresPerStep "
 						+ "was, or add it to KNOWN with what it costs");
@@ -137,7 +137,7 @@ class MergedBaseNoVanishedVanillaFieldTest {
 		List<String> repaired = new ArrayList<>(KNOWN.keySet());
 		repaired.removeAll(vanished);
 		assertEquals(List.of(), repaired,
-				"these are listed as unrepaired drifts and the merged base no longer has them. That is good news: "
+				"these are listed as unrepaired drifts and the staged base no longer has them. That is good news: "
 						+ "delete their lines from KNOWN so the list keeps meaning what it says");
 	}
 

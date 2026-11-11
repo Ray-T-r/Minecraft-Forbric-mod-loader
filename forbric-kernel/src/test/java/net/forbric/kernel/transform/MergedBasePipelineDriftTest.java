@@ -118,7 +118,7 @@ class MergedBasePipelineDriftTest {
 
 	@Test
 	void everyNumericDifferenceFromVanillaIsOneTheKernelRepairs() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 
 		List<String> unrepaired = new ArrayList<>();
@@ -167,7 +167,7 @@ class MergedBasePipelineDriftTest {
 		assertTrue(repaired.size() >= 2, "the census found " + repaired.size() + " repaired numeric differences; the "
 				+ "two known ones (nextDouble and the radians-to-degrees constant) must still be found, or this "
 				+ "test has stopped looking at what it was written for");
-		assertEquals(List.of(), unrepaired, "the merged base computes something vanilla does not, in a method no "
+		assertEquals(List.of(), unrepaired, "the staged base computes something vanilla does not, in a method no "
 				+ "repair covers. Either add a repair, or add it to ARGUED with the argument for why "
 				+ "it is not pipeline drift");
 	}

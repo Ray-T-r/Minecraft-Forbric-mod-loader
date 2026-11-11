@@ -112,7 +112,7 @@ class FmlContextLoaderRewriterTest {
 	void onlyNeoForgeModsAreRewritten() {
 		byte[] in = pluginShaped();
 		assertSame(in, rewrite(in, LoaderProbePolicy.Family.FABRIC));
-		assertSame(in, rewrite(in, null), "the merged base, the carriers and the kernel are never rewritten");
+		assertSame(in, rewrite(in, null), "the base, the carriers and the kernel are never rewritten");
 	}
 
 	@Test

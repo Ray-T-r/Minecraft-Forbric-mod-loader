@@ -111,7 +111,7 @@ class MergedBaseFabricConditionsTest {
 	 */
 	@Test
 	void everyConsumerInTheMergedBaseGoesThroughConditionalOps() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		Set<String> consumers = new LinkedHashSet<>();
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			var entries = zip.entries();
@@ -138,7 +138,7 @@ class MergedBaseFabricConditionsTest {
 		}
 		assertTrue(consumers.size() >= 5,
 				"only " + consumers.size() + " consumer(s) of the conditional codec found — the scan did not run, "
-						+ "or the merged base stopped using it: " + consumers);
+						+ "or the staged base stopped using it: " + consumers);
 	}
 
 	@Test

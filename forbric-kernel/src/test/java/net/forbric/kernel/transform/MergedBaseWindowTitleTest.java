@@ -45,7 +45,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The window title. The merged base carries one loader's title patch, so it announced that loader on an instance
+ * The window title. The staged base carries one loader's title patch, so it announced that loader on an instance
  * running all three; the brand and its separator go, the asterisk vanilla uses for a modified game stays.
  */
 class MergedBaseWindowTitleTest {
@@ -55,10 +55,10 @@ class MergedBaseWindowTitleTest {
 
 	@Test
 	void noLoaderNamesTheWindowAnyMore() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		byte[] in = readClass(MINECRAFT + ".class");
 		MethodNode before = title(parse(in));
-		assertTrue(brands(before).size() == 1, "the merged base must still name one loader: " + brands(before));
+		assertTrue(brands(before).size() == 1, "the staged base must still name one loader: " + brands(before));
 
 		byte[] out = new ForbricMergedBaseCompatTransformer().transform(MINECRAFT.replace('/', '.'), in, null);
 		assertTrue(out != in);
@@ -73,7 +73,7 @@ class MergedBaseWindowTitleTest {
 
 	@Test
 	void aSecondPassLeavesTheRepairedTitleAlone() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		byte[] once = new ForbricMergedBaseCompatTransformer()
 				.transform(MINECRAFT.replace('/', '.'), readClass(MINECRAFT + ".class"), null);
 		assertSame(once, new ForbricMergedBaseCompatTransformer().transform(MINECRAFT.replace('/', '.'), once, null));
@@ -116,7 +116,7 @@ class MergedBaseWindowTitleTest {
 	private static byte[] readClass(String entry) throws Exception {
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry found = zip.getEntry(entry);
-			assertNotNull(found, entry + " missing from the staged merged base");
+			assertNotNull(found, entry + " missing from the staged base");
 			try (InputStream in = zip.getInputStream(found)) {
 				return in.readAllBytes();
 			}

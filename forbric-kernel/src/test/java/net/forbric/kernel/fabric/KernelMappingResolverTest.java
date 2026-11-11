@@ -26,7 +26,7 @@ import net.fabricmc.loader.api.MappingResolver;
 /**
  * Covers the mapping resolver's CONTRACT, which is the only thing about it that can be wrong.
  *
- * <p>Every lookup is the identity because the kernel runs the merged base in Mojmap and modern mods ship compiled
+ * <p>Every lookup is the identity because the kernel runs the base in Mojmap and modern mods ship compiled
  * against Mojmap too. That makes the bodies trivial and the contract the whole risk: a mod branches on
  * {@code getCurrentRuntimeNamespace()} to decide whether it must remap at all, so a namespace name that does not
  * appear in {@code getNamespaces()}, or one spelled differently from what the identity mapping actually is, sends

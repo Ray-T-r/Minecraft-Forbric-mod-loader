@@ -17,7 +17,7 @@ import net.forbric.kernel.transform.ClassTransformer;
 import net.forbric.kernel.transform.TransformContext;
 
 /**
- * A fixture class as the merged base has it after one of the kernel's own COREMOD transformers ran: the production
+ * A fixture class as the base has it after one of the kernel's own COREMOD transformers ran: the production
  * transformer applied to the compiled stand-in, in the fixture jar, before any run reads it.
  *
  * <p>For a transformer {@link KernelBootChain} cannot register the way a boot does — KernelBoot registers Create's

@@ -43,7 +43,7 @@ class MixinShearsRelayTest {
 			MethodNode merged = only(StagedFabricMixinFixture.game(row.target(), false), row.method());
 			assertEquals(1, shearsChecks(vanilla), row + " on vanilla");
 			assertEquals(0, shearsChecks(merged), row + ": a rebuilt base that restores is(SHEARS) makes the row wrong");
-			assertEquals(1, MixinShearsRelay.carrierCalls(merged, row), row + " on the merged base");
+			assertEquals(1, MixinShearsRelay.carrierCalls(merged, row), row + " on the staged base");
 			assertFalse(row.because().isBlank());
 		}
 	}

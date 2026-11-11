@@ -185,7 +185,7 @@ class DatapackRegistryDeclarationTest {
 	// --- the two initialisers, in either order ------------------------------------------------------------------
 
 	/**
-	 * The premise of the whole fix, on stand-ins with the merged base's shape: NeoForge patched the loader's
+	 * The premise of the whole fix, on stand-ins with the base's shape: NeoForge patched the loader's
 	 * initialiser to call into the hooks just before it returns, and the hooks' initialiser copies the loader's
 	 * list. Loader first, and the copy is taken before the TAIL injector runs.
 	 */
@@ -329,14 +329,14 @@ class DatapackRegistryDeclarationTest {
 
 	/**
 	 * The reconcile reaches NeoForge by reflection, and a signature that drifted would turn it into a WARN with no test
-	 * saying so. Every member it names, as the staged carrier and merged base declare them.
+	 * saying so. Every member it names, as the staged carrier and base declare them.
 	 */
 	@Test
 	void theReconcilesReflectiveTargetsExistWithTheseShapes() throws Exception {
 		Path runtime = staged(TestFixtures.NEO_CARRIER_JAR);
 		Path merged = TestFixtures.stagedBase().normalize();
 		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(runtime) && Files.isRegularFile(merged),
-				"carrier or merged base not staged");
+				"carrier or base not staged");
 
 		ClassNode wrapper = classIn(runtime, "net/neoforged/neoforge/registries/DataPackRegistryEvent$DataPackRegistryData");
 		assertTrue(declares(wrapper, "<init>", "(Lnet/minecraft/resources/RegistryDataLoader$RegistryData;"

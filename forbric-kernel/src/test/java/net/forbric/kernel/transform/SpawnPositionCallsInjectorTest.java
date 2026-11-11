@@ -41,7 +41,7 @@ class SpawnPositionCallsInjectorTest {
 		byte[] original = read(MERGED, "net/minecraft/world/level/BaseSpawner.class");
 		byte[] rewritten = injector().transform(SpawnPositionCallsInjector.TARGET, original, null);
 		Function<String, byte[]> before = resources(original), after = resources(rewritten);
-		assertNotEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, before).verdict(), "premise: the merged base misses both");
+		assertNotEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, before).verdict(), "premise: the staged base misses both");
 		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, after).verdict(), MixinFit.evaluate(mixin, after).toString());
 	}
 
@@ -77,7 +77,7 @@ class SpawnPositionCallsInjectorTest {
 		byte[] rewritten = injector().transform(SpawnPositionCallsInjector.NATURAL, original, null);
 		Function<String, byte[]> before = path -> readOrNull(MERGED, path);
 		Function<String, byte[]> after = path -> path.equals(entry) ? rewritten : readOrNull(MERGED, path);
-		assertNotEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, before).verdict(), "premise: the merged base misses it");
+		assertNotEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, before).verdict(), "premise: the staged base misses it");
 		assertEquals(MixinFit.Verdict.FIT, MixinFit.evaluate(mixin, after).verdict(), MixinFit.evaluate(mixin, after).toString());
 	}
 
@@ -92,7 +92,7 @@ class SpawnPositionCallsInjectorTest {
 	}
 
 	private static SpawnPositionCallsInjector injector() {
-		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(NEO), "staged merged base absent");
+		TestFixtures.require(Fixture.STAGED, Files.isRegularFile(MERGED) && Files.isRegularFile(NEO), "staged base absent");
 		return new SpawnPositionCallsInjector(path -> {
 			for (Path jar : List.of(MERGED, NEO)) {
 				byte[] bytes = readOrNull(jar, path);

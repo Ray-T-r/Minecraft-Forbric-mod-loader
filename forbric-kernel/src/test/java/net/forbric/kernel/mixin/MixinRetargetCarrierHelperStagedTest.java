@@ -31,7 +31,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The carrier-helper rules over the REAL mixins of the sweep90 pack and the REAL merged base: the mods that paid for
+ * The carrier-helper rules over the REAL mixins of the sweep90 pack and the REAL staged base: the mods that paid for
  * them, and fabric-rendering-v1's HudMixin, whose four R3 moves out of the same dispatcher must not change.
  */
 class MixinRetargetCarrierHelperStagedTest {
@@ -68,7 +68,7 @@ class MixinRetargetCarrierHelperStagedTest {
 		assertEquals("extractPlayerHealth", plan.rewrites().get(0).from());
 		assertEquals("extractFoodLevel" + G, plan.rewrites().get(0).to());
 		// What still does not run is the other hook, the XP redirect in Hud.extractHotbarAndDecorations, which nothing in
-		// the merged game calls; the food redirect's own anchors all resolve in live code.
+		// the patched game calls; the food redirect's own anchors all resolve in live code.
 		MixinFit.Result after = MixinFit.evaluate(MixinRetarget.rewritten(mixin, plan), resolver);
 		assertEquals(MixinFit.Verdict.PARTIAL, after.verdict(), "after: " + after.unresolved());
 		assertEquals(1, after.unresolved().size(), "after: " + after.unresolved());

@@ -105,7 +105,7 @@ class MergedBaseDiscoveryFamilyTest {
 
 	// ---- fixtures ----------------------------------------------------------------------------------------------------------
 
-	/** Discovers {@link #CONFIG} with the mixin's bytes and, for every other class, the staged merged base's. */
+	/** Discovers {@link #CONFIG} with the mixin's bytes and, for every other class, the staged base's. */
 	private void discover(String point) throws Exception {
 		byte[] mixin = bytes(lateFreeze(point));
 		try (ZipFile jar = new ZipFile(merged.toFile())) {

@@ -30,7 +30,7 @@ import net.forbric.api.CompatibilityFinding;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 
-/** Fabric mods' injectors on the merged base's carrier stubs, as shipped, against the real merged classes. */
+/** Fabric mods' injectors on the staged base's stubs, as shipped, against the real staged classes. */
 @ResourceLock("system-properties")
 @ResourceLock("ModCatalog")
 class MixinStubRebindTest {
@@ -389,8 +389,8 @@ class MixinStubRebindTest {
 	/** MixinFit asks the same rule: the ResolvedModels anchor reads found for the MinecraftForge mod, missing otherwise. */
 	@Test void fusionsVerdictFindsTheAnchorWhereTheRebindPutsIt() throws Exception {
 		Path jar = SWEEP.resolve("fusion-1.3.15a-forge-mc26.2.jar");
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "fusion and the merged base required");
-		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "fusion and the merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "fusion and the staged base required");
+		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "fusion and the staged base required");
 		byte[] mixin, manager;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			mixin = zip.getInputStream(zip.getEntry("com/supermartijn642/fusion/mixin/ModelManagerMixin.class")).readAllBytes();
@@ -508,8 +508,8 @@ class MixinStubRebindTest {
 	/** MixinFit asks the same group rule: owo's lang mixin reads FIT where the three move, PARTIAL where they cannot. */
 	@Test void owosVerdictFollowsTheGroup() throws Exception {
 		Path jar = SWEEP.resolve("owo-lib-0.13.1+26.2.jar");
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "owo and the merged base required");
-		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "owo and the merged base required");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "owo and the staged base required");
+		TestFixtures.require(Fixture.THIRD_PARTY, Files.isRegularFile(jar), "owo and the staged base required");
 		byte[] mixin, language;
 		try (ZipFile zip = new ZipFile(jar.toFile())) {
 			mixin = zip.getInputStream(zip.getEntry("io/wispforest/owo/mixin/text/LanguageMixin.class")).readAllBytes();
@@ -711,7 +711,7 @@ class MixinStubRebindTest {
 		ClassNode loader = merged("net/minecraft/client/renderer/texture/atlas/SpriteResourceLoader");
 		MethodNode forwarding = loader.methods.stream().filter(m -> m.name.equals("loadSprite")
 				&& Type.getArgumentTypes(m.desc).length == 2 && m.instructions.size() > 0).findFirst().orElse(null);
-		assertNotNull(forwarding, "SpriteResourceLoader.loadSprite reshaped in the staged merged base");
+		assertNotNull(forwarding, "SpriteResourceLoader.loadSprite reshaped in the staged base");
 		assertNull(MixinStubRebind.delegation(loader, forwarding));
 	}
 

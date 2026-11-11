@@ -18,7 +18,7 @@ import org.objectweb.asm.Opcodes;
 import net.forbric.api.Ecosystem;
 
 /**
- * An injector bound only to a merged-base method nothing in the game calls is reported as not running — the
+ * An injector bound only to a base method nothing in the game calls is reported as not running — the
  * shape of Better Mount HUD's XP redirect in {@code Hud.extractHotbarAndDecorations}, whose one vanilla caller NeoForge's
  * HUD layers replaced — with the shipped row, synthetic classes, and no staged jar.
  */
@@ -79,7 +79,7 @@ class MixinFitLivenessTest {
 
 	/**
 	 * An installed mod calling the method makes it run: fabric-resource-loader, Iris and Collective call the
-	 * {@code Language.loadFromJson} stub the merged game no longer does. The boot-time scan reads it from the constant pool.
+	 * {@code Language.loadFromJson} stub the patched game no longer does. The boot-time scan reads it from the constant pool.
 	 */
 	@Test
 	void aModThatCallsTheMethodMakesItRun() {

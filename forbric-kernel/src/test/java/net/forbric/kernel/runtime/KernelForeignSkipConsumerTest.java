@@ -14,7 +14,7 @@ class KernelForeignSkipConsumerTest {
  @Test void knownMarkerSkipsDataWhileNormalOptionalAndDecodeErrorsRemainIntact()throws Exception{
   Path game=TestFixtures.stagedBase();
   Path compiled=Path.of("build/classes/java/runtime");
-  TestFixtures.require(Fixture.STAGED,Files.exists(game),"the staged merged base required");
+  TestFixtures.require(Fixture.STAGED,Files.exists(game),"the staged base required");
   TestFixtures.require(Fixture.GAME_SIDE,Files.exists(compiled),"actual game-side compilation required");
   Path mc=TestFixtures.minecraftDir();
   TestFixtures.require(Fixture.MC_LIBRARIES,Files.isRegularFile(mc.resolve("versions/26.2/26.2.json")),"no local Minecraft 26.2 version JSON");

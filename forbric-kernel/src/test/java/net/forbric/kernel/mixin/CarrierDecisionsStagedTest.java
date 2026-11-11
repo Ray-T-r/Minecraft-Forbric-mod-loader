@@ -31,7 +31,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.TestFixtures;
 
 /**
- * {@link CarrierDecisions} on unmodified upstream fabric-api mixins against the staged merged base and the native references
+ * {@link CarrierDecisions} on unmodified upstream fabric-api mixins against the staged base and the native references
  * it carries: what fabric-api's mining, enchanting and effect handlers become, read as Mixin will read them, and the mining
  * handler pair executed. The mechanism is given no name: the same handlers renamed, with one more instruction, still move;
  * a {@code @Group} or the switch leaves them as compiled.

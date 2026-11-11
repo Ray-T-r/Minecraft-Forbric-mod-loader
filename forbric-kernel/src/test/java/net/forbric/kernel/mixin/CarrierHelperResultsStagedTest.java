@@ -203,7 +203,7 @@ class CarrierHelperResultsStagedTest {
 		assertArrayEquals(before, StagedFabricMixinFixture.bytes(mixin), why);
 	}
 
-	/** The class each ecosystem's mods were compiled against, from the staged merged base's native references. */
+	/** The class each ecosystem's mods were compiled against, from the staged base's native references. */
 	private static java.util.function.BiFunction<net.forbric.api.Ecosystem, String, ClassNode> natives() {
 		Path jar = TestFixtures.stagedBase();
 		TestFixtures.requireFile(Fixture.STAGED, jar, "actual game required");

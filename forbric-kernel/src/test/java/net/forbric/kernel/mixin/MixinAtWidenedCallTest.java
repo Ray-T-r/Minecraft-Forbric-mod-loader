@@ -39,7 +39,7 @@ import org.objectweb.asm.tree.TypeInsnNode;
 /**
  * Holds the injection-point widening to the cases where moving a point cannot break the handler.
  *
- * <p>The merged base declares vanilla's {@code CustomPacketPayload.codec(FallbackProvider, List)} beside
+ * <p>The staged base declares vanilla's {@code CustomPacketPayload.codec(FallbackProvider, List)} beside
  * NeoForge's four-argument one and calls only the long one. Polymer's {@code @ModifyExpressionValue} names the
  * short signature, matched nothing, and its payload codec patch never landed — so {@code polymer:hello} went out
  * with the unknown-id fallback codec and the client was disconnected at world join.
@@ -115,7 +115,7 @@ class MixinAtWidenedCallTest {
 		String configured = System.getProperty("forbric.fabricApi");
 		java.nio.file.Path api = configured == null ? TestFixtures.fabricApi() : java.nio.file.Path.of(configured);
 		java.nio.file.Path base = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(api) && java.nio.file.Files.isRegularFile(base), "actual Fabric API and merged game required");
+		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(api) && java.nio.file.Files.isRegularFile(base), "actual Fabric API and staged game required");
 		byte[] bytes = null;
 		try (var outer = new java.util.zip.ZipFile(api.toFile())) {
 			var module = outer.stream().filter(e -> e.getName().startsWith("META-INF/jars/fabric-data-generation-api-v1-")).findFirst().orElseThrow();
@@ -316,7 +316,7 @@ class MixinAtWidenedCallTest {
 		assertNull(MixinAtWidenedCall.widenedNewIn(body, "Lp/T;"), "a class-name NEW target is not a constructor");
 	}
 
-	/** MixinFit judges the particle NEW anchors as the rewrite does: fit on the merged base, named when switched off. */
+	/** MixinFit judges the particle NEW anchors as the rewrite does: fit on the staged base, named when switched off. */
 	@Test void theVerdictAgreesWithTheRewrite() throws Exception {
 		byte[] mixin = StagedFabricMixinFixture.bytes(StagedFabricMixinFixture.mixin("fabric-particles-v1", "net/fabricmc/fabric/mixin/particle/EntityMixin"));
 		byte[] entity = StagedFabricMixinFixture.bytes(StagedFabricMixinFixture.game("net/minecraft/world/entity/Entity", false));
@@ -445,22 +445,22 @@ class MixinAtWidenedCallTest {
 		assertEquals(0, MixinAtWidenedCall.widen(mixin, name -> unreviewed));
 	}
 
-	/** Every reviewed row is a static method of the merged base that keeps the vanilla form it widened, both declared. */
+	/** Every reviewed row is a static method of the staged base that keeps the vanilla form it widened, both declared. */
 	@Test void everyRedirectableRowIsAStaticCallBesideTheVanillaFormItWidened() throws Exception {
 		java.nio.file.Path merged = TestFixtures.stagedBase();
-		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(merged), "staged merged base required");
+		TestFixtures.require(Fixture.STAGED, java.nio.file.Files.isRegularFile(merged), "staged base required");
 		java.nio.file.Path vanilla = TestFixtures.vanillaJar();
 		TestFixtures.require(Fixture.MC_LIBRARIES, java.nio.file.Files.isRegularFile(vanilla), "vanilla 26.2 required");
 		for (MixinAtWidenedCall.Redirectable row : MixinAtWidenedCall.REDIRECTABLE) {
 			MixinAtWidenedCall.Member wide = MixinAtWidenedCall.parse(row.member());
 			MethodNode widened = declared(merged, wide.owner(), wide.name(), wide.descriptor());
-			assertNotNull(widened, row.member() + " is no longer in the merged base: delete its row");
+			assertNotNull(widened, row.member() + " is no longer in the staged base: delete its row");
 			assertTrue((widened.access & Opcodes.ACC_STATIC) != 0, row.member() + " must be static");
 			int forms = 0;
 			for (MethodNode form : declaredAll(vanilla, wide.owner())) {
 				if (!form.name.equals(wide.name()) || !MixinAtWidenedCall.widens(form.desc, wide.descriptor())) continue;
 				forms++;
-				assertNotNull(declared(merged, wide.owner(), form.name, form.desc), "the merged base dropped vanilla's " + form.name + form.desc);
+				assertNotNull(declared(merged, wide.owner(), form.name, form.desc), "the staged base dropped vanilla's " + form.name + form.desc);
 			}
 			assertEquals(1, forms, "exactly one vanilla form widens to " + row.member());
 		}

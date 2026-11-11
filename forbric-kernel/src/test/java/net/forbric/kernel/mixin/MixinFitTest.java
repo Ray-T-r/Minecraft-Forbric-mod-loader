@@ -67,7 +67,7 @@ class MixinFitTest {
 	/**
 	 * The discriminator this repo now reports on, and the reason it is worth reporting.
 	 *
-	 * <p>An anchor that misses on a merged-base class is routine — measured across every gate log here, 1226 of
+	 * <p>An anchor that misses on a base class is routine — measured before Stage 4 across every gate log here, 1226 of
 	 * them, all on runs that pass. One that misses on ANOTHER MOD's class did not occur once in that same set,
 	 * and the one real instance found was Iris beside a Sodium build it no longer fits. Same unresolved anchor,
 	 * completely different meaning, so {@code evaluate} has to tell them apart.
@@ -80,7 +80,7 @@ class MixinFitTest {
 
 		MixinFit.Result asGame = MixinFit.evaluate(shadowMixin(target), resolver, name -> true);
 		assertEquals(MixinFit.Verdict.UNFIT, asGame.verdict(), "the anchor misses either way");
-		assertTrue(asGame.foreign().isEmpty(), "a merged-base miss is routine and must stay quiet");
+		assertTrue(asGame.foreign().isEmpty(), "a base-class miss is routine and must stay quiet");
 
 		MixinFit.Result asMod = MixinFit.evaluate(shadowMixin(target), resolver, name -> false);
 		assertEquals(1, asMod.foreign().size(), "a miss on another mod's class is the signal");

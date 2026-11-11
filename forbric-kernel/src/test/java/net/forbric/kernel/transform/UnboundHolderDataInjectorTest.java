@@ -31,7 +31,7 @@ import org.objectweb.asm.tree.VarInsnNode;
 /**
  * The merged {@code Holder.Reference.getData} answers "no data" for a value not registered yet, on the staged game's
  * own bytes: the edit, the JVM running it, and the census that makes this one method the sink of every holder-based
- * data-map lookup in the merged base and NeoForge.
+ * data-map lookup in the staged base and NeoForge.
  */
 @ResourceLock("system-properties")
 class UnboundHolderDataInjectorTest {

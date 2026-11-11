@@ -16,7 +16,7 @@ import net.forbric.kernel.mixin.MixinAtWidenedCall;
 
 /**
  * {@code MixinAtWidenedCall}'s redirect of a widened static call, woven by the real pipeline: a guest {@code @Redirect} of
- * {@code RegistryFriendlyByteBuf.decorator(RegistryAccess)}, which the merged game calls with NeoForge's connection type
+ * {@code RegistryFriendlyByteBuf.decorator(RegistryAccess)}, which the patched game calls with NeoForge's connection type
  * appended (creativecore's decorator redirects on the configuration listeners, in miniature).
  *
  * <p>The probe returns what each target method built:

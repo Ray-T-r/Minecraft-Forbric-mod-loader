@@ -28,7 +28,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * R3 over the REAL merged base: every move it makes in the pinned Fabric API's own mixins, and the audit of its moves
+ * R3 over the REAL staged base: every move it makes in the pinned Fabric API's own mixins, and the audit of its moves
  * over 655 mod jars replayed injector for injector — each the real selector, anchor, kind and ecosystem of one mod's
  * handler — so a regression on either side shows here without the third-party jars.
  *
@@ -361,9 +361,9 @@ class MixinRetargetRenamedBodyStagedTest {
 		return false;
 	}
 
-	/** The staged merged base, each class read once: the Fabric API scan resolves thousands of targets and supertypes. */
+	/** The staged base, each class read once: the Fabric API scan resolves thousands of targets and supertypes. */
 	private static Function<String, byte[]> mergedResolver() {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		java.util.Map<String, java.util.Optional<byte[]>> read = new java.util.HashMap<>();
 		return name -> read.computeIfAbsent(name, entry -> {
 			try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {

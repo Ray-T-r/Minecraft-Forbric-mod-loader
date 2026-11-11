@@ -32,9 +32,9 @@ class MixinEquivalentImplementationsTest {
  // ---- the value modifier the merged method already applies -----------------------------------------------------------
 
  private static Path neo(){return TestFixtures.stagedRoot().resolve(TestFixtures.NEO_CARRIER_JAR);}
- /** A class by internal name from the merged base, the NeoForge carrier, or fabric-api's crash-report module. */
+ /** A class by internal name from the staged base, the NeoForge carrier, or fabric-api's crash-report module. */
  private static Function<String,ClassNode> classes()throws Exception{
-  TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"staged merged base, NeoForge carrier and Fabric API",neo(),TestFixtures.fabricApi());
+  TestFixtures.requireFiles(TestFixtures.Fixture.STAGED,"staged base, NeoForge carrier and Fabric API",neo(),TestFixtures.fabricApi());
   Map<String,byte[]> all=new HashMap<>();
   for(Path jar:List.of(TestFixtures.stagedBase(),neo()))try(ZipFile z=new ZipFile(jar.toFile())){
    for(String name:List.of(WATCHDOG,"net/neoforged/neoforge/logging/ThreadInfoUtil","net/neoforged/neoforge/logging/ThreadInfoUtil$1")){ZipEntry e=z.getEntry(name+".class");if(e!=null)all.put(name,z.getInputStream(e).readAllBytes());}}

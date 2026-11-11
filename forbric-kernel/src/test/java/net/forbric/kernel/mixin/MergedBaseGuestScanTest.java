@@ -52,7 +52,7 @@ class MergedBaseGuestScanTest {
 		MixinStubRebind.forget();
 	}
 
-	/** The row's owner as the merged game has it, reduced to the method: nothing in it calls the method. */
+	/** The row's owner as the patched game has it, reduced to the method: nothing in it calls the method. */
 	private static ClassNode owner(String name, String method, String desc, int access) {
 		ClassNode node = new ClassNode();
 		node.version = Opcodes.V21;

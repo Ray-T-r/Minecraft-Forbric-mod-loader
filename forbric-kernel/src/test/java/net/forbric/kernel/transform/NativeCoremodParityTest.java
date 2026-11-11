@@ -71,7 +71,7 @@ class NativeCoremodParityTest {
 		for (String target : new TreeSet<>(NativeCoremodParity.FINALIZE_TARGETS)) {
 			ClassNode original = node(read(MERGED, target));
 			int raw = virtualFinalize(original), supers = specialFinalize(original);
-			assertTrue(raw >= 1, target + " has a finalizeSpawn call on the merged base");
+			assertTrue(raw >= 1, target + " has a finalizeSpawn call on the staged base");
 			ClassNode rewritten = node(NativeCoremodParity.apply(target, read(MERGED, target)));
 			assertEquals(0, virtualFinalize(rewritten), target);
 			assertEquals(raw, calls(rewritten, NativeCoremodParity.NEO_HOOKS, NativeCoremodParity.NEO_FINALIZE_HOOK), target);
@@ -81,7 +81,7 @@ class NativeCoremodParityTest {
 			after += calls(rewritten, NativeCoremodParity.NEO_HOOKS, NativeCoremodParity.NEO_FINALIZE_HOOK);
 		}
 		assertEquals(before, after);
-		// The census: every such call in the merged game is in a listed class.
+		// The census: every such call in the patched game is in a listed class.
 		try (ZipFile zip = new ZipFile(MERGED.toFile())) {
 			Set<String> outside = new TreeSet<>();
 			for (ZipEntry entry : Collections.list(zip.entries())) {

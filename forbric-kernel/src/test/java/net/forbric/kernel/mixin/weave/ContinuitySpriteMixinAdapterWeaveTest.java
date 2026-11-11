@@ -47,7 +47,7 @@ class ContinuitySpriteMixinAdapterWeaveTest {
 				SOURCES.resolve("net/minecraft/client/renderer/texture/atlas/SpriteSourceList.java"),
 				SOURCES.resolve("fixture/continuitysprite/Probe.java"),
 				SOURCES.resolve("me/pepperbell/continuity/client/mixin/SpriteSourceListMixin.java")),
-				// -g: the merged game and the mod both ship a LocalVariableTable, and the capture is checked against it.
+				// -g: the patched game and the mod both ship a LocalVariableTable, and the capture is checked against it.
 				Map.of(CONFIG, SOURCES.resolve(CONFIG)), List.of("-g"));
 		adapted = run("adapted", Map.of());
 		off = run("adapter-off", Map.of(MixinSpriteLoaderCallbackAdapter.PROPERTY, "off"));

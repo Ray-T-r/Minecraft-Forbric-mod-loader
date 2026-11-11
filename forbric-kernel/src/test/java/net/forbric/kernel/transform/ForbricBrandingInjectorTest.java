@@ -31,7 +31,7 @@ import net.forbric.api.ModCatalog;
 import net.forbric.kernel.util.ForbricBranding;
 
 /**
- * NeoForge's real BrandingControl and the merged base's real F3 version line name Forbric's release.
+ * NeoForge's real BrandingControl and the staged base's real F3 version line name Forbric's release.
  *
  * <p>Those two read staged bytes. {@link #theEditedLinesReadForbricAndCountEveryInstalledMod} runs the edits on
  * stand-ins compiled here with the call sequences the edits key on, against the real {@link ForbricBranding}.
@@ -204,7 +204,7 @@ class ForbricBrandingInjectorTest {
 	}
 
 	@Test void f3ShowsForbricsReleaseAndBrand() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "merged base not staged: " + MERGED);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "base not staged: " + MERGED);
 		String internal = ForbricBrandingInjector.DEBUG_VERSION.replace('.', '/');
 		byte[] original = NativeCoremodParityTest.read(MERGED, internal);
 		byte[] out = new ForbricBrandingInjector().transform(ForbricBrandingInjector.DEBUG_VERSION, original, null);

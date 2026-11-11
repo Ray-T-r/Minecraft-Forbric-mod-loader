@@ -146,7 +146,7 @@ class VanillaEarlyReturnsCensusTest {
 			for (Map.Entry<String, Map<String, Map<String, List<String>>>> owner : table.entrySet()) {
 				byte[] raw = bytes(mergedJar, owner.getKey().replace('/', '.'));
 				if (raw == null) {
-					failures.add(owner.getKey() + ": not in the merged base");
+					failures.add(owner.getKey() + ": not in the staged base");
 					continue;
 				}
 				byte[] before = compat.transform(owner.getKey().replace('/', '.'), raw, context);

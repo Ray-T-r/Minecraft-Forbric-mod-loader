@@ -23,7 +23,7 @@ import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
 /**
- * What the transport spelling tests share: fabric-api's released mixins, the staged merged base, the classes it indexes
+ * What the transport spelling tests share: fabric-api's released mixins, the staged base, the classes its native references index
  * as the ones a Fabric mod was compiled against, and the few edits the tests make — a selector replaced outright, and a
  * method of the same name declared before or after the one a bare name binds. Everything is read with its debug
  * information (the callback transports read local variable names) and fresh on every call.
@@ -63,16 +63,16 @@ final class TransportSpellings {
 		throw new AssertionError(name + " absent from " + module);
 	}
 
-	/** {@code name} as the merged base defines it. */
+	/** {@code name} as the staged base defines it. */
 	static ClassNode merged(String name) throws IOException {
 		try (ZipFile jar = new ZipFile(base().toFile())) {
 			ZipEntry entry = jar.getEntry(name + ".class");
-			TestFixtures.require(Fixture.STAGED, entry != null, name + " in the merged base");
+			TestFixtures.require(Fixture.STAGED, entry != null, name + " in the staged base");
 			return parse(jar.getInputStream(entry).readAllBytes());
 		}
 	}
 
-	/** Like {@link #merged}, null where the merged base does not define it. */
+	/** Like {@link #merged}, null where the staged base does not define it. */
 	static ClassNode mergedOrNull(String name) throws IOException {
 		try (ZipFile jar = new ZipFile(base().toFile())) {
 			ZipEntry entry = jar.getEntry(name + ".class");
@@ -80,7 +80,7 @@ final class TransportSpellings {
 		}
 	}
 
-	/** {@code name} as the class a mod of {@code ecosystem} was compiled against: the hash-pinned copy the merged base indexes. */
+	/** {@code name} as the class a mod of {@code ecosystem} was compiled against: the hash-pinned copy the launch's native references index. */
 	static ClassNode nativeClass(Ecosystem ecosystem, String name) throws IOException {
 		try (ZipFile jar = new ZipFile(base().toFile())) {
 			NativeGameReferences references = new NativeGameReferences(path -> {
@@ -92,7 +92,7 @@ final class TransportSpellings {
 				}
 			}, null, TestFixtures.launchSources(base()));
 			ClassNode node = references.get(ecosystem, name);
-			TestFixtures.require(Fixture.STAGED, node != null, "the hash-pinned native " + name + " the merged base indexes");
+			TestFixtures.require(Fixture.STAGED, node != null, "the hash-pinned native " + name + " the launch's native references index");
 			return node;
 		}
 	}

@@ -39,7 +39,7 @@ class CreateHudMixinAdapterWeaveTest {
 	private static final String TARGET = "net/minecraft/client/gui/Hud";
 
 	private static final String SCOPE = "net/forbric/kernel/interop/HudContextCallbackScope";
-	/** NeoForge's live frame method, and vanilla's, which the merged game declares but never calls. */
+	/** NeoForge's live frame method, and vanilla's, which the patched game declares but never calls. */
 	private static final List<String> HOSTS = List.of("extractRenderState", "extractHotbarAndDecorations");
 
 	private static final String ADAPTED = WeaveHarnessMain.DONE + " shown: train overlay, bar EMPTY | hidden: bar EXPERIENCE";

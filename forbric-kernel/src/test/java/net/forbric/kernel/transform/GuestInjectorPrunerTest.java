@@ -285,12 +285,12 @@ class GuestInjectorPrunerTest {
 
 	/**
 	 * The premise and the payoff in one place: on the original bytes MixinFit reads PARTIAL with {@code fromStream}
-	 * among the misses; on the pruned bytes it reads FIT. If the merged base ever grows {@code fromStream} back,
+	 * among the misses; on the pruned bytes it reads FIT. If the staged base ever grows {@code fromStream} back,
 	 * this is the test that says the pruner has become unnecessary.
 	 */
 	@Test
 	void thePrunedMixinFitsTheMergedModelManagerWhereTheOriginalWasPartial() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		byte[] original = realMixin();
 		Function<String, byte[]> resolver = mergedBaseResolver();
 

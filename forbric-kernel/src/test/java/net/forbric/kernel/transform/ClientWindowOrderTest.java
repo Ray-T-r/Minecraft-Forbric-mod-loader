@@ -52,7 +52,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * JourneyMap property null and killing the render loop the moment the world drew.
  *
  * <p>Both anchors are structural — the first {@code new Options} and the call to {@code ClientModLoader.finish} —
- * so a merged base that moves either one silently reopens one of those two failures. Neither injector had a test.
+ * so a base that moves either one silently reopens one of those two failures. Neither injector had a test.
  */
 class ClientWindowOrderTest {
 	private static final Path MERGED_BASE = TestFixtures.stagedBase();
@@ -67,7 +67,7 @@ class ClientWindowOrderTest {
 	private static final String FABRIC_HOOK = "fabric-client-entrypoints";
 	private static final String NEO_HOOK = "onNeoClientSetup";
 
-	/** On the REAL merged base, with both injectors applied, the three landmarks come out in the right order. */
+	/** On the REAL staged base, with both injectors applied, the three landmarks come out in the right order. */
 	@Test
 	void onTheRealMinecraftTheWindowsOpenInTheDocumentedOrder() throws Exception {
 		byte[] real = mergedBaseMinecraft();

@@ -22,7 +22,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The island on the staged merged base, read against vanilla's {@code LivingEntity.baseTick} (the Fabric native reference):
+ * The island on the staged base, read against vanilla's {@code LivingEntity.baseTick} (the Fabric native reference):
  * NeoForge's {@code baseTick} hands the air supply to {@code CommonHooks.onLivingBreathe}, and vanilla's two breathing
  * checks come back in front of that call — the eye-in-water check, the bubble-column and can-breathe checks, then the
  * water-breathing effect check, nothing that changes state — with only the static effect check relayed to the hook, which

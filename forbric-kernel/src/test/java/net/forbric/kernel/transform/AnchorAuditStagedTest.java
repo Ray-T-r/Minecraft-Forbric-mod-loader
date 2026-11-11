@@ -38,7 +38,7 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * The anchor books against the real merged base, and against a copy of it with the anchor taken away.
+ * The anchor books against the real staged base, and against a copy of it with the anchor taken away.
  *
  * <p>The second half is the point. Asserting that a repair applies today proves only that today is fine; the
  * failure this whole mechanism exists for is the one that arrives with a carrier upgrade, months from now, and

@@ -67,10 +67,10 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.mixin.MergedBaseCalleeSwaps;
 
 /**
- * The descriptor-identical callee swaps between stock 26.2 and the merged base, pinned; the safety test that says
+ * The descriptor-identical callee swaps between stock 26.2 and the staged base, pinned; the safety test that says
  * none of them may be rewritten at the call site; and the rows MixinRetarget follows, which must be among them.
  *
- * <p>A swap is: inside a vanilla method that still exists in the merged base (same owner, name, descriptor), a
+ * <p>A swap is: inside a vanilla method that still exists in the staged base (same owner, name, descriptor), a
  * callee {@code owner.name desc} of the vanilla body that the merged body never calls, while the merged body
  * calls {@code owner.other desc} (same owner, same descriptor, a different name) that the vanilla body never
  * calls. Synthetic names ({@code access$N}, {@code lambda$…}) are renumbering, not swaps.
@@ -128,11 +128,11 @@ class MergedBaseCalleeSwapTest {
 	@Test
 	void theCensusOfCalleeSwapsIsExactlyThePinnedSet() throws Exception {
 		Path vanilla = vanillaJar();
-		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED, "staged base absent");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(vanilla), "stock 26.2 absent: " + vanilla);
 		Set<String> found = new TreeSet<>();
 		for (Swap swap : swaps(vanilla)) found.add(swap.line());
-		assertEquals(PINNED, found, "descriptor-identical callee swaps between stock 26.2 and the merged base — re-derive, then decide");
+		assertEquals(PINNED, found, "descriptor-identical callee swaps between stock 26.2 and the staged base — re-derive, then decide");
 	}
 
 	/**
@@ -214,7 +214,7 @@ class MergedBaseCalleeSwapTest {
 		for (MergedBaseCalleeSwaps.Substitution row : List.of(derivedSubstitution)) {
 			String where = row.target() + "." + row.method();
 			MethodNode merged = debugMethod(MERGED, row.target(), row.method());
-			assertTrue(merged != null, where + " is not in the merged base");
+			assertTrue(merged != null, where + " is not in the staged base");
 			assertEquals(0, occurrences(merged, row.member()), where + ": the merged body makes the reference call again");
 			assertEquals(1, occurrences(merged, row.replacement()), where + ": the merged body no longer makes the replacement once");
 			for (Ecosystem ecosystem : Ecosystem.values()) {
@@ -242,8 +242,8 @@ class MergedBaseCalleeSwapTest {
 	}
 
 	/**
-	 * Every {@link MergedBaseCalleeSwaps#REPLACED} row, proven against stock 26.2 and the merged base: vanilla declares the
-	 * method privately and the merged base does not; the replacement is private there; the caller is the only method of
+	 * Every {@link MergedBaseCalleeSwaps#REPLACED} row, proven against stock 26.2 and the staged base: vanilla declares the
+	 * method privately and the staged base does not; the replacement is private there; the caller is the only method of
 	 * the class calling either, and calls each exactly once (the merged one never vanilla's); and each vanilla argument,
 	 * read off vanilla's call site, is the row's reading of the merged call's — the same caller local, or a no-argument
 	 * {@code invokevirtual} on it (made at the call, or stored once into a local the call then loads, as vanilla's
@@ -261,7 +261,7 @@ class MergedBaseCalleeSwapTest {
 			ClassNode before = debugClass(vanilla, row.owner()), after = debugClass(MERGED, row.owner());
 			MethodNode original = declared(before, row.vanilla());
 			assertTrue(original != null && (original.access & Opcodes.ACC_PRIVATE) != 0, where + ": vanilla no longer declares it privately");
-			assertTrue(declared(after, row.vanilla()) == null, where + ": the merged base declares it again; delete the row");
+			assertTrue(declared(after, row.vanilla()) == null, where + ": the staged base declares it again; delete the row");
 			MethodNode replacement = declared(after, row.replacement());
 			assertTrue(replacement != null && (replacement.access & Opcodes.ACC_PRIVATE) != 0, where + ": the replacement is not private there");
 			assertEquals(List.of(row.caller()), callers(before, row.vanillaMember()), where + ": vanilla's callers");

@@ -46,10 +46,10 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * Covers putting the game's random sources back in double precision.
  *
- * <p>Two subjects on purpose. The REAL merged base proves the shape this repair reacts to is the shape the other
+ * <p>Two subjects on purpose. The REAL staged base proves the shape this repair reacts to is the shape the other
  * repository's merge actually emits — a synthetic fixture alone would only assert that the test author and the
  * transformer agree about a bug neither of them observed. A synthetic fixture proves the REPAIRED bytes compute
- * what vanilla computes, which reading the merged base cannot show: {@code XoroshiroRandomSource} cannot be
+ * what vanilla computes, which reading the staged base cannot show: {@code XoroshiroRandomSource} cannot be
  * loaded here, and "the opcodes look right" is not "the number is right".
  *
  * <p>What it is protecting: {@code ImprovedNoise}'s constructor spends three {@code nextDouble() * 256.0} calls on
@@ -69,7 +69,7 @@ class MergedBaseRandomSourcePrecisionTest {
 
 	@Test
 	void theMergedBaseScalesItsRandomBitsInFloatAndTheRepairPutsItBackInDouble() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "base not staged: " + MERGED_BASE);
 		for (String source : SOURCES) {
 			byte[] before = entry(source + ".class");
 			assertTrue(scalesInFloat(read(before)), source + " no longer carries the float-rounded nextDouble() this "
@@ -205,7 +205,7 @@ class MergedBaseRandomSourcePrecisionTest {
 	private static byte[] entry(String path) throws Exception {
 		try (ZipFile jar = new ZipFile(MERGED_BASE.toFile())) {
 			java.util.zip.ZipEntry found = jar.getEntry(path);
-			assertTrue(found != null, path + " is absent from the merged base");
+			assertTrue(found != null, path + " is absent from the staged base");
 			try (InputStream in = jar.getInputStream(found)) {
 				return in.readAllBytes();
 			}

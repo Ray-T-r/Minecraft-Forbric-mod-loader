@@ -33,7 +33,7 @@ class MixinTailCaptureNativeTest {
 
 	private static byte[] merged() throws Exception {
 		Path jar = TestFixtures.stagedBase();
-		TestFixtures.requireFile(Fixture.STAGED, jar, "merged base required: " + jar);
+		TestFixtures.requireFile(Fixture.STAGED, jar, "staged base required: " + jar);
 		try (ZipFile zip = new ZipFile(jar.toFile())) { return zip.getInputStream(zip.getEntry(GUI + ".class")).readAllBytes(); }
 	}
 
@@ -84,7 +84,7 @@ class MixinTailCaptureNativeTest {
 	}
 
 	/**
-	 * What each platform's own GUI item held at its tail, read from the hash-pinned original bytes the merged base ships
+	 * What each platform's own GUI item held at its tail, read from the hash-pinned original bytes the launch's native references hold
 	 * (NativeGameReferences' source): vanilla's (what a Fabric mod is compiled against) returned early and held the
 	 * render state to its last return; NeoForge's and MinecraftForge's recompiled bodies folded the guard and did not. So
 	 * the same capture moves for a Fabric mod and stays, as it runs on its own platform, for a NeoForge or Forge mod.

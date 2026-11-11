@@ -40,7 +40,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
  * {@link KernelKeyMappingMap}'s view answers what vanilla's {@code KeyMapping.MAP} would: the mappings bound to a key,
- * null for an unbound one, grouped by each mapping's current key — against the merged base's real {@code KeyMapping}
+ * null for an unbound one, grouped by each mapping's current key — against the staged base's real {@code KeyMapping}
  * (instances allocated without their constructor, which would register them with the game's own key lookup).
  */
 class KernelKeyMappingMapTest {

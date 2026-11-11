@@ -21,7 +21,7 @@ import net.forbric.api.Ecosystem;
 import net.forbric.kernel.transform.InterfaceDefaultConflictRepair;
 
 /**
- * A mod's mixin adds an interface whose default the merged base already supplies through another: the post-Mixin
+ * A mod's mixin adds an interface whose default the base already supplies through another: the post-Mixin
  * {@code InterfaceDefaultConflictRepair} must give the woven class the override the JVM demands, or the first CALL
  * throws {@code IncompatibleClassChangeError: Conflicting default methods}.
  *

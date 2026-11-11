@@ -117,7 +117,7 @@ class MergedBaseParticleProvidersTest {
 
 	@Test
 	void anotherClassIsUntouched() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		byte[] other = readClass("net/minecraft/client/particle/ParticleProvider.class");
 		assertNotNull(other, "content drift: ParticleProvider absent from this base");
 		assertSame(other, new ForbricMergedBaseCompatTransformer()

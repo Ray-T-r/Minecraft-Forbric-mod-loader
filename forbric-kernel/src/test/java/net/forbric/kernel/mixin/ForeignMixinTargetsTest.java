@@ -38,7 +38,7 @@ import net.forbric.kernel.ExpectCaught;
 /**
  * Tells a cross-mod compatibility mixin apart from genuine dead weight.
  *
- * <p>The adapter drops a guest mixin whose anchors all fail to resolve against the merged base, on the reasoning
+ * <p>The adapter drops a guest mixin whose anchors all fail to resolve against the base, on the reasoning
  * that it was going to be dead weight. That is wrong exactly when the missing member is ANOTHER mod's mixin's
  * contribution — measured with Physics Mod, whose two Sodium/Iris integration mixins were the two the adapter
  * deleted, silently. These tests pin the question the adapter now asks first.

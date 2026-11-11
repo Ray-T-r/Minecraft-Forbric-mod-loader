@@ -84,7 +84,7 @@ public class MergedBaseShutdownSaveTest {
 
 	@Test
 	void theStagedBaseStillRunsTheTeardownUnguarded() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		ClassNode before = parse(readClass(INTEGRATED_SERVER + ".class"));
 		MethodNode stop = method(before, "stopServer", "()V");
 		assertNotNull(stop, "the base must still have IntegratedServer.stopServer()V");
@@ -96,7 +96,7 @@ public class MergedBaseShutdownSaveTest {
 
 	@Test
 	void theRepairedBaseCatchesTheTeardownAndStillReachesTheSave() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		byte[] in = readClass(INTEGRATED_SERVER + ".class");
 		byte[] out = transform(in);
 		assertTrue(out != in, "the staged base must still need the repair");
@@ -115,7 +115,7 @@ public class MergedBaseShutdownSaveTest {
 
 	@Test
 	void aSecondPassLeavesTheRepairedClassAlone() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent — skipping real-bytecode check");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent — skipping real-bytecode check");
 		byte[] once = transform(readClass(INTEGRATED_SERVER + ".class"));
 		assertSame(once, transform(once), "a body that already has a handler must not be wrapped twice");
 	}
@@ -293,7 +293,7 @@ public class MergedBaseShutdownSaveTest {
 	private static byte[] readClass(String entry) throws Exception {
 		try (ZipFile zip = new ZipFile(MERGED_BASE.toFile())) {
 			ZipEntry e = zip.getEntry(entry);
-			assertNotNull(e, entry + " must be in the staged merged base");
+			assertNotNull(e, entry + " must be in the staged base");
 			try (InputStream in = zip.getInputStream(e)) {
 				return in.readAllBytes();
 			}

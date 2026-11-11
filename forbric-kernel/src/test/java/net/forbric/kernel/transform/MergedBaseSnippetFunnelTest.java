@@ -209,7 +209,7 @@ class MergedBaseSnippetFunnelTest {
 	}
 
 	private static Function<String, byte[]> rawResolver() {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		return name -> {
 			try {
 				return readFromJar(MERGED_BASE, name);
@@ -220,7 +220,7 @@ class MergedBaseSnippetFunnelTest {
 	}
 
 	private static byte[] bytesOf(String internal) throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		byte[] bytes = readFromJar(MERGED_BASE, internal + ".class");
 		assertNotNull(bytes, internal);
 		return bytes;

@@ -113,7 +113,7 @@ class UncalledMethodCensusTest {
 		}
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(KERNEL_RUNTIME), "the game-side classes are compiled only with staged jars");
 
-		// The merged game: what it declares, where it names each method (name+desc, and owner#name+desc → the methods naming
+		// The patched game: what it declares, where it names each method (name+desc, and owner#name+desc → the methods naming
 		// it), and the strings it holds.
 		Map<String, Shape> game = new HashMap<>();
 		Map<String, Shape> mergedOnly = new LinkedHashMap<>();
@@ -166,7 +166,7 @@ class UncalledMethodCensusTest {
 			Set<String> referenceClasses = Set.copyOf(shapes.keySet());
 			// A caller that never runs in its own game does not make the method run there either: the same fixpoint over the
 			// reference. A method only such callers call runs natively no more than it does here, and is no loss — unless a mod
-			// can still make it run there and not here: a caller that is not private (a mod may call it), when the merged game
+			// can still make it run there and not here: a caller that is not private (a mod may call it), when the patched game
 			// does not keep that same caller calling the method (a mod calling it here would then reach it too).
 			Set<String> referenceDead = fixpoint(shapes, new HashMap<>(shapes), referenceClasses, referenceNamed, Set.of(), new TreeMap<>());
 			Set<String> referencePrivateDead = fixpoint(privateOnly(shapes), new HashMap<>(shapes), referenceClasses, referenceNamed, Set.of(), new TreeMap<>());
@@ -193,7 +193,7 @@ class UncalledMethodCensusTest {
 		}
 		TreeSet<String> rows = new TreeSet<>();
 		ecosystems.forEach((head, which) -> {
-			// The places the merged game names it, every one of them uncalled or silenced: the run-time re-check leaves exactly
+			// The places the patched game names it, every one of them uncalled or silenced: the run-time re-check leaves exactly
 			// these out, and a call from anywhere else makes it live again.
 			TreeSet<String> sites = new TreeSet<>();
 			for (String site : named.sites(head, candidates.get(head), game)) {

@@ -66,7 +66,7 @@ class MixinOverloadPinTest {
 	private static final String CLICK = "handleCustomClickAction";
 	private static final String ID = "Lnet/minecraft/resources/Identifier;";
 	private static final String OPTIONAL = "Ljava/util/Optional;";
-	/** NeoForge's overload, declared first on the merged base: fire the event, then call vanilla's. */
+	/** NeoForge's overload, declared first on the staged base: fire the event, then call vanilla's. */
 	private static final String CARRIER_CLICK = "(" + ID + OPTIONAL + "Lnet/minecraft/server/level/ServerPlayer;"
 			+ "Lcom/mojang/authlib/GameProfile;)V";
 	private static final String VANILLA_CLICK = "(" + ID + OPTIONAL + ")V";
@@ -353,7 +353,7 @@ class MixinOverloadPinTest {
 	void theRealMergedServerIsPinnedToVanillasOverload() throws Exception {
 		java.nio.file.Path merged = net.forbric.kernel.TestFixtures.stagedRoot()
 				.resolve(net.forbric.kernel.TestFixtures.BASE_JAR).normalize();
-		net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED, "the merged base", merged);
+		net.forbric.kernel.TestFixtures.requireFiles(net.forbric.kernel.TestFixtures.Fixture.STAGED, "the staged base", merged);
 		ClassNode server = new ClassNode();
 		try (java.util.zip.ZipFile zip = new java.util.zip.ZipFile(merged.toFile())) {
 			new org.objectweb.asm.ClassReader(zip.getInputStream(zip.getEntry(SERVER + ".class")).readAllBytes())

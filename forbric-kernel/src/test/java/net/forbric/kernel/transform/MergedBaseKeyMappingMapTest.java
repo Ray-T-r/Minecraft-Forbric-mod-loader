@@ -127,7 +127,7 @@ class MergedBaseKeyMappingMapTest {
 	}
 
 	private static byte[] original() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged merged base absent");
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "staged base absent");
 		try (ZipFile jar = new ZipFile(MERGED_BASE.toFile())) {
 			byte[] in = jar.getInputStream(jar.getEntry(KEY_MAPPING + ".class")).readAllBytes();
 			ClassNode node = new ClassNode();

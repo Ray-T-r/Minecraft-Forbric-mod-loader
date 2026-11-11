@@ -73,7 +73,7 @@ class BracketedTargetAdaptersStagedTest {
 
 	/**
 	 * The released-key hooks on a {@code keyPress} whose window guard has its early return back (a block in front of the
-	 * tail, which the join's run jumps over): Create Fly's two and Balm's TAIL land exactly as on the plain merged base, and
+	 * tail, which the join's run jumps over): Create Fly's two and Balm's TAIL land exactly as on the plain base, and
 	 * neither Create's handlers nor Balm's run on a release — natively the release returns before the final return.
 	 */
 	@Test

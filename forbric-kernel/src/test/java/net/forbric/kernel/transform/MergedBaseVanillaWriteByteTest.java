@@ -66,7 +66,7 @@ class MergedBaseVanillaWriteByteTest {
 	}
 
 	@Test void everyMergedSiteBecomesTheCallVanillaMakes() throws Exception {
-		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "merged base not staged: " + MERGED_BASE);
+		TestFixtures.requireFile(Fixture.STAGED, MERGED_BASE, "base not staged: " + MERGED_BASE);
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(VANILLA), "no vanilla 26.2 jar at " + VANILLA);
 		Map<String, Integer> repaired = new TreeMap<>();
 		try (ZipFile merged = new ZipFile(MERGED_BASE.toFile()); ZipFile vanilla = new ZipFile(VANILLA.toFile())) {
