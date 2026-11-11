@@ -30,11 +30,17 @@ abs "…not the pre-Minecraft window"     "\[main/INFO\]: \[Forbric/Fabric\] inv
 ck  "datapacks served"                  "Forbric/DataPacks\] served [1-9][0-9]* datapack"
 # (No alias line here: since Stage 4 the alias repair only fires when fabric-registry-sync's mixin adds a warning
 # addAlias to MappedRegistry, so it depends on the pack; gate-m9, whose pack carries fabric-api, pins it.)
-ck  "NeoForge registration order"       "fired RegisterEvent in NeoForge.s registration order"
+# RegisterEvent is posted by NeoForge's own GameData.postRegisterEvents (K3). Its own line ("fired RegisterEvent in
+# NeoForge's registration order") prints with or without the kernel's seam on it, so a check on that line could not go
+# red (K3 review B-3); this is gate-m9's seam pair instead (C5 wave 2b review B-1), the same patterns as gate-m1 and
+# gate-m9 (AssertCompatTest pins them together): the seam applied after Mixin wove what this pack aims at the method,
+# and no "not the shape" warning, which is the seam standing down and NeoForge's method running as shipped.
+ck  "postRegisterEvents carries the seam" "GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: .* [0-9]+ tail step"
 echo "== must be absent =="
 abs "no mod failed a phase"             "failed during (construct|IMC enqueue|IMC process)"
 abs "no unbound data component"         "Trying to access unbound value"
 abs "no RegisterEvent listener failed"  "RegisterEvent listener failed"
+abs "postRegisterEvents is the seam's shape" "GameData.postRegisterEvents is not the shape the kernel knows"
 abs "no tag lost to a dangling id"      "Couldn.t load tag"
 abs "JEI-style empty plugin list"       "plugins must not be empty"
 abs "no null pack reached the repo"     "streamSelfAndChildren.* because .pack. is null"
