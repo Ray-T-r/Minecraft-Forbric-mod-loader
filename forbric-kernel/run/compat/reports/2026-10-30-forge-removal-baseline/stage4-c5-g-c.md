@@ -399,8 +399,8 @@ Count 43 -> 44.
 
 | run | gate | before the join (late / ticks) | session (late / ticks) | where the late ticks fell (`m12-ticks.py`) |
 |---|---|---|---|---|
-| m12-tip-1 (tip, gate before the fallback; same window, read through `m12-window.py`) | 44 / 0 | 1 / 620 | 2 / 160 | 1 just after Done; 1 at the join, 1 at the leave |
-| m12-tip-2 (committed gate) | **44 / 0** | 1 / 640 | 1 / 160 | 1 just after Done; 1 at the join |
+| m12-tip-1 (3122ffec + the UNCOMMITTED gate before the fallback, same window; review B-4) | 44 / 0 | 1 / 620 | 2 / 160 | 1 just after Done; 1 at the join, 1 at the leave |
+| m12-tip-2 (120f0afc, the committed gate) | **44 / 0** | 1 / 640 | 1 / 160 | 1 just after Done; 1 at the join |
 | m12-mutA2: `/tick rate 8` at the join | **43 / 1**, exactly the ceiling check | 1 / 680 | **132 / 160** | every tick after the switch |
 | m12-mutB2: `/tick rate 8` from Done until the client dials, then 20 | **44 / 0** | 230 / 320 | 1 / 160 | 229 before the join, 1 at the join; the old count from the server's start (231) would have been red |
 
@@ -432,7 +432,9 @@ window freeze" (`next id 64736, 32369 mapped`) in the client log; the id >= 1 / 
   JVMs held the machine; the class alone three times: 9 / 0 each (`suite-final/libstop-rerun-*.log`). Re-run of the whole suite at the same commit after the gates: **5855 / 0 / 5**, exactly failures-k.txt's five names, 0 new, 0 gone (`suite-final2/`).
   5858 - 6 (MergedBaseKeyModifierSuffixTest) + 2 (KeyModifierSplitStagedTest) + 1 (GateNeoCanaryContractTest) = 5855.
 - 66 classes that read G-C's gates, the transformer or the switches (list in `targeted.sh`): 400 / 0 / 0.
-- Gates on this branch: m9 163 / 0, m12 44 / 0 (twice), m13 30 / 0, m14 34 / 0, m26 47 / 0.
+- Gates on this branch: m9 163 / 0, m12 44 / 0 (once on the committed gate 120f0afc, once on the uncommitted gate before
+  its fallback; review B-4), m13 30 / 0, m14 34 / 0, m26 47 / 0 (on 3122ffec + the uncommitted m26 edits that became
+  ef44d2a9, as was its red control 46 / 1; re-run on the review fixes below, review B-4).
 
 ### Commits (wave 2b)
 
@@ -451,3 +453,96 @@ window freeze" (`next id 64736, 32369 mapped`) in the client log; the id >= 1 / 
 - gates-parallel / gates-all: m26 has a third rundir (`server-forge-registration`, declared in GATE-PARALLEL) and boots a dedicated server on port 0 (no PORT_VARS entry needed).
 - `run/compat/assert.sh` still asserts "fired RegisterEvent in NeoForge's registration order" (a presence line, AssertCompatTest pins 36 PASS); not changed here (it is the compat probe's evidence list, not a gate check with a control). Owner: G-C next wave or RECORD's call.
 - LibStopWhenReadyContractTest's 2 s settle assertion can lose a few milliseconds under load (one red in the suite above, green alone x3): owner of lib.sh's server_ready (G-B1).
+
+## G-C wave 2b review fixes (2026-11-11)
+
+Reviews `c5/review-g-c-w2b-A.md` (A-1..A-3) and `c5/review-g-c-w2b-B.md` (B-1..B-7) of 3ef26586. Logs:
+`~/Forbric-backups/stage4-notes/c5/g-c/w2b/rf/` (`gates/<label>/`, `gates/counts.txt`, `mutations/`, `targeted-1.log`,
+`contract-red.log`, `suite/`). Every gate below ran on a COMMITTED tree: the lane worktree at 85324ead (tip runs), or an
+APFS clone of it taken with the worktree clean plus exactly the diff in `mutations/` (controls); `info.txt`'s `head=`
+for a clone is the lane's HEAD read through the shared gitdir, so the clone's content is the clone time's tip + the diff.
+
+| finding | outcome | commit |
+|---|---|---|
+| A-1 m12's window left out the configuration-phase handshake | fixed: the window opens at the last sampler line stamped in an earlier second than the client's "Connecting to 127.0.0.1" (the client has booted; same wall clock); dial->join and join->leave printed apart | 1e126d68 |
+| A-2 / B-2 m12 window parser untested; the ceiling 20 over 160 ticks is 12.5%, not "the same ceiling" | fixed: `M12_TICK_WINDOW_BEGIN/END` + M12TickWindowContractTest (9 cases); the ceiling keeps the old density, ceil(window x 20 / 700) (7 for 220 ticks), `M12_LATE_CEILING` still overrides with a number | 1e126d68 |
+| A-3 m26 phase 1c blind to a defect both ends share | fixed: `check_absent` of K1's CAUGHT "blockstate->id map is not one id per block state" on the client log and the server log (inside `M26_SERVER_IDS`, contract-tested) | 33e9b73a |
+| B-1 assert.sh kept the presence check m9 dropped | fixed (G-C owns assert.sh per PLAN §2, so no second owner): the seam pair replaces it; AssertCompatTest 36 -> 37 PASS, a red test (no seam / seam stood down), a test pinning both patterns to gate-m1's and gate-m9's | 82790eef |
+| B-3 D73's checks 1 and 3 ran after the deletion commit | confirmed, record only: 38804eff is 07:36:55; check 2 (`d73/scan/`, 07:21-07:34) came before it, checks 3 (`gates/m9-tip`, 08:51) and 1 (`gates/m9-v04options`, 09:29) after it, on 120f0afc, and both passed. D73's "Pass -> delete" outcome stands; the order was delete first, then measure | this record |
+| B-4 numbers from trees other than the commit; m26 never ran committed | confirmed: m26-tip / m26-noclientclear ran 3122ffec + uncommitted m26 edits, m12-tip-1 the uncommitted gate before the fallback (labels corrected above). All re-run below on committed trees | this record + runs below |
+| B-5 m12 x3 alone not met on the committed gate | fixed by measurement: three `--exclusive` runs of the committed gate at 85324ead, all 44 / 0 | runs below |
+| B-6 m9 comment cited a missing path | fixed: `c5/g-c/w2b/gates/m9-noseam`, 160 / 3 and the third red named | 85324ead |
+| B-7 G-A's files not named | fixed: line added under "For other lanes" below | this record |
+
+ba6010ba puts the measured numbers into the m12 and m26 headers (comments only, after the runs it quotes).
+
+### m12: window from the dial (A-1, A-2, B-2, B-5)
+
+Counts unchanged (44: the coverage check still asks >= 100 ticks from the join to the leave; the ceiling check now holds
+the dial->leave window). Wave 2b's three tip runs (the lane's two, review A's) re-read with the new code: 0 late in the
+handshake each time, 1-2 in the window (`rf/m12-window2.py`).
+
+| run (tree) | gate | before the dial | dial -> join | join -> leave | window / ceiling |
+|---|---|---|---|---|---|
+| m12-tip-1 (85324ead, `--exclusive`) | **44 / 0** | 1 / 560 | 0 / 40 | 3 / 180 | 3 of 220 <= 7 |
+| m12-tip-2 (85324ead, `--exclusive`) | **44 / 0** | 1 / 560 | 0 / 60 | 1 / 160 | 1 of 220 <= 7 |
+| m12-tip-3 (85324ead, `--exclusive`) | **44 / 0** | 1 / 540 | 0 / 100 | 1 / 160 | 1 of 260 <= 8 |
+| m12-mutHS: `/tick rate 8` at the dial, 20 at the join (0.1 s poller; `mutations/m12-mutHS-handshake-slow.diff`) | **43 / 1**, exactly the ceiling | 1 / 600 | **30 / 40** | 1 / 160 | 31 of 200 > 6 |
+| m12-mutPre: rate 8 before the client starts, 20 at its "Setting user" (`mutations/m12-mutPre-boot-slow.diff`) | **44 / 0** | **191 / 280** | 0 / 60 | 1 / 160 | 1 of 220 <= 7 |
+
+mutHS is the differential A-1 asked for: its join->leave count (1 of 160) is exactly 120f0afc's window, which the
+ceiling of 20 passed; the dial-opened window is red on the 30 late handshake ticks. mutPre shows the boot before the dial
+still out of the assertion. The window keeps up to two seconds of slack before the dial (a line stamped in an earlier
+second) and one after the leave; at tick rate 8 the 20-tick line comes every 2.5 s, so a server slow right up to the dial
+leaks up to that much (wave 2b's mutB2, rate 20 restored AT the dial, reads 30 of 60 in its handshake with the new code).
+The contract test is red on a mutation that opens the window at the join again (5 of 9 cases, incl. the handshake case;
+`contract-red.log`, `mutations/contract-tests-red.diff`).
+
+### m26: 49 checks (A-3, B-4)
+
+Tip (85324ead) **49 / 0**: id 32366 on both ends, both invariant lines absent. Red control, the clone without lane S's
+clear before the client window's freeze (`mutations/m26-noclientclear.diff`, same edit as wave 2b's): **47 / 2**, the
+comparison (client 64733, server 32366) and the client's invariant line (present x6); the server's stays green, its map
+is right. The server-side absence is red-checked by the contract test (the line on the server log alone, and the same
+wrong id on both ends with the line on each) and K1's own server-side control printed the same line (c5/k1/review-fixes).
+GateNeoCanaryContractTest's case is red with the two checks removed (`contract-red.log`).
+
+### assert.sh (B-1)
+
+`ck "postRegisterEvents carries the seam"` (the seam's applied line) + `abs "postRegisterEvents is the seam's shape"`
+replace `ck "NeoForge registration order"`. Same patterns as gate-m1 / gate-m9, pinned by
+`AssertCompatTest.theSeamPatternsAreTheGatesOwn`. With 3ef26586's assert.sh, 4 AssertCompatTest cases are red
+(`contract-red.log`). push-and-run.py is the only caller; it runs against client logs, where the seam's line is printed
+(m9 checks the same line in a client log).
+
+### Suite and gates (review fixes)
+
+- Full suite at ba6010ba (APFS clone, clean, `-Pforbric.requireFixtures=all jar cleanTest test --continue`, 8 m 45 s):
+  **5866 tests, 0 skipped, 5 failed, exactly failures-k.txt's five names** (LiquidBounce x3, SharedFinalSourceActualTest
+  x2), 0 new, 0 gone (`rf/suite/`). 5855 (wave 2b) + 9 (M12TickWindowContractTest) + 2 (AssertCompatTest) = 5866.
+- Targeted (67 classes, `rf/targeted.sh`: wave 2b's 66 + M12TickWindowContractTest) on the uncommitted tree that became
+  1e126d68..85324ead, byte-identical in those files: **411 / 0 / 0**.
+- Gates on committed trees: m12 44 / 0 x3 alone, m26 49 / 0, controls above. m9 not re-run: 85324ead changes a comment
+  only. m13 / m14 untouched.
+
+### Commits (review fixes)
+
+| sha | what |
+|---|---|
+| 1e126d68 | m12: window from the client's dial, density ceiling, M12_TICK_WINDOW + M12TickWindowContractTest |
+| 33e9b73a | m26: K1's invariant line absent on both ends |
+| 82790eef | assert.sh: the seam pair, AssertCompatTest 37 |
+| 85324ead | m9: comment path and count |
+| ba6010ba | m12 / m26 headers: the measured numbers (comments) |
+| (this commit) | this record |
+
+### For other lanes / open (supersedes the wave 2b list where they differ)
+
+- T-B phase 2 / RECORD: unchanged from wave 2b (RETIRED +1, ci-unstaged -1 +1). No new ci row: M12TickWindowContractTest
+  needs only bash and python3, no staged tree.
+- -> G-A / RECORD: gate-m26 and GateNeoCanaryContractTest are G-A's files (PLAN §2), given to G-C for this item by D80:
+  phase 1c, its rundir `server-forge-registration` (GATE-PARALLEL), and 45 -> 49 checks (47 in wave 2b + the two
+  invariant absences).
+- RECORD: AssertCompatTest pins 37 PASS (was 36); assert.sh's check list changed (seam pair).
+- The `run/compat/assert.sh` open item of wave 2b is closed (B-1).
+- LibStopWhenReadyContractTest's 2 s settle (owner G-B1): unchanged.
