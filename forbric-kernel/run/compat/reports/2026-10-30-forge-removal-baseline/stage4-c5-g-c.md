@@ -333,3 +333,121 @@ against the kept logs, the fixture and the tree; none was refuted.
   `failures-wave1.txt` (LiquidBounce x3, SharedFinalSourceActualTest x2); 0 new, 0 gone (`suite-final-xml/`). No test
   added, deleted or renamed, so no TSV row (D47).
 - Scratch: the installer clone, the c3-merged-ro clone, the before-pack copy and the m9 clone are deleted.
+
+## Wave 2b (2026-11-11)
+
+Branch `s4-c5-g-c`, cut from the stage tip b9154084 (K lanes merged, D80). Pinned build, plain `--offline` (D68), lane
+ports 46660-46679, every client gate under the client lock, the load-sensitive ones (m12, m13) `--exclusive`. Logs:
+`~/Forbric-backups/stage4-notes/c5/g-c/w2b/` (`gates/<label>/` per run, `gates/counts.txt`, `mutations/`, `d73/`,
+`unstaged/`, `suite-final/`). Counts are `^\[kernel\] PASS` / `^\[kernel\] FAIL` lines only. Mutations ran on APFS
+clones of the lane worktree in scratch (deleted afterwards), never in the worktree.
+
+### (1) D73: dropTheKeyModifierSuffix, three checks -> deleted (38804eff, f6bc18bb)
+
+| check | result | evidence |
+|---|---|---|
+| 1. symptom, repair off, on genuine; merged red | Genuine, repair gone, m9 with the options.txt that a Forbric <= 0.4 install wrote (`run/installed/options.txt`, 2026-10-01, eight modifier bindings: five JEI `:SHIFT`, journeymap `:CONTROL`, two sophisticatedbackpacks `:ALT`): **163 / 0**: no "Failed to load options", the game wrote the file back, all 227 `key_` lines kept, the eight modifier bindings unchanged, the seeded `key_key.attack:key.mouse.left:CONTROL_OR_COMMAND` written back with its modifier (the only difference from the file as installed), JEI's 35 unchanged. Wave 2's switch-off run on the fixture: only the repair's own line red. Merged red: 512c5e9a, the same switch off on the merged base, 2 red incl. "options.txt loads with modded modifier bindings in it". | `gates/m9-v04options/`, `options-before.txt` / `options-after.txt` |
+| 2. whole-jar search | `getKey(String)` call sites: genuine base + NeoForge carrier + fabric-api 0.155.2 (15352 classes): 2, both in `Options.processOptions`, one fed `value.split(":")[0]`, one fed the whole value only where `value.indexOf(':') == -1`. Merged base + both carriers (15426): 5; MinecraftForge's `processOptionsKeysOnly` feeds the whole value with no such test (the crash the repair answered). The standing test's criterion on the same jars: genuine `split` 1, `guarded` 1, `whole` 0; merged `whole` 1 (`processOptionsKeysOnly @58`). Mod corpora (client-merged-pack, client-neo-pack, client-popular, 196 jars + the kernel jars): REI, kuma-api (NeoForge and Fabric) and WTHIT call `getKey` with names from their own configs, which native NeoForge and native Fabric hand to vanilla's parse unchanged. | `d73/scan/` (GetKeyCallers.java, genuine.txt, merged.txt, corpus.txt), `d73/scan/criterion-*.txt` (CritMain.java) |
+| 3. callers | m9 on the tip, repair gone: 163 / 0; "options.txt loads with modded modifier bindings in it" PASS, the game wrote options.txt back, JEI's 35 bindings (five `:SHIFT`) unchanged; every `key_` line equal before and after, the seeded `key_key.attack:key.mouse.left:CONTROL_OR_COMMAND` included. | `gates/m9-tip/` |
+
+Done: the repair, its claim and `KEY_SUFFIX_PROPERTY` deleted from ForbricMergedBaseCompatTransformer (REPAIRS and
+the claims list lose one entry; TransformerAnchorCensusTest counts them); `forbric.keyModifierSuffix` in
+ForbricSwitches.RETIRED (it stays in released-switches.txt); MergedBaseKeyModifierSuffixTest deleted with its one
+ci-unstaged row. Standing check: **KeyModifierSplitStagedTest** (staged census of every `getKey(String)` call in base and
+carrier; a criterion test on fixtures in the shapes javap shows, incl. MinecraftForge's whole-value call and a guard a
+second jump also reaches). The census is red on the merged base (criterion run above). ci-unstaged row for the census,
+measured on a plain `--shared` clone of ef44d2a9 with no stagedRoot / FORBRIC_OLD and mcLibraries / fabricApi /
+rebornEnergy pointing nowhere: it skips on `[fixture:staged]`, the criterion test runs (`unstaged/`). A first measurement
+with `stagedRoot=/nonexistent` failed every GateNeoCanaryContractTest case ("no staged tree", lib.sh) for that reason
+alone; CI passes no stagedRoot, so the second run is the profile (`unstaged/run1-stagedRoot-nonexistent/`). No
+ci-prepared row (that profile stages base and carrier). gate-m9: the check on the repair's own line is deleted (its
+producer is gone, D34); the options-load absence and the JEI comparison stay as the survival check (D73), with comments
+saying so; the seed step stays.
+
+### (2) gate-m14 A-10: the full block state (done by K1, re-measured here; no change)
+
+K1's review fix 683171ec already made the read-back compare the whole state (`[connection=middle_ns]`, confirmed on the
+server with `execute if block ... Test passed`) and rewrote the header's "32/1 note_block" paragraph. Re-measured on this
+branch: default **34 / 0** (reads `mcwbridges:andesite_bridge ... [connection=middle_ns]`), control A
+(`-Dforbric.fabricRegistryInitialization=off`) **33 / 1**, exactly "the shared mod's block reads back as itself, state
+and all" (reads `[connection=base]`); item id 1640 -> 1639 -> 1640 in both. These are the numbers the header gives, so
+it stays. The canary was rebuilt first (`run/build-fabric-canary.sh`, rc 0). Logs `gates/m14-tip/`, `gates/m14-ctlA/`.
+Review A's original A-10 (a canary raw-id survival line, w2 review A) is not added: what it would watch is fabric-api's
+own REMOTE-mode remap keeping a client-only entry; no kernel mechanism takes part since the MinecraftForge wrapper sync
+went (D34), and no red control could break it short of patching fabric-api. The id move and put-back and the full-state
+read-back cover the kernel's part.
+
+### (3) m9 "NeoForge registration order": kept as the client's seam pair (3122ffec)
+
+The presence check matched the line KernelLifecycle prints after NeoForge's `postRegisterEvents` returns, seam or not,
+so it could not go red (K3 review B-3). Decision: drop that presence check and check what only the client can show:
+the seam's applied line and the absence of its "not the shape the kernel knows" WARN, after Mixin has woven whatever the
+97-mod pack aims at the method (m1 checks the same pair on a dedicated server; the K3 defect was the client's). What it
+guards: if a client mod's mixin leaves a shape the seam does not know, NeoForge's method runs as shipped (one throwing
+listener rolls every registry back, the Fabric mains run after the tail) and nothing else in m9 says so. The symptom
+check "no unbound data component" stays. Measured: tip 163 / 0; red control, K3's no-seam mutation
+(`mutations/m9-noseam.diff`, `Edit edit = null`) on a clone: **160 / 3**: the two seam checks (applied line absent; the not-the-shape WARN present x2) and "NeoForge's tooltip appenders are built" -- the kernel prints that line from the seam's route of the tail step (KernelLifecycle ~903, KernelRuntimeClasses note), so without the seam it is not printed (whether NeoForge's own tail built them unannounced was not measured). Logs `gates/m9-noseam/`.
+
+### (4) gate-m12's late-tick ceiling: counted while the player is on (120f0afc)
+
+The ceiling of 20 applied to the sampler's 700-tick line, which held both the gate's own client JVM booting and the join
+(wave 2: 21, 10, 4, 16, 3, 16). The server now runs with `-Dforbric.tickSamplerEvery=20` (an existing knob), so totals
+print every second; the gate takes the session as the difference between the last line before "joined the game" and the
+first line after "left the game" (else the last line, when the server stopped first), requires >= 100 session ticks, and
+holds the session's late count to the same ceiling 20 (not loosened). The pre-join count is printed, not asserted.
+Count 43 -> 44.
+
+| run | gate | before the join (late / ticks) | session (late / ticks) | where the late ticks fell (`m12-ticks.py`) |
+|---|---|---|---|---|
+| m12-tip-1 (tip, gate before the fallback; same window, read through `m12-window.py`) | 44 / 0 | 1 / 620 | 2 / 160 | 1 just after Done; 1 at the join, 1 at the leave |
+| m12-tip-2 (committed gate) | **44 / 0** | 1 / 640 | 1 / 160 | 1 just after Done; 1 at the join |
+| m12-mutA2: `/tick rate 8` at the join | **43 / 1**, exactly the ceiling check | 1 / 680 | **132 / 160** | every tick after the switch |
+| m12-mutB2: `/tick rate 8` from Done until the client dials, then 20 | **44 / 0** | 230 / 320 | 1 / 160 | 229 before the join, 1 at the join; the old count from the server's start (231) would have been red |
+
+The first two control runs (`m12-mutA-session-slow`, `m12-mutB-prejoin-slow`, 42 / 2 each) ran the gate before its
+fallback: a server at tick rate 8 prints every 2.5 s and was stopped before a line after the leave, so the window was
+"?" and both checks went red on coverage, not on the count. That is what the fallback fixes; the same logs through the
+committed window code read 128 / 140 and 1 / 160 (`m12-window.py`), and the re-runs above are the in-gate numbers.
+Separation, as wave 2 asked: in these runs the client booted in ~30 s and the pre-join lateness was 1 (the world's first
+tick after Done) unless the control made it more; nothing in this wave reproduced wave 2's spread, so the old flake is
+not root-caused further, only taken out of the assertion.
+
+### (5) gate-m26: client block-state id == dedicated-server id (ef44d2a9)
+
+New phase 1c: a dedicated Forbric server (own rundir `run/server-forge-registration`, port 0, nothing connects) with the
+two canary jars the client ran prints the NeoForge canary's BLOCKID at ServerStarted; the gate requires one and the same
+id on both ends (`M26_SERVER_IDS`, contract-tested in GateNeoCanaryContractTest: equal green, also printed twice;
+different, missing, two ids, AIR on both red). Count 45 -> 47 (Done + the comparison).
+Tip **47 / 0** (32366 on both; the server's registration window: 32368 states, each numbered once). Red control: a clone
+without lane S's clear before the client window's freeze (`mutations/m26-noclientclear.diff`): **46 / 1**, exactly the
+new check (client 64733, server 32366), with the kernel's CAUGHT "not one id per block state after the client entrypoint
+window freeze" (`next id 64736, 32369 mapped`) in the client log; the id >= 1 / round-trip checks stayed green.
+
+### Suite and gates
+
+- Suite at 120f0afc (APFS clone of the worktree, `-Pforbric.requireFixtures=all jar cleanTest test --continue`):
+  **5855 tests, 0 skipped, 6 failed**: failures-k.txt's five names (LiquidBounce x3, SharedFinalSourceActualTest x2) plus
+  `LibStopWhenReadyContractTest.aBootSlowerThanTheTimerGetsTheLineOnlyAfterDoneAndTheSettle` ("the line came 1.999 s
+  after Done, not after the 2 s settle"), a wall-clock assertion on lib.sh (untouched here) run while m13 / other lanes'
+  JVMs held the machine; the class alone three times: 9 / 0 each (`suite-final/libstop-rerun-*.log`). Re-run of the whole suite at the same commit after the gates: **5855 / 0 / 5**, exactly failures-k.txt's five names, 0 new, 0 gone (`suite-final2/`).
+  5858 - 6 (MergedBaseKeyModifierSuffixTest) + 2 (KeyModifierSplitStagedTest) + 1 (GateNeoCanaryContractTest) = 5855.
+- 66 classes that read G-C's gates, the transformer or the switches (list in `targeted.sh`): 400 / 0 / 0.
+- Gates on this branch: m9 163 / 0, m12 44 / 0 (twice), m13 30 / 0, m14 34 / 0, m26 47 / 0.
+
+### Commits (wave 2b)
+
+| sha | what |
+|---|---|
+| 38804eff | D73: key-modifier suffix repair deleted, switch RETIRED, KeyModifierSplitStagedTest, m9 survival check |
+| 3122ffec | m9: the client's RegisterEvent seam pair replaces the presence check |
+| ef44d2a9 | m26: client vs dedicated-server block-state id |
+| f6bc18bb | ci-unstaged row for KeyModifierSplitStagedTest's census (D47) |
+| 120f0afc | m12: late ticks counted while the player is on |
+| (this commit) | this record |
+
+### For other lanes / open
+
+- T-B phase 2 / RECORD: ForbricSwitches.RETIRED +1 (`forbric.keyModifierSuffix`); ci-unstaged -1 (MergedBaseKeyModifierSuffixTest) +1 (KeyModifierSplitStagedTest).
+- gates-parallel / gates-all: m26 has a third rundir (`server-forge-registration`, declared in GATE-PARALLEL) and boots a dedicated server on port 0 (no PORT_VARS entry needed).
+- `run/compat/assert.sh` still asserts "fired RegisterEvent in NeoForge's registration order" (a presence line, AssertCompatTest pins 36 PASS); not changed here (it is the compat probe's evidence list, not a gate check with a control). Owner: G-C next wave or RECORD's call.
+- LibStopWhenReadyContractTest's 2 s settle assertion can lose a few milliseconds under load (one red in the suite above, green alone x3): owner of lib.sh's server_ready (G-B1).
