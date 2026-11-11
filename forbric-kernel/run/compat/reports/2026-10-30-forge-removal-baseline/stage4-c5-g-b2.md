@@ -212,3 +212,75 @@ Open after the review fixes:
 
 Review-fix commits: 0a4fe3fc (m34), 4d5a3bc0 (m33 title), 076f3a1c (PROTOCOL breath-drown), cdae9449 (m60 inputs),
 cc10eb35 (m35), and this record update.
+
+## G-B2 wave 2b (2026-11-11, D72 and D76's leak)
+
+Branch `s4-c5-g-b2` reset to the stage tip b9154084 (K1-K4 merged). Notes and logs:
+`~/Forbric-backups/stage4-notes/c5/g-b2/w2b/` (`gates/`, `controls/`, `leak/`, `suite/`). Same harness as wave 2 (D68,
+heavy.sh for every Gradle and game run, ports 46760-46779). No client run; nothing downloaded.
+
+| item | outcome | commit |
+|---|---|---|
+| D72: m35's spawner read-back phase-aware, withhold set = five | DONE. The probe expected NeoForge's replacement SpawnGroupData in the event after the post in every phase, so in `withhold` spawner-nonempty-input was red only from reading back the answer its own listener withheld (its game state equals positive's). The read-back now expects what native leaves in the event: the listener's answer (NEO_DATA) in positive, none in withhold (javap: `BaseSpawner.serverTick` passes `aconst_null` to `EventHooks.finalizeMobSpawnSpawner`, which pops `Mob.finalizeSpawn`'s return), and still refuses the finalizer's return in every phase (split into its own `require`). The withhold set is portal-neo-veto, spawner-data, spawner-neo-cancel-finalize, spawner-neo-veto-spawn, item-result; the gate pins spawner-nonempty-input's withhold row as passing with positive's state (finalizations 0, inserted, marker 35, `eventDataAfter` none) and its header says why the sixth case is not in the set. | 47ad56d5 |
+| D76: m40/m35 server left bound after a gate run | DONE (m33 had the same code and gets the same fix). Two causes, both reproduced on the stage tip's m40 (below). (1) Timeout race: `kill_owned_descendants` listed evidence.py's children once and evidence.py was only `kill -9`ed 15 s later; an evidence.py still capturing its inputs at the timeout had no child to list, started the inner shell and the server during the 15 s, and was then killed above them, so they were re-parented to launchd and held `*:46760`; the next phase writes a new ownership token, the orphan's probe reads it as foreign (DISARMED), never halts its server, and it stays (wave 2: 4 h). (2) Signal: heavy.sh forwards TERM to the gate pid alone and the gate had no trap, so its background phase (evidence.py, shell, server) outlived it. Fix: `stop_phase` freezes evidence.py (STOP) before listing anything; if it already waits on a child (the phase command, or a git call while capturing, whose failure ends it before the command) each child's tree goes with lib.sh's `kill_tree` and evidence.py is thawed to record the killed command (exit=-9, inputs unchanged), else it is killed with its tree; an EXIT trap kills the in-flight phase tree however the gate ends, and HUP/INT/TERM exit through it; `fresh_world`'s stale-pid reaping uses `kill_tree`. No lib.sh edit (G-B1's file): the gates use its `kill_tree`/`_running`. | 82e1a0b3 |
+
+### Leak: before and after (`leak/`, driver `leak/leak-driver.sh`; snapshots of listeners in 46760-46779 and of every process naming the lane worktree)
+
+| run | gate | 0 s after the gate exited | later |
+|---|---|---|---|
+| early timeout (`M40_TIMEOUT=none`: the wait loop runs zero times, so the timeout path runs while evidence.py is still capturing — what `M40_TIMEOUT=1` hit in wave 2 on a loaded machine) | stage tip's m40 (b9154084 copy) | `java` on `*:46760` + its shell, ppid 1; a second orphan pair from `negative` | 23 s: the prepare pair still bound (its token was replaced, probe DISARMED); killed by the driver |
+| TERM to the gate once its server printed "Starting Minecraft server on" | stage tip's m40 | evidence.py (ppid 1), shell, `java` on `*:46760` | 3 s: gone (that probe still owned its token, finished and halted its server) |
+| early timeout | lane m40 | nothing, ports free | nothing |
+| TERM | lane m40 | nothing, ports free (rc 143) | nothing |
+| early timeout | lane m35 | nothing, ports free | nothing |
+| TERM | lane m35 | nothing, ports free (rc 143) | nothing |
+| `M40_TIMEOUT=3` (the thaw branch: evidence.py already waits on the phase command) | lane m40 | nothing, ports free; every phase's driver log `[evidence] command exit=-9, inputs unchanged=True` | — |
+
+A first attempt with `M40_TIMEOUT=0` did not hit the race on either side (`leak/run1-seq-pitfall/`): BSD `seq 1 0`
+prints `1 0`, so the loop waited 2 s, and evidence.py had started its command by then. Before the fix the TERM leak is
+transient for a phase whose probe still owns its token and permanent for one whose token a later phase replaced.
+
+### Gates on the lane tip 82e1a0b3 (`gates/`, `^[kernel] PASS` / `^[kernel] FAIL` lines; ports free after each)
+
+| gate | PASS / FAIL | note |
+|---|---|---|
+| m35 | 3 / 0 | positive 7/7, spawn-position-off 7/7 (rewrite absent), withhold red on exactly the five, spawner-nonempty-input passing there with positive's state (`gates/m35-tip-evidence/`) |
+| m40 | 36 / 0 | negative and noreborn inside |
+| m33 | 22 / 0 | |
+
+### Red controls for the changed checks (`controls/<name>.diff`, `.out`, `-evidence/`; each mutated probe prints `MUTATION <name>` into the phase logs)
+
+| control | result |
+|---|---|
+| M1: the stage tip's probe (read-back not phase-aware) with the new gate | RED 2/1: withhold FAILs on the set, six failures (spawner-nonempty-input among them) against the five expected |
+| M2: the withheld FinalizeSpawn listener still sets NEO_DATA (the premise broken) | RED 2/1: withhold spawner-nonempty-input FAILs "the event carries a SpawnGroupData although BaseSpawner hands it none and the probe's listener withheld its answer" (`eventDataAfter` NeoForge's); spawner-data FAILs the same way |
+| M3: `ProbeMob.finalizeSpawn` writes its return into the event (what native's `pop` forbids) | RED 1/2: positive and spawn-position-off FAIL, spawner-data and spawner-neo-veto-spawn "native discarded finalizer return was written back into the event". withhold stays PASS: its three finalizing cases already fail at their pinned earlier reasons and spawner-nonempty-input never finalizes, so the write-back half is live in positive/spawn-position-off only |
+| leak, stage tip | the before rows above (port held, JVMs left) |
+| leak, lane tip | the after rows above (nothing left) |
+
+### Checks changed (D34)
+
+- m35 withhold: `spawner-nonempty-input` left the expected red set and its pinned "probe-side read-back only" reason is
+  gone (D72: red for a probe-side reason, shows nothing). It is replaced by an assertion that the case passes in withhold
+  with positive's game state; M1/M2 above show the gate red when the read-back is not phase-aware or the premise breaks.
+- The probe's single read-back `require` is two: the finalizer's return is never in the event (all phases, M3 red), and
+  the event holds the listener's answer or none (phase-aware, M2 red). Nothing was weakened in positive: the two
+  together are the old `== NEO_DATA`.
+
+### Suite
+At the lane tip 82e1a0b3 (`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all jar
+cleanTest test --continue`, run after every gate and control, so no mutation was in the tree): **5858 tests, 0 skipped, 5
+failed**, name for name `failures-k.txt` (0 new, 0 gone; `suite/suite.log`, `suite/xml/`, `suite/failures.txt`). The
+changes are a canary probe outside the Gradle source sets and three gate scripts; no test reads them. Python:
+test_gate_ports + test_lib_guards 24/24. No TSV row: no new test.
+
+### Open / hand-offs
+
+- -> G-B1 / orchestrator (lib.sh owner): the signal half of the leak is not m33/m35/m40-specific. A static census of the
+  gate files: 52 gates start a server or client in the background; only m28 and now m33/m35/m40 stop it on a signal
+  (m9's EXIT trap only removes a file). On a TERM from heavy.sh the others leave their JVM to the next run's
+  `reap_stale_server`, holding the port meanwhile. Not
+  measured on any of them. A lib.sh-level fix (the EXIT trap kills the tree of the pid each gate records with
+  `record_server_pid`, plus HUP/INT/TERM -> exit) would cover them all; it is G-B1's file, so not done here.
+- -> merger: m35's withhold set is five now; D48's six in PLAN/merge notes are superseded by D72.
+- Unchanged from wave 2: m34's 2-hour release soak (VERIFY).
