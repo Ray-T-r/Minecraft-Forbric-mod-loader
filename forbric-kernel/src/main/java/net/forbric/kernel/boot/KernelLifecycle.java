@@ -1011,11 +1011,14 @@ public final class KernelLifecycle {
 	 * whole {@code CREATIVE_MODE_TAB} registry, and natively runs once, at the end of {@code GameData.postRegisterEvents},
 	 * after the last registration; the server's datapack reload ({@code NeoForgeEventHandler}'s creative-tab reload
 	 * listener) recalculates it again on the server thread. On a client the Fabric mains and client entrypoints register
-	 * in {@code Minecraft.<init>} ({@link #onClientEntrypoints}), after that sort, so a Fabric mod's tab was searchable
-	 * but had no tab: measured (Stage 4 C5 lane K3b, mcw-stairs Fabric + mcw-bridges NeoForge, a probe on
-	 * {@code SORTED_TABS}), the tab stayed out of the strip until an integrated server's reload put it in, and on a
-	 * client joining a dedicated server it never did. Native Fabric shows it from the start. Sorting where the client's
-	 * last registration window closes gives the list that reload gives, from the start and on every join.
+	 * in {@code Minecraft.<init>} ({@link #onClientEntrypoints}), after that sort, so a Fabric mod's tab was in the
+	 * {@code CREATIVE_MODE_TAB} registry but not in the strip: measured (Stage 4 C5 lane K3b, mcw-stairs Fabric +
+	 * mcw-bridges NeoForge, a probe on {@code SORTED_TABS} and the registry), the tab stayed out of {@code SORTED_TABS}
+	 * until an integrated server's reload put it in, and on a client joining a dedicated server it never did. The tab's
+	 * contents and the search tab were not measured. Native Fabric's pager reads vanilla's {@code CreativeModeTabs.tabs()},
+	 * which streams the live registry on every call (javap of 26.2 and fabric-creative-tab-api-v1 5.0.14; no native
+	 * client was run), so there a registered tab is in the list the strip reads. Sorting where the client's last
+	 * registration window closes gives the list that reload gives, from the start and on every join.
 	 *
 	 * <p>Calling {@code sortTabs()} a second time is safe: with no server up, {@code runInServerThreadIfPossible} runs
 	 * inline; it is a topological sort over the tab registry plus the ordering edges; {@code KernelRegistryContent} clears
