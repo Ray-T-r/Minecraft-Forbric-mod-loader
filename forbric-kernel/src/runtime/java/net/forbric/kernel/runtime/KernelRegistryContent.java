@@ -106,18 +106,16 @@ public final class KernelRegistryContent {
 	}
 
 	/**
-	 * Re-sorts NeoForge's creative tabs so the ones registered inside the kernel's window reach the tab strip.
+	 * Sorts NeoForge's creative tabs again once a client's Fabric entrypoints have registered theirs, so those reach the
+	 * tab strip ({@code KernelLifecycle.sortNeoCreativeTabs} says when and why).
 	 *
 	 * <p>{@code sortTabs()} REPLACES {@code SORTED_TABS} but only APPENDS to {@code DEFAULT_TABS} — it re-adds the
 	 * four special tabs (hotbar / search / op / inventory) on every call and never clears. The special tabs'
 	 * screen column is {@code indexOf % (size/2) + 5}, so a duplicated list (size 8) yields columns 5..8 and the
 	 * tab-sprite array (length 7) overflows: {@code ArrayIndexOutOfBoundsException: Index 7} in
-	 * {@code extractTabButton} the moment the creative screen renders. Since lane K3, NeoForge's own
-	 * {@code GameData.postRegisterEvents} tail runs {@code sortTabs()} once (after every RegisterEvent and, on a dedicated
-	 * server, every Fabric main), so the kernel's re-sort is a SECOND call — the list is cleared first to make the call
-	 * idempotent. With this re-sort switched off, a dedicated server (packedup + supermartijn642corelib) ended with the same
-	 * {@code DEFAULT_TABS} (4) and {@code SORTED_TABS} (11) as native NeoForge 26.2.0.93; whether a client still needs it is
-	 * not measured (K3 review fixes, open item for the orchestrator).
+	 * {@code extractTabButton} the moment the creative screen renders. NeoForge's own {@code GameData.postRegisterEvents}
+	 * tail has run {@code sortTabs()} once already, so this is a SECOND call — the list is cleared first to make the call
+	 * idempotent ({@code DEFAULT_TABS} 4, as native NeoForge 26.2.0.93 has it).
 	 */
 	public static void sortCreativeTabs() {
 		try {
@@ -136,9 +134,9 @@ public final class KernelRegistryContent {
 				names.append(CreativeModeTabRegistry.getName(tab));
 			}
 			ForbricLog.info("[Forbric/Lifecycle] re-sorted NeoForge creative tabs %d -> %d (special tabs: %d, must "
-					+ "stay 4): [%s] (the creative screen's tab strip reads ONLY this list; the baseline sort "
-					+ "predates the kernel's registration window, so window-registered tabs were searchable but "
-					+ "had no tab)", before, after.size(), defaults.size(), names);
+					+ "stay 4): [%s] (the creative screen's tab strip reads ONLY this list; NeoForge sorted it at the "
+					+ "end of RegisterEvent, before the Fabric entrypoints registered their tabs)", before,
+					after.size(), defaults.size(), names);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not re-sort NeoForge creative tabs "
 					+ "(mod creative tabs may be missing from the tab strip)");

@@ -940,13 +940,18 @@ public final class KernelLifecycle {
 	/**
 	 * Closes the registration window and redoes the bookkeeping the open window invalidated.
 	 *
-	 * <p>Each of these four is a failure the kernel has already paid for once, so they are named rather than
+	 * <p>Each of these three is a failure the kernel has already paid for once, so they are named rather than
 	 * folded: {@code linkBlockItems} links any block item still missing from {@code Item.BY_BLOCK} (normally none: the
 	 * item registry's add-callback links each one as it is added; without either, {@code Block.asItem()} is AIR and a
 	 * mod's creative tab collapses to empty), {@code freeze} also latches {@code registriesLoaded} (and its bake
-	 * numbers every block's states, from the map {@link #clearBlockStateIds} has just emptied),
-	 * {@code completeBlockStateBookkeeping} fills the state caches, and
-	 * {@code sortNeoCreativeTabs} puts window-registered tabs into the strip the creative screen actually reads.
+	 * numbers every block's states, from the map {@link #clearBlockStateIds} has just emptied), and
+	 * {@code completeBlockStateBookkeeping} fills the state caches.
+	 *
+	 * <p>No creative-tab sort here any more: NeoForge's own {@code GameData.postRegisterEvents} tail sorts the tabs once
+	 * everything this window registers is in (on a dedicated server the Fabric mains too), so a second sort here found the
+	 * same list every time (Stage 4 C5 lane K3b, the plan's C3 checks: a dedicated server and a client, re-sort on and
+	 * off). The client's last registration happens later, in the Fabric entrypoint window, and is sorted where that
+	 * window closes ({@link #closeClientEntrypointWindow}).
 	 *
 	 * <p>Best-effort as a whole AND per step, because this runs in a finally: it must not replace the exception
 	 * that brought it here.
@@ -977,33 +982,28 @@ public final class KernelLifecycle {
 			Caught.warn(t, "[Forbric/Lifecycle] could not complete the block state bookkeeping — late-registered block "
 					+ "states keep the caches their registration left");
 		}
-		try {
-			sortNeoCreativeTabs(cl);
-		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] could not re-sort the creative tabs — a mod's tab may be missing "
-					+ "from the strip");
-		}
-		// After the sort, which is what it reports on.
+		// After NeoForge's own sort (the tail of postRegisterEvents), which is what it reports on.
 		if (Boolean.getBoolean("forbric.tabProbe")) startCreativeTabProbe(cl);
 	}
 
 	/**
-	 * Re-sorts NeoForge's creative-tab ORDER list so tabs registered in the kernel's window become visible.
+	 * Sorts NeoForge's creative-tab ORDER list again, so the tabs the Fabric client entrypoints registered reach the strip.
 	 *
 	 * <p>NeoForge's {@code CreativeModeInventoryScreen} paginates its tab strip EXCLUSIVELY from
 	 * {@code net.neoforged.neoforge.common.CreativeModeTabRegistry.getSortedCreativeModeTabs()} — not from
-	 * {@code CreativeModeTabs.tabs()}. That {@code SORTED_TABS} list starts empty and is only rewritten by
-	 * {@code sortTabs()}, which walks the whole {@code CREATIVE_MODE_TAB} registry. Vanilla's tabs enter the
-	 * registry during {@code Bootstrap} — BEFORE the kernel's registration window — so the sort that ran during
-	 * NeoForge baseline bring-up froze a vanilla-only snapshot, and a mod tab registered in the window never
-	 * appeared in the strip. It stayed fully SEARCHABLE the whole time, because the search tree is built from
-	 * {@code CreativeModeTabs.allTabs()} (the live registry) — that split, "searchable but no tab", is this bug's
-	 * fingerprint.
+	 * {@code CreativeModeTabs.tabs()}. That {@code SORTED_TABS} list is rewritten by {@code sortTabs()}, which walks the
+	 * whole {@code CREATIVE_MODE_TAB} registry, and natively runs once, at the end of {@code GameData.postRegisterEvents},
+	 * after the last registration; the server's datapack reload ({@code NeoForgeEventHandler}'s creative-tab reload
+	 * listener) recalculates it again on the server thread. On a client the Fabric mains and client entrypoints register
+	 * in {@code Minecraft.<init>} ({@link #onClientEntrypoints}), after that sort, so a Fabric mod's tab was searchable
+	 * but had no tab: measured (Stage 4 C5 lane K3b, mcw-stairs Fabric + mcw-bridges NeoForge, a probe on
+	 * {@code SORTED_TABS}), the tab stayed out of the strip until an integrated server's reload put it in, and on a
+	 * client joining a dedicated server it never did. Native Fabric shows it from the start. Sorting where the client's
+	 * last registration window closes gives the list that reload gives, from the start and on every join.
 	 *
-	 * <p>Calling {@code sortTabs()} again after the window is safe and idempotent: with no server up,
-	 * {@code runInServerThreadIfPossible} runs inline; the recalculation is a pure topological sort over the tab
-	 * registry plus the ordering-JSON edges; and any later genuine re-sort (the datapack reload listener) walks the
-	 * same registry and keeps the tab.
+	 * <p>Calling {@code sortTabs()} a second time is safe: with no server up, {@code runInServerThreadIfPossible} runs
+	 * inline; it is a topological sort over the tab registry plus the ordering edges; {@code KernelRegistryContent} clears
+	 * {@code DEFAULT_TABS} first, which {@code sortTabs()} appends to.
 	 */
 	private static void sortNeoCreativeTabs(ClassLoader cl) {
 		contentCall(cl, "sortCreativeTabs", "re-sort the NeoForge creative tabs");
@@ -2480,6 +2480,9 @@ public final class KernelLifecycle {
 	 * NeoForge's probe block 64733 where a dedicated server reads 32366), past the width of the global palette sized from
 	 * the map's {@code size()}. Native NeoForge bakes a client's blocks once, so each state's id is its position in registry
 	 * order; the bake after the clear gives exactly that, with the late registrations at the end.
+	 *
+	 * <p>Then the creative tabs are sorted again ({@link #sortNeoCreativeTabs}): this is the client's last registration,
+	 * after NeoForge's own sort, and a Fabric mod's tab is not in the strip otherwise.
 	 */
 	private static void closeClientEntrypointWindow(ClassLoader cl) {
 		try {
@@ -2492,5 +2495,13 @@ public final class KernelLifecycle {
 			Caught.warn(t, "[Forbric/Lifecycle] could not re-close after the Fabric client entrypoints");
 		}
 		verifyBlockStateIds(cl, "client entrypoint window");
+		// The client's last registration: the tabs the Fabric entrypoints added go into NeoForge's strip now, as NeoForge's
+		// own tail sort puts in what RegisterEvent added (see sortNeoCreativeTabs).
+		try {
+			sortNeoCreativeTabs(cl);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] could not sort the creative tabs after the Fabric client entrypoints — "
+					+ "a Fabric mod's tab may be missing from the strip");
+		}
 	}
 }
