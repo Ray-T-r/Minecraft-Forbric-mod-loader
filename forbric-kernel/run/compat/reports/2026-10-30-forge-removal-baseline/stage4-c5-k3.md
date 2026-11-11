@@ -209,3 +209,150 @@ Every count equals gates-all except m1 (+2, the new checks). Ports 46900-46919 f
 1. (B-8, A-4) A throwing RegisterEvent listener (contained per mod, per registry) and a throw inside NeoForge's per-registry try (roll-back to vanilla, then the boot continues): native NeoForge rolls back and stops at its loading-error screen in both. Rule needed: keep containing, or stop as native does.
 2. (B-7) The kernel's creative-tab re-sort in `closeRegistrationWindow`: redundant on a dedicated server (measured above); a client with Fabric tabs is not measured. Candidate for the C3 three checks.
 3. Unchanged from the first record: COMMON/CLIENT configs load before the registry phase (native: after); NewRegistryEvent/ModifyRegistriesEvent are still posted by the kernel; `deliverModBusEvent` (setup-phase events) still walks a `Map.copyOf` in hash order — the tail event no longer does (A-3).
+
+## K3b (wave 2b, 2026-11-11)
+
+Lane K3b, branch `s4-c5-k3` reset to the stage tip b9154084. Evidence: `~/Forbric-backups/stage4-notes/c5/k3b/w2b/`
+(tabs/, census/, gates/, suite-baseline/, suite-tip/, mut-*.diff/log/xml, probe/). Every Forbric arm below ran from an APFS
+clone whose tree is named next to it: `tip-wt` = b9154084 byte-equal (src diffed), `resort-wt` = b9154084 + the re-sort
+mutation (`resort-off.diff`, `resort-wt-vs-tip.txt`), `fix-wt` = e785444a.
+
+### 1. B-7: the creative-tab re-sort in closeRegistrationWindow — redundant there, the defect moved; re-anchored (e785444a)
+
+Fixture: fabric-api 0.155.2 + mcw-stairs 1.0.2 **Fabric** (its `main` registers `mcwstairs:mcwstairs`) + mcw-bridges 3.1.2
+**NeoForge** (`mcwbridges:mcwbridges`), jars already on disk (sha1 in each arm's `mods.sha1`). Probe agent
+`probe/k3btabs.jar` (source beside it) reads, every 2 s, without loading or initialising anything: NeoForge's
+`CreativeModeTabRegistry.SORTED_TABS` (the only list the creative screen's strip reads) as keys, `DEFAULT_TABS` size, and
+the `CREATIVE_MODE_TAB` registry. `tabs-run.sh sp|mp`: a client quick-played into a copy of client-merged-pack's ForbricTest,
+or a dedicated Forbric server with the same jars plus a client joining it over a socket.
+
+| arm | dedicated server SORTED / DEFAULT | client after its Fabric mains | client in the world |
+|---|---|---|---|
+| native NeoForge 26.2.0.93 server, mcw-bridges only (`tabs/native-neo-server`) | 11 (vanilla 10 + mcwbridges) / 4 | — | — |
+| tip, SP (`tabs/sp-on`) | — | 11, no mcwstairs | 12 (+mcwstairs) only once the integrated server's reload ran (07:39:07, the second it started) |
+| re-sort off, SP (`tabs/sp-off`) | — | 11 | 12, same moment |
+| tip, MP (`tabs/mp-on`) | 12 (mcwbridges, mcwstairs) / 4 | 11 | **11 — mcwstairs never in the strip** |
+| re-sort off, MP (`tabs/mp-off`) | 12 / 4 | 11 | **11** |
+| fix e785444a, MP (`tabs/mp-fix`) | 12 / 4 | **12** (sorted at the window's close, "11 -> 12") | 12 |
+| fix e785444a, SP (`tabs/sp-fix`) | — | **12** | 12 (the reload gives the same list) |
+
+The plan's C3 three checks, for the sort in `closeRegistrationWindow`:
+
+1. **Symptom check** (its symptom: a window-registered tab searchable but out of `SORTED_TABS`): with it removed, the dedicated
+   server ends with the same 12/4 and the client with the same 11/4 then 12/4 as with it, SP and MP; every tip arm's own log
+   says `re-sorted NeoForge creative tabs N -> N` with the same list (server 12 -> 12, client 11 -> 11). The native NeoForge
+   server has the NeoForge tab in its tail sort (11/4). So at that point it is redundant: NeoForge's own
+   `GameData.postRegisterEvents` tail (K3) sorts after everything the window registers, the server's Fabric mains included.
+2. **Whole-jar search** for the same pattern, a tab registered after NeoForge's last `sortTabs`: in the genuine base + carrier
+   `CreativeModeTabRegistry.sortTabs` is called from `GameData.postRegisterEvents` only, and the recalculation from
+   `NeoForgeEventHandler.onResourceReload` (`AddServerReloadListenersEvent`: a server's datapack reload, so an integrated
+   server too, never a client on a remote server) (javap). The kernel has one more registration point after the tail: a
+   client's Fabric mains and client entrypoints, in `Minecraft.<init>` (`onClientEntrypoints`). Hit: the mcwstairs rows above
+   — searchable but not in the strip until an integrated server's reload, and for good on a multiplayer join, on the tip and
+   with the re-sort off alike. Native Fabric shows the tab from the start (fabric-creative-tab-api's own pager lays out every
+   registered tab; on Forbric that pager is pinned off and NeoForge's is the only one). The defect moved, so per the plan the
+   repair is re-anchored, not deleted: `closeClientEntrypointWindow` sorts after its freeze; `closeRegistrationWindow` no
+   longer sorts. On a dedicated server nothing reads `SORTED_TABS` but the reload's recalculation, and the tail sort already
+   holds every tab there.
+3. **Caller check**: the measured arms are the callers (a real Fabric mod's tab, a real NeoForge mod's tab); after the fix the
+   client has the list an integrated server's reload gives (12, same order) before any world, on MP as on SP, `DEFAULT_TABS`
+   4. m55 (creative screen, search) and m9 / m26 (clients) re-run below.
+
+Switch: none existed for the re-sort, so nothing goes to `ForbricSwitches.RETIRED`. `-Dforbric.tabProbe` keeps its place.
+Check: `KernelLifecycleRegistrationWindowTest.theCreativeTabsAreSortedWhereTheClientsLastRegistrationWindowCloses` — the
+client window's close sorts, after its freeze, and it is the only place the kernel sorts. Red control: the sort taken out of
+`closeClientEntrypointWindow` (`mut-no-client-sort.diff`) → that test red (`mut-no-client-sort.log/.xml`, 1 of 8). Runtime red
+control: `tabs/mp-on` and `tabs/mp-off` (no sort at that close) leave mcwstairs out of the strip on a join; `tabs/mp-fix` has it.
+No gate carries a Fabric mod with a creative tab over a socket (m12's set has none, m14's canary registers none); adding one
+to a shared fixture is left to the owners of those gates (open item 3).
+
+### 2. Setup-phase mod-bus delivery in ModList order (25fbc88f)
+
+What walked hash order: `KernelModLoader.publishedNeoMods()` was a `Map.copyOf` (iteration order salted per JVM), and every
+setup phase walks it — `KernelNeoSetup.firePhase` for FMLConstructModEvent, common setup, the sided setup, both IMC phases
+and load complete — and so does `deliverModBusEvent` (its one live caller, `RegisterTooltipAppendersEvent` from
+`KernelNeoTooltips`). (K3's census item 3 named `deliverModBusEvent` for the setup phases; the setup phases go through
+`firePhase`, over the same map.) Native (javap of .93): `CommonModLoader.load` → `ModLoader.dispatchParallelEvent` →
+`dispatchParallelTask` over `ModList.getSortedMods()`, each container's task waiting for its dependencies' futures, then
+`acceptEvent` with that container active; `ModLoader.postEvent` → each `EventPriority`, `ModList` order. The kernel publishes
+ModList from a `LinkedHashMap` in dependency order (`orderByDependency`), so the map is now that same map, read-only
+(`KernelModLoader.published`): walking it is walking `ModList.getSortedMods()` minus the presence aliases, one container at
+a time — an order native NeoForge can produce, and one that keeps its guarantee that a dependency finishes first. K3's
+`deliverInModOrder` reads ModList directly; it already fitted the RegisterEvent and BlockEntityTypeAddBlocksEvent paths and
+is unchanged. `deliverModBusEvent` now walks the same order through the map (baseline first, then ModList order, phase by
+phase); it was left in place rather than folded into `deliverInModOrder`, to keep the shape tests that pin it.
+
+Test: `KernelModLoaderPublishedOrderTest` (2): the map keeps the order it is given (unit), and on the staged carrier after
+`constructMods` of an eight-mod jar `publishedNeoMods()` walks `ModList.getSortedMods()` (staged). Red control: `published`
+back to `Map.copyOf` (`mut-hash-order.diff`) → 2/2 red (`mut-hash-order.log/.xml`: ModList a..h, the map f, e, d, c, b, a, h, …).
+TSV (cfb39a49): measured with the staged root absent and no requireFixtures (`ci-measure.log`, the two TEST-*.xml beside it),
+the staged case skips with "[fixture:staged] staged runtime classes/carrier absent: …/neoforge-runtime/neoforge-runtime.jar"
+and the unit case and the new KernelLifecycleRegistrationWindowTest case run; one ci-unstaged row, with the profile's
+default root as `KernelModLoaderClasslessTest`'s rows have it.
+
+### 3. The two unchanged K3 items, with a census
+
+- **COMMON/CLIENT configs "load before the registry phase"**: not so at this tip. `loadEarlyConfigs` is step 2c, after
+  `registerNeoForgeContent` returns; the logs show "loaded NeoForge configs" after "fired RegisterEvent" and the tail's
+  creative-tab sort, on a server (`c5/k3/repro/after-server/server.log` lines 183→193) and a client
+  (`c5/k3/repro/after-client/client.log` 194→205), as native `CommonModLoader.begin` does ("Registry initialization", then
+  "Config loading"). What said otherwise were two stale comments inside `registerNeoForgeContent` (they described a config load
+  in the window that `git log -S` finds in no commit since the baseline; the call has been at step 2c since 44e8eeea at
+  least) — corrected in 66acdc78, no code change. One remaining difference, not fixed: the kernel loads COMMON then CLIENT,
+  native CLIENT then COMMON (`lambda$begin$1`). Census: 20 NeoForge jars in the corpora register both types
+  (`census/registry-events.tsv`, kind `client_and_common`); a mod would see the order only if one type's
+  `ModConfigEvent.Loading` listener read the other type's values — not shown for any of them (not analysed per mod).
+- **NewRegistryEvent / ModifyRegistriesEvent kernel-posted**: census `census/registry_events_scan.py` over run/client-*,
+  run/neoforge-builds, build/compat-inputs, build/sweep80/90/100-mac and forge-swap/mods-neo (nested jars included,
+  sha1-deduplicated): 1747 jars, 397 NeoForge. Listeners of NewRegistryEvent in 12 distinct mods (PuzzlesLib, TerraBlender,
+  architectury ×2, bagus_lib ×2, balm ×2, framework, fzzy_config, nuit, tofucraft, tombstone, whitenoise); of
+  ModifyRegistriesEvent, PuzzlesLib only (its generic event-invoker table). The two kernel differences K3 recorded are (a)
+  NewRegistryEvent posted without an active container, (b) ModifyRegistriesEvent not posted to NeoForge's own container (the
+  kernel calls `NeoForgeRegistriesSetup.modifyRegistries` itself). (a) is observable only to a listener that asks
+  `ModLoadingContext` for the active container: no listener class does, and in those jars only PuzzlesLib calls
+  `getActiveContainer` at all (`NeoForgeModContainerHelper.getOptionalModEventBus`, reached from its constructor, not from its
+  NewRegistryEvent lambda, which only calls `NewRegistryEvent.register`; javap, `census/listener-jars-ctx.txt`). (b) touches no
+  mod. So no mod in the corpora observes either; not changed.
+
+### Results
+
+- Suite, baseline at b9154084 (`suite-baseline/`, clone `tip-wt`): 5858 tests / 0 skipped / 5 failed. Tip e785444a (`suite-tip/`, clone `suite-wt`):
+  **5861 / 0 / 5**, the same five names as failures-k.txt (+3: KernelModLoaderPublishedOrderTest 2, KernelLifecycleRegistrationWindowTest 1); 0 new.
+- Gates on the lane tip e785444a, in the K3 worktree (ports 46900-46919), one at a time, `^[kernel] PASS/FAIL` counts
+  (`gates/tip-server/counts.txt`, `gates/tip-client/counts.txt`); m9 on an APFS clone of client-merged-pack by real path:
+
+  | gate | PASS / FAIL | b9154084 gates-all |
+  |---|---|---|
+  | m1 | 19 / 0 | 19/0 |
+  | m2 | 29 / 0 | 29/0 |
+  | m2b | 38 / 0 | 38/0 |
+  | m4 | 33 / 0 | 33/0 |
+  | m4-canary | 22 / 0 | 22/0 |
+  | m7-neo | 28 / 0 | 28/0 |
+  | m10-overlay | 24 / 0 | 24/0 |
+  | m21-forgesetup | 54 / 0 | 54/0 |
+  | m25-worldgen | 16 / 0 | 16/0 |
+  | m26-forgeclient | 45 / 0 | 45/0 |
+  | m55-creative-search | 23 / 0 | 23/0 (each phase's client now logs "re-sorted NeoForge creative tabs 10 -> 10" at the window's close) |
+  | m9-client | 163 / 0 | 163/0 |
+
+  The gates ran on e785444a's code (cfb39a49 adds a TSV row only). m2, m2b, m4, m4-canary, m7-neo, m9, m21 post the setup
+  phases (m21 drains each phase's own queue in order); no gate asserts a setup order between two mods, which is what the
+  unit test pins. m14 (not in this lane's list) was not run.
+
+### For other lanes
+
+- Nothing to change for G-C, G-B2, UPG or SWAP. Shared file with K1/K3 history: `KernelLifecycle.java`
+  (`closeRegistrationWindow` loses its sort block; `clearBlockStateIds` right before `freeze` is kept in both closes, as K1 needs).
+- T-B phase 2: one new test class, `KernelModLoaderPublishedOrderTest` (2 tests, one ci-unstaged row, cfb39a49); the new
+  `KernelLifecycleRegistrationWindowTest` case needs no staged root. Suite count +3. The ci-prepared-noforge profile was not
+  measured (its classless rows still name the Forge carrier; T-B's).
+
+### Open items
+
+1. (orchestrator, unchanged) K3 B-8/A-4: a throwing RegisterEvent listener is contained; native NeoForge rolls back and stops.
+   Not touched here.
+2. (orchestrator / kernel) COMMON then CLIENT config load order vs native CLIENT then COMMON; no affected mod shown.
+3. (G-C / gate owners) No gate joins a dedicated server with a Fabric mod that has a creative tab, so the client-window sort is
+   pinned by the unit shape test and these measured arms only. A Fabric creative tab on the m12 or m14 client (fixture or
+   canary) plus a smoke read of `SORTED_TABS` at the join would make it a gate check.
