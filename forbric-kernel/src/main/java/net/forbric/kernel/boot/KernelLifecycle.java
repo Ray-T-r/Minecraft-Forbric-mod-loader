@@ -238,10 +238,11 @@ public final class KernelLifecycle {
 		// (preInitClient -> TooltipOverlayHandler.init -> NeoForge.EVENT_BUS.register), which is why the tooltip
 		// stayed missing even after mod-bus delivery was fixed.
 		fireModSetupLifecycle(cl, side);
-		// Step 3b2: the late-config pass, in the one place it is honest. loadEarlyConfigs (step 2c) ran before
-		// construction's own events, so a mod that registers a config from FMLConstructModEvent or common setup —
-		// and a Fabric mod registering one through the ForgeConfigAPIPort — has a config that is registered and
-		// never loaded. Reading it then throws "Cannot get config value before config is loaded" rather than
+		// Step 3b2: the late-config pass, in the one place it is honest. loadEarlyConfigs (step 2c) ran before the
+		// setup lifecycle (FMLConstructModEvent fired earlier, inside registerNeoForgeContent, so a config registered
+		// there IS loaded by step 2c), so a mod that registers a config from common setup or a later phase — and a
+		// Fabric mod registering one through the ForgeConfigAPIPort — has a config that is registered and never
+		// loaded. Reading it then throws "Cannot get config value before config is loaded" rather than
 		// returning a default, from wherever the mod first asked. This opens only what has no loaded config yet, so
 		// it cannot re-open what step 2c already did; on a pack where nothing registers late it says nothing.
 		openLateConfigs(cl, side, "the mod setup lifecycle");
@@ -426,9 +427,10 @@ public final class KernelLifecycle {
 	/**
 	 * Opens NeoForge configs that were registered after {@link #loadEarlyConfigs} had already run.
 	 *
-	 * <p>The early pass happens once, before mod content registration. A Fabric mod registering a config from a
-	 * CLIENT entrypoint is therefore too late for it, and nothing else opens a non-STARTUP config — the carrier's
-	 * {@code registerConfig} eagerly opens STARTUP only. The mod then reads a config that was registered and never
+	 * <p>The early pass happens once, after mod content registration and before the setup lifecycle (step 2c, where
+	 * native NeoForge loads its configs too). A Fabric mod registering a config from a CLIENT entrypoint, or a mod
+	 * registering one from common setup or later, is therefore too late for it, and nothing else opens a non-STARTUP
+	 * config — the carrier's {@code registerConfig} eagerly opens STARTUP only. The mod then reads a config that was registered and never
 	 * loaded, and what it gets is not an empty config but "Cannot get config value before config is loaded",
 	 * thrown from wherever it first asked. ShoulderSurfing asks from a mixin in {@code Minecraft.<init>}.
 	 *

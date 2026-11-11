@@ -132,8 +132,9 @@ public final class KernelConfigLoad {
 	/**
 	 * Opens every config of the named types that has no loaded config yet.
 	 *
-	 * <p>The early pass happens once, before mod content registration. A Fabric mod registering a config from a
-	 * CLIENT entrypoint is therefore too late for it, and nothing else opens a non-STARTUP config — the carrier's
+	 * <p>The early pass happens once, after mod content registration and before the setup lifecycle. A Fabric mod
+	 * registering a config from a CLIENT entrypoint, or a mod registering one from common setup or later, is
+	 * therefore too late for it, and nothing else opens a non-STARTUP config — the carrier's
 	 * {@code registerConfig} eagerly opens STARTUP only. The mod then reads a config that was registered and
 	 * never loaded, and what it gets is not an empty config but "Cannot get config value before config is
 	 * loaded", thrown from wherever it first asked. ShoulderSurfing asks from a mixin in {@code Minecraft.<init>}.
