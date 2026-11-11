@@ -107,8 +107,10 @@ REAL_MODS=(
   "$NEO_MODS/waystones-neoforge-26.2-26.2.0.5.jar"
   "$NEO_MODS/sophisticatedbackpacks-26.2-3.26.2.2154.jar"
 )
-# Their libraries: installed with them, but they put nothing in the world of their own, so write_checks does not ask
-# each for a population line (in REAL_MODS each fails "no OK line of world.commands puts <mod> content in the world").
+# Their libraries: installed with them, but no population command of world.commands is theirs, so write_checks does not
+# ask each for a population line (in REAL_MODS each fails "no OK line of world.commands puts <mod> content in the
+# world"). Their content still reaches the save: sophisticatedcore's data components ride on the backpack in the chest,
+# and balm's player key BalmData holds waystones' player data; the census and the diffs cover both.
 LIB_MODS=(
   "$NEO_MODS/balm-neoforge-26.2-26.2.0.4.jar"
   "$NEO_MODS/shogi-neoforge-26.2-26.2.0.3.jar"
@@ -304,8 +306,9 @@ mod_namespace() {
 # write_checks <log> <who> <player: yes|no> <world-script|-> <player-script> [populated jars...] — the side that wrote
 # this save (<who>: "old server", "new server", "old client") wrote everything it was asked to. Every jar listed must
 # have at least one OK line of the world script naming its namespace (D53: a mod stays in the set only while its
-# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1). Every writer runs on a fresh
-# world, so the canary's forceload of the export box must succeed.
+# population command succeeds); a jar with none is red, not skipped (review w2 UPG A-1). Every writer that runs a world
+# script writes a fresh world, so the canary's forceload of the export box must succeed; a writer without one (s2-sp,
+# which opens a copy of S2) is not asked about the world script or the forceload.
 write_checks() {
   local log="$1" who="$2" player="$3" script="$4" pscript="$5" jar ns n; shift 5
   if [ "$script" != - ]; then

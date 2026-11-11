@@ -18,7 +18,8 @@ Scripts (run as the server; every line must print `[M58Upgrade] OK command`, or 
   state-bearing blocks; a NoAI pig with a fixed UUID, an armor stand, an item frame; real NeoForge mods' blocks and
   items (mcw-bridges, mcw-furniture, waystones, a sophisticatedbackpacks backpack in the chest) and a corpse entity (D53:
   a mod stays in the set only while its population command succeeds; its libraries balm, shogi and sophisticatedcore are
-  installed beside it and put nothing in the world of their own); scoreboard, team, command storage and a bossbar.
+  installed beside it with no population command of their own, though sophisticatedcore's data components ride on the
+  backpack and balm's player key BalmData holds waystones' player data); scoreboard, team, command storage and a bossbar.
 - `player.commands` — at each login in phase `write`: inventory (with a backpack and waystones in the hotbar), armour,
   offhand, ender chest, XP, an infinite effect, spawn point, a recipe, an advancement, a score.
 - `forge.commands` — the save with MinecraftForge-only content (mcw-bridges' MinecraftForge build beside vanilla and
