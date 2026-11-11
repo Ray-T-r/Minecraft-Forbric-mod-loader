@@ -330,7 +330,9 @@ CanUpdate: 4`.
 | K2's fix off (`ctl-k2.log`, `ctl-k2.evidence/`, mutated file `ctl-k2.ParticleViewTrackerInjector.java`) | `ParticleViewTrackerInjector.enabled()` returns false (the tracker is attached as written) | **44 / 16** | s3 and s4: `the new client's registry remap did not fail` FAIL (present x3: `Registry remapping failed!`, `java.lang.UnsupportedOperationException`), `the remap tracker is not attached …` FAIL (got 0); the denominator and the block-state check PASS. The rest of the 16 follow from the client dying: join FAIL, player reads FAIL, S2 -> S3 3 / S3 -> S4 2 differences (the player's) |
 | K1's fix off (`ctl-k1.log`, `ctl-k1.evidence/`, mutated file `ctl-k1.KernelLifecycle.java`) | `closeRegistrationWindow` no longer calls `clearBlockStateIds(cl)` before the freeze | **56 / 4** + CAUGHT 4x K1's own invariant (`next id 61734, 47050 state(s) mapped … 14684 stale`) | s3 and s4: `the new client mapped every block-state id it was sent` FAIL (present x1, `No value with id 47862`) and the join FAIL; the particle checks PASS |
 
-Each control is red on exactly the check that guards its fix, and green on the other fix's checks.
+Each control is red on exactly the check that guards its fix, and green on the other fix's checks (in K2's control the
+block-state-id check is vacuous: the client dies in the configuration phase, before any chunk is sent; review B-4). Both
+controls ran phase main only; the singleplayer calls were first put under a control in the review fixes below.
 
 ### Other gates, suite, python tests (at `0d135d87`)
 
@@ -345,6 +347,57 @@ No Java file changed and no test was added or deleted, so no TSV row (D47).
 
 ### Open (owner named)
 
-- The wave-2 open items "gate-m58 is not green" and "ruling owed, D53 / A-2 / B-4" are closed: K1 and K2 fixed the joins and
-  D74 is carried out above.
+- The wave-2 open items "gate-m58 is not green" and "ruling owed, D53 / A-2 / B-4" can close (the orchestrator's call): K1
+  and K2 fixed the joins and D74 is carried out above.
 - Unchanged from wave 2: an old -> old A/A in singleplayer is still not run (owner UPG, optional).
+
+## Wave 2b review fixes (2026-11-11)
+
+Reviews `c5/review-upg-w2b-A.md` (A-1..A-4) and `c5/review-upg-w2b-B.md` (B-1..B-5), each verified before acting.
+Evidence: `c5/upg/w2b/review-fixes/`. Nothing pushed, main untouched, nothing downloaded, no Java changed.
+
+### Findings
+
+| finding | outcome |
+|---|---|
+| A-1 (medium) two singleplayer absences can never fail | **fixed `14367c6f`**. Verified: fabric-registry-sync-v0-7.1.0's `RegistrySyncManager` returns before building its sync when `MinecraftServer.isSingleplayerOwner` (javap), and the integrated server shares the client's one block-state id map; review A's controls had both green on s3-sp/s4-sp with either fix off. `new_client_checks` now asks the two absences (`Registry remapping failed`, `No value with id`) and the denominator only for socket joins. Every new client, sp included, is asked K2's presence line and the absence of K1's own invariant line `blockstate->id map is not one id per block state` (0 on the tip; logged in each new client's JVM, both modes, with K1 off). The header and the helper's comment say which runs where and why |
+| A-2 (low) "the libraries put nothing in the world" | **fixed `87ca6372`** (wording). Verified in S2.json: `sophisticatedcore:number_of_inventory_slots` / `number_of_upgrade_slots` on the backpack, balm's `BalmData` holding `WaystonesData`. The LIB_MODS comment and the README now say they have no population command of their own and where their content rides |
+| A-3 (low) `UnsupportedOperationException` too wide | **fixed `14367c6f`**: the remap absence matches `Registry remapping failed` only; it is red on K2's control (present x1 on s3 and s4) |
+| A-4 (nit) `179 = … + 26`; "every writer runs on a fresh world" | **fixed**: c5/checks.md now says 205 = 179 + 26; the `write_checks` comment (`87ca6372`) says only a writer that runs a world script writes a fresh world, and s2-sp is not asked about the forceload |
+| B-1 (low, D34) the denominator and the sp calls never shown red | **fixed by controls** (below): the denominator is red with sophisticatedbackpacks + sophisticatedcore out of the set; every sp check is red on its own control |
+| B-2 (low) checks.md arithmetic and commit list | **fixed** in c5/checks.md (205 = 179 + 26; header lists 876b051b 89d9e735 0d135d87 + 2b413219) |
+| B-3 (low) C4 and A/A reference values changed unexplained | **fixed** (this record): with the held mods in phase main, C4's ForgeData is **3 holders / fired 3** (was 1/1) and the A/A set-aside is **ForgeData=6** (was 2), measured at 0d135d87 and again at the tip. In S2.json the two new holders are the NoAI pig and the armor stand, each with an empty `ForgeData` compound on the old side; the player's `ForgeData` holds `PlayerPersisted.BalmData`, which the rule only drops when it equals the `NeoForgeData` copy (wave 2). Which installed mod makes the old side write the empty compounds was not measured |
+| B-4 (very low) a vacuous green in K2's control | **fixed** (wave 2b section reworded). The new invariant absence is not vacuous there: it is read from the client's boot, before the join |
+| B-5 (very low) the lane closed orchestrator items | **fixed**: the record's Open and c5/handoff.md say "can close (the orchestrator's call)" |
+
+### Red controls on the new `new_client_checks` (at `87ca6372`)
+
+| control | how | result | the new-client checks |
+|---|---|---|---|
+| K2 off, phases main sp (`ctl-k2.log`) | K2's own switch `JAVA_TOOL_OPTIONS=-Dforbric.particleViewDetach=off`, lane worktree, no source change | **83 / 18**, CAUGHT none | s3/s4-server: tracker presence FAIL (got 0), remap absence FAIL (present x1); s3-sp/s4-sp: tracker presence FAIL (got 0). The denominator and both block-state checks PASS; the other FAILs follow from the socket client dying (join, player reads, S2 -> S3 3 / S3 -> S4 2) |
+| K1 off, phases main sp (`ctl-k1.log`, `ctl-k1.KernelLifecycle.java`) | scratch clone, the registration window's `clearBlockStateIds(cl)` before the freeze removed (one line) | **93 / 8**, CAUGHT 1 site (K1's invariant) | s3/s4-server: invariant absence FAIL (present x2 / x3), `No value with id` FAIL (x1), join FAIL; s3-sp/s4-sp: invariant absence FAIL (present x3). The particle checks PASS |
+| denominator, phase main (`ctl-den.log`, `ctl-den.gate-m58-world-upgrade.sh`) | scratch clone, sophisticatedbackpacks and sophisticatedcore dropped from REAL_MODS / LIB_MODS (two lines) | **56 / 5** | s3/s4-server: "a mod registered a particle type" FAIL (got 0). The other 3 FAILs are the world and player scripts' sophisticatedbackpacks lines that now fail on the old server, as expected |
+
+Each check of `new_client_checks` is now red on a control that breaks what it guards, in both modes where it runs.
+The scratch clones are deleted.
+
+### gate-m58, all default phases at `87ca6372` (`tip.log`, evidence `tip.evidence/`): **208 PASS / 0 FAIL**, CAUGHT none
+
+208 = the same 179 non-new-client check names as `0d135d87`'s run (compared name for name) + 29 new-client checks
+(s3-server, s4-server, bb-write, bb-read, c1-server: 5 each; s3-sp, s4-sp: 2 each). The merger's reference count for
+gate-m58 is **208/0** (it was 205/0 in the wave 2b report).
+
+### Suite and python tests
+
+Full suite at `87ca6372` (pinned, plain `--offline` + `.stage4/props.txt`, `-Pforbric.requireFixtures=all jar cleanTest
+test --continue`, `suite.log`, XML `suite-xml/`): **5858 tests, 0 skipped, 5 failed, 0 errors: exactly the 5 names of
+`c5/failures-k.txt`** (D58), 0 new, 0 gone (`fails.txt`).
+
+Python at `87ca6372` (`python-tests.log`): test_world_snapshot 31, test_world_parity 4, test_gate_ports 11,
+test_lib_guards 13, tools/test_run_nightly 9, all OK. Only gate-m58 changed, so no other gate's reach changed; m12 and
+m31 were not re-run. No test was added, so no TSV row (D47).
+
+### Open
+
+- Orchestrator: the wave-2 UPG items "m58 not green" and the D53/A-2/B-4 ruling can close (your call).
+- UPG (optional, unchanged): an old -> old A/A in singleplayer is still not run.
