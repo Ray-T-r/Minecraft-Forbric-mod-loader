@@ -395,7 +395,8 @@ check_absent "no alias warns that its target is missing" "but the latter doesn't
 # dedicated server; this pair is the CLIENT's, after Mixin has woven whatever this pack aims at the method: if that
 # leaves a shape the seam does not know, the seam stands down and NeoForge's method runs as shipped (one mod's throwing
 # listener rolls every registry back), and only this pair says so. RED, measured C5 wave 2b on a clone with the seam
-# never applied (K3's no-seam mutation, c5/g-c/w2b/m9-noseam): see the record.
+# never applied (K3's no-seam mutation, c5/g-c/w2b/gates/m9-noseam): 160 PASS / 3 FAIL, this pair and "NeoForge's tooltip
+# appenders are built" (the kernel prints that line from the seam's tail step). compat/assert.sh asks the same pair.
 check "the client's postRegisterEvents carries the kernel's seam" \
   "GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: .* [0-9]+ tail step" "$LOG"
 check_absent "the client's postRegisterEvents is the shape the seam knows" \
