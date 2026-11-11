@@ -36,6 +36,12 @@
 # kernel's commit and jar, the merged base, what ran), logs/, and old-create.snapshot.json / old-player.snapshot.json /
 # old-aa.diff.json for the old side's own A/A.
 #
+# gate-m59's fixture is this output plus native/: the frozen native arm, `native-controls.py swap --engine native` with
+# the same candidates minus classicpipes (native MinecraftForge 65.0.1 cannot load it), `--console` = forge-swap.py
+# console + checks, `--after-create "python3 run/compat/forge-swap.py mark-configs"`, `--chunks -2,-2,3,3` and
+# `--create-jvm=-javaagent:<forge-swap.py bag-agent>=bag=2,-60,8;source=4,-60,8`, keeping its snapshots, logs, diffs,
+# inputs/result and forge-instance/world, neo-instance/world, neo-instance/config (what forge-swap.py classify reads).
+#
 # Jars: FORGE_SWAP_FORGE_DIR / FORGE_SWAP_NEO_DIR (default run/client-popular/forge-refused and run/client-popular/mods,
 # the Stage 3 layout of the orchestrator's worktree). Heavy: run under .stage/heavy.sh, and client.sh first unless
 # --no-client. Port: GATE_PORT. Exit 3 when the old side cannot be had here (old-kernel.sh says why).

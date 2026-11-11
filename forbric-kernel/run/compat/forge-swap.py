@@ -21,6 +21,9 @@ player replaces that jar with the same mod's NeoForge build.
                                                   bag step, a -javaagent for the old create, the native create and the old
                                                   singleplayer client); prints the jar's path
     forge-swap.py bags <world>                    what packedup's saved backpack inventories hold (packedup/backpacks/)
+    forge-swap.py lastupdate <world> [--chunks B]  each probe chunk's LastUpdate (the re-save proof)
+    forge-swap.py pin --forbric DIR --native DIR [--client SNAP] --tsv FILE
+                                                  gate-m59's verdict: the Forbric arm's losses against expected-losses.tsv
 
 WHY. A world a Forge build wrote holds the mod's data in places a NeoForge build may not read: MinecraftForge's own
 capability storage (ForgeCaps) and persistent data (ForgeData) on entities, block entities and players, renamed ids,
@@ -386,6 +389,110 @@ def bags(world, ws=None):
             stacks.append((int(m.group(1)), ident, count, components))
         out[path.name] = stacks
     return out
+
+
+def lastupdate(world, box=BOX):
+    """{"CX CZ": LastUpdate} for every overworld chunk in the box (the re-save proof: a chunk a phase saved has a
+    later game time than the one before it)."""
+    wp = _load("world_parity", "world-parity.py")
+    ws = _load("world_snapshot", "world-snapshot.py")
+    x0, z0, x1, z1 = (int(v) for v in box.split(","))
+    out = {}
+    overworld = ws.dimensions(Path(world)).get("minecraft:overworld")
+    if overworld is None:
+        return out
+    for cx, cz, root in wp.chunks_typed(overworld / "region"):
+        if x0 <= cx <= x1 and z0 <= cz <= z1:
+            value = root[1].get("LastUpdate") if isinstance(root, list) else root.get("LastUpdate")
+            if value is not None:
+                out["%d %d" % (cx, cz)] = value[1]
+    return out
+
+
+# --- gate-m59's pin: expected-losses.tsv --------------------------------------------------------------------------
+
+LOSS_KINDS = ("lost", "rule")
+TSV_COLUMNS = ("key", "mod", "verdict", "why")
+
+
+def read_tsv(path):
+    """[{key, mod, verdict, why}] from expected-losses.tsv (tab-separated, `#` comments, header row `key\tmod\t...`)."""
+    rows = []
+    for raw in Path(path).read_text().splitlines():
+        if not raw.strip() or raw.startswith("#"):
+            continue
+        cells = raw.split("\t")
+        if cells[0] == "key":
+            continue
+        if len(cells) != len(TSV_COLUMNS):
+            raise ValueError("expected-losses.tsv: %d cells, want %d: %r" % (len(cells), len(TSV_COLUMNS), raw))
+        rows.append(dict(zip(TSV_COLUMNS, cells)))
+    return rows
+
+
+def pin(table, expected):
+    """gate-m59's three verdicts on a classify() table against expected-losses.tsv rows:
+    unpinned  a Forbric loss (its own row lost or rule) that no TSV row names;
+    stale     a TSV row whose key Forbric no longer loses, or loses under another verdict (a row may only stay while
+              it is measured exactly as pinned);
+    changed   a value Forbric changes that native keeps (FORBRIC CHANGED) or, with no native row, a value move of a
+              key no TSV row names (NO NATIVE ROW, a value moved) - a Forbric-caused change that is not a loss."""
+    by_key = {row["key"]: row for row in table["rows"]}
+    pinned = {row["key"]: row for row in expected}
+    lost = {k: r for k, r in by_key.items() if r["forbric"] in LOSS_KINDS}
+    unpinned = sorted(k for k in lost if k not in pinned)
+    stale = sorted(k for k, row in pinned.items() if k not in lost or lost[k]["verdict"] != row["verdict"])
+    changed = sorted(k for k, r in by_key.items() if k not in pinned and k not in lost
+                     and r["verdict"] in (FORBRIC_CHANGED, NO_NATIVE_CHANGED))
+    return {"unpinned": unpinned, "stale": stale, "changed": changed,
+            "lost": sorted(lost), "verdicts": {k: lost[k]["verdict"] for k in sorted(lost)}}
+
+
+# --- gate-m59's controls (each breaks one thing in a world AFTER the NeoForge open; the gate must go red on it) -----
+
+def drop_slot(world, x, y, z, slot):
+    """Remove the stack in `slot` of the container block entity at x y z (overworld) from the region file: a key the
+    swap kept, lost. Returns what was dropped, or None when nothing matched."""
+    ws = _load("world_snapshot", "world-snapshot.py")
+    wp = _load("world_parity", "world-parity.py")
+    cx, cz = x >> 4, z >> 4
+    region = ws.dimensions(Path(world))["minecraft:overworld"] / "region"
+    for c1, c2, root in wp.chunks_typed(region):
+        if (c1, c2) != (cx, cz):
+            continue
+        for be in ws.get(root, "block_entities") or []:
+            if (be["x"][1], be["y"][1], be["z"][1]) != (x, y, z):
+                continue
+            items = be.get("Items", ["list", "compound", []])[2]
+            for item in list(items):
+                if item.get("Slot", ["byte", -1])[1] == slot:
+                    items.remove(item)
+                    ws.rewrite_chunk(region / ("r.%d.%d.mca" % (cx >> 5, cz >> 5)), cx, cz, root)
+                    return "%s*%s" % (item["id"][1], item.get("count", ["int", 1])[1])
+    return None
+
+
+def drop_pack(world, pack):
+    """Take `pack` out of level.dat's enabled data packs (gzip NBT, written back). True when it was there."""
+    import gzip as _gzip
+    ws = _load("world_snapshot", "world-snapshot.py")
+    path = Path(world) / "level.dat"
+    root = ws.read_nbt_file(path)
+    data = root[1]["Data"][1]
+    packs = data.get("DataPacks", ["compound", {}])[1]
+    enabled = packs.get("Enabled", ["list", "string", []])
+    if pack not in enabled[2]:
+        return False
+    enabled[2].remove(pack)
+    path.write_bytes(_gzip.compress(ws.encode_root(root)))
+    return True
+
+
+def enabled_packs(world):
+    ws = _load("world_snapshot", "world-snapshot.py")
+    root = ws.read_nbt_file(Path(world) / "level.dat")
+    data = root[1]["Data"][1]
+    return list(data.get("DataPacks", ["compound", {}])[1].get("Enabled", ["list", "string", []])[2])
 
 
 # --- the loader-key census -------------------------------------------------------------------------------------------
@@ -833,6 +940,11 @@ def verdict(key, fk, nk, no_native):
     return "%s/%s (judged)" % (fk, nk)
 
 
+def PLAYER_KEY(key):
+    """A classify key of the player's (players / advancements / stats facets, or a rule about the player file)."""
+    return key.startswith(("players ", "advancements ", "stats ", "rule player "))
+
+
 def classify(forbric, native, client=None):
     """The L_F / L_N table. forbric: a `native-controls.py swap --engine forbric` result dir (old, neo-open snapshots);
     native: the `--engine native` one (forge-reopen, neo-open). A key the native arm cannot have (classicpipes, which
@@ -849,7 +961,7 @@ def classify(forbric, native, client=None):
     n_old, n_new = read(native, "forge-reopen"), read(native, "neo-open")
     nf_old, nn_old = _normalised(f_old, "a", ws), _normalised(n_old, "a", ws)
     lf, ln = losses(f_old, f_new, ws, na=nf_old), losses(n_old, n_new, ws, na=nn_old)
-    player = lambda k: k.startswith(("players ", "advancements ", "stats ")) or k.startswith(("rule player ",))
+    player = PLAYER_KEY
     # A dedicated server never loads a player file, so its export has the old file untouched: no player row comes from
     # a server arm (native has no player at all).
     lf = {k: v for k, v in lf.items() if not player(k)}
@@ -923,6 +1035,15 @@ def main(argv=None):
     wf = sub.add_parser("files"); wf.add_argument("old_world"); wf.add_argument("new_world")
     ba = sub.add_parser("bag-agent"); ba.add_argument("dir")
     bg = sub.add_parser("bags"); bg.add_argument("world")
+    lu = sub.add_parser("lastupdate"); lu.add_argument("world"); lu.add_argument("--chunks", default=BOX)
+    pn = sub.add_parser("pin")
+    pn.add_argument("--forbric", required=True); pn.add_argument("--native", required=True)
+    pn.add_argument("--client"); pn.add_argument("--tsv", required=True); pn.add_argument("--out")
+    pn.add_argument("--no-player", action="store_true", help="no client ran: player rows of the TSV are not asked for")
+    ct = sub.add_parser("control", help="gate-m59's reverse controls on a world after the open")
+    ct.add_argument("name", choices=["drop-slot", "drop-pack"]); ct.add_argument("world"); ct.add_argument("args", nargs="*")
+    pk = sub.add_parser("packs", help="whether every forbric/data/* pack enabled in the old world is enabled in the new one")
+    pk.add_argument("old_world"); pk.add_argument("new_world")
     args = parser.parse_args(argv)
     if args.action == "console":
         sys.stdout.write(console_text())
@@ -958,6 +1079,43 @@ def main(argv=None):
                 for slot, ident, count, comps in stacks)))
         print("[forge-swap] bags: %d file(s), %d holding stacks" % (len(found), sum(1 for v in found.values() if v)))
         return 0 if any(found.values()) else 1
+    elif args.action == "lastupdate":
+        for chunk, value in sorted(lastupdate(args.world, args.chunks).items()):
+            print("[forge-swap] LastUpdate %s %d" % (chunk, value))
+    elif args.action == "pin":
+        table = classify(Path(args.forbric), Path(args.native), args.client)
+        expected = read_tsv(args.tsv)
+        if args.no_player:
+            expected = [row for row in expected if not PLAYER_KEY(row["key"])]
+            table = dict(table, rows=[row for row in table["rows"] if not PLAYER_KEY(row["key"])])
+        result = pin(table, expected)
+        result["candidates"] = table["candidates"]
+        if args.out:
+            Path(args.out).write_text(json.dumps({"pin": result, "table": table}, indent=1, sort_keys=True))
+        for kind in ("unpinned", "stale", "changed"):
+            for key in result[kind]:
+                print("[forge-swap] pin %s %s" % (kind, key))
+        for key in result["lost"]:
+            print("[forge-swap] loss %s | %s" % (key, result["verdicts"][key]))
+        print("[forge-swap] pin: %d loss(es), %d unpinned, %d stale, %d changed" % (
+            len(result["lost"]), len(result["unpinned"]), len(result["stale"]), len(result["changed"])))
+        return 0 if not (result["unpinned"] or result["stale"] or result["changed"]) else 1
+    elif args.action == "control":
+        if args.name == "drop-slot":
+            x, y, z, slot = (int(v) for v in args.args)
+            dropped = drop_slot(args.world, x, y, z, slot)
+            print("[forge-swap] control drop-slot %d %d %d slot %d: %s" % (x, y, z, slot, dropped or "nothing matched"))
+            return 0 if dropped else 1
+        dropped = drop_pack(args.world, args.args[0])
+        print("[forge-swap] control drop-pack %s: %s" % (args.args[0], "dropped" if dropped else "not enabled"))
+        return 0 if dropped else 1
+    elif args.action == "packs":
+        old = [p for p in enabled_packs(args.old_world) if p.startswith("forbric/data/")]
+        new = set(enabled_packs(args.new_world))
+        gone = [p for p in old if p not in new]
+        print("[forge-swap] packs: %d forbric/data pack(s) in the old world, %d no longer enabled%s" % (
+            len(old), len(gone), (": " + " ".join(gone)) if gone else ""))
+        return 0 if old and not gone else 1
     elif args.action == "files":
         for rel, verdict, detail in world_files(args.old_world, args.new_world):
             print("[forge-swap] world file %s %s %s" % (verdict, rel, detail))

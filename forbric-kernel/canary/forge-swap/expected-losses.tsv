@@ -1,0 +1,15 @@
+# gate-m59 (run/gate-m59-forge-swap.sh): EXACTLY what the Forbric arm of the Forge->NeoForge build swap loses, as
+# forge-swap.py pin measures it against the frozen native arm. Owner ruling D77 (O1, "document only"): these losses
+# are the mods' own format, which the native MinecraftForge 26.2-65.0.1 -> NeoForge 26.2.0.93 swap loses too; they are
+# documented (release notes / compatibility list), never migrated, and a Forbric-caused loss is fixed, never added here.
+# A row stays only while the gate measures it lost with its verdict (pin `stale` otherwise); a loss not listed is red
+# (pin `unpinned`). Keys and verdicts are forge-swap.py classify's, copied from the measuring run (lane SWAP wave 2b,
+# 2026-11-11, fixture ~/Forbric-backups/forge-swap-w2b). The packedup bags (a chest's and the player's, filled on the
+# old side) lose nothing and so have no row. Columns are tab-separated.
+key	mod	verdict	why
+players /<player>/active_effects[id=tombstone:silent_bond]	tombstone	NO NATIVE ROW (judged by the mod's code)	D77: tombstone's NeoForge build has no silent_bond effect (renamed beyond_the_grave_bond), so the player's effect does not load; native NeoForge loads the same jar, so it loses it too (static evidence: no native client here)
+players /<player>/attributes[id=forge:swim_speed]	tombstone	NO NATIVE ROW (judged by the mod's code)	D77: MinecraftForge's own forge:swim_speed attribute (it carried tombstone's ghostly_shape_swim_speed modifier); NeoForge's is neoforge:swim_speed and native NeoForge has no forge:swim_speed either (static evidence)
+rule entity <animalgarden_owl:owl 'Swap Owl'>: ForgeCaps carries capability data the genuine base does not read (lost on upgrade): tombstone:cap_familiar	tombstone	MOD FORMAT (native loses it too)	D77: tombstone's familiar capability in MinecraftForge's ForgeCaps; NeoForge never reads ForgeCaps (measured on the native arm too)
+rule entity <minecraft:wolf 'Swap Wolf'>: ForgeCaps carries capability data the genuine base does not read (lost on upgrade): tombstone:cap_familiar	tombstone	MOD FORMAT (native loses it too)	D77: as the owl's, measured lost on the native arm too
+rule entity <minecraft:zombie 'Swap Zombie'>: ForgeCaps carries capability data the genuine base does not read (lost on upgrade): tombstone:cap_familiar,tombstone:cap_servant_entity	tombstone	MOD FORMAT (native loses it too)	D77: as the owl's plus the servant capability, measured lost on the native arm too
+rule player <player>: ForgeCaps carries capability data the genuine base does not read (lost on upgrade): tombstone:cap_protected_entity,tombstone:cap_tombstone	tombstone	NO NATIVE ROW (judged by the mod's code)	D77: the player's tombstone capabilities (knowledge, alignment, perks; protected entity) in ForgeCaps; NeoForge never reads ForgeCaps (static evidence: no native client here)

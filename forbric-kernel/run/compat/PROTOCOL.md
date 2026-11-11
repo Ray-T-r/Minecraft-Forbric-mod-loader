@@ -370,7 +370,9 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
    A packedup backpack's contents live in its own files, which only a player opening the bag creates, so
    `ForgeSwapBagFill.java` (built by `forge-swap.py bag-agent`, a `-javaagent` on the old create, the native create
    via `swap --create-jvm=...`, and the old singleplayer client) runs packedup's own server-side open-and-insert, and
-   `forge-swap.py bags` reads the saved inventories back. Their docstrings are the operating manual;
+   `forge-swap.py bags` reads the saved inventories back. `run/gate-m59-forge-swap.sh` opens the frozen fixture on
+   this tree and pins its losses with `forge-swap.py pin` against `canary/forge-swap/expected-losses.tsv` and the
+   fixture's frozen native arm (D77: exactly the native-identical rows). Their docstrings are the operating manual;
    `test_forge_swap.py` and `test_native_controls.py` check them.
 9. `push-and-run.py` implements the shell entry point's orchestration and writes
    `report.md` using `report-template.md`, with commit, manifest, phase results, log

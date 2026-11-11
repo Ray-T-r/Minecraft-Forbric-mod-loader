@@ -381,5 +381,78 @@ class Bags(unittest.TestCase):
                 self.assertIn("ForgeSwapBagFill.class", z.namelist())
 
 
+class Pin(unittest.TestCase):
+    """gate-m59's verdict: losses equal expected-losses.tsv exactly, verdicts included; no Forbric-only value change."""
+
+    TABLE = {"rows": [
+        {"key": "entities <minecraft:wolf 'Swap Wolf'>/ForgeCaps", "forbric": "rule", "native": "rule",
+         "verdict": "MOD FORMAT (native loses it too)"},
+        {"key": "players <player>/active_effects[id=tombstone:silent_bond]", "forbric": "lost", "native": "n/a",
+         "verdict": fs.NO_NATIVE_LOSS},
+        {"key": "block_entities /minecraft:overworld 2 -60 0/cooking_time_spent", "forbric": "changed",
+         "native": "changed", "verdict": fs.CHANGED},
+        {"key": "level /Data/DataVersion", "forbric": "kept", "native": "changed", "verdict": "kept/changed (judged)"},
+    ]}
+    TSV = [{"key": "entities <minecraft:wolf 'Swap Wolf'>/ForgeCaps", "mod": "tombstone",
+            "verdict": "MOD FORMAT (native loses it too)", "why": "D77"},
+           {"key": "players <player>/active_effects[id=tombstone:silent_bond]", "mod": "tombstone",
+            "verdict": fs.NO_NATIVE_LOSS, "why": "D77"}]
+
+    def test_the_measured_table_is_green(self):
+        result = fs.pin(self.TABLE, self.TSV)
+        self.assertEqual(([], [], []), (result["unpinned"], result["stale"], result["changed"]))
+        self.assertEqual(2, len(result["lost"]))
+
+    def test_a_dropped_row_is_unpinned_and_an_extra_one_is_stale(self):
+        self.assertEqual([self.TSV[1]["key"]], fs.pin(self.TABLE, self.TSV[:1])["unpinned"])
+        extra = self.TSV + [{"key": "chunk_extra /x", "mod": "m", "verdict": fs.FORBRIC_CAUSED, "why": "w"}]
+        self.assertEqual(["chunk_extra /x"], fs.pin(self.TABLE, extra)["stale"])
+
+    def test_a_row_lost_under_another_verdict_is_stale(self):
+        tsv = [dict(self.TSV[0], verdict=fs.FORBRIC_CAUSED), self.TSV[1]]
+        self.assertEqual([self.TSV[0]["key"]], fs.pin(self.TABLE, tsv)["stale"])
+
+    def test_a_kept_key_lost_or_a_value_only_forbric_changed_is_red(self):
+        table = {"rows": self.TABLE["rows"] + [
+            {"key": "block_entities /minecraft:overworld 0 -60 0/Items[Slot=1]", "forbric": "lost", "native": "kept",
+             "verdict": fs.FORBRIC_CAUSED},
+            {"key": "block_entities /minecraft:overworld 0 -60 0/Items[Slot=0]/count", "forbric": "changed",
+             "native": "kept", "verdict": fs.FORBRIC_CHANGED}]}
+        result = fs.pin(table, self.TSV)
+        self.assertEqual(["block_entities /minecraft:overworld 0 -60 0/Items[Slot=1]"], result["unpinned"])
+        self.assertEqual(["block_entities /minecraft:overworld 0 -60 0/Items[Slot=0]/count"], result["changed"])
+
+    def test_the_tsv_reader_takes_comments_a_header_and_four_cells(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "e.tsv"
+            path.write_text("# comment\nkey\tmod\tverdict\twhy\nk1\tm\tv\tw\n")
+            self.assertEqual([{"key": "k1", "mod": "m", "verdict": "v", "why": "w"}], fs.read_tsv(path))
+            path.write_text("k1\tm\tv\n")
+            with self.assertRaises(ValueError):
+                fs.read_tsv(path)
+
+    def test_the_checked_in_tsv_parses_and_names_only_player_or_world_keys_with_known_verdicts(self):
+        rows = fs.read_tsv(HERE.parents[1] / "canary/forge-swap/expected-losses.tsv")
+        self.assertTrue(rows)
+        known = set(fs.VERDICTS.values()) | {fs.NO_NATIVE_LOSS, fs.FORBRIC_CAUSED}
+        for row in rows:
+            self.assertIn(row["verdict"], known, row)
+            self.assertNotEqual(fs.FORBRIC_CAUSED, row["verdict"], "a Forbric-caused loss is fixed, never pinned (D77)")
+            self.assertTrue(row["why"].strip(), row)
+
+
+class Controls(unittest.TestCase):
+    def test_drop_pack_takes_one_pack_out_of_level_dat(self):
+        import gzip
+        level = ["compound", {"Data": ["compound", {"DataPacks": ["compound", {
+            "Enabled": ["list", "string", ["vanilla", "forbric/data/packedup", "forbric/data/tombstone"]],
+            "Disabled": ["list", "end", []]}]}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            (Path(tmp) / "level.dat").write_bytes(gzip.compress(ws.encode_root(level)))
+            self.assertTrue(fs.drop_pack(tmp, "forbric/data/packedup"))
+            self.assertEqual(["vanilla", "forbric/data/tombstone"], fs.enabled_packs(tmp))
+            self.assertFalse(fs.drop_pack(tmp, "forbric/data/packedup"))
+
+
 if __name__ == "__main__":
     unittest.main()
