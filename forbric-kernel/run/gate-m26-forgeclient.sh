@@ -47,11 +47,13 @@
 #   numbering on each side (its block bake at every freeze); a socket join sends block states by these ids, and nothing
 #   syncs them. The client's numbering runs through one more freeze than the server's (the client entrypoint window,
 #   where the Fabric canary's late block registers), so it is the client that can drift. The probe block is registered in
-#   the first wave on both ends, so its id is the same on both: 32366 (K1 by dump; this gate 47 PASS / 0 FAIL, wave 2b).
+#   the first wave on both ends, so its id is the same on both: 32366 (K1 by dump; this gate 49 PASS / 0 FAIL, wave 2b review fixes).
 #   RED, measured in wave 2b on a clone without lane S's clear before the client window's freeze (835ec80c;
 #   c5/g-c/w2b/gates/m26-noclientclear): 46 PASS / 1 FAIL, exactly this check (client 64733, server 32366), with the
 #   kernel's own CAUGHT "not one id per block state after the client entrypoint window freeze" in the client log. The
-#   id >= 1 and round-trip checks above stay green on that clone: a state numbered twice still round-trips.
+#   id >= 1 and round-trip checks above stay green on that clone: a state numbered twice still round-trips. Since the
+#   review fixes the phase also asserts that CAUGHT line absent on both ends; the same clone, re-run
+#   (c5/g-c/w2b/rf/gates/m26-noclientclear): 47 PASS / 2 FAIL, the comparison and the client's line (present x6).
 # GATE-PARALLEL: rundirs=client-forge-registration,client-forge-refusal,server-forge-registration mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"

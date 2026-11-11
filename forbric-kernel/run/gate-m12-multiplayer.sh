@@ -272,9 +272,12 @@ fi
 # dial -- the client's boot competing with the server for the machine, which says nothing about the server -- is printed,
 # not asserted.
 # The CEILING keeps the old one's density, not its number: 20 late in 700 ticks, so ceil(window x 20 / 700), 7 for the
-# usual 220-tick window (review B-2: 20 over a 160-tick session would have been 12.5%, four times as loose). Measured in
-# wave 2b and its review fixes: 1-2 late in the window alone, 0 of them in the handshake; see the record (stage4-c5-g-c.md).
-# M12_LATE_CEILING, when set, replaces the derived ceiling with a number.
+# usual 220-tick window (review B-2: 20 over a 160-tick session would have been 12.5%, four times as loose). Measured
+# alone on the tip of the review fixes (c5/g-c/w2b/rf/gates): 3, 1 and 1 late in windows of 220, 220 and 260 ticks, none
+# of them in the handshake. RED: /tick rate 8 from the dial to the join only, 43 PASS / 1 FAIL, exactly the ceiling (31 of
+# 200, 30 of them in the handshake; join to leave 1 of 160, which the join-opened window passed). GREEN: /tick rate 8 from
+# before the client starts until its "Setting user", 191 late before the dial, not counted (44 / 0). Record:
+# stage4-c5-g-c.md. M12_LATE_CEILING, when set, replaces the derived ceiling with a number.
 check "the tick sampler reported" "Forbric/Tick\] [0-9]+ tick\(s\): mean " "$SLOG"
 # M12_TICK_WINDOW_BEGIN — M12TickWindowContractTest runs this block against synthetic SLOG/CLOG pairs.
 TICK_WINDOW="$(python3 - "$SLOG" "$CLOG" <<'PY_TICKS'
