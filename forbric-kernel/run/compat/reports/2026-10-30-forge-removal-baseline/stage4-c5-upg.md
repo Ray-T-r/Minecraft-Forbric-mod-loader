@@ -299,3 +299,52 @@ The record commit after `00f15bd5` changes only this file, so the suite and gate
   in the same file.
 - The old client was exercised (MP and SP) on the tag's kernel; an old -> old A/A in singleplayer is still not run
   (owner UPG, optional).
+
+## Wave 2b (2026-11-11): D74, waystones and sophisticatedbackpacks back in phase main
+
+Branch `s4-c5-upg`, reset to the stage tip `b9154084` (K1-K4 merged). Pinned build (D68), port block 46740-46759.
+Evidence: `c5/upg/w2b/`. Nothing pushed, main untouched, nothing downloaded (every mod jar was already in
+`run/client-merged-pack/mods`).
+
+### Commits
+
+| commit | what |
+|---|---|
+| `876b051b` | K1's measured patch `c5/k1/rf/upg-d74-held-to-main.patch`: `REAL_MODS` += waystones, sophisticatedbackpacks (each still needs its own OK population line); new `LIB_MODS` = balm, shogi, sophisticatedcore, installed (`MAIN_MODS`) and file-checked, not asked for a population line; `held*.commands` lines into `world.commands` / `player.commands` unchanged, both held files deleted; phase `held` deleted (step, default `PHASES`, missing-file loop, header paragraph, manifest inputs). The gate comment and `world.commands` header that said balm registers a particle type, and the README's held-files entry, corrected (D80: only sophisticatedcore does) |
+| `89d9e735` | `new_client_checks <game log> <mp\|sp>` after every new client (`server_round` with a client, `sp_round`): K2's failure absent (`Registry remapping failed\|UnsupportedOperationException`), K1's absent (`No value with id`), K2's presence line (`[Forbric/Particles] fabric-registry-sync's remap tracker for ParticleEngine.providers is not attached`), and over the socket gate-m12's denominator (`registered content: .*particle_type=[1-9]`, sophisticatedcore). Old clients predate both fixes and are not asked. Phase main's header paragraph says so |
+| `0d135d87` | `write_checks`' `WC_BOX_FORCED` branch deleted (only phase held wrote into an already force-loaded copy); every remaining writer (s2-server, bb-write, s2-forge) writes a fresh world, so the forceload OK check is unconditional and the no-FAIL check has no exception again |
+
+### gate-m58, all default phases at `0d135d87` (`m58-tip.log`, evidence `m58-tip.evidence/`): **205 PASS / 0 FAIL**, CAUGHT none
+
+Phases `main sp aa bb transfer energy forge installed controls`. 205 = K1's 179 for the patch alone + 26 new-client checks
+(s3-server, s4-server, bb-write, bb-read, c1-server: 4 each; s3-sp, s4-sp: 3 each). waystones (2) and sophisticatedbackpacks
+(1) population lines OK on the old server and on the new (bb) server; S2 -> S3 / S3 -> S4 0 / 0 (server), S2c -> S3c /
+S3c -> S4c 0 / 0 (singleplayer), B/B S2n -> S3n 0, A/A 0, forge 0 with mcwbridges ignored and C5 4 differences all
+naming it, C1/C2/C4 PASS. S2 -> S3's rules used include `drop merged-only ForgeData: 3` and `drop merged-only
+CanUpdate: 4`.
+
+### Red controls: the new absent-checks fire (scratch clones of `0d135d87`, `M58_PHASES=main`, deleted afterwards)
+
+| control | mutation | result | the new checks |
+|---|---|---|---|
+| K2's fix off (`ctl-k2.log`, `ctl-k2.evidence/`, mutated file `ctl-k2.ParticleViewTrackerInjector.java`) | `ParticleViewTrackerInjector.enabled()` returns false (the tracker is attached as written) | **44 / 16** | s3 and s4: `the new client's registry remap did not fail` FAIL (present x3: `Registry remapping failed!`, `java.lang.UnsupportedOperationException`), `the remap tracker is not attached …` FAIL (got 0); the denominator and the block-state check PASS. The rest of the 16 follow from the client dying: join FAIL, player reads FAIL, S2 -> S3 3 / S3 -> S4 2 differences (the player's) |
+| K1's fix off (`ctl-k1.log`, `ctl-k1.evidence/`, mutated file `ctl-k1.KernelLifecycle.java`) | `closeRegistrationWindow` no longer calls `clearBlockStateIds(cl)` before the freeze | **56 / 4** + CAUGHT 4x K1's own invariant (`next id 61734, 47050 state(s) mapped … 14684 stale`) | s3 and s4: `the new client mapped every block-state id it was sent` FAIL (present x1, `No value with id 47862`) and the join FAIL; the particle checks PASS |
+
+Each control is red on exactly the check that guards its fix, and green on the other fix's checks.
+
+### Other gates, suite, python tests (at `0d135d87`)
+
+| check | result |
+|---|---|
+| gate-m31 (`m31-tip.log`) | 13 PASS / 0 FAIL |
+| gate-m12 (`m12-tip.log`, under client.sh + `--exclusive`) | 43 PASS / 0 FAIL (= the merger's 43 after K1+K2) |
+| `test_world_snapshot.py` / `test_world_parity.py` / `test_gate_ports.py` / `test_lib_guards.py` / `tools/test_run_nightly.py` | 31/31 / 4/4 / 11/11 / 13/13 / 9/9 OK |
+| full suite (pinned, plain `--offline` + `.stage4/props.txt`, `-Pforbric.requireFixtures=all jar cleanTest test --continue`, `suite.log`, XML `suite-xml/`) | **5858 tests, 0 skipped, 5 failed, 0 errors: exactly the 5 names of `c5/failures-k.txt`** (D58), 0 new, 0 gone |
+
+No Java file changed and no test was added or deleted, so no TSV row (D47).
+
+### Open (owner named)
+
+- The wave-2 open items "gate-m58 is not green" and "ruling owed, D53 / A-2 / B-4" are closed: K1 and K2 fixed the joins and
+  D74 is carried out above.
+- Unchanged from wave 2: an old -> old A/A in singleplayer is still not run (owner UPG, optional).
