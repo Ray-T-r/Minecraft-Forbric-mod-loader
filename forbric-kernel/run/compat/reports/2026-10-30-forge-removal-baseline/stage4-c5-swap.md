@@ -154,7 +154,7 @@ Commits:
   pin` / `lastupdate` / `packs` / `control`; tests Pin x6, Controls x1.
 - this record.
 
-No kernel (Java) change: no Forbric-caused loss was measured, so nothing to fix and no file of another lane to clear.
+No kernel (Java) change: no Forbric-caused loss was measured, so nothing to fix. (Corrected by the review fixes below, B-3: both code commits do touch a file of another lane, `run/compat/PROTOCOL.md`, G-B2's: one paragraph in the forge-swap section, which CompatProtocolTest needs because it names `ForgeSwapBagFill.java` and gate-m59.)
 
 Runs (all heavy.sh; client runs client.sh first): fixture `old4` (make-old, old server + old client + old A/A),
 native arm `native5`, Forbric arm `forbric5`, gate-m59 m59-derive / m59-green / m59-final (client) and six server-only
@@ -178,8 +178,70 @@ Open:
   there is SKIP-FATAL (exit 3) naming the missing file. Orchestrator: set that one aside and put forge-swap-w2b at
   `~/Forbric-backups/forge-swap` (or link `run/forge-swap` in the stage worktree, D54), before gates-all counts m59.
 - Nightly/CI has no fixture: gate-m59 SKIP-FATALs there (like the other fixture gates); whether nightly skips it is the
-  nightly owner's call.
+  nightly owner's call. (Reason corrected by the review fixes below, B-4: GitHub CI runs only m1, m36, m46 and m53, never
+  m59; the nightly runs gates-all.sh on this Mac and m59 finds `~/Forbric-backups/forge-swap` by its own fallback.)
 - Release notes / compatibility list rows for tombstone (D77: entity and player ForgeCaps, `silent_bond`, and
   MinecraftForge's `forge:swim_speed`): RECORD / C6 docs.
 - Still not measured (unchanged from wave 2): journeymap's and BiomesOPlenty's configs (no mark), the Forge->Fabric
   journeymap row, the energy gap, the implicit swaps, a GUI open of a bag on the new side.
+
+## SWAP wave 2b review fixes (2026-11-11)
+
+Reviews `c5/review-swap-w2b-A.md` (adversarial) and `c5/review-swap-w2b-B.md` (completeness), both of 809a6c8b. Each
+finding re-checked; evidence `c5/swap/w2b-rf/`. Fix commit `474f86cb` (Python, shell; no kernel or Java change), then
+this record. Worktree `s4c5-swap`, ports 46780-46799, every run through heavy.sh (client runs client.sh first).
+
+| finding | verdict | what was done |
+|---|---|---|
+| A-1 / B-1 no control breaks a bag check; "read" not asserted | confirmed (re-measured: the five controls break a chest slot, the TSV, a pack or a region, never a bag) | `forge-swap.py rewritten` + a gate check after the open and after the client: every packedup inventory file saved after the clone (both clones keep the old time; the open rewrites both files, the player's too, which no player opened on the server, so packedup loads every inventory with the world and saves every loaded one: rewritten + same stacks = read). Controls `bag-stack` (the sword out of the new inventory0.nbt) and `bag-restore` (the fixture's files back, bytes and time). A's optional read-only agent mode not added: the rewrite check answers the same question without a new agent path |
+| A-2 drill passes on any PASS count | confirmed | `forge-swap.py drill` names each named check with no announce line (MISSING) and prints `P PASS, F FAIL, M missing of N`; the gate takes N from the checks file the server got and wants `N PASS, 0 FAIL, 0 missing of N`. Control `drop-announce` |
+| A-3 / B-5 provenance: MANIFEST says b9154084, old side came from uncommitted work; native/ not tied | confirmed | record corrected (below). `forge-swap.py tie` + a gate check in the fixture step: seed/box vs MANIFEST, the native jars by SHA-256 within mods-forge/ and mods-neo/ (a mod left out on both sides only), S0 keeps every block the old create placed, the old and native creates place the same blocks and block entities except a namespace native has none of. Control `native-tie`. make-old's MANIFEST now names `tree-dirty`, each script's and the agent jar's sha1, `create-console-sha256` (tie compares it with native/inputs.json) and old-create.snapshot.json's sha1 (the gate asserts it when present); native-controls swap records each `-javaagent` jar's bytes (`createJvmAgents`). The committed make-old run end to end at 474f86cb (below) |
+| A-4 drop-region red on two checks | accepted note (A's own verdict) | unchanged; header documents it |
+| B-2 GATE_PORT set but unused | confirmed (inputs.json ports 61980/62239/63070/65510 in wave 2b) | `native-controls.py swap --port`; m59 passes `$GATE_PORT`: inputs.json `"port": 46780` on every run below |
+| B-3 PROTOCOL.md is G-B2's file | confirmed | record corrected (the "no file of another lane" sentence above); flagged to the merger and G-B2 in handoff. This round does not touch PROTOCOL.md |
+| B-4 nightly reason wrong | confirmed with a correction: GitHub CI does run gates, but only m1, m36, m46, m53 (build.yml), never m59 | handoff reworded: the nightly (com.forbric.nightly, gates-all.sh on this Mac, origin/main) would find `~/Forbric-backups/forge-swap` by the gate's own fallback; once Stage 4 is on main and the fixture is in place it runs m59 (a client gate, mem 4000) every weekday; the owner's question is SLOW_GATES and FIXTURES (run/forge-swap) |
+| B-6 handoff could leave one copy | confirmed | handoff: set the Fable copy aside, `cp -c -R` forge-swap-w2b to `~/Forbric-backups/forge-swap`, keep forge-swap-w2b, D54's main-checkout copy and link |
+| B-7 "per-mod rows complete" vs unmarked configs | confirmed | wording fixed in stage4-forge-swap.md; one owner: SWAP. Why not marked now: a mark goes into the old create's and the native create's config (make-old and `--after-create`), so it needs a new fixture on both arms (a D54 rewrite), and journeymap writes no file into the server's config/ (the fixture's old-config has none) |
+
+**Provenance (A-3/B-5).** The fixture `forge-swap-w2b` (old side `old4`, 07:43-07:47) was written by the working tree
+that became 4095dd7e, before that commit (08:37); its MANIFEST's `tree b9154084` is the commit under that work, which
+has no bag agent. The committed make-old was never run end to end after the commit. Now it was, at 474f86cb (clean,
+`tree-dirty 0`; run `old5`, client.sh + heavy.sh): drill 24/0/0 missing; "bag filled" on the create (6 stacks) and in
+the old client (3 stacks); MANIFEST `packedup-bag-stacks` identical to forge-swap-w2b's, both mod sets identical,
+`create-console-sha256` a704d83e = native/inputs.json's console, the old create's blocks 0 differences from
+forge-swap-w2b's, `source-sha1 ForgeSwapBagFill.java` 743c150a (the committed source B named). `tie` of old5 against
+forge-swap-w2b's native/: all 7 rows PASS (console included). old5 is evidence only (`w2b-rf/old5/`: MANIFEST, logs),
+not a fixture.
+
+**gate-m59 at 474f86cb, fixture forge-swap-w2b:**
+
+| run | phases | PASS / FAIL | red checks |
+|---|---|---|---|
+| m59-final | open client pin | **30 / 0 GREEN** (27 + tie + rewritten x2) | - |
+| controls/none | open pin | 25 / 0 | - |
+| bag-stack | open pin | 23 / 2 | world file CHANGED, same_bags (open) |
+| bag-restore | open pin | 24 / 1 | rewritten (open) |
+| drop-announce | open pin | 24 / 1 | drill (`MISSING vanilla.chest.sword`, 24 of 24 wanted) |
+| drop-slot | open pin | 24 / 1 | unpinned (`Items[Slot=1]`) |
+| chest-slot | open pin | 24 / 1 | changed |
+| drop-row | open pin | 24 / 1 | unpinned (the owl's ForgeCaps row) |
+| drop-pack | open pin | 24 / 1 | packs |
+| drop-region | open pin | 23 / 2 | re-save proof, unpinned (x16843) |
+| native-tie | fixture step only | 3 / 2 | the tie check, then the gate's "fixture is not the one this gate pins" stop line |
+
+Baseline fixture step alone (no phase): 4 / 0. Pin on m59-final: 6 losses = the six TSV rows, 0 unpinned, 0 stale, 0
+changed; both inventory files rewritten by the open (11:07:42) and by the client (11:08:08), fixture time 07:46:53.
+
+Unit tests (run/compat): test_forge_swap 33 OK (+5: drill missing, Rewritten, BagControls, Tie x2), test_native_controls
+28 OK (+1 port; agent bytes added to the create-jvm test), test_world_snapshot 31, test_gate_ports 11, test_lib_guards
+13, `unittest discover` 234 OK. Ten mutations, each red (`w2b-rf/mutations.txt`). No JUnit test added (no TSV row).
+
+Suite at 474f86cb (pinned build, D68: `heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt)
+-Pforbric.requireFixtures=all jar cleanTest test --continue`): **5858 tests, 0 skipped, 5 failed = the 5 names of
+failures-k.txt** (LB x3, SharedFinalSourceActualTest x2), 0 new. Log `w2b-rf/suite.log`, XML `w2b-rf/suite-xml/`.
+
+Open after the fixes: the fixture's home (orchestrator), the nightly policy (nightly owner), the D77 docs rows (RECORD /
+C6), PROTOCOL.md hunk (merger / G-B2), the m59 run wording (heavy.sh's header lists m59 under `--exclusive`, the gate
+header says client.sh then heavy.sh one slot; every run here used one slot: orchestrator), and, owner SWAP: journeymap's
+and BiomesOPlenty's configs unmarked, the Forge->Fabric journeymap row, the energy gap, the implicit swaps, a GUI open of
+a bag on the new side.

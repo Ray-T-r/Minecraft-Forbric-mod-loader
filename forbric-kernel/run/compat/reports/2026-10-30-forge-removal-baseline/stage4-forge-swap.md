@@ -295,7 +295,29 @@ The first drop-row run (controls/drop-row) dropped the TSV's first row, a player
 measured, nothing lost (Forbric and, for the chest's bag, native); "Forbric-caused: OPEN" is closed by K3 (the new
 client boots and plays with packedup); tombstone — unchanged, now pinned by gate-m59.
 
-PLAN's SWAP acceptance: per-mod rows complete (journeymap's and BiomesOPlenty's configs still unmarked, as wave 2
-said); Forbric-caused losses 0; m59 green equal to expected-losses.tsv exactly; re-save proof holds (LastUpdate
+PLAN's SWAP acceptance: per-mod rows not complete: journeymap's and BiomesOPlenty's configs are still unmarked, as wave 2
+said (owner: SWAP; see "Wave 2b review fixes"); Forbric-caused losses 0; m59 green equal to expected-losses.tsv exactly; re-save proof holds (LastUpdate
 1780-1783 -> 2383-2392 on every probe chunk in every run but drop-region); red controls (a) chest-slot, (b) drop-row, (c) drop-pack,
 (d) drop-region, plus drop-slot (a kept key dropped).
+
+### Wave 2b review fixes (2026-11-11)
+
+Reviews `c5/review-swap-w2b-{A,B}.md`; fix commit `474f86cb`; the lane record `stage4-c5-swap.md` "SWAP wave 2b review
+fixes" has every finding's outcome and the runs.
+
+- **Provenance of forge-swap-w2b.** Its old side (`old4`) was written by the uncommitted work that became 4095dd7e; the
+  MANIFEST's `tree b9154084` names the commit under that work, whose make-old has no bag agent. The committed make-old,
+  run end to end at 474f86cb on a clean tree (`old5`), writes the same bags (6 + 3 stacks, listing identical), the same
+  mod sets, the same old-create blocks (0 differences) and a create console whose sha256 (a704d83e) is the native arm's.
+  MANIFESTs written from now on name the tree's uncommitted files, the scripts' and the agent's sha1s, the console's
+  sha256 and the old create snapshot's sha1.
+- **The read proof is now a check.** gate-m59 asks that every packedup inventory file was saved again after the clone,
+  on the open and on the client (`forge-swap.py rewritten`); with the same stacks that is a file packedup read. The two
+  bag controls (`bag-stack`, `bag-restore`) and the drill-count control (`drop-announce`) are red on exactly their
+  checks.
+- **native/ is tied to the old side** (`forge-swap.py tie`, gate fixture step): seed, box, jars by SHA-256, and the same
+  blocks placed by both creates (classicpipes x6 set aside: native has none).
+- gate-m59 at 474f86cb: **30 PASS / 0 FAIL**; pin unchanged (6 losses = the six TSV rows). The server binds GATE_PORT.
+- Not changed by these fixes: the six D77 rows, Forbric-caused losses 0, and the not-measured list above (configs of
+  journeymap and BiomesOPlenty, owner SWAP: a mark needs a new fixture on both arms; journeymap writes no file into the
+  server's config/).
