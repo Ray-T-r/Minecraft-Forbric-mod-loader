@@ -42,6 +42,7 @@ test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[2] false	[fixtu
 test	net.forbric.kernel.boot.KernelBusSupportTest	theCarrierStillOffersEveryBusBuilderCallMakeModBusMakes()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelBusSupportTest	theModBusMarkerInterfaceStillExists()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSummaryGateM4CanaryReadsIsPrintedWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.boot.KernelLifecycleEarlyConfigOrderTest	theClientsOrderIsTheCarriersOwn()	[fixture:staged] staged NeoForge carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelLoadReportTest	theServerStartedHookWritesTheReportAgain()	[fixture:game-side] runtime helper not compiled
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	getEventBusIsStillAbstractOnModContainer()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	iModInfoStillDeclaresWhatTheProxyAnswers()	[fixture:staged] staged NeoForge carrier absent
@@ -50,6 +51,7 @@ test	net.forbric.kernel.boot.KernelModContainerFactoryTest	theFieldsTheFactoryWr
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	theFourResolvedTypesExistAndArePublic()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	aClasslessModIsInModListBesideTheModsWithAClass()	[fixture:staged] staged runtime classes/carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	switchedOffTheClasslessModIsAbsentAgain()	[fixture:staged] staged runtime classes/carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.boot.KernelModLoaderPublishedOrderTest	aDeclaredOnlyLibraryIsPublishedBeforeTheModThatRequiresIt()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelModLoaderPublishedOrderTest	walkingThePublishedModsIsWalkingModList()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelRuntimeClassesTest	everyRegisteredCallIsOnTheCompiledGameSideClass()	[fixture:game-side] no staged game jars, so no game side was built
 test	net.forbric.kernel.boot.KernelServerDutiesGenuineBaseTest	aNeoForgeModGetsTheGenuineFmlContainerWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
