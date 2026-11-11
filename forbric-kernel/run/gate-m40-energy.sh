@@ -81,7 +81,11 @@ export BASE NEO_RT
 # killed above it, leaving the shell and the JVM re-parented to launchd; and a gate stopped by a signal (heavy.sh
 # forwards TERM to the gate alone) never touched its background phase. stop_phase freezes evidence.py before it lists
 # anything, so it can start nothing while its tree is collected, and the EXIT trap below stops the phase still in
-# flight however the gate ends.
+# flight and removes its pid file, so a later process that reuses that pid is not taken for this gate's stale phase.
+# The trap runs when the gate ends on its own or on a TERM, which is what heavy.sh forwards (and what it turns its own
+# INT and HUP into). The gate's own HUP and INT traps take effect only where those signals were not ignored when it
+# started: an async child of a non-interactive shell, as the gate is under heavy.sh, starts with INT ignored, and nohup
+# ignores HUP. A SIGKILL to the gate runs no trap; the next run's fresh_world reaps the phase its pid file names.
 PHASE_PID=""
 stop_phase() {
   local pid="$1" child i
@@ -96,7 +100,7 @@ stop_phase() {
   fi
   kill_tree "$pid"   # no child yet (thawed, it would start the server), or it did not finish recording in time
 }
-trap 'rc=$?; kill_tree "$PHASE_PID"; _gate_exit "$rc"' EXIT
+trap 'rc=$?; if [ -n "$PHASE_PID" ]; then kill_tree "$PHASE_PID"; rm -f "$RUNDIR/.forbric-gate.pid"; fi; _gate_exit "$rc"' EXIT
 trap 'exit 129' HUP; trap 'exit 130' INT; trap 'exit 143' TERM
 # fresh_world <with-reborn: yes|no>
 fresh_world() {
