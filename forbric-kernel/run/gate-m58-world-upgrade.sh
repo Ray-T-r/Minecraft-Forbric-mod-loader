@@ -18,9 +18,11 @@
 #              S2 -> S3 under the `upgrade` rules and S3 -> S4 under `reopen` must show 0 differences; every name S2
 #              refers to must be in the new registries (census); each canary reads back every value as written; the
 #              first new boot logs exactly one "Missing data pack" line, for the MinecraftForge carrier, and the second
-#              none; no other load error names anything. Every new client, here and in every phase below, logs no failed
-#              registry remap and no block-state id it cannot map, and leaves the particle provider view untracked (D74:
-#              what kept waystones and sophisticatedbackpacks out of this phase until K1 and K2).
+#              none; no other load error names anything. Every new client, here and in every phase below, leaves the
+#              particle provider view untracked and logs no block-state id map that is not one id per block state; one
+#              that joins over the socket also logs no failed registry remap and no block-state id it cannot map (D74:
+#              what kept waystones and sophisticatedbackpacks out of this phase until K1 and K2; new_client_checks says
+#              why a singleplayer client is not asked those two).
 #   sp         the same save as a singleplayer world: an old client opens it (its own player is written there), then a
 #              new client twice -> S2c, S3c, S4c, the same rules.
 #   aa         reverse control C3, the A/A: the OLD kernel reopens a copy of S2 with an old client joining -> S2aa, and
@@ -357,23 +359,35 @@ boot_checks() {  # boot_checks <log> <side>
 }
 
 # new_client_checks <client game log> <mp|sp> — what kept waystones and sophisticatedbackpacks out of phase main (D74)
-# stays out of every new client's log: fabric-registry-sync's remap failing on the kernel's particle provider view (K2:
-# "Registry remapping failed!", UnsupportedOperationException from its clear()) and a block-state id the client cannot map
-# (K1: "No value with id", the dedicated server's offset numbering). The particle provider view was asked to the remap
-# tracker and left untracked (K2's line, present on every new client, singleplayer too). Over the socket a mod registered
-# a particle type (sophisticatedcore), so the server's sync reaches the particle registry: the denominator for the first
-# absence. The old kernel predates both fixes and is not asked.
+# stays out of every new client's log.
+# Every new client (mp and sp):
+#  - K2: the particle provider view was offered to fabric-registry-sync's remap tracker and left untracked (K2's line).
+#  - K1: the kernel's own invariant after the registration window freeze, "NeoForge's blockstate->id map is not one id per
+#    block state", is absent (with K1's fix off it is logged in the client JVM in both modes, and in the server's).
+# Over the socket only (mp):
+#  - a mod registered a particle type (sophisticatedcore), so the server's sync reaches the particle registry: the
+#    denominator for the next absence;
+#  - K2: fabric-registry-sync's remap did not fail on the particle provider view ("Registry remapping failed", which it
+#    logs for any failed remap; an UnsupportedOperationException elsewhere is not this check's to blame);
+#  - K1: the client mapped every block-state id the server sent ("No value with id", the dedicated server's offset
+#    numbering).
+# A singleplayer client is not asked the two mp absences: fabric-registry-sync sends no registry sync to the
+# singleplayer owner (RegistrySyncManager asks MinecraftServer.isSingleplayerOwner), so no remap runs, and the integrated
+# server shares the client's one block-state id map, so no id can go unmapped; with either fix off both stay green there
+# (review UPG w2b A-1). The old kernel predates both fixes and is not asked.
 new_client_checks() {
   local log="$1" how="$2" where
   where="$(basename "${log%.client.game.log}")"
+  check "the remap tracker is not attached to the particle provider view ($where)" \
+    "Forbric/Particles\] fabric-registry-sync's remap tracker for ParticleEngine.providers is not attached" "$log"
+  check_absent "the new client's block-state id map is one id per block state ($where)" \
+    "blockstate->id map is not one id per block state" "$log"
   if [ "$how" = mp ]; then
     check "a mod registered a particle type, so the join's remap reaches the particle registry ($where)" \
       "Forbric/Lifecycle\] registered content: .*particle_type=[1-9]" "$log"
+    check_absent "the new client's registry remap did not fail ($where)" "Registry remapping failed" "$log"
+    check_absent "the new client mapped every block-state id it was sent ($where)" "No value with id" "$log"
   fi
-  check "the remap tracker is not attached to the particle provider view ($where)" \
-    "Forbric/Particles\] fabric-registry-sync's remap tracker for ParticleEngine.providers is not attached" "$log"
-  check_absent "the new client's registry remap did not fail ($where)" "Registry remapping failed|UnsupportedOperationException" "$log"
-  check_absent "the new client mapped every block-state id it was sent ($where)" "No value with id" "$log"
 }
 
 # server_round <side> <dir> <label> <phase> <client-dir|-> [canary script properties...] — one server boot, an optional
