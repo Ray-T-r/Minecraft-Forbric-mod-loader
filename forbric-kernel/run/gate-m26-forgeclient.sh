@@ -221,6 +221,12 @@ else
   echo "[kernel] FAIL the client numbers forbricneolive:probe_block as the dedicated server does (client: ${CLIENT_PROBE_ID:-none}, server: ${SERVER_PROBE_ID:-none})"
   FAIL=1
 fi
+# The comparison above cannot see a numbering defect both ends share (the same wrong id on each); the kernel's own check
+# after every freeze it drives can (KernelLifecycle.verifyBlockStateIds, lane K1): its CAUGHT line is absent on both ends
+# (review A-3 of C5 wave 2b; the clone without lane S's clear printed it 6 times in the client log, c5/g-c/w2b/gates/
+# m26-noclientclear, and its re-run in c5/g-c/w2b/rf/gates is red on the client's line).
+check_absent "the client's blockstate->id map is one id per block state" "blockstate->id map is not one id per block state" "$LOG"
+check_absent "the dedicated server's blockstate->id map is one id per block state" "blockstate->id map is not one id per block state" "$SERVER_LOG"
 # M26_SERVER_IDS_END
 
 # M26_REFUSAL_BEGIN — phase 2 (header): a MinecraftForge-only mod on a client is put to the player, not swallowed.

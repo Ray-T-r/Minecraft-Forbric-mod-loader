@@ -179,6 +179,18 @@ class GateNeoCanaryContractTest {
 		assertRed(m26ServerIds(line.formatted("32366") + line.formatted("64734"), line.formatted("32366")), same);
 		// AIR on both ends agrees and is still wrong.
 		assertRed(m26ServerIds(line.formatted("0"), line.formatted("0")), same);
+		// A numbering defect both ends share gives the same wrong id on each, so the comparison stays green; the kernel's
+		// own invariant line after a freeze is what says so, on either end (review A-3 of C5 wave 2b).
+		String caught = "[Forbric/Lifecycle] NeoForge's blockstate->id map is not one id per block state after the %s freeze\n";
+		String sharedDefect = line.formatted("64733") + caught.formatted("client entrypoint window");
+		assertRed(m26ServerIds(sharedDefect, line.formatted("64733") + caught.formatted("registration window")),
+				"FAIL the client's blockstate->id map is one id per block state (present x1)");
+		assertRed(m26ServerIds(line.formatted("32366") + caught.formatted("client entrypoint window"), line.formatted("32366")),
+				"FAIL the client's blockstate->id map is one id per block state");
+		assertRed(m26ServerIds(line.formatted("32366"), line.formatted("32366") + caught.formatted("registration window")),
+				"FAIL the dedicated server's blockstate->id map is one id per block state");
+		assertTrue(m26ServerIds(line.formatted("32366"), line.formatted("32366")).output()
+				.contains("PASS the dedicated server's blockstate->id map is one id per block state (absent)"));
 	}
 
 	// --- gate-m26's options seed and session block: shared contracts that outlive every canary --------------------
