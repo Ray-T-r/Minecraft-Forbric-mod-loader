@@ -98,9 +98,20 @@ class KernelLifecycleLateConfigTest {
 		assertTrue(Files.isRegularFile(compiled),
 				"KernelLifecycle not found in the compiled src/main classes, which exist before any test runs");
 
-		assertFalse(constantsOf(compiled, "loadEarlyConfigs").contains("STARTUP"),
-				"loadEarlyConfigs must not name STARTUP: ConfigTracker.registerConfig already opened those, and "
-						+ "loadConfigs re-opens whatever it is given");
+		// The list moved into earlyConfigTypes (K3b review A-3, to pin its order); both methods are read, and the
+		// early pass must still take its list from there.
+		for (String method : List.of("loadEarlyConfigs", "earlyConfigTypes")) {
+			assertFalse(constantsOf(compiled, method).contains("STARTUP"),
+					method + " must not name STARTUP: ConfigTracker.registerConfig already opened those, and "
+							+ "loadConfigs re-opens whatever it is given");
+		}
+		ClassNode node = new ClassNode();
+		new ClassReader(Files.readAllBytes(compiled)).accept(node, 0);
+		assertTrue(firstCall(method(node, "loadEarlyConfigs"), "earlyConfigTypes") >= 0,
+				"loadEarlyConfigs takes the types it opens from earlyConfigTypes");
+		for (Side side : Side.values()) {
+			assertFalse(KernelLifecycle.earlyConfigTypes(side).contains("STARTUP"), side + ": the early pass names STARTUP");
+		}
 	}
 
 	/**

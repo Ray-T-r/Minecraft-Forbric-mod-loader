@@ -410,13 +410,27 @@ public final class KernelLifecycle {
 					+ "defaults or read unloaded values");
 			return;
 		}
-		// STARTUP is deliberately absent — see the game side, which explains what naming it would cost.
-		List<String> types = side.isClient() ? List.of("COMMON", "CLIENT") : List.of("COMMON");
+		List<String> types = earlyConfigTypes(side);
 		try {
 			configClass(cl).getMethod("loadEarly", List.class).invoke(null, types);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not load NeoForge configs");
 		}
+	}
+
+	/**
+	 * The config types {@link #loadEarlyConfigs} opens, in the order it opens them: native NeoForge's
+	 * ({@code CommonModLoader.begin}'s "Config loading" step, {@code lambda$begin$1} in 26.2.0.93: {@code CLIENT} when the
+	 * dist is the client, then {@code COMMON}). Opening a config posts {@code ModConfigEvent.Loading} for it, so natively a
+	 * COMMON config's Loading listener that reads the mod's CLIENT values finds them loaded. With COMMON first, as the
+	 * kernel had it, those values were still unloaded there and the read throws "Cannot get config value before config
+	 * is loaded" (Stage 4 C5 K3b review A-3).
+	 *
+	 * <p>STARTUP is deliberately absent — see the game side, which explains what naming it would cost. SERVER is
+	 * per-world (see {@link #loadEarlyConfigs}).
+	 */
+	static List<String> earlyConfigTypes(Side side) {
+		return side.isClient() ? List.of("CLIENT", "COMMON") : List.of("COMMON");
 	}
 
 	/** The game-side half of config loading. */
