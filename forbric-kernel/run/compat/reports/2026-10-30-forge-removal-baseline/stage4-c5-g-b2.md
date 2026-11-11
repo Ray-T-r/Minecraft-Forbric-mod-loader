@@ -284,3 +284,51 @@ test_gate_ports + test_lib_guards 24/24. No TSV row: no new test.
   `record_server_pid`, plus HUP/INT/TERM -> exit) would cover them all; it is G-B1's file, so not done here.
 - -> merger: m35's withhold set is five now; D48's six in PLAN/merge notes are superseded by D72.
 - Unchanged from wave 2: m34's 2-hour release soak (VERIFY).
+
+## G-B2 wave 2b review fixes (2026-11-11)
+
+Reviews A and B of wave 2b (`c5/review-g-b2-w2b-A.md`, `c5/review-g-b2-w2b-B.md`). Logs:
+`~/Forbric-backups/stage4-notes/c5/g-b2/w2b/review-fixes/` (`leak/` with driver `leak-driver2.sh` and batch `all2.sh`,
+`gates/`, `census/`, `python/`, `suite/`). Same harness (heavy.sh, ports 46760-46779); nothing downloaded, no client run.
+
+| finding | outcome | commit / evidence |
+|---|---|---|
+| A-1 / B-1: canary README still described the six-case withhold set and "probe-side read-back only" | CONFIRMED, fixed: the README names the five and says spawner-nonempty-input passes with no SpawnGroupData in the event, its withhold state pinned equal to positive's (as the gate header says) | 79b8969a |
+| B-2 (= A-1's javadoc half): WorldProbe's class comment listed "the four spawner cases" as must-fail | CONFIRMED, fixed: "the three spawner cases that finalize", named | 79b8969a |
+| A-4: `.forbric-gate.pid` left after a signal | CONFIRMED and fixed: the EXIT trap now removes the pid file once it has killed the phase it names (nothing when no phase is in flight). Red: TERM to d192fffb's m40 left the pid file naming the dead evidence.py (`leak/d192-m40-term.txt`); pointing that leftover file at a live unrelated process (a `sleep`) turned the next run red at once, "FAIL stale PID no longer belongs to M40; refusing to terminate it" (`leak/pid-reuse-m40.txt`). Green: after TERM the file is absent for m33, m35 and m40 at a1e4352a (`leak/after-m{33,35,40}-term.txt`; the stage tip's m33 also leaves it, `before-m33-term.txt`) | a1e4352a |
+| A-3: "HUP, INT and TERM exit through it" overstated | CONFIRMED (a bash async child of a non-interactive shell starts with INT ignored and cannot trap it: measured with a two-line script, INT ignored, TERM trapped; heavy.sh's `lock_run_child` starts the gate as `"$@" &`). No leak: heavy.sh turns its own INT/HUP into TERM to the gate. The gate comment now says which signals reach the trap (TERM under heavy.sh; the gate's own INT/HUP traps only where not ignored at start; SIGKILL runs no trap). Correction to the wave 2b text above: TERM is the path under heavy.sh | a1e4352a |
+| B-3: m33's leak fix claimed but not measured | CONFIRMED (the commit subjects of 82e1a0b3/d192fffb stay as written). Measured now, same driver: stage tip's m33 (b9154084 copy; its `--execute-phase` branch is byte-identical to the lane's) with an early timeout left `java` on `*:46760` plus its shell (ppid 1) and a second orphan pair from `negative`, the prepare pair still bound 23 s later (`leak/before-m33-early-timeout.txt`); TERM left evidence.py (ppid 1), shell and `java` bound at 0 s, gone by 3 s (`before-m33-term.txt`). Lane m33 at a1e4352a: early timeout and TERM, nothing left and ports free at 0 s (`after-m33-*.txt`) | `leak/` |
+| A-2: the proposed lib.sh fix only covers the pid from `record_server_pid` | CONFIRMED and measured: TERM to gate-m39 (G-B2's gate; evidence.py -> shell -> java in the gate's foreground, no recorded pid, no trap of its own) left evidence.py (ppid 1), both shells and `java` on `*:46760` at 0 s and 3 s; they were gone by 23 s (the server's own `stop_when_ready 35` ended it) (`leak/m39-term.txt`). The same run shows lib.sh's EXIT trap does run on that TERM (the gate printed its `CAUGHT none` line after it), so a lib.sh fix can live in that trap. Hand-off reworded below | hand-off |
+| B-4: m40's PASS lines in a timed-out run had no record entry or single owner | CONFIRMED: now an open item below, owner T-B phase 2 (PASS-line wording). Timing-dependent: 8 PASS / 32 FAIL in before-m40-early-timeout and after-m40-timeout3, 0 / 40 in after-m40-early-timeout (wave 2b `leak/`) and in this round's after-m40-early-timeout | record |
+| B-5: report made the stage-tip TERM leak look lasting; "permanent" TERM case inferred | CONFIRMED. Use this record's wording: the stage-tip TERM leak was transient in every TERM run measured (m40 in wave 2b, m33 here: gone by 3 s). The wave 2b sentence "permanent for one whose token a later phase replaced" holds for the timeout path (measured, 23 s); for TERM it was inferred, not seen, and after a TERM no later phase of the gate runs to replace the token | record |
+| B-6: evidence without a file | CONFIRMED, filed: Python test output (`python/python-tests.log`, 24/24 at a1e4352a), the gate census as a script and its output (`census/census.sh`, `census/census.txt`: 52 gates with a background launch line, the trap lines of m9, m28, m33, m35, m40, and a heuristic list of gates whose evidence.py or launch-kernel-server.sh line has no trailing `&`; that list is candidates, it also catches lines inside a gate's own `--execute-phase` branch, and only m39:78 is measured). Wave 2b's `leak-before/` holds two aborted first attempts and shows nothing either way: `m40-timeout0.out` was terminated while still waiting for a heavy slot and never ran; `m40-timeout1.out` (by its name M40_TIMEOUT=1) ran to red with no process or listener snapshot taken | `census/`, `python/` |
+
+### Gates at a1e4352a (`gates/`, `^[kernel] PASS` / `^[kernel] FAIL` lines; ports free after each)
+
+| gate | PASS / FAIL |
+|---|---|
+| m35 | 3 / 0 |
+| m40 | 36 / 0 |
+| m33 | 22 / 0 |
+
+### Suite
+At a1e4352a (`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all jar cleanTest test
+--continue`, after every gate and leak run, clean tree): **5858 tests, 0 skipped, 5 failed**, name for name
+`failures-k.txt` (0 new, 0 gone; `suite/suite.log`, `suite/xml/`, `suite/failures.txt`). The changes are a canary README,
+a comment in the canary probe (outside the Gradle source sets) and three gate scripts; no test reads them. Python
+test_gate_ports + test_lib_guards 24/24 (`python/python-tests.log`). No TSV row: no new test.
+
+### Open / hand-offs (supersede wave 2b's)
+
+- -> G-B1 / orchestrator (lib.sh): a TERM to a gate leaves what it started unless the gate kills it. lib.sh already
+  runs `_gate_exit` from its EXIT trap, and bash runs that trap on the TERM heavy.sh forwards (m39 above). Proposed fix,
+  not made or measured here (G-B1's file): in that trap, before reporting, kill the tree of every child of the gate
+  shell (`pgrep -P $$`, each with `kill_tree`) and remove the recorded pid file. That covers background launches (52
+  gates in `census/census.txt`) and foreground ones like m39, which a fix keyed on `record_server_pid` would miss.
+  Gates with their own EXIT trap (m9, m28, m33, m35, m40, `canary_scratch` users) call `_gate_exit` from it and would
+  get the same.
+- -> T-B phase 2: a timed-out m40 run still prints some `[kernel] PASS` absence lines (8 of 40 in two of the four measured
+  timeouts) next to its FAILs; the verdict is right (rc 1, FAIL lines), the PASS lines are noise. Wording only.
+- -> merger: unchanged from wave 2b (no lib.sh, TSV or Java-suite change; D72 supersedes D48's six in PLAN/merge text).
+  Use this section's wording for the stage-tip TERM leak (transient) over the wave 2b report's.
+- Unchanged: m34's 2-hour release soak (VERIFY).
