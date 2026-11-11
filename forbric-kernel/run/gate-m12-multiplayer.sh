@@ -107,7 +107,9 @@ FIFO="$SRV/.stdin"; rm -f "$FIFO"; mkfifo "$FIFO"
 # the server's networking path, the run produced zero lines, and "zero" was indistinguishable from "the code
 # never ran" when the truth was that the flag had only ever been passed to the client. A knob that silently
 # covers half the system under test is worse than no knob.
-FORBRIC_JVM="${M12_EXTRA_JVM:-}" \
+# The tick sampler prints its running totals every 20 ticks (one second) instead of every 600, so the lateness check below
+# can read them at the player's join and leave.
+FORBRIC_JVM="-Dforbric.tickSamplerEvery=20 ${M12_EXTRA_JVM:-}" \
 RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$SLOG" 2>&1 &
 SRVPID=$!
 record_server_pid "$SRV" "$SRVPID"
@@ -255,17 +257,55 @@ fi
 # loader is slow had nothing to agree or disagree with.
 #
 # The MEAN is not the assertion — a server keeping up holds 50ms exactly, by sleeping off what the tick did not
-# use. The tail is: an interval at twice the budget means there was no sleep left to give back. (An older note here
-# gave a live baseline of 1 in 1800. C5 wave 2 measured 21, 10, 4, 16, 3 and 16 over the sampler's 700 ticks, six runs
-# alone on NeoForge's base, with 0 in the first 100 ticks in the three runs whose server log was kept. Ticks 100-700 hold
-# the client's boot and its join, and the sampler cannot separate the two. The ceiling of 20 sits inside that spread;
-# whether to count after the join or move the ceiling is open.)
+# use. The tail is: an interval at twice the budget means there was no sleep left to give back.
+#
+# COUNTED WHILE THE PLAYER IS ON, not from the server's start (C5 wave 2b). Until then the ceiling of 20 applied to the
+# sampler's 700-tick line, and C5 wave 2 measured 21, 10, 4, 16, 3 and 16 there in six runs alone on NeoForge's base,
+# with nothing late in the first 100 ticks: ticks 100-700 held both this gate's own client JVM booting on the same
+# machine and the player's join, and the sampler could not tell them apart. The sampler now prints its totals every 20
+# ticks, so the difference between the last line before "joined the game" and the first line after "left the game" is
+# the session's (a second of slack on each side, counted in), and the lateness before the join -- the client's boot
+# competing with the server for the machine, which says nothing about the server -- is printed, not asserted. Measured
+# in wave 2b: see the record (stage4-c5-g-c.md, "wave 2b"). M12_LATE_CEILING (default 20) bounds the session's count.
 check "the tick sampler reported" "Forbric/Tick\] [0-9]+ tick\(s\): mean " "$SLOG"
-LATE_TICKS="$(grep -aoE 'at twice the budget or worse [0-9]+' "$SLOG" | grep -oE '[0-9]+' | tail -1)"
-if [ -n "${LATE_TICKS:-}" ] && [ "$LATE_TICKS" -le "${M12_LATE_CEILING:-20}" ]; then
-  echo "[kernel] PASS server ticks within the lateness ceiling ($LATE_TICKS <= ${M12_LATE_CEILING:-20})"
+TICK_WINDOW="$(python3 - "$SLOG" <<'PY_TICKS'
+import re, sys
+# Every sampler line carries running totals; the session is what changed between the join and the leave.
+line_re = re.compile(r'\[Forbric/Tick\] (\d+) tick\(s\): .* at twice the budget or worse (\d+) ')
+# The first line after the leave closes the window; a server stopped before it printed one (a slow server prints a line
+# every 20 of its own ticks) closes it at its last line, which can only leave the last ticks of the session out, never
+# add any. (No apostrophe in this block: bash 3.2 parses a heredoc inside a command substitution for quotes.)
+totals, before_join, after_leave, joined, left = (0, 0), None, None, False, False
+for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
+    m = line_re.search(line)
+    if m:
+        totals = (int(m.group(1)), int(m.group(2)))
+        if left and after_leave is None:
+            after_leave = totals
+    elif not joined and ' joined the game' in line:
+        joined, before_join = True, totals
+    elif joined and not left and ' left the game' in line:
+        left = True
+if left and after_leave is None:
+    after_leave = totals
+if before_join is None or after_leave is None:
+    print('? ? ? ?')
+else:
+    print(after_leave[0] - before_join[0], after_leave[1] - before_join[1], before_join[0], before_join[1])
+PY_TICKS
+)"
+read -r SESSION_TICKS SESSION_LATE PRE_TICKS PRE_LATE <<< "$TICK_WINDOW"
+echo "[kernel] tick lateness: ${PRE_LATE:-?} of ${PRE_TICKS:-?} tick(s) before the join (the client booting beside the server; not asserted), ${SESSION_LATE:-?} of ${SESSION_TICKS:-?} while the player was on"
+if [[ "${SESSION_TICKS:-}" =~ ^[0-9]+$ ]] && [ "$SESSION_TICKS" -ge 100 ]; then
+  echo "[kernel] PASS the tick sampler covered the session ($SESSION_TICKS ticks between the join and the leave)"
 else
-  echo "[kernel] FAIL server ticks late: ${LATE_TICKS:-none found} at twice the budget (ceiling ${M12_LATE_CEILING:-20})"
+  echo "[kernel] FAIL the tick sampler covered the session (got ${SESSION_TICKS:-none}; a join and a leave with sampler lines around them, 100 ticks at least)"
+  FAIL=1
+fi
+if [[ "${SESSION_LATE:-}" =~ ^[0-9]+$ ]] && [ "$SESSION_LATE" -le "${M12_LATE_CEILING:-20}" ]; then
+  echo "[kernel] PASS server ticks within the lateness ceiling while the player was on ($SESSION_LATE <= ${M12_LATE_CEILING:-20})"
+else
+  echo "[kernel] FAIL server ticks late while the player was on: ${SESSION_LATE:-none found} at twice the budget (ceiling ${M12_LATE_CEILING:-20})"
   FAIL=1
 fi
 check_absent "nobody was told the server requires a mod they have" \
