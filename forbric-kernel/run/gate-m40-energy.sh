@@ -87,6 +87,17 @@ export BASE NEO_RT
 # started: an async child of a non-interactive shell, as the gate is under heavy.sh, starts with INT ignored, and nohup
 # ignores HUP. A SIGKILL to the gate runs no trap; the next run's fresh_world reaps the phase its pid file names.
 PHASE_PID=""
+# The phases that ran out of time. Their logs stop wherever the phase was killed, so a marker missing from one proves
+# nothing: only_if_finished turns an absence (or a count of zero) read from such a log into a FAIL instead of a PASS.
+TIMED_OUT=""
+# only_if_finished <phase> <check function> <what> <args...>
+only_if_finished() {
+  local phase="$1" fn="$2"; shift 2
+  case " $TIMED_OUT " in
+    *" $phase "*) printf '[kernel] FAIL %s (phase %s timed out, so its log proves no absence)\n' "$1" "$phase"; FAIL=1 ;;
+    *) "$fn" "$@" ;;
+  esac
+}
 stop_phase() {
   local pid="$1" child i
   case "$pid" in ''|*[!0-9]*) return 0;; esac
@@ -148,7 +159,7 @@ run_phase() {
     sleep 1
   done
   if kill -0 "$pid" 2>/dev/null; then
-    echo "[kernel] FAIL M40 phase $phase timed out"; FAIL=1
+    echo "[kernel] FAIL M40 phase $phase timed out"; FAIL=1; TIMED_OUT="$TIMED_OUT $phase"
     stop_phase "$pid"
   fi
   wait "$pid" 2>/dev/null || true; PHASE_PID=""
@@ -193,7 +204,7 @@ step "positive: four directed Fabric <-> NeoForge energy routes through the real
 run_phase prepare on
 assert_phase prepare pass
 LOG="$RESULTS/prepare-inputs.log"
-check_absent "positive probe emitted no failure marker" "M40Energy\] FAIL" "$LOG"
+only_if_finished prepare check_absent "positive probe emitted no failure marker" "M40Energy\] FAIL" "$LOG"
 for family in fabric neo; do check "the independent $family energy cell initialized" "M40Energy\] REGISTERED $family " "$LOG"; done
 check "the kernel connected Team Reborn Energy" "Forbric/Transfer\] connected Team Reborn Energy" "$LOG"
 check "public lookups preserve NORTH/null and refuse SOUTH" "PASS all public energy lookups preserve NORTH/null and refuse SOUTH" "$LOG"
@@ -206,14 +217,14 @@ check "nested rollback on both engines" "PASS nested commit then root abort rest
 check "replacement invalidated every cached view" "PASS cached foreign energy views cannot write replaced block entities" "$LOG"
 check "cached views of a replaced Reborn cell moved nothing, fresh ones reached the new cell" "PASS cached NeoForge views of a replaced Reborn cell move nothing" "$LOG"
 check "a Fabric addon's explicit provider reached the NeoForge consumer" "PASS a Fabric addon's explicit Reborn provider on a NeoForge block reaches the NeoForge consumer" "$LOG"
-check_absent "no energy provider answer was rejected" "Energy provider returned an invalid amount" "$LOG"
+only_if_finished prepare check_absent "no energy provider answer was rejected" "Energy provider returned an invalid amount" "$LOG"
 check "one root commit dirtied the block entity once" "PASS clean chunk -> abort stays clean -> one root commit dirties it once" "$LOG"
 check "long amounts clamp to int without loss" "PASS long energy: int views saturate" "$LOG"
 
 step "reload the same gate-owned world and verify persisted energy"
 run_phase reload on
 assert_phase reload pass
-check_absent "reload probe emitted no failure marker" "M40Energy\] FAIL" "$RESULTS/reload-inputs.log"
+only_if_finished reload check_absent "reload probe emitted no failure marker" "M40Energy\] FAIL" "$RESULTS/reload-inputs.log"
 check "real deserialization was verified" "M40Energy\] PASS save/reload:" "$RESULTS/reload-inputs.log"
 count_exactly "after the restart all four routes ran again" "M40Energy\] PASS route " "$RESULTS/reload-inputs.log" 4
 count_exactly "after the restart both consumers committed into the other family's cell" "M40Energy\] PASS route (forbricenergyfabric: forbricenergyfabric -> forbricenergyneo|forbricenergyneo: forbricenergyneo -> forbricenergyfabric) face=" "$RESULTS/reload-inputs.log" 4
@@ -223,22 +234,22 @@ fresh_world no
 run_phase noreborn on
 assert_phase noreborn pass
 LOG="$RESULTS/noreborn-inputs.log"; CLASSES="$RESULTS/noreborn-classes.log"
-check_absent "the Reborn-free probe emitted no failure marker" "M40Energy\] FAIL" "$LOG"
+only_if_finished noreborn check_absent "the Reborn-free probe emitted no failure marker" "M40Energy\] FAIL" "$LOG"
 check "the NeoForge consumer found the NeoForge cell on NORTH/null, not SOUTH" "PASS all public energy lookups preserve NORTH/null and refuse SOUTH" "$LOG"
-count_exactly "no route ran: one family, nothing to move into" "M40Energy\] PASS route " "$LOG" 0
+only_if_finished noreborn count_exactly "no route ran: one family, nothing to move into" "M40Energy\] PASS route " "$LOG" 0
 check "the probe says its cross-engine nested rollback had nothing to cross (SKIP, not PASS)" "M40Energy\] SKIP nested rollback: one transaction engine" "$LOG"
 check "the probe says no consumer of another family cached a view (SKIP, not PASS)" "M40Energy\] SKIP cached foreign energy views" "$LOG"
-check_absent "the kernel did not try to connect Team Reborn Energy" "Team Reborn Energy|transfer-energy" "$LOG"
+only_if_finished noreborn check_absent "the kernel did not try to connect Team Reborn Energy" "Team Reborn Energy|transfer-energy" "$LOG"
 check "the class-load log is this JVM's: the energy probe ran in it" "forbric\.transferworld\.EnergyWorldProbe " "$CLASSES"
 check "the bridge's NeoForge fallback was asked in this JVM (the probe's refused-face query)" "net\.forbric\.kernel\.runtime\.transfer\.TransferPrecedence " "$CLASSES"
-check_absent "no Team Reborn Energy class and no Reborn half of the bridge was loaded" "team\.reborn\.|RebornEnergy" "$CLASSES"
+only_if_finished noreborn check_absent "no Team Reborn Energy class and no Reborn half of the bridge was loaded" "team\.reborn\.|RebornEnergy" "$CLASSES"
 
 step "negative control: bridge off must make the same energy assertions RED"
 fresh_world yes
 run_phase negative off
 assert_phase negative fail
 check "negative failed in a foreign public lookup" "M40Energy\] FAIL phase=negative.*missing .* provider" "$RESULTS/negative-inputs.log"
-check_absent "negative never claimed probe success" "M40Energy\] PASS phase=negative" "$RESULTS/negative-inputs.log"
+only_if_finished negative check_absent "negative never claimed probe success" "M40Energy\] PASS phase=negative" "$RESULTS/negative-inputs.log"
 
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M40 ENERGY WORLD GATE GREEN — four public routes, save/reload, a Reborn-free pack and a red bridge-off control"
