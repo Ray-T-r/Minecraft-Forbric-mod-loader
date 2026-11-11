@@ -191,12 +191,13 @@ step "1c. a dedicated server with the same canaries numbers the NeoForge canary'
 SERVER_LOG="$BUILD/gate-m26-server.log"
 reap_stale_server "$SERVER_DIR"
 rm -rf "$SERVER_DIR"; mkdir -p "$SERVER_DIR/mods"
-# The jars the client ran, as staged above. Port 0: nothing connects, so the system picks a free port and no two runs
-# can collide on one.
+# The jars the client ran, as staged above. Nothing connects to this server, but it still binds GATE_PORT like every
+# other gate's server (compat/test_gate_ports.py holds every gate to the knob, no literal port, and await_server says
+# whether the port was lost); the client above is singleplayer, so the port is free for it.
 cp "$RUNDIR/mods/forbricneolive.jar" "$RUNDIR/mods/forbricfabriclive.jar" "$SERVER_DIR/mods/" || exit 3
 printf 'eula=true\n' > "$SERVER_DIR/eula.txt"
-printf 'server-ip=127.0.0.1\nserver-port=0\nonline-mode=false\nlevel-name=M26Server\nlevel-type=minecraft\\:flat\ngenerate-structures=false\nview-distance=2\nsimulation-distance=2\nmax-tick-time=-1\nsync-chunk-writes=false\n' \
-  > "$SERVER_DIR/server.properties"
+printf 'server-ip=127.0.0.1\nserver-port=%s\nonline-mode=false\nlevel-name=M26Server\nlevel-type=minecraft\\:flat\ngenerate-structures=false\nview-distance=2\nsimulation-distance=2\nmax-tick-time=-1\nsync-chunk-writes=false\n' \
+  "$GATE_PORT" > "$SERVER_DIR/server.properties"
 SERVER_FIFO="$SERVER_DIR/.stdin"; rm -f "$SERVER_FIFO"; mkfifo "$SERVER_FIFO"
 : > "$SERVER_LOG"
 FORBRIC_JVM="${M26_EXTRA_JVM:-}" RUNDIR="$SERVER_DIR" "$KERNEL/run/launch-kernel-server.sh" < "$SERVER_FIFO" > "$SERVER_LOG" 2>&1 &
