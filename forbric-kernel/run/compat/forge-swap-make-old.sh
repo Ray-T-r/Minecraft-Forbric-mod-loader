@@ -11,24 +11,24 @@
 #   1. old create   a dedicated old server, a flat world from native-controls' seed, the Forge builds in mods/; the
 #                   console script (forge-swap.py console) places every candidate's blocks, machines, chests and mobs
 #                   in chunks 0,0..1,1, then the drill (forge-swap.py checks) proves on the old side what the NeoForge
-#                   open will be asked; save-all, stop.
+#                   open will be asked; save-all, stop. The packedup bag in the BAG chest is FILLED here by the
+#                   ForgeSwapBagFill agent (forge-swap.py THE BAGS): packedup's own server-side "open the bag, move
+#                   stacks in", since no console line or datapack reaches it and a server has no player. The run fails
+#                   unless the agent says `[forge-swap] bag filled: <BAG>` and the drill's packedup.bag.kept passes.
 #   2. old player   (skipped by --no-client) a singleplayer client of the old kernel on that world. A datapack
 #                   (forge-swap.py datapack) gives the player a kit once (inventory, armour, offhand, ender chest, xp,
-#                   tombstone's knowledge/alignment and effect) after a death that leaves a tombstone grave. THE ONE
-#                   MANUAL STEP of the plan -- a player opening a packedup backpack and putting items in it -- is
-#                   ATTEMPTED with key presses posted to the client's window (keyboard reaches a background window,
-#                   mouse clicks do not): packedup's own open-bag key (rebound from O, which journeymap's
-#                   fullscreen-options key also uses, to keypad 7 in options.txt) is meant to open the first backpack
-#                   in the inventory, and with the container open the cursor sits at the window centre, so 2 and 3
-#                   would move hotbar slots 2-3 into the slot under it. NOT YET SHOWN TO WORK: in the run of record
-#                   (old2) O opened journeymap's screen, and the keypad-7 run (old3) stalled on the title screen. The
-#                   backpack inventory files that exist afterwards are listed and written to MANIFEST as
-#                   `packedup-bag` (`none` when no bag was ever opened), so a fixture says whether it has a bag
-#                   inventory at all; what a bag holds is read from those files (forge-swap.py files), never assumed.
-#                   The client saves and quits by itself (KernelClientSmoke's clean disconnect).
+#                   tombstone's knowledge/alignment and effect, an obsidian backpack in hotbar 0) after a death that
+#                   leaves a tombstone grave; the same agent in the client's JVM fills that backpack from the
+#                   PLAYER_BAG_SOURCE chest (`[forge-swap] bag filled: player slot 0`). No key is posted: the earlier
+#                   key-press attempt at this step never filled a bag (9488359f). The client saves and quits by itself
+#                   (KernelClientSmoke's clean disconnect).
 #   3. old A/A      the datapack is removed and the world reopened once on the old server and saved: the export of
 #                   THAT world is S0, so a loss that happened before the swap (an old bridge that never saved a
 #                   mod's file, a capability that does not round-trip) shows in old-aa.diff and not as a swap loss.
+#
+# Every backpack inventory packedup saved is read back from the A/A's world (forge-swap.py bags) and written to
+# MANIFEST as `packedup-bag <files>` and one `packedup-bag-stacks <file> <slot=item*count ...>` line each; a run where
+# no bag holds a stack fails.
 #
 # Output (the frozen fixture's layout): old-save/ (the world after the A/A), old-config/ (the old instance's config/,
 # with forge-swap.py's CONFIG_MARKS written into it after the create), old-snapshot.json (S0, world-snapshot.py
@@ -76,6 +76,11 @@ LOG="$OUT/logs/make-old.txt"
 say() { echo "$*" | tee -a "$LOG"; }
 
 old_kernel_init > "$OUT/logs/old-kernel.txt" 2>&1 || { cat "$OUT/logs/old-kernel.txt" >&2; exit 3; }
+fsv() { python3 -c 'import importlib.util,sys;s=importlib.util.spec_from_file_location("f",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(eval(sys.argv[2],vars(m)))' "$HERE/forge-swap.py" "$1"; }
+AGENT="$($FS bag-agent "$OUT/work/agent")" || { echo "[kernel] FAIL could not build the bag agent (ForgeSwapBagFill.java)" >&2; exit 1; }
+BAG="$(fsv BAG)"
+BAG_AGENT="-javaagent:$AGENT=$(fsv 'bag_agent_args(BAG, BAG_SOURCE)')"
+PLAYER_BAG_AGENT="-javaagent:$AGENT=$(fsv 'bag_agent_args("player", PLAYER_BAG_SOURCE)')"
 cat "$OUT/logs/old-kernel.txt" | tee -a "$LOG"
 
 while IFS='|' read -r f n; do
@@ -101,10 +106,13 @@ S1="$OUT/work/old-create"; server_dir "$S1"
 $FS console > "$OUT/work/console.txt"; $FS checks > "$OUT/work/checks.txt"
 say "[forge-swap] old create: $S1"
 if ! $FS session --log "$OUT/logs/old-create.log" --cwd "$S1" --console "$OUT/work/console.txt" --console "$OUT/work/checks.txt" \
-     "${OLD_ENV[@]}" --env "RUNDIR=$S1" -- "$OLD_SERVER" | tee -a "$LOG"; then
+     "${OLD_ENV[@]}" --env "RUNDIR=$S1" --env "FORBRIC_JVM=$BAG_AGENT" -- "$OLD_SERVER" | tee -a "$LOG"; then
   say "[kernel] FAIL the old server did not create and save the world (logs/old-create.log)"; exit 1
 fi
 $FS drill "$OUT/logs/old-create.log" > "$OUT/logs/old-create.drill.txt"; tail -n 1 "$OUT/logs/old-create.drill.txt" | tee -a "$LOG"
+grep -a "\[forge-swap\] bag" "$OUT/logs/old-create.log" | tee -a "$LOG"
+grep -aq "\[forge-swap\] bag filled: $BAG " "$OUT/logs/old-create.log" || { say "[kernel] FAIL the bag agent did not fill the bag at $BAG (logs/old-create.log)"; exit 1; }
+grep -aq "\[forge-swap\] PASS packedup.bag.kept" "$OUT/logs/old-create.drill.txt" || { say "[kernel] FAIL packedup.bag.kept on the old create (logs/old-create.drill.txt)"; exit 1; }
 $WS export "$S1/world" --out "$OUT/old-create.snapshot.json" --chunks "$BOX" --label "old create" | tee -a "$LOG"
 # One non-default value per candidate config (forge-swap.py CONFIG_MARKS): whether the NeoForge build reads the old
 # file is otherwise invisible, since a reset to the default equals the default the Forge build wrote.
@@ -116,26 +124,21 @@ cp -c -R "$S1/config" "$OUT/work/old-config"
 if [ $CLIENT = 1 ]; then
   C="$OUT/work/old-client"; mkdir -p "$C/saves" "$C/mods"; cp "$OUT"/mods-forge/*.jar "$C/mods/"
   cp -c -R "$OUT/work/old-config" "$C/config"
-  printf 'onboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nskipMultiplayerWarning:true\njoinedFirstServer:true\nsoundCategory_master:0.0\nrenderDistance:4\nsimulationDistance:5\nguiScale:2\nnarrator:0\n%s\n' \
-    "$(python3 -c 'import importlib.util,sys;s=importlib.util.spec_from_file_location("f",sys.argv[1]);m=importlib.util.module_from_spec(s);s.loader.exec_module(m);print(m.PACKEDUP_OPEN_BAG_OPTION)' "$HERE/forge-swap.py")" > "$C/options.txt"
+  printf 'onboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nskipMultiplayerWarning:true\njoinedFirstServer:true\nsoundCategory_master:0.0\nrenderDistance:4\nsimulationDistance:5\nguiScale:2\nnarrator:0\n' > "$C/options.txt"
   cp -c -R "$OUT/work/old-world" "$C/saves/$WORLD"
   $FS datapack "$C/saves/$WORLD" >> "$LOG"
   mkdir -p "$C/quickPlay"
   say "[forge-swap] old player: $C"
   $FS client --log "$OUT/logs/old-player.log" --rundir "$C" "${OLD_ENV[@]}" --env "RUNDIR=$C" \
-    --env "FORBRIC_JVM=-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=${FORGE_SWAP_CLIENT_TICKS:-900}" \
-    --on 'forge-swap\] kit given=+3,kp7,+3,2,+1,3,+1,escape' --timeout 900 \
+    --env "FORBRIC_JVM=-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=${FORGE_SWAP_CLIENT_TICKS:-900} $PLAYER_BAG_AGENT" \
+    --timeout 900 \
     -- "$OLD_CLIENT" --quickPlayPath "$C/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" | tee "$OUT/logs/old-player.result.json" | tee -a "$LOG"
   grep -aq '"cleanDisconnect": true' "$OUT/logs/old-player.result.json" || { say "[kernel] FAIL the old client did not save and quit cleanly (logs/old-player.log)"; exit 1; }
   grep -aq 'forge-swap\] kit given' "$OUT/logs/old-player.log" || { say "[kernel] FAIL the player kit never ran (logs/old-player.log)"; exit 1; }
+  grep -a "\[forge-swap\] bag" "$OUT/logs/old-player.log" | tee -a "$LOG"
+  grep -aq '\[forge-swap\] bag filled: player slot 0 ' "$OUT/logs/old-player.log" || { say "[kernel] FAIL the bag agent did not fill the player's backpack (logs/old-player.log)"; exit 1; }
   rm -rf "$OUT/work/old-world"; cp -c -R "$C/saves/$WORLD" "$OUT/work/old-world"
   rm -rf "$OUT/work/old-world/datapacks/forge-swap"
-  BAGS="$(ls "$OUT/work/old-world/packedup/backpacks/" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
-  if [ -n "$BAGS" ]; then
-    say "[forge-swap] packedup backpack file(s): $BAGS"
-  else
-    say "[forge-swap] WARN no packedup backpack inventory was written (nothing under packedup/backpacks/: no bag was opened), MANIFEST says packedup-bag none"
-  fi
 fi
 $WS export "$OUT/work/old-world" --out "$OUT/old-player.snapshot.json" --chunks "$BOX" --label "old before A/A" | tee -a "$LOG"
 
@@ -148,6 +151,11 @@ fi
 cp -c -R "$A/world" "$OUT/old-save"
 cp -c -R "$A/config" "$OUT/old-config"
 $FS configs "$A" | tee -a "$LOG" || say "[forge-swap] WARN the old A/A did not keep every config mark (see above)"
+# What the bags hold, read from packedup's own saved files after the A/A (the Forge build loaded and re-saved them).
+$FS bags "$OUT/old-save" > "$OUT/logs/old-bags.txt"; BAGS_RC=$?
+tee -a "$LOG" < "$OUT/logs/old-bags.txt"
+BAGS="$(ls "$OUT/old-save/packedup/backpacks/" 2>/dev/null | tr '\n' ' ' | sed 's/ *$//')"
+[ $BAGS_RC = 0 ] || { say "[kernel] FAIL no packedup backpack inventory holds a stack in the old save (logs/old-bags.txt)"; exit 1; }
 $WS export "$OUT/old-save" --out "$OUT/old-snapshot.json" --chunks "$BOX" --label "S0: old A/A" | tee -a "$LOG"
 $WS diff "$OUT/old-player.snapshot.json" "$OUT/old-snapshot.json" --rules reopen --list 40 --json "$OUT/old-aa.diff.json" \
   > "$OUT/logs/old-aa.diff.txt" 2>&1
@@ -159,8 +167,9 @@ say "[forge-swap] old A/A $(tail -n 1 "$OUT/logs/old-aa.diff.txt")"
   echo "old-kernel-jar-sha1 $(shasum -a 1 "$OLD_KERNEL_JAR" | cut -d' ' -f1)"
   echo "old-merged-base-sha1 $(shasum -a 1 "$OLD_KERNEL_STAGE/run/merged-base/patched-mc-merged-26.2.jar" | cut -d' ' -f1)"
   echo "seed $SEED"; echo "box $BOX"; echo "client $CLIENT"
-  # Whether the one manual packedup step filled a bag: its files, `none`, or `not-run` without a client.
-  if [ $CLIENT = 1 ]; then echo "packedup-bag ${BAGS:-none}"; else echo "packedup-bag not-run"; fi
+  # The backpack inventories packedup saved, and what each holds (forge-swap.py bags on old-save).
+  echo "packedup-bag ${BAGS:-none}"
+  sed -n 's/^\[forge-swap\] bag \(inventory[0-9]*\.nbt\): [0-9]* stack(s) /packedup-bag-stacks \1 /p' "$OUT/logs/old-bags.txt"
   echo "tree $(git -C "$KERNEL" rev-parse HEAD)"
   echo "drill $(tail -n 1 "$OUT/logs/old-create.drill.txt")"
   for d in mods-forge mods-neo; do for j in "$OUT/$d"/*.jar; do echo "$d $(shasum -a 1 "$j" | cut -d' ' -f1) $(basename "$j")"; done; done

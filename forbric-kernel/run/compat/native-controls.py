@@ -713,12 +713,15 @@ def _native_instance(family, run_dir, mods, port):
 
 
 def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world=None, chunks=None, xmx="3G", timeout=900,
-         after_create=None, old_config=None):
+         after_create=None, old_config=None, create_jvm=None):
     """Run the swap's phases for one engine; returns the result written to <out>/result.json.
 
     The NeoForge instance starts from the old instance's config/ (a player swaps jars, not the instance): native, the
     MinecraftForge instance's; Forbric, old_config. after_create (native) is a command run with the MinecraftForge
-    instance's path appended once the world is created, before the A/A reopen (forge-swap.py mark-configs)."""
+    instance's path appended once the world is created, before the A/A reopen (forge-swap.py mark-configs).
+    create_jvm (native) is a list of extra JVM arguments for the MinecraftForge create only (forge-swap's bag agent,
+    which fills a packedup backpack the way the old side's create does); the A/A reopen and the NeoForge phases run
+    without them."""
     ws = _snapshot_module()
     out = Path(out).resolve(); out.mkdir(parents=True, exist_ok=True)
     forge_mods = [Path(m).resolve() for m in forge_mods]; neo_mods = [Path(m).resolve() for m in neo_mods]
@@ -732,7 +735,8 @@ def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world
     inputs = {"engine": engine, "seed": SEED, "chunks": box, "port": port,
               "forgeMods": mod_set(forge_mods)[0] if forge_mods else [], "neoMods": mod_set(neo_mods)[0],
               "console": record(console) if console else None, "checks": record(checks) if checks else None,
-              "java": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).strip()}
+              "java": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).strip(),
+              "createJvm": list(create_jvm or [])}
 
     def export(instance, name):
         snap = ws.export(instance / "world", box, label=f"{engine} {name}")
@@ -753,7 +757,8 @@ def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world
             forge = _native_instance("forge", out, forge_mods, port)
             inputs["forgeImage"] = json.loads((BASE / "native/forge/installation.json").read_text())
             command = native_command("forge", forge, java_args)
-            run("forge-create", forge, command, os.environ.copy(), console_lines(console))
+            run("forge-create", forge, native_command("forge", forge, java_args + list(create_jvm or [])), os.environ.copy(),
+                console_lines(console))
             export(forge, "forge-create")
             if after_create:
                 subprocess.run([*after_create, str(forge)], check=True)
@@ -847,6 +852,8 @@ def main():
     swap_parser.add_argument("--old-world", help="forbric: the world the old kernel wrote (it is cloned, never written)")
     swap_parser.add_argument("--old-config", help="forbric: the old instance's config/ (cloned into the NeoForge instance)")
     swap_parser.add_argument("--after-create", help="native: a command run with the MinecraftForge instance appended after the create")
+    swap_parser.add_argument("--create-jvm", action="append", default=[],
+                             help="native: an extra JVM argument for the MinecraftForge create only (repeatable)")
     swap_parser.add_argument("--chunks", help="export box X0,Z0,X1,Z1 in chunk coordinates (world-snapshot.py --chunks)")
     swap_parser.add_argument("--out", required=True, help="result directory (instances, logs, snapshots, diffs)")
     swap_parser.add_argument("--xmx", default="3G")
@@ -881,7 +888,8 @@ def main():
         return 0 if result["outcome"] == DONE else 1
     elif args.action == "swap":
         result = swap(args.engine, args.forge_mods, args.neo_mods, args.out, args.console, args.checks, args.old_world,
-                      args.chunks, args.xmx, args.timeout, args.after_create.split() if args.after_create else None, args.old_config)
+                      args.chunks, args.xmx, args.timeout, args.after_create.split() if args.after_create else None, args.old_config,
+                      args.create_jvm)
         print(json.dumps({k: result.get(k) for k in ("engine", "error", "diffs", "out")}, indent=2))
         return 1 if result.get("error") else 0
     return 0

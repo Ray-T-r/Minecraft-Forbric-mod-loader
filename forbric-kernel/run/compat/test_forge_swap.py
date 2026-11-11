@@ -327,5 +327,59 @@ class Datapack(unittest.TestCase):
             self.assertIn("kit given", (root / "data/forgeswap/function/kit.mcfunction").read_text())
 
 
+
+class Bags(unittest.TestCase):
+    """The packedup bag step (THE BAGS): the bag the create fills is in the probe and the drill, and `bags` reads what
+    packedup's own save wrote (bytes of that shape: {"stacks": n, "stack<i>": item, ...})."""
+
+    def test_the_bag_and_its_sources_are_chests_the_console_places_and_the_drill_reads(self):
+        text = fs.console_text()
+        for pos in (fs.BAG, fs.BAG_SOURCE, fs.PLAYER_BAG_SOURCE):
+            self.assertIn("setblock %s minecraft:chest" % pos.replace(",", " "), text)
+        bag_line = next(l for l in text.splitlines() if l.startswith("setblock %s " % fs.BAG.replace(",", " ")))
+        self.assertIn('Slot:0b,id:"packedup:obsidianbackpack"', bag_line)
+        self.assertNotIn("packedup:inventory_id", bag_line)  # the agent gives it its inventory, the console cannot
+        named = {row[0]: row for row in fs.checks() if row[0]}
+        self.assertIn("packedup.bag.kept", named)
+        self.assertIn("block %s container.0 packedup:obsidianbackpack[packedup:inventory_id]" % fs.BAG.replace(",", " "),
+                      named["packedup.bag.kept"][2])
+        self.assertIn("packedup:obsidianbackpack", fs.KIT.splitlines()[0])  # hotbar 0: the player's bag
+        self.assertEqual("bag=player;source=6,-60,8", fs.bag_agent_args("player", fs.PLAYER_BAG_SOURCE))
+
+    def test_bags_reads_each_saved_inventory_in_slot_order(self):
+        import gzip
+        root = ["compound", {"stacks": ["int", 72], "layer": ["int", 0], "version": ["int", 4903],
+                             "bagsInThisBag": ["int_array", []],
+                             "stack10": ["compound", {"id": ["string", "minecraft:emerald"], "count": ["int", 7]}],
+                             "stack0": ["compound", {"id": ["string", "minecraft:diamond_sword"], "count": ["int", 1],
+                                                     "components": ["compound", {"minecraft:damage": ["int", 5]}]}],
+                             "stack1": ["compound", {"id": ["string", "minecraft:air"], "count": ["int", 0]}]}]
+        with tempfile.TemporaryDirectory() as tmp:
+            d = Path(tmp) / "packedup/backpacks"; d.mkdir(parents=True)
+            (d / "inventory0.nbt").write_bytes(gzip.compress(ws.encode_root(root)))
+            (d / "inventory1.nbt").write_bytes(gzip.compress(ws.encode_root(["compound", {"stacks": ["int", 9]}])))
+            found = fs.bags(tmp, ws)
+        self.assertEqual({"inventory0.nbt": [(0, "minecraft:diamond_sword", 1, ["minecraft:damage"]),
+                                             (10, "minecraft:emerald", 7, [])],
+                          "inventory1.nbt": []}, found)
+
+    def test_the_agent_line_names_where_and_which_inventory(self):
+        line = "[Server thread/INFO]: [STDOUT]: [forge-swap] bag filled: 2,-60,8 inventory_id=0 type=OBSIDIAN stacks=6 (a*1)"
+        self.assertEqual(("2,-60,8", "0", "OBSIDIAN", "6"), fs.BAG_FILLED.search(line).groups())
+        line = "[forge-swap] bag filled: player slot 0 inventory_id=1 type=OBSIDIAN stacks=3 (a*1)"
+        self.assertEqual("player slot 0", fs.BAG_FILLED.search(line).group(1))
+
+    def test_the_agent_builds_into_a_jar_with_its_premain(self):
+        import shutil
+        import zipfile
+        if not (shutil.which("javac") and shutil.which("jar")):
+            self.skipTest("no javac/jar on PATH")
+        with tempfile.TemporaryDirectory() as tmp:
+            jar = fs.build_bag_agent(tmp)
+            with zipfile.ZipFile(jar) as z:
+                self.assertIn("Premain-Class: ForgeSwapBagFill", z.read("META-INF/MANIFEST.MF").decode())
+                self.assertIn("ForgeSwapBagFill.class", z.namelist())
+
+
 if __name__ == "__main__":
     unittest.main()

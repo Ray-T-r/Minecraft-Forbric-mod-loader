@@ -367,7 +367,11 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
    singleplayer player pass, the old side's own A/A, and the fixture's MANIFEST); `forge-swap.py` holds the probe's
    console and drill lines, the player kit, the loader-key census and the per-key loss classification
    (`classify --forbric DIR --native DIR`); `native-controls.py swap` runs the native oracle and the Forbric open.
-   Their docstrings are the operating manual; `test_forge_swap.py` and `test_native_controls.py` check them.
+   A packedup backpack's contents live in its own files, which only a player opening the bag creates, so
+   `ForgeSwapBagFill.java` (built by `forge-swap.py bag-agent`, a `-javaagent` on the old create, the native create
+   via `swap --create-jvm=...`, and the old singleplayer client) runs packedup's own server-side open-and-insert, and
+   `forge-swap.py bags` reads the saved inventories back. Their docstrings are the operating manual;
+   `test_forge_swap.py` and `test_native_controls.py` check them.
 9. `push-and-run.py` implements the shell entry point's orchestration and writes
    `report.md` using `report-template.md`, with commit, manifest, phase results, log
    assertions, frame verdict, region evidence and named load-report failures. Retain

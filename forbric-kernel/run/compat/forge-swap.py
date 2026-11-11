@@ -17,6 +17,10 @@ player replaces that jar with the same mod's NeoForge build.
                                                   the per-mod loss table (L_F / L_N) from the two arms' snapshots, plus
                                                   each arm's mod world files and config marks
     forge-swap.py files <old-world> <new-world>   a mod's own world files (packedup/, tombstone/, ...): kept / changed / lost
+    forge-swap.py bag-agent <dir>                 build ForgeSwapBagFill.java into <dir>/forge-swap-bagfill.jar (the packedup
+                                                  bag step, a -javaagent for the old create, the native create and the old
+                                                  singleplayer client); prints the jar's path
+    forge-swap.py bags <world>                    what packedup's saved backpack inventories hold (packedup/backpacks/)
 
 WHY. A world a Forge build wrote holds the mod's data in places a NeoForge build may not read: MinecraftForge's own
 capability storage (ForgeCaps) and persistent data (ForgeData) on entities, block entities and players, renamed ids,
@@ -33,9 +37,20 @@ the items it crafts are never part of a diff), is cleared before and after, and 
 mod's blocks are still there, its items still in their slots, its block can be placed, its machine still works and its
 recipe still crafts (a vanilla crafter powered by a redstone block). Each check is announced by
 `say [forge-swap] check <name> expect <regex>` so `drill` can read the answer that follows it. The player half
-(inventory, armour, ender chest, xp, tombstone's player data and effect, a grave, and a packedup backpack the client
-tries to fill, which no run has done yet) needs a singleplayer client: `datapack` writes a tick function that gives the player a kit once, and forge-swap-make-old.sh
-drives the client. CONFIG_MARKS puts one non-default value into one config per candidate, so a NeoForge build that
+(inventory, armour, ender chest, xp, tombstone's player data and effect, a grave, and a filled packedup backpack) needs
+a singleplayer client: `datapack` writes a tick function that gives the player a kit once, and forge-swap-make-old.sh
+drives the client.
+
+THE BAGS. A packedup backpack's contents are not in the item: the stack carries only `packedup:inventory_id`, and the
+stacks live in packedup/backpacks/inventory<id>.nbt, written by packedup's own save. packedup creates that inventory
+only when a player opens the bag (server side, PackedUpCommon.openBackpackInventory), and no command or datapack
+reaches it; key presses into the old client never filled one (9488359f). So ForgeSwapBagFill.java, a -javaagent, runs
+the server-side half of "open the bag, move stacks in" with packedup's own classes: on the create (old Forbric and
+native MinecraftForge alike) the obsidian backpack in BAG's chest gets the BAG_SOURCE chest's stacks, and in the old
+singleplayer client the player's backpack (hotbar 0, the kit's) gets PLAYER_BAG_SOURCE's. `bags` reads the saved files
+back; the drill's packedup.bag.kept asks the running game whether the bag still names its inventory.
+
+CONFIG_MARKS puts one non-default value into one config per candidate, so a NeoForge build that
 ignores the old file is visible.
 """
 import argparse
@@ -93,8 +108,12 @@ setblock 5 -60 4 minecraft:chest[facing=south]
 setblock 6 -60 4 classicpipes:copper_fluid_pipe
 setblock 7 -60 4 classicpipes:routing_pipe
 setblock 8 -60 4 minecraft:chest[facing=south]{Items:[{Slot:0b,id:"classicpipes:copper_pipe",count:16},{Slot:1b,id:"classicpipes:routing_pipe",count:2}]}
-# packedup: backpacks as items (the filled one is the player's, see datapack)
+# packedup: backpacks as items; the bag chest's obsidian backpack is FILLED from the source chest by ForgeSwapBagFill on
+# the create (BAG), the player's from the second source chest in the singleplayer phase (PLAYER_BAG_SOURCE)
 setblock 0 -60 8 minecraft:chest[facing=south]{Items:[{Slot:0b,id:"packedup:basicbackpack",count:1},{Slot:1b,id:"packedup:ironbackpack",count:1,components:{"minecraft:custom_name":"Iron Pack"}}]}
+setblock 2 -60 8 minecraft:chest[facing=south]{Items:[{Slot:0b,id:"packedup:obsidianbackpack",count:1,components:{"minecraft:custom_name":"Swap Bag"}}]}
+setblock 4 -60 8 minecraft:chest[facing=south]{Items:[{Slot:0b,id:"minecraft:diamond",count:9},{Slot:1b,id:"minecraft:diamond_sword",count:1,components:{"minecraft:damage":5,"minecraft:custom_name":"Bag Sword","minecraft:enchantments":{"minecraft:sharpness":2}}},{Slot:2b,id:"brickfurnace:brick_furnace",count:2},{Slot:3b,id:"biomesoplenty:fir_log",count:16},{Slot:4b,id:"tombstone:grave_dust",count:5},{Slot:5b,id:"animalgarden_owl:mob_spawn_egg",count:1}]}
+setblock 6 -60 8 minecraft:chest[facing=south]{Items:[{Slot:0b,id:"minecraft:emerald",count:7},{Slot:1b,id:"classicpipes:copper_pipe",count:4},{Slot:2b,id:"tombstone:white_marble",count:3}]}
 # tombstone: a decorative grave, marble, a chest of its items, two mobs (one with its effect)
 setblock 0 -60 12 tombstone:decorative_grave_simple[facing=south]
 setblock 2 -60 12 tombstone:white_marble
@@ -131,6 +150,7 @@ classicpipes.block.kept | Test passed | execute if block 1 -60 4 classicpipes:co
 classicpipes.items.kept | Test passed\. Count: 16 | execute if items block 8 -60 4 container.0 classicpipes:copper_pipe
 classicpipes.place | Changed the block | setblock 108 -60 0 classicpipes:copper_pipe
 packedup.items.kept | Test passed\. Count: 1 | execute if items block 0 -60 8 container.0 packedup:basicbackpack
+packedup.bag.kept | Test passed\. Count: 1 | execute if items block 2 -60 8 container.0 packedup:obsidianbackpack[packedup:inventory_id]
 setblock 100 -60 4 minecraft:crafter[orientation=up_north]{Items:[{Slot:0b,id:"minecraft:stick",count:1},{Slot:1b,id:"minecraft:string",count:1},{Slot:2b,id:"minecraft:stick",count:1},{Slot:3b,id:"minecraft:leather",count:1},{Slot:4b,id:"minecraft:chest",count:1},{Slot:5b,id:"minecraft:leather",count:1},{Slot:6b,id:"minecraft:leather",count:1},{Slot:7b,id:"minecraft:leather",count:1},{Slot:8b,id:"minecraft:leather",count:1}]}
 setblock 101 -60 4 minecraft:redstone_block
 tombstone.block.kept | Test passed | execute if block 0 -60 12 tombstone:decorative_grave_simple
@@ -315,6 +335,59 @@ def write_datapack(world):
     return root
 
 
+# --- the packedup bags (see THE BAGS above) --------------------------------------------------------------------------
+
+BAG = "2,-60,8"                 # the chest whose slot 0 holds the obsidian backpack the create fills
+BAG_SOURCE = "4,-60,8"          # ...from this chest
+PLAYER_BAG_SOURCE = "6,-60,8"   # the player's backpack (hotbar 0, the kit's) is filled from this one in the client phase
+BAG_AGENT_SOURCE = HERE / "ForgeSwapBagFill.java"
+
+
+def bag_agent_args(target, source):
+    return "bag=%s;source=%s" % (target, source)
+
+
+def build_bag_agent(out_dir):
+    """Compile ForgeSwapBagFill.java (no dependencies) into <out_dir>/forge-swap-bagfill.jar with Premain-Class."""
+    import subprocess
+    out_dir = Path(out_dir).resolve()
+    classes = out_dir / "bagfill-classes"
+    classes.mkdir(parents=True, exist_ok=True)
+    subprocess.run(["javac", "-d", str(classes), str(BAG_AGENT_SOURCE)], check=True)
+    manifest = out_dir / "bagfill-manifest.txt"
+    manifest.write_text("Premain-Class: ForgeSwapBagFill\n")
+    jar = out_dir / "forge-swap-bagfill.jar"
+    subprocess.run(["jar", "--create", "--file", str(jar), "--manifest", str(manifest), "-C", str(classes), "."], check=True)
+    return jar
+
+
+BAG_FILLED = re.compile(r"\[forge-swap\] bag filled: (\S+(?: slot 0)?) inventory_id=(\d+) type=(\S+) stacks=(\d+)")
+
+
+def bags(world, ws=None):
+    """{file name: [(slot, item id, count, sorted component names)]} for every packedup/backpacks/inventory*.nbt, as
+    packedup's own save wrote it ({"stacks": n, "stack<i>": item, ...}; an empty slot is an empty or air entry)."""
+    ws = ws or _load("world_snapshot", "world-snapshot.py")
+    out = {}
+    for path in sorted((Path(world) / "packedup/backpacks").glob("*.nbt")):
+        root = ws.read_nbt_file(path)
+        entries = root[1] if isinstance(root, list) and root[:1] == ["compound"] else {}
+        stacks = []
+        for key in sorted(entries, key=lambda k: (len(k), k)):
+            m = re.fullmatch(r"stack(\d+)", key)
+            item = entries[key][1] if m and entries[key][:1] == ["compound"] else None
+            if not item or "id" not in item:
+                continue
+            ident = item["id"][1]
+            if ident == "minecraft:air":
+                continue
+            count = item.get("count", ["int", 1])[1]
+            components = sorted((item.get("components") or ["compound", {}])[1])
+            stacks.append((int(m.group(1)), ident, count, components))
+        out[path.name] = stacks
+    return out
+
+
 # --- the loader-key census -------------------------------------------------------------------------------------------
 
 LOADER_KEYS = ("ForgeCaps", "ForgeData", "NeoForgeData", "neoforge:attachments", "fabric:attachments")
@@ -348,9 +421,6 @@ def census(snapshot):
 # macOS virtual key codes (Carbon kVK_ANSI_*) for the keys the client drill uses.
 KEYCODES = {"o": 31, "1": 18, "2": 19, "3": 20, "4": 21, "5": 23, "6": 22, "escape": 53, "e": 14, "return": 36, "f2": 120,
             "kp7": 89}
-# packedup's open-bag key (default O, GLFW 79) shares O with journeymap's key.journeymap.fullscreen_options: on the old
-# client the O press opened a pause screen ("Saving and pausing game...") and no backpack. The client options rebind it to keypad 7.
-PACKEDUP_OPEN_BAG_OPTION = "key_packedup.keys.openbag:key.keyboard.keypad.7"
 
 
 def post_keys(pid, keys, gap=0.6):
@@ -851,6 +921,8 @@ def main(argv=None):
     cl.add_argument("--forbric", required=True); cl.add_argument("--native", required=True); cl.add_argument("--out")
     cl.add_argument("--client", help="the NEW singleplayer client's export of the old world (the player's rows)")
     wf = sub.add_parser("files"); wf.add_argument("old_world"); wf.add_argument("new_world")
+    ba = sub.add_parser("bag-agent"); ba.add_argument("dir")
+    bg = sub.add_parser("bags"); bg.add_argument("world")
     args = parser.parse_args(argv)
     if args.action == "console":
         sys.stdout.write(console_text())
@@ -876,6 +948,16 @@ def main(argv=None):
         result = client_session(command, env, args.log, Path(args.rundir).resolve(), triggers, args.timeout)
         print(json.dumps(result))
         return 0 if result["exitCode"] == 0 and not result["crashed"] and result["cleanDisconnect"] else 1
+    elif args.action == "bag-agent":
+        print(build_bag_agent(args.dir))
+    elif args.action == "bags":
+        found = bags(args.world)
+        for name, stacks in found.items():
+            print("[forge-swap] bag %s: %d stack(s) %s" % (name, len(stacks), " ".join(
+                "%d=%s*%d%s" % (slot, ident, count, "{%s}" % ",".join(comps) if comps else "")
+                for slot, ident, count, comps in stacks)))
+        print("[forge-swap] bags: %d file(s), %d holding stacks" % (len(found), sum(1 for v in found.values() if v)))
+        return 0 if any(found.values()) else 1
     elif args.action == "files":
         for rel, verdict, detail in world_files(args.old_world, args.new_world):
             print("[forge-swap] world file %s %s %s" % (verdict, rel, detail))

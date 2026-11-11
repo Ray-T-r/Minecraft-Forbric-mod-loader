@@ -220,6 +220,44 @@ class ForbricStage(unittest.TestCase):
             self.assertEqual("mark = 3\n", (tmp / "out/neo-instance/config/mod-common.toml").read_text())
             self.assertEqual(["swap", "reopen"], list(result["diffs"]))
 
+    def test_the_native_create_alone_gets_the_extra_jvm_arguments(self):
+        # forge-swap's bag agent fills a packedup backpack on the MinecraftForge create (--create-jvm); the A/A reopen and
+        # the NeoForge phases must run without it, or they would measure the agent instead of the swap.
+        seen = []
+
+        class FakeSnapshots:
+            def export(self, world, box=None, label=""):
+                return {"schema": "s", "label": label}
+
+            def diff(self, a, b, mode, ignore=()):
+                return [], mock.Mock(used={}, violations=[], mode=mode, ignore=())
+
+            def diff_report(self, found, rules):
+                return {"count": 0, "by_facet": {}, "rules_used": {}}
+
+        def session(command, cwd, env, log, lines, timeout=900, settle=3.0):
+            seen.append((Path(log).stem, list(command)))
+            return {"outcome": nc.DONE, "saved": True, "exitCode": 0, "timedOut": False, "seconds": 1.0}
+
+        def instance(family, run_dir, mods, port):
+            d = run_dir / ("%s-instance" % family); (d / "world").mkdir(parents=True, exist_ok=True)
+            return d
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            for family in ("forge", "neo"):
+                (tmp / "base/native" / family).mkdir(parents=True)
+                (tmp / "base/native" / family / "installation.json").write_text("{}")
+            jar = tmp / "m.jar"; jar.write_bytes(b"m")
+            agent = "-javaagent:/x/forge-swap-bagfill.jar=bag=2,-60,8;source=4,-60,8"
+            with mock.patch.object(nc, "swap_session", session), mock.patch.object(nc, "BASE", tmp / "base"), \
+                    mock.patch.object(nc, "_native_instance", instance), \
+                    mock.patch.object(nc, "_snapshot_module", FakeSnapshots), mock.patch("sys.stdout", new_callable=io.StringIO):
+                result = nc.swap("native", [jar], [jar], tmp / "out", create_jvm=[agent])
+            self.assertNotIn("error", result)
+            self.assertEqual(["forge-create", "forge-reopen", "neo-open", "neo-reopen"], [phase for phase, _ in seen])
+            self.assertEqual([True, False, False, False], [agent in command for _, command in seen])
+            self.assertEqual([agent], json.loads((tmp / "out/inputs.json").read_text())["createJvm"])
+
 
 class SwapSession(unittest.TestCase):
     def _run(self, mode, lines):
