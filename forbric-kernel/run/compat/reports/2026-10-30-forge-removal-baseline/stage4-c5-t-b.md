@@ -135,7 +135,7 @@ script); heavy runs through `.stage/heavy.sh`; ports 46700 (GATE_PORT) only. Log
 ### The mechanical commit (`dfb505ac`)
 
 `grep -rnaE 'merged[ -](base|game)' forbric-kernel/src/test/java`: **373 lines in 190 files** at `28188fac`, **158 lines
-in 100 files** after. 215 lines in 108 files reworded; wording only (skip and fixture reasons, assertion messages,
+in 100 files** after (155 in 98 after the review fix `2ac8801a`, below). 215 lines in 108 files reworded; wording only (skip and fixture reasons, assertion messages,
 javadoc and comments), no code path, assertion, test name or TSV row changed. Rules:
 
 - what a test reads today, in present tense: "staged merged base" -> "staged base", "merged base not staged" -> "base not
@@ -147,10 +147,11 @@ javadoc and comments), no code path, assertion, test name or TSV row changed. Ru
 - `KernelModelFormatsTest` had an orphaned javadoc about a MinecraftForge carrier field; it now sits on the NeoForge carrier
   field it describes;
 - scope: files no other C5 lane changed (PLAN), plus T-B's own phase-1 files, plus `MergedBaseFeaturesPerStepTest`'s skip
-  reason (S1 changed the file in C5 but did not reword it, so it is not "reworded by its owner"). The other nine files a
-  C5 lane changed hold only history and guard literals (classified below).
+  reason (S1 changed the file in C5 but did not reword it, so it is not "reworded by its owner"; its two other hits are
+  history). Nine other residue files were changed by another C5 lane (the TSV's owner column, `ChainAnchorCensusStagedTest`
+  included: S's, see below); they hold only history lines and were left alone.
 
-Residue (158 lines; per line with its class in `stage4-c5-t-b-wording-left.tsv` beside this file):
+Residue (155 lines in 98 files after `2ac8801a`; per line with its class in `stage4-c5-t-b-wording-left.tsv` beside this file):
 
 | class | lines | files | what, and its fate |
 |---|---|---|---|
@@ -159,7 +160,7 @@ Residue (158 lines; per line with its class in `stage4-c5-t-b-wording-left.tsv` 
 | stage6-name | 9 | 8 | named after production code that keeps the name: `ForbricMergedBaseCompatTransformer`'s claim ids `forbric-merged-base-compat#…` (6), "the merged-base repair" / "merged-base compat edit" (2), `run/compat/field-drift.py`'s output line "vanilla classes absent from merged base" (1). Stage 6, with the code |
 | stage6-measure | 1 | 1 | `DeclarationReaderCensusTest:29` names "the merged base and both carriers … MinecraftForge's handshake" in present tense; a word swap would assert an unmeasured list of NeoForge's `ModList` readers. Stage 6, with a measurement |
 | history-fixture | 20 | 18 | a synthetic fixture or a shipped table laid out after the merged base or its builder (weave fixtures, `PackRepairInjectorsTest`'s shape, `OptionalPartnerInjector*` tables). True as provenance; keep, Stage 6 if the fixtures are re-derived |
-| history | 98 | 73 | what the merged base did or had: past tense, "On the merged base …", dated measurements, contrasts with NeoForge's base. Keep |
+| history | 95 | 71 | what the merged base did or had: past tense, "On the merged base …", dated measurements, contrasts with NeoForge's base. Keep |
 
 Outside the regex (not counted, not changed): "merged classes" / "merged jar" / "merged side" in 14 test lines; RECORD's
 `stage4-c5-wording-left.txt` grep covers `net/minecraftforge|MinecraftForge|merged base` over `K/run` + `K/src/test`.
@@ -177,12 +178,17 @@ Outside the regex (not counted, not changed): "merged classes" / "merged jar" / 
   `dfb505ac` and `3771ea1b` give 11 classes, 11 byte-identical (`c5/t-b/w2b/canary-bytes-cmp.py`). Still in `canary/`
   and outside this list: 10 lines in 8 files (behavior, transfer, world-upgrade, menu-codec READMEs, EnergyWorldProbe,
   creative-search, attribution `fabric.mod.json`, ForbricFabricLive), owned by G-B2/UPG/G-C/G-A; for RECORD.
+  Ownership: G-B1's record (`stage4-c5-g-b1.md` :167, :194) and `merge-wave2.md`:173 had given this residue to RECORD /
+  Stage 6 with a canary rebuild and an m43/m46/m51 re-run. This pass took it with the byte-identity proof above in place of
+  the rebuild and re-run (the review confirmed it by a second method: no token outside comments changed), so RECORD
+  strikes these 10 lines from its residue list.
 - **T-A B-2** (`ci-unstaged.tsv` reason column of the 15 `MergedBaseGateSpellingTest` / `FabricFreezeHookSpellingTest`
   rows naming the old jar): not reworded. The ratchet compares the first three columns only and the reason column is
   rewritten wholesale by the regeneration RECORD owns (D47; PLAN §3 has nobody rewrite reasons before this pass, but no
   rule gives it the regeneration). For RECORD: at `7a4323fe` the reason column names the merged base or merged game in
   395 of 1980 `ci-unstaged.tsv` rows (282 of them the `merged-base/` path), 2 of 727 `ci-prepared.tsv` rows, and 29 of 895
-  `ci-prepared-noforge.tsv` rows (C6). `dfb505ac` changed the skip messages of many of those tests, so the regenerated
+  `ci-prepared-noforge.tsv` rows (16 of them the `merged-base/` path, the `[fixture:forge-carrier]
+  …/staged-noforge/run/merged-base/forge-runtime-interop.jar` rows; C6). `dfb505ac` changed the skip messages of many of those tests, so the regenerated
   reasons will differ from the committed ones in more than the 15 rows.
 - **K3b's new tests in the prepared / noforge profiles** (merge-w2b open item): `forbric.hideForgeCarrier` is retired
   (build.gradle warns and runs the ordinary suite), so the noforge profile is the prepared one. The six K3b/G-C classes
@@ -195,7 +201,11 @@ Outside the regex (not counted, not changed): "merged classes" / "merged jar" / 
   `ForbricSwitches.RETIRED` has the row; `ci-unstaged.tsv` has `KeyModifierSplitStagedTest`'s census row and no
   `MergedBaseKeyModifierSuffixTest` row; neither other TSV names the deleted test. Counts for RECORD: RETIRED +1,
   ci-unstaged -1/+1; `AssertCompatTest` pins 37.
-- **m40's PASS lines in a timed-out run** (`7a4323fe`, G-B2's file, assigned here by merge-w2b): see below.
+- **`ChainAnchorCensusStagedTest`'s three merged-base literals** (:83, :151, :175; S handed them back to this pass,
+  handoff.md :279 and :461): answered. Each says what the merged base "had lost" against NeoForge's restored call sites,
+  which is history; kept. Owner column: S (`7d506522`, `6a75fcd5`, `e0844870`), T-B phase 1 also changed the file.
+- **m40's PASS lines in a timed-out run** (`7a4323fe`, G-B2's file, assigned here by merge-w2b as "(wording)"): a behaviour
+  change in G-B2's gate, not wording: on a timed-out phase eight checks that printed PASS now print FAIL; see below.
 
 ### gate-m40 (`7a4323fe`)
 
@@ -224,6 +234,19 @@ Port 46700 free after each run; no JVM left.
 - `run/compat` `python3 -m unittest discover` (with the m40 change): 237 OK.
 - TSVs: none touched (no test added, deleted or renamed).
 
+### Review fixes (`review-t-b2.md`, 2026-11-11)
+
+| finding | outcome |
+|---|---|
+| B2-1 three present-tense premises filed as history | **Fixed** (`2ac8801a`), reworded after measuring on `.stage4` rather than refiled. `ChunkGenerator.featuresPerStep` is declared once in `patched-mc-neoforge-26.2.jar`, descriptor `Ljava/util/function/Supplier;` (javap); and every gate-m9 client-boot log on the genuine base in the C5 notes (11 runs: k1, k3b, g-a, g-c, review-g-c) logs `replayed 1 previously unmatched directive(s)` beside `(23 AT, 0 AW)`, so `AccessCensusGateM9ContractTest:20`'s "the replay count is 0" was false there, not only unmeasured. The javadoc now says the count is no invariant, which is why the gate asserts the outcome. `MergedBasePipelineDriftTest:58/:86`: NeoForge's `XoroshiroRandomSource.nextDouble()` is `l2f; ldc 1.110223E-16f; fmul` where vanilla 26.2 has `l2d; ldc2_w; dmul`, and its `Goat.finalizeSpawn` is `ldc 0.1f; fcmpg` where vanilla has `f2d; ldc2_w 0.10000000149011612; dcmpg`; both lines now name NeoForge's patched game. Comments only, every line in place; the three rows leave the residue (158 -> 155 lines, history 98 -> 95) |
+| B2-2 owner column and two counts | **Fixed** in this record and the TSV: `ChainAnchorCensusStagedTest`'s three rows name S; the "nine files" sentence now counts the nine left alone without `MergedBaseFeaturesPerStepTest`; ci-prepared-noforge's `merged-base/` path count is 16 of 29 (recounted) |
+| B2-3 scope (a) `MergedBaseFeaturesPerStepTest`, (b) canary comments, (c) gate-m40 | **No code change; recorded for the merger.** (a) kept, wording only, one literal in S1's file: the merger may drop that hunk. (b) ownership and RECORD's strike noted above. (c) m40 is recorded above as a behaviour change in G-B2's file (stricter; D34 shown) |
+
+Suite after `2ac8801a` (`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all jar
+cleanTest test --continue`, run to the end): **5873 tests, 0 skipped, 5 failed** = exactly the five names of `c5/failures-k.txt` (0 new, 0 gone);
+`AccessCensusGateM9ContractTest` 4/0/0 and `MergedBasePipelineDriftTest` 1/0/0 on the committed text
+(`c5/t-b/w2b/review-fix/suite.log`, `suite-xml/`).
+
 ### Open items
 
 | item | owner |
@@ -233,3 +256,6 @@ Port 46700 free after each run; no JVM left.
 | 9 stage6-name lines: rename with `ForbricMergedBaseCompatTransformer` and `field-drift.py` | Stage 6 |
 | 10 canary lines outside G-B1's list (behavior, transfer, world-upgrade, menu-codec READMEs, EnergyWorldProbe, creative-search, attribution, ForbricFabricLive) | RECORD residue list / owners |
 | "merged classes" / "merged jar" wording outside the regex (14 test lines) | RECORD's wording-left grep / Stage 6 |
+| Name the directive gate-m9's pack replays on NeoForge's base (`replayed 1`; `AccessCensus` logs only the count), and check gate-m9's comment that the biome widener "matches first time" against it | Stage 6 (access census) |
+| Strike the 10 G-B1 canary lines `3771ea1b` reworded from RECORD's residue list | RECORD |
+| Merger: `7a4323fe` changes G-B2's gate-m40 behaviour (stricter); `dfb505ac` edits one skip reason in S1's `MergedBaseFeaturesPerStepTest` | merger |

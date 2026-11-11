@@ -32,7 +32,6 @@ net/forbric/kernel/boot/LaunchInputCheckTest.java	347	keep-concept	-	assertEqual
 net/forbric/kernel/boot/PreLaunchBeforeGameClassesTest.java	22	history	-	* boot. Measured in game with {@code -Xlog:class+load}: before, 40 classes of the merged base were defined ahead of
 net/forbric/kernel/boot/KernelTransferInteropTest.java	201	history	-	// A finding with no provider object has no class to attribute (the code here is a live one; on the merged base
 net/forbric/kernel/boot/KernelLifecycleFreezeOrderTest.java	46	history	-	* {@link ForeignType#GAME_DATA} so a rename cannot pass silently, and a MinecraftForge one at the name the merged base's
-net/forbric/kernel/access/AccessCensusGateM9ContractTest.java	20	history	-	* a COREMOD repair. The merged base now keeps both descriptors, the widener matches first time, and the replay
 net/forbric/kernel/mixin/MixinStubRebindTest.java	335	history	-	* {@code ServerExplosion.hurtEntities()}, taking that list by type. On the merged base vanilla's signature is a stub
 net/forbric/kernel/mixin/MixinStubRebindTest.java	549	history	-	* PackDetector's two-argument detectPackResources: the merged base carried it as MinecraftForge's stub, so a NeoForge
 net/forbric/kernel/mixin/MixinStubRebindTest.java	641	history	-	* Language.loadFromJson(InputStream, BiConsumer) — on the merged base a stub passing a no-op lambda to NeoForge's
@@ -106,8 +105,6 @@ net/forbric/kernel/transform/NeoForgeBaseClientPartTrackingStagedTest.java	35	hi
 net/forbric/kernel/transform/NeoForgeBaseClientPartTrackingStagedTest.java	91	history	-	* every NeoForge mod's entity on the merged base (for this broken entity it is native NeoForge behaviour).
 net/forbric/kernel/transform/DeclarationReaderCensusTest.java	29	stage6-measure	-	* <p>The platform half is the scoping claim. The merged base and both carriers enumerate {@code ModList} in a dozen
 net/forbric/kernel/transform/FabricHooksCallTest.java	330	history-fixture	-	/** {@code main(String[])}: {@code if (args.length == 0) ServerModLoader.load(false);} — the merged base's shape. */
-net/forbric/kernel/transform/MergedBasePipelineDriftTest.java	58	history	-	* <p>The merged base's Minecraft half comes out of NeoForge's decompile-recompile pipeline, so it is not vanilla's
-net/forbric/kernel/transform/MergedBasePipelineDriftTest.java	86	history	-	* double ({@code f2d; ldc2_w 0.10000000149011612; dcmpg}); the merged base compares in float
 net/forbric/kernel/transform/RegistryRevertInjectorTest.java	46	history	-	* edits is NeoForge's on either base, so this is the genuine base's class as much as the merged base's.
 net/forbric/kernel/transform/RepairDriftCensusStagedTest.java	47	stage6-name	-	private static final String STREAMS_CLAIM = "forbric-merged-base-compat#wrapTheStreamsVanillaWraps";
 net/forbric/kernel/transform/RepairDriftCensusStagedTest.java	93	stage6-name	-	assertTrue(drift.declined().stream().anyMatch(d -> d.contains("forbric-merged-base-compat#bridgeOrphanedPipRenderers")),
@@ -134,9 +131,9 @@ net/forbric/kernel/transform/GenuineNativeReferencesStagedTest.java	255	stage6-n
 net/forbric/kernel/transform/NeoForgeBaseCreativeSearchStagedTest.java	29	history	-	* <p>The merged base carried MinecraftForge's {@code SessionSearchTrees.getSearchTree(Key)},
 net/forbric/kernel/transform/NeoForgeBaseCreativeSearchStagedTest.java	36	history	-	* {@code Map.getOrDefault} within the five instructions before. The merged base had one (getSearchTree); NeoForge's
 net/forbric/kernel/mixin/weave/MixinAnonymousRetargetWeaveTest.java	21	history-fixture	-	* <p>The fixture is laid out like the merged base for {@code BoundedFloatFunction}, one of the table's
-net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	83	history	-	* <p>The same replay also pins what the chain must NOT do: the four NeoForge hook calls the merged base had lost and the
-net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	151	history	-	// NeoForge's own call sites that the merged base had lost, which the chain must leave as they are
-net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	175	history	-	* The four NeoForge hook calls the merged base had lost and the genuine base restored (Stage 4 C2): raw NeoForge 26.2.0.93
+net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	83	history	S (7d506522, 6a75fcd5, e0844870)	* <p>The same replay also pins what the chain must NOT do: the four NeoForge hook calls the merged base had lost and the
+net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	151	history	S (7d506522, 6a75fcd5, e0844870)	// NeoForge's own call sites that the merged base had lost, which the chain must leave as they are
+net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	175	history	S (7d506522, 6a75fcd5, e0844870)	* The four NeoForge hook calls the merged base had lost and the genuine base restored (Stage 4 C2): raw NeoForge 26.2.0.93
 net/forbric/kernel/mixin/weave/KeyActionExitsWeaveTest.java	116	history-fixture	-	* {@code nativeFixture}, hash-pinned under the FABRIC prefix, exactly as the merged-base builder emits it.
 net/forbric/kernel/mixin/weave/MixinHandlerShimWeaveTest.java	24	history-fixture	-	* {@code MixinHandlerShim} through the real weave: a handler written for vanilla's lambda, on a merged base that keeps
 net/forbric/kernel/transform/ForeignFluidTypeInjectorExecutionTest.java	24	history	-	* rebinds to show the answer is not cached. (The merged base's {@code Fluid} also had MinecraftForge's
