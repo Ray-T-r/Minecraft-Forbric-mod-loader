@@ -714,8 +714,9 @@ step "a config registered too late for the early pass is still opened (must PASS
 # What is asserted instead is the OUTCOME: the early pass ran over both types, the config that used to crash the
 # client is loaded, and no config is opened twice during boot. The Server-thread double open at world join (16 per
 # run, the per-world SERVER configs) is a SEPARATE defect and is deliberately not covered here yet.
+# In native NeoForge's order (CommonModLoader.begin: CLIENT, then COMMON; Stage 4 C5 K3b review A-3). COMMON first is red.
 check "the early pass loads both boot-time config types" \
-  "Forbric/Lifecycle\] loaded NeoForge configs \(COMMON\+CLIENT\)" "$LOG"
+  "Forbric/Lifecycle\] loaded NeoForge configs \(CLIENT\+COMMON\)" "$LOG"
 check_absent "and no config is opened twice during boot" \
   "\[main/WARN\]: Opening a config that was already loaded" "$LOG"
 check_absent "and nothing read a config before it was loaded" \

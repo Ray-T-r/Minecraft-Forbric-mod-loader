@@ -71,7 +71,7 @@ class KernelLifecycleConfigPassesTest {
 		ColdLoader loader = new ColdLoader();
 		loader.fail("neoEarly");
 		invoke(loader, "loadEarlyConfigs", Side.CLIENT);
-		assertEquals(List.of("neo.early:[COMMON, CLIENT]"), loader.calls());
+		assertEquals(List.of("neo.early:[CLIENT, COMMON]"), loader.calls());
 	}
 
 	@ExpectCaught("could not open late-registered NeoForge configs")
@@ -105,7 +105,9 @@ class KernelLifecycleConfigPassesTest {
 		}
 	}
 
-	private static List<String> neoEarly(Side side) { return side.isClient() ? List.of("COMMON", "CLIENT") : List.of("COMMON"); }
+	// Native NeoForge's order (CommonModLoader.begin: CLIENT on the client, then COMMON); KernelLifecycleEarlyConfigOrderTest
+	// reads it off the carrier.
+	private static List<String> neoEarly(Side side) { return side.isClient() ? List.of("CLIENT", "COMMON") : List.of("COMMON"); }
 	private static List<String> neoLate(Side side) { return side.isClient() ? List.of("STARTUP", "COMMON", "CLIENT") : List.of("STARTUP", "COMMON"); }
 
 	private static void invoke(ColdLoader loader, String name, Side side) throws Exception {
