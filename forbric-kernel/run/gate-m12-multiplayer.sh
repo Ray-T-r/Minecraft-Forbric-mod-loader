@@ -108,7 +108,7 @@ FIFO="$SRV/.stdin"; rm -f "$FIFO"; mkfifo "$FIFO"
 # never ran" when the truth was that the flag had only ever been passed to the client. A knob that silently
 # covers half the system under test is worse than no knob.
 # The tick sampler prints its running totals every 20 ticks (one second) instead of every 600, so the lateness check below
-# can read them at the player's join and leave.
+# can read them at the client's dial, the player's join and the leave.
 FORBRIC_JVM="-Dforbric.tickSamplerEvery=20 ${M12_EXTRA_JVM:-}" \
 RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$SLOG" 2>&1 &
 SRVPID=$!
@@ -259,55 +259,89 @@ fi
 # The MEAN is not the assertion — a server keeping up holds 50ms exactly, by sleeping off what the tick did not
 # use. The tail is: an interval at twice the budget means there was no sleep left to give back.
 #
-# COUNTED WHILE THE PLAYER IS ON, not from the server's start (C5 wave 2b). Until then the ceiling of 20 applied to the
-# sampler's 700-tick line, and C5 wave 2 measured 21, 10, 4, 16, 3 and 16 there in six runs alone on NeoForge's base,
-# with nothing late in the first 100 ticks: ticks 100-700 held both this gate's own client JVM booting on the same
-# machine and the player's join, and the sampler could not tell them apart. The sampler now prints its totals every 20
-# ticks, so the difference between the last line before "joined the game" and the first line after "left the game" is
-# the session's (a second of slack on each side, counted in), and the lateness before the join -- the client's boot
-# competing with the server for the machine, which says nothing about the server -- is printed, not asserted. Measured
-# in wave 2b: see the record (stage4-c5-g-c.md, "wave 2b"). M12_LATE_CEILING (default 20) bounds the session's count.
+# COUNTED FROM THE CLIENT'S DIAL TO THE LEAVE, not from the server's start (C5 wave 2b). Until then the ceiling of 20
+# applied to the sampler's 700-tick line, and C5 wave 2 measured 21, 10, 4, 16, 3 and 16 there in six runs alone on
+# NeoForge's base, with nothing late in the first 100 ticks: ticks 100-700 held both this gate's own client JVM booting on
+# the same machine and the player's connection, and the sampler could not tell them apart. The sampler now prints its
+# totals every 20 ticks (one second), so the window is the difference between the last line stamped in an earlier second
+# than the client's "Connecting to" (vanilla prints it before the first packet; the client has finished booting by then)
+# and the first line after "left the game" -- up to two seconds of slack before the dial and one after the leave, counted
+# in. It holds the whole handshake this gate exists for (the login, then the configuration phase: known packs, registry
+# and tag sync, channel declarations, all on the server thread) and the session. Wave 2b's first cut opened the window at
+# the join, which comes after the configuration phase, so nothing bounded the handshake (review A-1). What came before the
+# dial -- the client's boot competing with the server for the machine, which says nothing about the server -- is printed,
+# not asserted.
+# The CEILING keeps the old one's density, not its number: 20 late in 700 ticks, so ceil(window x 20 / 700), 7 for the
+# usual 220-tick window (review B-2: 20 over a 160-tick session would have been 12.5%, four times as loose). Measured in
+# wave 2b and its review fixes: 1-2 late in the window alone, 0 of them in the handshake; see the record (stage4-c5-g-c.md).
+# M12_LATE_CEILING, when set, replaces the derived ceiling with a number.
 check "the tick sampler reported" "Forbric/Tick\] [0-9]+ tick\(s\): mean " "$SLOG"
-TICK_WINDOW="$(python3 - "$SLOG" <<'PY_TICKS'
-import re, sys
-# Every sampler line carries running totals; the session is what changed between the join and the leave.
-line_re = re.compile(r'\[Forbric/Tick\] (\d+) tick\(s\): .* at twice the budget or worse (\d+) ')
-# The first line after the leave closes the window; a server stopped before it printed one (a slow server prints a line
-# every 20 of its own ticks) closes it at its last line, which can only leave the last ticks of the session out, never
-# add any. (No apostrophe in this block: bash 3.2 parses a heredoc inside a command substitution for quotes.)
-totals, before_join, after_leave, joined, left = (0, 0), None, None, False, False
-for line in open(sys.argv[1], encoding='utf-8', errors='replace'):
-    m = line_re.search(line)
+# M12_TICK_WINDOW_BEGIN — M12TickWindowContractTest runs this block against synthetic SLOG/CLOG pairs.
+TICK_WINDOW="$(python3 - "$SLOG" "$CLOG" <<'PY_TICKS'
+import math, re, sys
+# Sampler lines carry running totals (ticks, late ticks); a window is the difference between two of them.
+# (No apostrophe in this block: bash 3.2 parses a heredoc inside a command substitution for quotes.)
+SAMPLER = re.compile(r"\[Forbric/Tick\] (\d+) tick\(s\): .* at twice the budget or worse (\d+) ")
+STAMP = re.compile(r"^\[(\d\d):(\d\d):(\d\d)\]")
+def stamp(line):
+    m = STAMP.match(line)
+    return None if m is None else int(m.group(1)) * 3600 + int(m.group(2)) * 60 + int(m.group(3))
+dial = None
+for line in open(sys.argv[2], encoding="utf-8", errors="replace"):
+    if "Connecting to 127.0.0.1" in line and stamp(line) is not None:
+        dial = stamp(line)
+        break
+totals, first, prev, wrap = (0, 0), None, None, 0
+before_dial, at_join, after_leave, joined, left = (0, 0), None, None, False, False
+for line in open(sys.argv[1], encoding="utf-8", errors="replace"):
+    t = stamp(line)
+    if t is not None:
+        if prev is not None and t < prev - 43200:
+            wrap += 86400  # the run crossed midnight
+        prev = t
+        t += wrap
+        if first is None:
+            first = t
+    m = SAMPLER.search(line)
     if m:
         totals = (int(m.group(1)), int(m.group(2)))
+        # Stamped in an earlier second than the dial, so printed before it: the last such line opens the window.
+        if dial is not None and t is not None and t < dial + (86400 if dial < first else 0):
+            before_dial = totals
         if left and after_leave is None:
             after_leave = totals
-    elif not joined and ' joined the game' in line:
-        joined, before_join = True, totals
-    elif joined and not left and ' left the game' in line:
+    elif not joined and " joined the game" in line:
+        joined, at_join = True, totals
+    elif joined and not left and " left the game" in line:
         left = True
+# A server stopped before it printed a line after the leave (at a slow tick rate it prints one every 20 of its own
+# ticks) closes the window at its last line, which can only leave the last ticks out, never add any.
 if left and after_leave is None:
     after_leave = totals
-if before_join is None or after_leave is None:
-    print('? ? ? ?')
+if dial is None or at_join is None or after_leave is None:
+    print("? ? ? ? ? ? ? ? ?")
 else:
-    print(after_leave[0] - before_join[0], after_leave[1] - before_join[1], before_join[0], before_join[1])
+    print(before_dial[0], before_dial[1], at_join[0] - before_dial[0], at_join[1] - before_dial[1],
+          after_leave[0] - at_join[0], after_leave[1] - at_join[1], after_leave[0] - before_dial[0],
+          after_leave[1] - before_dial[1], math.ceil((after_leave[0] - before_dial[0]) * 20 / 700))
 PY_TICKS
 )"
-read -r SESSION_TICKS SESSION_LATE PRE_TICKS PRE_LATE <<< "$TICK_WINDOW"
-echo "[kernel] tick lateness: ${PRE_LATE:-?} of ${PRE_TICKS:-?} tick(s) before the join (the client booting beside the server; not asserted), ${SESSION_LATE:-?} of ${SESSION_TICKS:-?} while the player was on"
+read -r PRE_TICKS PRE_LATE HS_TICKS HS_LATE SESSION_TICKS SESSION_LATE WINDOW_TICKS WINDOW_LATE DERIVED_CEILING <<< "$TICK_WINDOW"
+LATE_CEILING="${M12_LATE_CEILING:-${DERIVED_CEILING:-?}}"
+echo "[kernel] tick lateness: ${PRE_LATE:-?} of ${PRE_TICKS:-?} tick(s) before the client dialled (its boot beside the server; not asserted), ${HS_LATE:-?} of ${HS_TICKS:-?} from the dial to the join (the handshake), ${SESSION_LATE:-?} of ${SESSION_TICKS:-?} while the player was on"
 if [[ "${SESSION_TICKS:-}" =~ ^[0-9]+$ ]] && [ "$SESSION_TICKS" -ge 100 ]; then
   echo "[kernel] PASS the tick sampler covered the session ($SESSION_TICKS ticks between the join and the leave)"
 else
-  echo "[kernel] FAIL the tick sampler covered the session (got ${SESSION_TICKS:-none}; a join and a leave with sampler lines around them, 100 ticks at least)"
+  echo "[kernel] FAIL the tick sampler covered the session (got ${SESSION_TICKS:-none}; a dial, a join and a leave with sampler lines around them, 100 ticks at least from the join)"
   FAIL=1
 fi
-if [[ "${SESSION_LATE:-}" =~ ^[0-9]+$ ]] && [ "$SESSION_LATE" -le "${M12_LATE_CEILING:-20}" ]; then
-  echo "[kernel] PASS server ticks within the lateness ceiling while the player was on ($SESSION_LATE <= ${M12_LATE_CEILING:-20})"
+if [[ "${WINDOW_LATE:-}" =~ ^[0-9]+$ ]] && [[ "$LATE_CEILING" =~ ^[0-9]+$ ]] && [ "$WINDOW_LATE" -le "$LATE_CEILING" ]; then
+  echo "[kernel] PASS server ticks within the lateness ceiling from the client's dial to the leave ($WINDOW_LATE of $WINDOW_TICKS <= $LATE_CEILING)"
 else
-  echo "[kernel] FAIL server ticks late while the player was on: ${SESSION_LATE:-none found} at twice the budget (ceiling ${M12_LATE_CEILING:-20})"
+  echo "[kernel] FAIL server ticks late from the client's dial to the leave: ${WINDOW_LATE:-none found} of ${WINDOW_TICKS:-?} at twice the budget (ceiling $LATE_CEILING)"
   FAIL=1
 fi
+# M12_TICK_WINDOW_END
 check_absent "nobody was told the server requires a mod they have" \
   "This server requires" "$SLOG"
 
