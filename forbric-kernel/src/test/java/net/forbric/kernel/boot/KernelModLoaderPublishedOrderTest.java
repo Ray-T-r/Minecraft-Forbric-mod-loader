@@ -44,7 +44,11 @@ import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
+import net.forbric.api.DiscoveredMod;
+import net.forbric.api.Ecosystem;
+import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
+import net.forbric.api.UnifiedDependency;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -56,7 +60,8 @@ import net.forbric.kernel.TestFixtures.Fixture;
  * was a hash order salted per JVM: a mod could take its common setup before the library it depends on, and in a
  * different order on the next launch. Native NeoForge dispatches each phase over {@code ModList.getSortedMods()} with
  * every container waiting for its dependencies ({@code ModLoader.dispatchParallelTask}). ModList is published in the
- * kernel's dependency order, so walking it keeps "a dependency first" (Stage 4 C5 lane K3b).
+ * kernel's dependency order, so walking it keeps "a dependency first" (Stage 4 C5 lane K3b) — for a mod with no
+ * {@code @Mod} class too, which used to follow every constructed mod whatever its dependents said (K3b review A-1).
  */
 class KernelModLoaderPublishedOrderTest {
 	private static final Path STAGED = TestFixtures.stagedRoot().normalize();
@@ -94,6 +99,72 @@ class KernelModLoaderPublishedOrderTest {
 	}
 
 	/**
+	 * A mod with no {@code @Mod} class takes its place in the dependency order, not after every constructed mod: a mod
+	 * that requires it comes after it, one that does not keeps its place before it.
+	 */
+	@Test
+	void aModWithNoModClassStandsInTheDependencyOrder() {
+		Map<String, Integer> constructed = new LinkedHashMap<>();
+		constructed.put("free", 0);
+		constructed.put("dependent", 1);
+		Map<String, Integer> classless = new LinkedHashMap<>();
+		classless.put("library", 2);
+
+		Map<String, Integer> published = KernelModLoader.published(constructed, classless,
+				List.of("free", "library", "dependent"));
+
+		assertEquals(List.of("free", "library", "dependent"), List.copyOf(published.keySet()),
+				"the declared-only library before the mod that requires it, as native NeoForge sorts every mod it lists");
+		assertThrows(UnsupportedOperationException.class, () -> published.put("x", 0),
+				"what the lifecycle walks is read-only");
+		assertEquals(List.of("free", "dependent", "library"),
+				List.copyOf(KernelModLoader.published(constructed, classless, List.of()).keySet()),
+				"with no order to apply, the constructed mods and then the declared-only ones, as given");
+	}
+
+	/**
+	 * Against the real carrier: a constructed mod requiring a mod with no {@code @Mod} class is published, into ModList
+	 * and into the map the setup phases walk, after it.
+	 */
+	@Test
+	void aDeclaredOnlyLibraryIsPublishedBeforeTheModThatRequiresIt() throws Exception {
+		ClassLoader game = game();
+		ModPresence.publishForgeFamily(List.of(
+				declared("ordertest_dep", new UnifiedDependency("ordertest_lib", "*", true)),
+				declared("ordertest_free"),
+				declared("ordertest_lib")));
+		try {
+			KernelModLoader.constructMods(game, List.of(depsJar), Side.DEDICATED_SERVER);
+		} finally {
+			ModPresence.publishForgeFamily(List.of());
+		}
+
+		assertEquals(Set.of("ordertest_lib"), KernelModLoader.classlessNeoMods().keySet(),
+				"the library declares no @Mod class and has a container of its own");
+		List<String> expected = List.of("ordertest_free", "ordertest_lib", "ordertest_dep");
+		assertEquals(expected, List.copyOf(KernelModLoader.publishedNeoMods().keySet()),
+				"the setup phases reach the library before the mod that requires it");
+		assertEquals(expected, modListOrder(game),
+				"and ModList, which RegisterEvent and the mod-bus events walk, has it there too");
+	}
+
+	private static DiscoveredMod declared(String id, UnifiedDependency... deps) {
+		return new DiscoveredMod(Ecosystem.NEOFORGE, id, "1.0", id, List.of(deps), List.of(), null, "deps.jar");
+	}
+
+	/** The published mods' ids in {@code ModList.getSortedMods()}'s order. */
+	private static List<String> modListOrder(ClassLoader game) throws Exception {
+		Class<?> modListCls = Class.forName("net.neoforged.fml.ModList", false, game);
+		Object modList = modListCls.getMethod("get").invoke(null);
+		List<String> order = new ArrayList<>();
+		for (Object container : (List<?>) modListCls.getMethod("getSortedMods").invoke(modList)) {
+			String id = (String) container.getClass().getMethod("getModId").invoke(container);
+			if (KernelModLoader.publishedNeoMods().containsKey(id)) order.add(id);
+		}
+		return order;
+	}
+
+	/**
 	 * Against the real carrier: after {@code constructMods}, walking {@code publishedNeoMods()} is walking
 	 * {@code ModList.getSortedMods()}.
 	 */
@@ -123,11 +194,13 @@ class KernelModLoaderPublishedOrderTest {
 	static Path shared;
 	private static URLClassLoader gameLoader;
 	private static Path modsJar;
+	private static Path depsJar;
 
 	private static ClassLoader game() throws Exception {
 		if (gameLoader == null) {
 			modsJar = eightModJar(shared.resolve("mods/eight.jar"));
-			gameLoader = gameLoader(modsJar);
+			depsJar = libraryJar(shared.resolve("mods/deps.jar"));
+			gameLoader = gameLoader(modsJar, depsJar);
 			PassiveSeeder.seedNeoForgeModList(gameLoader);
 		}
 		return gameLoader;
@@ -161,6 +234,30 @@ class KernelModLoaderPublishedOrderTest {
 		return jar;
 	}
 
+	/**
+	 * Three mods in one {@code neoforge.mods.toml}: {@code ordertest_dep} (an {@code @Mod} class) requires
+	 * {@code ordertest_lib}, which has no {@code @Mod} class; {@code ordertest_free} (an {@code @Mod} class) requires
+	 * nothing.
+	 */
+	private static Path libraryJar(Path jar) throws IOException {
+		Files.createDirectories(jar.getParent());
+		String toml = "modLoader=\"javafml\"\nloaderVersion=\"[1,)\"\nlicense=\"MIT\"\n"
+				+ "[[mods]]\nmodId=\"ordertest_dep\"\nversion=\"1.0\"\n"
+				+ "[[mods]]\nmodId=\"ordertest_free\"\nversion=\"1.0\"\n"
+				+ "[[mods]]\nmodId=\"ordertest_lib\"\nversion=\"1.0\"\n"
+				+ "[[dependencies.ordertest_dep]]\nmodId=\"ordertest_lib\"\ntype=\"required\"\nversionRange=\"[1,)\"\n";
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			KernelModLoaderDeclaredTest.put(zip, "META-INF/neoforge.mods.toml", toml);
+			for (String[] mod : new String[][] {{"ordertestdeps/DepMod", "ordertest_dep"},
+					{"ordertestdeps/FreeMod", "ordertest_free"}}) {
+				zip.putNextEntry(new ZipEntry(mod[0] + ".class"));
+				zip.write(modClass(mod[0], mod[1]));
+				zip.closeEntry();
+			}
+		}
+		return jar;
+	}
+
 	/** {@code @Mod(id) public class <name> { public <name>() {} }} */
 	private static byte[] modClass(String internalName, String modId) {
 		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
@@ -180,14 +277,15 @@ class KernelModLoaderPublishedOrderTest {
 	}
 
 	/** The game side as a boot sees it: the kernel's runtime classes, the NeoForge carrier and the mod jar. */
-	private static URLClassLoader gameLoader(Path modJar) throws Exception {
+	private static URLClassLoader gameLoader(Path... modJars) throws Exception {
 		Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
 		Path neo = STAGED.resolve(TestFixtures.NEO_CARRIER_JAR);
 		TestFixtures.requireFiles(Fixture.STAGED, "staged runtime classes/carrier absent", neo);
 		TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "staged runtime classes/carriers absent");
 		Path stubs = PassiveSeederLoadingModListTest.loggingStubs(shared.resolve("stubs"));
 		Set<URL> urls = new LinkedHashSet<>(List.of(compiled.toUri().toURL(), stubs.toUri().toURL(),
-				neo.toUri().toURL(), modJar.toUri().toURL()));
+				neo.toUri().toURL()));
+		for (Path modJar : modJars) urls.add(modJar.toUri().toURL());
 		String log4j = System.getProperty("forbric.log4jApiForTests", "");
 		assertTrue(!log4j.isEmpty() && Files.isRegularFile(Path.of(log4j)),
 				"log4j-api for the event bus absent: '" + log4j + "'");

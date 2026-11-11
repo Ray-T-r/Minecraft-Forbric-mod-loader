@@ -148,7 +148,8 @@ public final class KernelModLoader {
 		// and called that library's API before the library had initialised. What comes back is an error inside the
 		// library, attributed to the library, on a line that has nothing to do with the cause. Both real loaders
 		// sort by dependency before they construct anything.
-		claimed = orderByDependency(claimed);
+		List<String> modOrder = dependencyOrder();
+		claimed = orderByDependency(claimed, modOrder);
 
 		// Phase 2 — build every NeoForge mod's identity. They are PUBLISHED below, before phase 3, because a mod's constructor may ask its family's ModList about ITSELF, and against the kernel's
 		// empty ModList that is fatal to that mod (Bookshelf: "Could not find mod 'bookshelf'" from getModBus;
@@ -230,11 +231,13 @@ public final class KernelModLoader {
 
 		// Aliases go into ModList but NOT into publishedNeo: nothing must post setup events at a mod that has no
 		// @Mod class here, and no caller should resolve an alias as if it were a constructed mod.
-		Map<String, NeoIdentity> published = new LinkedHashMap<>(neo);
-		published.putAll(classless);
+		// The mods with no @Mod class take their place in the same dependency order as the rest, not after all of
+		// them: native NeoForge sorts every mod it lists together, and a mod that requires a declared-only library is
+		// dispatched after it.
+		publishedNeo = published(neo, classless, modOrder);
+		Map<String, NeoIdentity> published = new LinkedHashMap<>(publishedNeo);
 		published.putAll(aliases);
 
-		publishedNeo = published(neo, classless);
 		publishNeoModList(cl, published, false);
 
 		// Phase 3 — construct.
@@ -283,11 +286,10 @@ public final class KernelModLoader {
 		if (neoNeedsWithdrawal(neo.keySet(), neoBuilt)) {
 			List<String> droppedNeo = new ArrayList<>();
 			Map<String, NeoIdentity> keptNeo = keepConstructed(neo, neoBuilt, droppedNeo);
-			publishedNeo = published(keptNeo, classless);
-
-			Map<String, NeoIdentity> republish = new LinkedHashMap<>(keptNeo);
 			// A declared-only mod has no constructor that could have thrown, so it stays whatever else went.
-			republish.putAll(classless);
+			publishedNeo = published(keptNeo, classless, modOrder);
+
+			Map<String, NeoIdentity> republish = new LinkedHashMap<>(publishedNeo);
 			republish.putAll(aliases);
 			// allowEmpty: "every NeoForge mod failed and there are no aliases" must publish an EMPTY list rather
 			// than leave the full one standing.
@@ -551,21 +553,41 @@ public final class KernelModLoader {
 		return out;
 	}
 
+	/** {@link #published(Map, Map, List)} with no dependency order to apply: {@link #withClassless}, read-only. */
+	static <T> Map<String, T> published(Map<String, T> constructed, Map<String, T> classless) {
+		return published(constructed, classless, List.of());
+	}
+
 	/**
-	 * {@link #publishedNeoMods()}: {@link #withClassless} read-only, in the order given — the order the same containers
-	 * go into {@code ModList} ({@code publishNeoModList} is handed them in it), so walking this map is walking
-	 * {@code ModList.getSortedMods()} without the presence aliases.
+	 * {@link #publishedNeoMods()}: the constructed mods and the mods with no {@code @Mod} class together, in
+	 * {@code order} (the kernel's dependency order, {@link #dependencyOrder}), read-only. The same containers go into
+	 * {@code ModList} in this order ({@code publishNeoModList} is handed them in it), so walking this map is walking
+	 * {@code ModList.getSortedMods()} without the presence aliases. An id {@code order} does not name keeps its place
+	 * after the ordered ones ({@link ModConstructionOrder#sort}). With no metadata published (an empty {@code order})
+	 * or under {@code -Dforbric.modOrder=name} the map is {@link #withClassless} as it is.
 	 *
 	 * <p>It was a {@code Map.copyOf}, whose iteration order is a hash order salted per JVM. Every NeoForge setup phase
-	 * ({@code FMLConstructModEvent} to {@code FMLLoadCompleteEvent}, {@code KernelNeoSetup.firePhase}) walks this map, so
-	 * a mod could take its common setup before a library it depends on, in an order that changed from one launch to
-	 * the next. Native NeoForge dispatches those phases over {@code ModList.getSortedMods()} with each container waiting
-	 * for its dependencies' ({@code ModLoader.dispatchParallelTask}), so a dependency always finishes first; walking
-	 * ModList's dependency-sorted order one container at a time is an order native NeoForge can produce, and the only
-	 * one that keeps that guarantee without its thread pool. Stage 4 C5 lane K3b.
+	 * ({@code FMLConstructModEvent} to {@code FMLLoadCompleteEvent}, {@code KernelNeoSetup.firePhase}) walks this map,
+	 * and so do {@code DataPackRegistryEvent.NewRegistry} and {@code deliverModBusEvent}, so a mod could take its
+	 * common setup before a library it depends on, in an order that changed from one launch to the next. Native
+	 * NeoForge dispatches those phases over {@code ModList.getSortedMods()} with each container waiting for its
+	 * dependencies' ({@code ModLoader.dispatchParallelTask}), so a dependency finishes first; walking ModList's
+	 * dependency-sorted order one container at a time is an order native NeoForge can produce, and the only one that
+	 * keeps that guarantee without its thread pool. Stage 4 C5 lane K3b.
+	 *
+	 * <p>The mods with no {@code @Mod} class used to follow every constructed mod, whatever their dependencies said, so
+	 * a mod requiring a declared-only library took its setup phases before that library's
+	 * {@code @EventBusSubscriber} classes did. Native NeoForge sorts them with every other mod (K3b review A-1).
 	 */
-	static <T> Map<String, T> published(Map<String, T> constructed, Map<String, T> classless) {
-		return java.util.Collections.unmodifiableMap(withClassless(constructed, classless));
+	static <T> Map<String, T> published(Map<String, T> constructed, Map<String, T> classless, List<String> order) {
+		Map<String, T> all = withClassless(constructed, classless);
+		if (order.isEmpty()) return java.util.Collections.unmodifiableMap(all);
+		Map<String, T> sorted = new LinkedHashMap<>();
+		for (Map.Entry<String, T> entry : ModConstructionOrder.sort(new ArrayList<>(all.entrySet()), Map.Entry::getKey,
+				order)) {
+			sorted.put(entry.getKey(), entry.getValue());
+		}
+		return java.util.Collections.unmodifiableMap(sorted);
 	}
 
 	/**
@@ -586,13 +608,10 @@ public final class KernelModLoader {
 	 * heard of keep their place rather than being moved to either end.
 	 */
 	private static List<ModAnnotationScanner.ModClassInfo> orderByDependency(
-			List<ModAnnotationScanner.ModClassInfo> claimed) {
+			List<ModAnnotationScanner.ModClassInfo> claimed, List<String> order) {
 		try {
-			List<net.forbric.api.DiscoveredMod> known = new ArrayList<>(ModPresence.forgeFamilyMods());
-			known.addAll(ModPresence.fabricMods());
-			if (known.isEmpty()) return claimed;
+			if (order.isEmpty()) return claimed;
 
-			List<String> order = ModConstructionOrder.of(known);
 			List<ModAnnotationScanner.ModClassInfo> sorted =
 					ModConstructionOrder.sort(claimed, info -> info.modId, order);
 
@@ -606,6 +625,23 @@ public final class KernelModLoader {
 			// An order is an improvement, never a precondition. Losing it must not cost the pack its mods.
 			Caught.warn(t, "[Forbric/Order] could not order mods by dependency; using the order they were found in");
 			return claimed;
+		}
+	}
+
+	/**
+	 * Every mod discovery published, in dependency order ({@link ModConstructionOrder#of}); empty when nothing was
+	 * published or the order could not be built. One order for the {@code @Mod} classes' construction and for where
+	 * every NeoForge container, a declared-only one included, stands in {@code ModList}.
+	 */
+	private static List<String> dependencyOrder() {
+		try {
+			List<net.forbric.api.DiscoveredMod> known = new ArrayList<>(ModPresence.forgeFamilyMods());
+			known.addAll(ModPresence.fabricMods());
+			return known.isEmpty() ? List.of() : ModConstructionOrder.of(known);
+		} catch (Throwable t) {
+			// An order is an improvement, never a precondition — the same rule orderByDependency keeps.
+			Caught.warn(t, "[Forbric/Order] could not order mods by dependency; using the order they were found in");
+			return List.of();
 		}
 	}
 
