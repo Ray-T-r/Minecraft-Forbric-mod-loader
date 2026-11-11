@@ -44,7 +44,8 @@ import net.neoforged.neoforge.event.level.BlockEvent;
  * <p>Phase {@code withhold} is the premise control. Every NeoForge listener still counts its event (so a case that only
  * asks whether NeoForge was asked still passes) but withholds its answer: no portal veto, no replacement SpawnGroupData,
  * no finalize cancel or spawn veto, no result stack. The cases that judge an answer reaching the game must then fail
- * (portal-neo-veto, the four spawner cases, item-result) while portal-allow, which asks only that the event fired, holds.
+ * (portal-neo-veto, the three spawner cases that finalize -- spawner-data, spawner-neo-cancel-finalize,
+ * spawner-neo-veto-spawn -- and item-result) while portal-allow, which asks only that the event fired, holds.
  * It proves the positive phase's verdicts come from NeoForge's listeners through the live game callers and not from the
  * world doing the same thing on its own. spawner-nonempty-input passes in both phases (D72): no finalization runs there in
  * either (BaseSpawner finalizes only a bare {id} entity tag), so no answer of NeoForge's reaches the game in that case, and

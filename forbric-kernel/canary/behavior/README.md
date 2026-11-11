@@ -31,11 +31,13 @@ Seven cases execute after the actual dedicated server starts in a nonce-owned fr
 rewrite (the one kernel transformer on these paths; it posts the same event and decides nothing differently); all seven
 must pass again, a native A/B, not a red control. `withhold`, the premise control: every NeoForge listener still counts
 its event but gives no answer (no portal veto, no replacement SpawnGroupData, no finalize cancel or spawn veto, no result
-stack), so exactly `portal-neo-veto`, the four `spawner-*` cases and `item-result` must fail, each for its pinned reason,
-and `portal-allow` must pass. Five of those reds are the game: NeoForge's answer no longer reaches it. The sixth,
-`spawner-nonempty-input`, is the probe: no finalization runs in either phase and the world behaves as in `positive`; it
-fails only on reading back the SpawnGroupData its own listener withheld, and its failure text says "probe-side read-back
-only". (The three repair-off phases this gate ran on the merged base, portal-off, spawner-off and item-off, went with the
+stack), so exactly five cases must fail, each for its pinned reason: `portal-neo-veto`, the three spawner cases that
+finalize (`spawner-data`, `spawner-neo-cancel-finalize`, `spawner-neo-veto-spawn`) and `item-result`. Each of those reds
+is the game: NeoForge's answer no longer reaches it. `portal-allow` must pass, and so must `spawner-nonempty-input` (D72):
+no finalization runs there in either phase (`BaseSpawner` finalizes only a bare `{id}` entity tag), so none of NeoForge's
+answers reaches the game, and the probe's event read-back is phase-aware -- the listener's SpawnGroupData in `positive`,
+none in `withhold` (what `BaseSpawner` hands the event). The gate pins its `withhold` state equal to `positive`'s: no
+finalization, inserted, the tag's marker 35, no SpawnGroupData in the event. (The three repair-off phases this gate ran on the merged base, portal-off, spawner-off and item-off, went with the
 merged base: their switches are retired with their code.)
 
 Run from the worktree root (the root agent schedules kernel Gradle/server work):
