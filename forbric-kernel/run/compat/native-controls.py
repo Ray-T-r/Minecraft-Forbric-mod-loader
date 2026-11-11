@@ -713,7 +713,7 @@ def _native_instance(family, run_dir, mods, port):
 
 
 def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world=None, chunks=None, xmx="3G", timeout=900,
-         after_create=None, old_config=None, create_jvm=None):
+         after_create=None, old_config=None, create_jvm=None, port=None):
     """Run the swap's phases for one engine; returns the result written to <out>/result.json.
 
     The NeoForge instance starts from the old instance's config/ (a player swaps jars, not the instance): native, the
@@ -721,7 +721,8 @@ def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world
     instance's path appended once the world is created, before the A/A reopen (forge-swap.py mark-configs).
     create_jvm (native) is a list of extra JVM arguments for the MinecraftForge create only (forge-swap's bag agent,
     which fills a packedup backpack the way the old side's create does); the A/A reopen and the NeoForge phases run
-    without them."""
+    without them. port: the server port every phase binds (a gate passes its GATE_PORT, so the port it checks is free
+    at the end is the one the run used); without it an OS ephemeral port."""
     ws = _snapshot_module()
     out = Path(out).resolve(); out.mkdir(parents=True, exist_ok=True)
     forge_mods = [Path(m).resolve() for m in forge_mods]; neo_mods = [Path(m).resolve() for m in neo_mods]
@@ -730,13 +731,17 @@ def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world
             raise RuntimeError(f"missing mod jar: {m}")
     box = tuple(int(v) for v in chunks.split(",")) if chunks else None
     java_args = ["-Xms256M", f"-Xmx{xmx}", "-Djava.awt.headless=true"]
-    port = free_port()
+    port = port or free_port()
     phases, snapshots = [], {}
     inputs = {"engine": engine, "seed": SEED, "chunks": box, "port": port,
               "forgeMods": mod_set(forge_mods)[0] if forge_mods else [], "neoMods": mod_set(neo_mods)[0],
               "console": record(console) if console else None, "checks": record(checks) if checks else None,
               "java": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True).strip(),
-              "createJvm": list(create_jvm or [])}
+              "createJvm": list(create_jvm or []),
+              # The bytes of each -javaagent jar the create ran (review A-3: a path alone, in a scratch directory, names
+              # nothing once that directory is gone).
+              "createJvmAgents": [record(Path(arg[len("-javaagent:"):].split("=", 1)[0])) for arg in create_jvm or []
+                                  if arg.startswith("-javaagent:") and Path(arg[len("-javaagent:"):].split("=", 1)[0]).is_file()]}
 
     def export(instance, name):
         snap = ws.export(instance / "world", box, label=f"{engine} {name}")
@@ -854,6 +859,7 @@ def main():
     swap_parser.add_argument("--after-create", help="native: a command run with the MinecraftForge instance appended after the create")
     swap_parser.add_argument("--create-jvm", action="append", default=[],
                              help="native: an extra JVM argument for the MinecraftForge create only (repeatable)")
+    swap_parser.add_argument("--port", type=int, help="the server port every phase binds (default: an OS ephemeral port)")
     swap_parser.add_argument("--chunks", help="export box X0,Z0,X1,Z1 in chunk coordinates (world-snapshot.py --chunks)")
     swap_parser.add_argument("--out", required=True, help="result directory (instances, logs, snapshots, diffs)")
     swap_parser.add_argument("--xmx", default="3G")
@@ -889,7 +895,7 @@ def main():
     elif args.action == "swap":
         result = swap(args.engine, args.forge_mods, args.neo_mods, args.out, args.console, args.checks, args.old_world,
                       args.chunks, args.xmx, args.timeout, args.after_create.split() if args.after_create else None, args.old_config,
-                      args.create_jvm)
+                      args.create_jvm, args.port)
         print(json.dumps({k: result.get(k) for k in ("engine", "error", "diffs", "out")}, indent=2))
         return 1 if result.get("error") else 0
     return 0

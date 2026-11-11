@@ -1,6 +1,7 @@
 """native-controls.py: how one server console is classified, what identifies a mod set, which stage the Forbric arm
 boots, and the swap subcommand's server session."""
 import importlib.util
+import hashlib
 import io
 import json
 import os
@@ -220,6 +221,39 @@ class ForbricStage(unittest.TestCase):
             self.assertEqual("mark = 3\n", (tmp / "out/neo-instance/config/mod-common.toml").read_text())
             self.assertEqual(["swap", "reopen"], list(result["diffs"]))
 
+    def test_the_swap_binds_the_port_it_is_given(self):
+        # gate-m59 passes its GATE_PORT (review B-2): the port it checks is free at the end must be the one the run used,
+        # not an OS ephemeral one outside the lane's block.
+        class FakeSnapshots:
+            def export(self, world, box=None, label=""):
+                return {"schema": "s", "label": label}
+
+            def diff(self, a, b, mode, ignore=()):
+                return [], mock.Mock(used={}, violations=[], mode=mode, ignore=())
+
+            def diff_report(self, found, rules):
+                return {"count": 0, "by_facet": {}, "rules_used": {}}
+
+        seen = []
+
+        def session(command, cwd, env, log, lines, timeout=900, settle=3.0):
+            seen.append((Path(cwd) / "server.properties").read_text())
+            return {"outcome": nc.DONE, "saved": True, "exitCode": 0, "timedOut": False, "seconds": 1.0}
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp).resolve()
+            stage = self._stage(tmp / "stage4")
+            world = tmp / "old-world"; world.mkdir(); (world / "level.dat").write_bytes(b"x")
+            neo = tmp / "neo.jar"; neo.write_bytes(b"neo")
+            with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(stage)}), mock.patch.object(nc, "swap_session", session), \
+                    mock.patch.object(nc, "ORIGINAL", self._reference(tmp)), mock.patch.object(nc, "free_port", lambda: 1), \
+                    mock.patch.object(nc, "_snapshot_module", FakeSnapshots), mock.patch("sys.stdout", new_callable=io.StringIO):
+                result = nc.swap("forbric", [], [neo], tmp / "out", old_world=world, port=46799)
+            self.assertNotIn("error", result)
+            self.assertEqual(2, len(seen))
+            for props in seen:
+                self.assertIn("server-port=46799\n", props)
+            self.assertEqual(46799, json.loads((tmp / "out/inputs.json").read_text())["port"])
+
     def test_the_native_create_alone_gets_the_extra_jvm_arguments(self):
         # forge-swap's bag agent fills a packedup backpack on the MinecraftForge create (--create-jvm); the A/A reopen and
         # the NeoForge phases must run without it, or they would measure the agent instead of the swap.
@@ -248,7 +282,8 @@ class ForbricStage(unittest.TestCase):
                 (tmp / "base/native" / family).mkdir(parents=True)
                 (tmp / "base/native" / family / "installation.json").write_text("{}")
             jar = tmp / "m.jar"; jar.write_bytes(b"m")
-            agent = "-javaagent:/x/forge-swap-bagfill.jar=bag=2,-60,8;source=4,-60,8"
+            agent_jar = tmp / "forge-swap-bagfill.jar"; agent_jar.write_bytes(b"agent")
+            agent = "-javaagent:%s=bag=2,-60,8;source=4,-60,8" % agent_jar
             with mock.patch.object(nc, "swap_session", session), mock.patch.object(nc, "BASE", tmp / "base"), \
                     mock.patch.object(nc, "_native_instance", instance), \
                     mock.patch.object(nc, "_snapshot_module", FakeSnapshots), mock.patch("sys.stdout", new_callable=io.StringIO):
@@ -257,6 +292,8 @@ class ForbricStage(unittest.TestCase):
             self.assertEqual(["forge-create", "forge-reopen", "neo-open", "neo-reopen"], [phase for phase, _ in seen])
             self.assertEqual([True, False, False, False], [agent in command for _, command in seen])
             self.assertEqual([agent], json.loads((tmp / "out/inputs.json").read_text())["createJvm"])
+            agents = json.loads((tmp / "out/inputs.json").read_text())["createJvmAgents"]
+            self.assertEqual([hashlib.sha256(b"agent").hexdigest()], [a["sha256"] for a in agents])
 
 
 class SwapSession(unittest.TestCase):

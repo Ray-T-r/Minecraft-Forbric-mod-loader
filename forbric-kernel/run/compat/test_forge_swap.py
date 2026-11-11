@@ -77,6 +77,18 @@ class Drill(unittest.TestCase):
         self.assertEqual(("FAIL", "Unknown block type 'tombstone:white_marble'"), rows["tombstone.place"])
         self.assertEqual(("FAIL", ""), rows["packedup.craft"])
 
+    def test_a_check_whose_announce_line_never_reached_the_log_is_missing(self):
+        # review A-2: drill counts only announced checks, so a log missing one would pass on PASS-count alone.
+        names = fs.drill_names()
+        self.assertEqual(len(names), len(set(names)))
+        full = "".join("[12:00:01] [Server thread/INFO]: [Server] [forge-swap] check %s expect .*\n"
+                       "[12:00:01] [Server thread/INFO]: Test passed\n" % n for n in names)
+        self.assertEqual([], fs.drill_missing(fs.drill(full)))
+        short = "\n".join(l for l in full.splitlines() if "check %s " % names[3] not in l)
+        rows = fs.drill(short)
+        self.assertEqual(len(names) - 1, sum(r[2] == "PASS" for r in rows))
+        self.assertEqual([names[3]], fs.drill_missing(rows))
+
 
 def _snap(**facets):
     snap = {"schema": ws.SCHEMA, "meta": {"exporter": ws.EXPORTER, "world": "w", "chunks": None, "label": ""}, "level": None}
@@ -379,6 +391,106 @@ class Bags(unittest.TestCase):
             with zipfile.ZipFile(jar) as z:
                 self.assertIn("Premain-Class: ForgeSwapBagFill", z.read("META-INF/MANIFEST.MF").decode())
                 self.assertIn("ForgeSwapBagFill.class", z.namelist())
+
+
+class Rewritten(unittest.TestCase):
+    """review A-1: the new world's bag files must have been saved again, not merely left as cloned."""
+
+    def test_a_file_saved_after_the_clone_is_rewritten_and_one_left_alone_is_not(self):
+        import os
+        import shutil
+        with tempfile.TemporaryDirectory() as tmp:
+            old = Path(tmp) / "old/packedup/backpacks"; old.mkdir(parents=True)
+            for name in ("inventory0.nbt", "inventory1.nbt", "inventory2.nbt"):
+                (old / name).write_bytes(b"x")
+                os.utime(old / name, ns=(1_000_000_000_000_000_000, 1_000_000_000_000_000_000))
+            shutil.copytree(Path(tmp) / "old", Path(tmp) / "new")  # copy2 keeps the time, as cp -c -R does
+            new = Path(tmp) / "new/packedup/backpacks"
+            (new / "inventory0.nbt").write_bytes(b"x")  # saved again, same bytes
+            (new / "inventory2.nbt").unlink()
+            rows = {name: verdict for name, verdict, _a, _b in fs.rewritten(Path(tmp) / "old", Path(tmp) / "new")}
+            self.assertEqual({"inventory0.nbt": "REWRITTEN", "inventory1.nbt": "NOT REWRITTEN", "inventory2.nbt": "LOST"}, rows)
+            # restore-bags (gate-m59's bag-restore control) puts the old bytes AND time back: not rewritten again.
+            self.assertEqual(["inventory0.nbt", "inventory1.nbt", "inventory2.nbt"], fs.restore_bags(Path(tmp) / "old", Path(tmp) / "new"))
+            self.assertEqual({"NOT REWRITTEN"}, {v for _n, v, _a, _b in fs.rewritten(Path(tmp) / "old", Path(tmp) / "new")})
+
+
+class BagControls(unittest.TestCase):
+    def test_drop_bag_stack_removes_one_stack_and_keeps_the_files_compression(self):
+        import gzip
+        root = ["compound", {"stacks": ["int", 9],
+                             "stack0": ["compound", {"id": ["string", "minecraft:diamond"], "count": ["int", 9]}],
+                             "stack1": ["compound", {"id": ["string", "minecraft:diamond_sword"], "count": ["int", 1]}]}]
+        for packed in (False, True):
+            with tempfile.TemporaryDirectory() as tmp:
+                d = Path(tmp) / "packedup/backpacks"; d.mkdir(parents=True)
+                raw = ws.encode_root(root)
+                (d / "inventory0.nbt").write_bytes(gzip.compress(raw) if packed else raw)
+                self.assertEqual("minecraft:diamond_sword", fs.drop_bag_stack(tmp, "inventory0.nbt", 1))
+                self.assertEqual(packed, (d / "inventory0.nbt").read_bytes()[:2] == b"\x1f\x8b")
+                self.assertEqual({"inventory0.nbt": [(0, "minecraft:diamond", 9, [])]}, fs.bags(tmp, ws))
+                self.assertIsNone(fs.drop_bag_stack(tmp, "inventory0.nbt", 1))
+
+
+class Tie(unittest.TestCase):
+    """review A-3: native/ must be the native arm of the old side beside it (seed, box, mod sets, the same placements)."""
+
+    def _fixture(self, tmp):
+        import hashlib
+        fix = Path(tmp)
+        for d, names in (("mods-forge", ("pipes-forge-1.jar", "bag-forge-1.jar")), ("mods-neo", ("pipes-neoforge-1.jar", "bag-neoforge-1.jar"))):
+            (fix / d).mkdir()
+            for n in names:
+                (fix / d / n).write_bytes(n.encode())
+        sha = lambda d, n: hashlib.sha256(n.encode()).hexdigest()
+        (fix / "MANIFEST").write_text("# x\nseed 8035262\nbox -2,-2,3,3\nclient 1\n")
+        (fix / "native").mkdir()
+        (fix / "native/inputs.json").write_text(json.dumps({
+            "seed": 8035262, "chunks": [-2, -2, 3, 3],
+            "forgeMods": [{"name": "bag-forge-1.jar", "sha256": sha("f", "bag-forge-1.jar")}],
+            "neoMods": [{"name": "bag-neoforge-1.jar", "sha256": sha("n", "bag-neoforge-1.jar")}]}))
+        placed = {"minecraft:overworld 0 -60 0": "minecraft:chest[facing=north]", "minecraft:overworld 1 -60 0": "bag:block",
+                  "minecraft:overworld 2 -60 0": "pipes:pipe[east=true]"}
+        (fix / "old-create.snapshot.json").write_text(json.dumps({"blocks": placed, "block_entities": {
+            "minecraft:overworld 0 -60 0": {}, "minecraft:overworld 2 -60 0": {}}}))
+        (fix / "old-snapshot.json").write_text(json.dumps({"blocks": dict(placed, **{"minecraft:overworld 8 -60 -10": "bag:grave"})}))
+        native = {k: v for k, v in placed.items() if not v.startswith("pipes:")}
+        (fix / "native/forge-create.snapshot.json").write_text(json.dumps({"blocks": native, "block_entities": {
+            "minecraft:overworld 0 -60 0": {}}}))
+        return fix
+
+    def test_the_measured_shape_ties(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            rows = fs.tie(self._fixture(tmp))
+            self.assertEqual([("seed", True), ("box", True), ("forge mods", True), ("neo mods", True), ("s0", True), ("placed", True)],
+                             [(r[0], r[1]) for r in rows])
+
+    def test_another_console_seed_or_mod_set_is_red(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            fix = self._fixture(tmp)
+            snap = json.loads((fix / "native/forge-create.snapshot.json").read_text())
+            snap["blocks"]["minecraft:overworld 0 -60 0"] = "minecraft:chest[facing=south]"
+            (fix / "native/other.json").write_text(json.dumps(snap))
+            self.assertEqual(["placed"], [r[0] for r in fs.tie(fix, fix / "native/other.json") if not r[1]])
+            inputs = json.loads((fix / "native/inputs.json").read_text())
+            (fix / "native/inputs.json").write_text(json.dumps(dict(inputs, seed=1, neoMods=[])))
+            self.assertEqual(["seed", "neo mods"], [r[0] for r in fs.tie(fix) if not r[1]])
+            # The native arm may leave a mod out only on both sides.
+            (fix / "native/inputs.json").write_text(json.dumps(dict(inputs, neoMods=inputs["neoMods"] + [
+                {"name": "pipes-neoforge-1.jar", "sha256": __import__("hashlib").sha256(b"pipes-neoforge-1.jar").hexdigest()}])))
+            self.assertEqual(["neo mods"], [r[0] for r in fs.tie(fix) if not r[1]])
+            # A MANIFEST that names its create's console ties the native console to it.
+            manifest = (fix / "MANIFEST").read_text()
+            (fix / "native/inputs.json").write_text(json.dumps(dict(inputs, console={"sha256": "a" * 64})))
+            (fix / "MANIFEST").write_text(manifest + "create-console-sha256 %s\n" % ("a" * 64))
+            self.assertEqual([], [r[0] for r in fs.tie(fix) if not r[1]])
+            (fix / "MANIFEST").write_text(manifest + "create-console-sha256 %s\n" % ("b" * 64))
+            self.assertEqual(["console"], [r[0] for r in fs.tie(fix) if not r[1]])
+            (fix / "MANIFEST").write_text(manifest)
+            # S0 must keep what the create placed.
+            (fix / "native/inputs.json").write_text(json.dumps(inputs))
+            (fix / "old-snapshot.json").write_text(json.dumps({"blocks": {"minecraft:overworld 0 -60 0": "minecraft:air"}}))
+            self.assertEqual(["s0"], [r[0] for r in fs.tie(fix) if not r[1]])
 
 
 class Pin(unittest.TestCase):

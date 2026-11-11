@@ -33,7 +33,9 @@
 # Output (the frozen fixture's layout): old-save/ (the world after the A/A), old-config/ (the old instance's config/,
 # with forge-swap.py's CONFIG_MARKS written into it after the create), old-snapshot.json (S0, world-snapshot.py
 # export --chunks -2,-2,3,3), mods-forge/ and mods-neo/ (both builds of every candidate), MANIFEST (sha1s, the old
-# kernel's commit and jar, the merged base, what ran), logs/, and old-create.snapshot.json / old-player.snapshot.json /
+# kernel's commit and jar, the merged base, what ran; and what wrote it: the tree, how many files under run/ were
+# uncommitted, the sha1 of each script and of the bag agent, the create console's sha256 that forge-swap.py tie
+# compares with native/inputs.json, the old create snapshot's sha1), logs/, and old-create.snapshot.json / old-player.snapshot.json /
 # old-aa.diff.json for the old side's own A/A.
 #
 # gate-m59's fixture is this output plus native/: the frozen native arm, `native-controls.py swap --engine native` with
@@ -176,7 +178,17 @@ say "[forge-swap] old A/A $(tail -n 1 "$OUT/logs/old-aa.diff.txt")"
   # The backpack inventories packedup saved, and what each holds (forge-swap.py bags on old-save).
   echo "packedup-bag ${BAGS:-none}"
   sed -n 's/^\[forge-swap\] bag \(inventory[0-9]*\.nbt\): [0-9]* stack(s) /packedup-bag-stacks \1 /p' "$OUT/logs/old-bags.txt"
+  # What wrote this fixture (review A-3/B-5): the commit, whether the tree had uncommitted changes under run/ (then
+  # the commit alone does not reproduce it), and the bytes of the scripts and the agent that ran.
   echo "tree $(git -C "$KERNEL" rev-parse HEAD)"
+  echo "tree-dirty $(git -C "$KERNEL" status --porcelain -- run | wc -l | tr -d ' ') $(git -C "$KERNEL" status --porcelain -- run | awk '{print $2}' | tr '\n' ' ')"
+  for s in ForgeSwapBagFill.java forge-swap.py forge-swap-make-old.sh world-snapshot.py native-controls.py; do
+    echo "source-sha1 $s $(shasum -a 1 "$HERE/$s" | cut -d' ' -f1)"
+  done
+  echo "bag-agent-jar-sha1 $(shasum -a 1 "$AGENT" | cut -d' ' -f1)"
+  # The native arm's --console is forge-swap.py console + checks; forge-swap.py tie compares it with this line.
+  echo "create-console-sha256 $(cat "$OUT/work/console.txt" "$OUT/work/checks.txt" | shasum -a 256 | cut -d' ' -f1)"
+  echo "old-create.snapshot.json $(shasum -a 1 "$OUT/old-create.snapshot.json" | cut -d' ' -f1)"
   echo "drill $(tail -n 1 "$OUT/logs/old-create.drill.txt")"
   for d in mods-forge mods-neo; do for j in "$OUT/$d"/*.jar; do echo "$d $(shasum -a 1 "$j" | cut -d' ' -f1) $(basename "$j")"; done; done
   echo "old-snapshot.json $(shasum -a 1 "$OUT/old-snapshot.json" | cut -d' ' -f1)"

@@ -21,6 +21,8 @@ player replaces that jar with the same mod's NeoForge build.
                                                   bag step, a -javaagent for the old create, the native create and the old
                                                   singleplayer client); prints the jar's path
     forge-swap.py bags <world>                    what packedup's saved backpack inventories hold (packedup/backpacks/)
+    forge-swap.py rewritten <old-world> <new-world>  whether each backpack inventory was saved again (the "read" proof)
+    forge-swap.py tie <fixture>                   whether the fixture's native/ is the native arm of its old side
     forge-swap.py lastupdate <world> [--chunks B]  each probe chunk's LastUpdate (the re-save proof)
     forge-swap.py pin --forbric DIR --native DIR [--client SNAP] --tsv FILE
                                                   gate-m59's verdict: the Forbric arm's losses against expected-losses.tsv
@@ -233,6 +235,18 @@ def drill(text):
     return found
 
 
+
+def drill_names():
+    """The named checks of this tree's drill, in order."""
+    return [name for name, _expect, _command in checks() if name]
+
+
+def drill_missing(rows):
+    """The drill's named checks that no announce line in the log answered (review A-2): `drill` counts only the checks
+    whose announce line reached the log, so a truncated console or a lost announce line shrinks the drill with no FAIL."""
+    seen = {row[0] for row in rows}
+    return [name for name in drill_names() if name not in seen]
+
 # --- config files ----------------------------------------------------------------------------------------------------
 
 # One non-default value per candidate config, written into the old instance after the create (relative path, key, the
@@ -391,6 +405,133 @@ def bags(world, ws=None):
     return out
 
 
+
+def rewritten(old_world, new_world):
+    """[(file, verdict, old mtime ns, new mtime ns)] for every packedup/backpacks/*.nbt the old world has: REWRITTEN when
+    the new world's copy was saved after the old one, NOT REWRITTEN when it still has the old file's time, LOST when it
+    is gone. Both clones the gate makes keep the old file's time (cp -c -R, and copytree's copy2), so only a save moves
+    it. Measured (review A-1): the NeoForge open rewrites both inventories, the player's too, which no player opened on
+    the server, so packedup loads every inventory with the world and writes every loaded one on a save. A file that is
+    REWRITTEN and still holds the same stacks (gate-m59's same_bags) is one packedup read; a NeoForge side that never
+    loaded packedup leaves every file byte-identical, which `files` and same_bags alone call KEPT."""
+    old_dir, new_dir = Path(old_world) / "packedup/backpacks", Path(new_world) / "packedup/backpacks"
+    rows = []
+    for path in sorted(old_dir.glob("*.nbt")):
+        target = new_dir / path.name
+        old_ns = path.stat().st_mtime_ns
+        if not target.is_file():
+            rows.append((path.name, "LOST", old_ns, None))
+            continue
+        new_ns = target.stat().st_mtime_ns
+        rows.append((path.name, "REWRITTEN" if new_ns > old_ns else "NOT REWRITTEN", old_ns, new_ns))
+    return rows
+
+
+# --- the fixture's two halves ----------------------------------------------------------------------------------------
+
+def _manifest(path):
+    """{first word: [rest of line, ...]} of a fixture MANIFEST (comments skipped)."""
+    out = {}
+    for raw in Path(path).read_text().splitlines():
+        if raw.strip() and not raw.startswith("#"):
+            key, _, rest = raw.partition(" ")
+            out.setdefault(key, []).append(rest.strip())
+    return out
+
+
+def _sha256(path):
+    import hashlib
+    h = hashlib.sha256()
+    with open(path, "rb") as f:
+        for chunk in iter(lambda: f.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _stem(jar):
+    """A mod jar's name before its loader (-forge / -neoforge), shared by the mod's two builds."""
+    return re.split(r"-(?:neo)?forge", jar, maxsplit=1)[0]
+
+
+def _namespace(state):
+    return state.split(":", 1)[0] if state and ":" in state else None
+
+
+def tie(fixture, native_create=None):
+    """[(check, ok, detail)]: whether the fixture's native/ is the native arm of the old side beside it (review A-3).
+
+    The MANIFEST names the old side's S0; nothing in native/ named it, so a native/ from another console, seed or mod
+    set would be pinned against without a word. Asked from what both halves recorded:
+      seed, box     native/inputs.json against MANIFEST's seed and box;
+      console       (a MANIFEST that names create-console-sha256) the native create ran the same console script;
+      neo mods      the native NeoForge jars are, by SHA-256, exactly the fixture's mods-neo/ (the jars the open uses);
+      forge mods    the native MinecraftForge jars are fixture mods-forge/ jars (it may lack one native cannot load);
+      s0            S0 holds every block the old side's create placed (old-create.snapshot.json), more only where
+                    its player phase ran (MANIFEST client 1);
+      placed        the old side's create (old-create.snapshot.json, before its player phase) and the native create
+                    (native/forge-create.snapshot.json, or native_create) hold the same blocks and block entities in
+                    the box, except blocks of a namespace the native create has none of (a mod native cannot load).
+                    Both came from forge-swap.py's console on native-controls' seed, so a different console is red here."""
+    fixture = Path(fixture)
+    manifest = _manifest(fixture / "MANIFEST")
+    inputs = json.loads((fixture / "native/inputs.json").read_text())
+    rows = []
+    seed = (manifest.get("seed") or [""])[0]
+    rows.append(("seed", str(inputs.get("seed")) == seed, "native %s, MANIFEST %s" % (inputs.get("seed"), seed)))
+    box = (manifest.get("box") or [""])[0]
+    nbox = ",".join(str(v) for v in inputs.get("chunks") or [])
+    rows.append(("box", nbox == box, "native %s, MANIFEST %s" % (nbox, box)))
+    forge = {_sha256(j): j.name for j in sorted((fixture / "mods-forge").glob("*.jar"))}
+    nforge = {r["sha256"]: r["name"] for r in inputs.get("forgeMods") or []}
+    lacks = sorted(n for s, n in forge.items() if s not in nforge)
+    rows.append(("forge mods", bool(nforge) and set(nforge) <= set(forge), "%d native, %s in mods-forge/; native lacks: %s" % (
+        len(nforge), "all" if set(nforge) <= set(forge) else "NOT all (%s)" % ", ".join(
+            n for s, n in sorted(nforge.items()) if s not in forge), ", ".join(lacks) or "none")))
+    neo = {_sha256(j): j.name for j in sorted((fixture / "mods-neo").glob("*.jar"))}
+    nneo = {r["sha256"]: r["name"] for r in inputs.get("neoMods") or []}
+    # The native arm leaves out of its NeoForge set exactly the mods it left out of its MinecraftForge set (a mod's two
+    # builds share the name before -forge / -neoforge).
+    neo_lacks = sorted(n for s, n in neo.items() if s not in nneo)
+    rows.append(("neo mods", bool(nneo) and set(nneo) <= set(neo) and {_stem(n) for n in neo_lacks} == {_stem(n) for n in lacks},
+                 "%d native, %s in mods-neo/; native lacks: %s" % (len(nneo), "all" if set(nneo) <= set(neo) else "NOT all (%s)" % ", ".join(
+                     n for s, n in sorted(nneo.items()) if s not in neo), ", ".join(neo_lacks) or "none")))
+    console = (manifest.get("create-console-sha256") or [None])[0]
+    if console:  # a MANIFEST written since review A-3 names the console its create ran
+        nconsole = (inputs.get("console") or {}).get("sha256")
+        rows.append(("console", nconsole == console, "native %s, MANIFEST %s" % (nconsole, console)))
+    old = json.loads((fixture / "old-create.snapshot.json").read_text())
+    s0 = json.loads((fixture / "old-snapshot.json").read_text())
+    # S0 is the old create after its player phase and A/A: it holds every block the create placed as placed, and
+    # more only where the player phase ran (MANIFEST client 1; its grave).
+    client = (manifest.get("client") or ["0"])[0] == "1"
+    moved = [k for k in sorted(set(old.get("blocks", {})) | set(s0.get("blocks", {})))
+             if old["blocks"].get(k) != s0["blocks"].get(k) and not (client and k not in old["blocks"])]
+    added = [k for k in s0.get("blocks", {}) if k not in old.get("blocks", {})]
+    rows.append(("s0", not moved, "S0 keeps every block the old create placed (%d differ%s); %d added after it%s" % (
+        len(moved), "".join("; %s: %s / %s" % (k, old["blocks"].get(k), s0["blocks"].get(k)) for k in moved[:4]),
+        len(added), " by the player phase" if client else "")))
+    nat = json.loads(Path(native_create or fixture / "native/forge-create.snapshot.json").read_text())
+    native_ns = {_namespace(s) for s in nat.get("blocks", {}).values()}
+    bad, skipped = [], {}
+    for key in sorted(set(old.get("blocks", {})) | set(nat.get("blocks", {}))):
+        a, b = old["blocks"].get(key), nat["blocks"].get(key)
+        if a == b:
+            continue
+        if b is None and _namespace(a) not in native_ns:
+            skipped[_namespace(a)] = skipped.get(_namespace(a), 0) + 1
+            continue
+        bad.append("%s: %s / %s" % (key, a, b))
+    for key in sorted(set(old.get("block_entities", {})) ^ set(nat.get("block_entities", {}))):
+        if key in old.get("block_entities", {}) and key not in nat.get("block_entities", {}) \
+                and _namespace(old["blocks"].get(key)) not in native_ns:
+            continue
+        bad.append("%s: block entity only in the %s create" % (key, "old" if key in old.get("block_entities", {}) else "native"))
+    rows.append(("placed", not bad, "%d block(s) differ%s%s" % (len(bad), "".join("; " + d for d in bad[:4]),
+                 "; set aside (no native block of that namespace): " + ", ".join("%s x%d" % kv for kv in sorted(skipped.items()))
+                 if skipped else "")))
+    return rows
+
+
 def lastupdate(world, box=BOX):
     """{"CX CZ": LastUpdate} for every overworld chunk in the box (the re-save proof: a chunk a phase saved has a
     later game time than the one before it)."""
@@ -486,6 +627,36 @@ def drop_pack(world, pack):
     enabled[2].remove(pack)
     path.write_bytes(_gzip.compress(ws.encode_root(root)))
     return True
+
+
+
+def drop_bag_stack(world, name, slot):
+    """Remove stack<slot> from packedup/backpacks/<name>, written back with the file's own compression (packedup writes
+    it raw; gzip is kept if found). Returns the item id dropped, or None when the slot is empty or missing."""
+    import gzip as _gzip
+    ws = _load("world_snapshot", "world-snapshot.py")
+    path = Path(world) / "packedup/backpacks" / name
+    data = path.read_bytes()
+    root = ws.read_nbt_file(path)
+    entry = root[1].pop("stack%d" % slot, None) if root else None
+    if not entry or entry[:1] != ["compound"] or "id" not in entry[1]:
+        return None
+    raw = ws.encode_root(root)
+    path.write_bytes(_gzip.compress(raw) if data[:2] == b"\x1f\x8b" else raw)
+    return entry[1]["id"][1]
+
+
+def restore_bags(old_world, new_world):
+    """Put the old world's packedup/backpacks/*.nbt back over the new world's, bytes and time (copy2): what a NeoForge
+    side that never loaded packedup would leave. Returns the names put back."""
+    import shutil
+    done = []
+    for path in sorted((Path(old_world) / "packedup/backpacks").glob("*.nbt")):
+        target = Path(new_world) / "packedup/backpacks" / path.name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, target)
+        done.append(path.name)
+    return done
 
 
 def enabled_packs(world):
@@ -1041,7 +1212,12 @@ def main(argv=None):
     pn.add_argument("--client"); pn.add_argument("--tsv", required=True); pn.add_argument("--out")
     pn.add_argument("--no-player", action="store_true", help="no client ran: player rows of the TSV are not asked for")
     ct = sub.add_parser("control", help="gate-m59's reverse controls on a world after the open")
-    ct.add_argument("name", choices=["drop-slot", "drop-pack"]); ct.add_argument("world"); ct.add_argument("args", nargs="*")
+    ct.add_argument("name", choices=["drop-slot", "drop-pack", "drop-bag-stack", "restore-bags"]); ct.add_argument("world")
+    ct.add_argument("args", nargs="*")
+    rw = sub.add_parser("rewritten", help="whether every packedup inventory of the old world was saved again in the new one")
+    rw.add_argument("old_world"); rw.add_argument("new_world")
+    ti = sub.add_parser("tie", help="whether the fixture's native/ is the native arm of the old side beside it")
+    ti.add_argument("fixture"); ti.add_argument("--native-create", help="read this native create snapshot instead (gate-m59's control)")
     pk = sub.add_parser("packs", help="whether every forbric/data/* pack enabled in the old world is enabled in the new one")
     pk.add_argument("old_world"); pk.add_argument("new_world")
     args = parser.parse_args(argv)
@@ -1106,6 +1282,15 @@ def main(argv=None):
             dropped = drop_slot(args.world, x, y, z, slot)
             print("[forge-swap] control drop-slot %d %d %d slot %d: %s" % (x, y, z, slot, dropped or "nothing matched"))
             return 0 if dropped else 1
+        if args.name == "drop-bag-stack":
+            name, slot = args.args[0], int(args.args[1])
+            dropped = drop_bag_stack(args.world, name, slot)
+            print("[forge-swap] control drop-bag-stack %s stack%d: %s" % (name, slot, dropped or "nothing there"))
+            return 0 if dropped else 1
+        if args.name == "restore-bags":
+            done = restore_bags(args.args[0], args.world)
+            print("[forge-swap] control restore-bags: put back %s with the old time" % (" ".join(done) or "nothing"))
+            return 0 if done else 1
         dropped = drop_pack(args.world, args.args[0])
         print("[forge-swap] control drop-pack %s: %s" % (args.args[0], "dropped" if dropped else "not enabled"))
         return 0 if dropped else 1
@@ -1116,6 +1301,22 @@ def main(argv=None):
         print("[forge-swap] packs: %d forbric/data pack(s) in the old world, %d no longer enabled%s" % (
             len(old), len(gone), (": " + " ".join(gone)) if gone else ""))
         return 0 if old and not gone else 1
+    elif args.action == "rewritten":
+        rows = rewritten(args.old_world, args.new_world)
+        for name, verdict, old_ns, new_ns in rows:
+            print("[forge-swap] bag file %s %s (old %s, new %s)" % (verdict, name, time.strftime("%H:%M:%S", time.localtime(old_ns / 1e9)),
+                                                                 time.strftime("%H:%M:%S", time.localtime(new_ns / 1e9)) if new_ns else "-"))
+        done = sum(r[1] == "REWRITTEN" for r in rows)
+        print("[forge-swap] rewritten: %s bag file(s) saved again" % (
+            "all %d" % done if rows and done == len(rows) else "%d of %d" % (done, len(rows))))
+        return 0 if rows and done == len(rows) else 1
+    elif args.action == "tie":
+        rows = tie(args.fixture, args.native_create)
+        for check, ok, detail in rows:
+            print("[forge-swap] tie %s %s: %s" % ("PASS" if ok else "FAIL", check, detail))
+        ok = sum(r[1] for r in rows)
+        print("[forge-swap] tie: %s" % ("all %d rows PASS" % ok if ok == len(rows) else "%d of %d rows PASS" % (ok, len(rows))))
+        return 0 if all(r[1] for r in rows) else 1
     elif args.action == "files":
         for rel, verdict, detail in world_files(args.old_world, args.new_world):
             print("[forge-swap] world file %s %s %s" % (verdict, rel, detail))
@@ -1131,8 +1332,12 @@ def main(argv=None):
         rows = drill(Path(args.log).read_text(errors="replace"))
         for name, expect, verdict, answer in rows:
             print("[forge-swap] %s %s (want /%s/; got %s)" % (verdict, name, expect, answer or "no answer"))
-        print("[forge-swap] drill: %d PASS, %d FAIL" % (sum(r[2] == "PASS" for r in rows), sum(r[2] == "FAIL" for r in rows)))
-        return 0 if rows and all(r[2] == "PASS" for r in rows) else 1
+        missing = drill_missing(rows)
+        for name in missing:
+            print("[forge-swap] MISSING %s (no announce line in the log)" % name)
+        print("[forge-swap] drill: %d PASS, %d FAIL, %d missing of %d" % (
+            sum(r[2] == "PASS" for r in rows), sum(r[2] == "FAIL" for r in rows), len(missing), len(drill_names())))
+        return 0 if rows and all(r[2] == "PASS" for r in rows) and not missing else 1
     elif args.action == "census":
         for path, keys in sorted(census(json.loads(Path(args.snapshot).read_text())).items()):
             print("%s: %s" % (path, ",".join(keys) or "(empty)"))
