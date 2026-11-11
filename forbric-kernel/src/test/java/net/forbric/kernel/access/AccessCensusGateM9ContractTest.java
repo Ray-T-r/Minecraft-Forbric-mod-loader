@@ -17,9 +17,9 @@ import net.forbric.kernel.GateLogContract;
 /**
  * gate-m9's access assertions, held to what {@link AccessCensus#report()} prints. They used to require
  * "replayed >= 1": true only while fabric-biome-api's featuresPerStep widener first missed and was replayed after
- * a COREMOD repair. The merged base now keeps both descriptors, the widener matches first time, and the replay
- * count is 0. The gate asserts the outcome instead, "(N AT, 0 AW)", which these runs of the real census pin down
- * from both sides.
+ * a COREMOD repair. NeoForge's base declares that field once, with vanilla's descriptor, yet gate-m9's pack there
+ * still replays one directive the census does not name, so no replay count is an invariant. The gate asserts the
+ * outcome instead, "(N AT, 0 AW)", which these runs of the real census pin down from both sides.
  */
 @org.junit.jupiter.api.parallel.ResourceLock("ModCatalog")
 class AccessCensusGateM9ContractTest {
