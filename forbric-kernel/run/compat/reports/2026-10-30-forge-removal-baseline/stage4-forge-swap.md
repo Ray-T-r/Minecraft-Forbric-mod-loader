@@ -3,7 +3,7 @@
 Lane SWAP, wave 2 (2026-11-09/10), branch `s4-c5-swap`. Plan: map-swap W2-W6; D32 (native-controls is the swap
 oracle), D54 (scope, representatives, fixture location), O1 (the owner rules on mod-format losses; no migration code
 before that). This file is the measurement (W5) and the classification of every lost key (W6). The gate (W8,
-gate-m59) and `expected-losses.tsv` wait for the owner's ruling (W7) and are NOT here.
+gate-m59) and `expected-losses.tsv` waited for the owner's ruling (W7); they are in "Wave 2b" at the end (D77).
 
 Evidence: `~/Forbric-backups/stage4-notes/c5/swap/w2/` (logs, phase results, diffs, drill and classify outputs).
 Frozen old side: `~/Forbric-backups/forge-swap/` (D54; MANIFEST, old-save/, old-config/, old-snapshot.json sha1
@@ -199,3 +199,103 @@ PlayerPersisted); (2) the corelib `@RegistryEntryAcceptor` fix (W6, OPEN, Forbri
 representative and its NEW side cannot be measured before it; (3) a re-made fixture whose backpack was filled (old
 side; the keypad-7 rebinding is in place, not yet shown to work). Then any migration code. PLAN's SWAP acceptance
 ("Forbric-caused losses = 0, each fixed or proven native-identical") is NOT met while (2) is open.
+
+## Wave 2b (2026-11-11): W8 — a filled bag, the new client with packedup, the re-derived candidates, gate-m59
+
+Lane SWAP wave 2b, branch `s4-c5-swap` reset to the stage tip b9154084 (K1-K4 merged, so K3's GameData fix is in).
+D77 (owner ruling O1, "document only") is the rule this section applies: gate-m59 and `canary/forge-swap/expected-losses.tsv`
+pin exactly the native-identical rows, no migration code, Forbric-caused losses stay 0. Evidence:
+`~/Forbric-backups/stage4-notes/c5/swap/w2b/` (old4, native5, forbric5, m59-derive, m59-green, m59-final, controls/).
+This section supersedes "Not done (waits for the owner)" above: its three preconditions are met (O1 = D77; the corelib
+fix = K3, merged; a fixture with a filled bag = below).
+
+### (1) A filled packedup bag in the old Forge world
+
+Why the earlier step could not work (javap of packedup 1.1.1, both builds): a backpack's stacks are not in the item.
+The stack carries only `packedup:inventory_id`; the stacks live in `packedup/backpacks/inventory<id>.nbt`, written by
+packedup's own `LevelEvent.Save` listener. The inventory is created only in `PackedUpCommon.openBackpackInventory`,
+server side, when a player uses the bag or presses packedup's open-bag key (its packet ends in the same method); stacks
+go in through the bag's slots, which call `BackpackInventory.setStackInSlot`. No command or datapack function reaches
+either, a dedicated server has no player, and the native MinecraftForge arm has no client at all, so a console or
+datapack fill does not exist; the key presses of wave 2 (9488359f) depended on where the cursor was and never filled one.
+
+What does it now: `run/compat/ForgeSwapBagFill.java`, a dependency-free `-javaagent` that runs exactly the server half of
+those two player actions with packedup's own classes, on the server thread: `createInventoryIndex(type)`, the
+`inventory_id` component, `adjustSize`, then `setStackInSlot` for every stack of a source chest. It runs on the old
+Forbric create (the obsidian backpack in the chest at 2,-60,8, from the chest at 4,-60,8), in the old singleplayer
+client (the kit's backpack in hotbar 0, from the chest at 6,-60,8), and on the native MinecraftForge create
+(`native-controls.py swap --create-jvm=...`, the chest's bag only: no native client). `forge-swap-make-old.sh` fails
+unless both "bag filled" lines appear and the drill's new `packedup.bag.kept` passes; MANIFEST records what each saved
+inventory holds (`packedup-bag-stacks`). Verified by reading the saved NBT (`forge-swap.py bags`), not by the log:
+
+| where | inventory | what packedup saved (old A/A world) |
+|---|---|---|
+| chest 2,-60,8 (old Forbric create) | inventory0.nbt | diamond x9, diamond_sword x1 {custom_name, damage, enchantments}, brickfurnace:brick_furnace x2, biomesoplenty:fir_log x16, tombstone:grave_dust x5, animalgarden_owl:mob_spawn_egg x1 |
+| player hotbar 0 (old client) | inventory1.nbt | emerald x7, classicpipes:copper_pipe x4, tombstone:white_marble x3 |
+| chest 2,-60,8 (native MinecraftForge create) | inventory0.nbt | the same six stacks |
+
+New fixture (D54): `~/Forbric-backups/forge-swap-w2b/` = forge-swap-make-old.sh run `old4` (2026-11-11 07:43-07:47,
+old kernel 187143a1 / jar aae280b5, merged base ca98f147, tree b9154084; drill 24/0; old A/A 27 differences, all ticking
+values, the removed kit pack and the merged-only-key rule lines the reopen rules print; nothing lost before the swap)
+plus `native/` (run `native5`, the frozen native arm gate-m59 classifies against; `native/README.txt`). S0 sha1
+660f98e5. **Note for the orchestrator:** `~/Forbric-backups/forge-swap/` was rewritten on 2026-11-10 20:47-20:51
+(its MANIFEST: tree 9b59fe61), i.e. after the 19:55 cut D78 names, so it is the discarded Fable run's product; this lane
+neither read its content nor used it. Wave 2's Opus fixture is `~/Forbric-backups/forge-swap-superseded/old2-20261110/`.
+
+### (2) The new client pass with packedup, corelib and configlib
+
+gate-m59 phase client (runs m59-derive, m59-green, m59-final): this tree's singleplayer client with all twelve
+NeoForge builds in mods/ (its `[kernel-launch] mods:` line names packedup, supermartijn642corelib and
+supermartijn642configlib) opens a clone of the fixture's old-save, reaches the world, saves and quits by itself (clean
+disconnect, no crash). The player's backpack is still in hotbar 0 with `packedup:inventory_id` 1, both inventory files
+are KEPT (same NBT; rewritten by the NeoForge build's own save: their mtimes move on the open), and `bags` lists the
+same stacks. So the wave-2 rows "`Inventory[Slot=0]` lost" and "`packedup:obsidian_backpack` advancement lost" were the
+absent mod (newclient3), as recorded then; with packedup present neither row exists.
+
+Not drilled, and why: opening a bag in a screen on the NEW side. The server side of "use" is what the files show (the
+NeoForge build loaded both inventories and saved them back unchanged, and `packedup.bag.kept` reads the bag's id on the
+running server); a GUI open would need a click a background window does not take.
+
+### (3) classify's candidates, re-derived on all seven candidates (with the new fixture)
+
+Server arms (`classify-server`: forbric5 vs native5): 36 keys, **0 Forbric-caused candidates**: 3 MOD FORMAT rows (tombstone `cap_familiar` on the owl, wolf and zombie, plus `cap_servant_entity` on the zombie: lost
+on both arms), 1 NOT IN FORBRIC'S OLD WORLD (`fml/Registries`), 10 CHANGED (ticking furnace, tombstone counters), 9 GAINED, 13
+LOADER METADATA. Drill on the open: Forbric 24 PASS / 0 FAIL; native 21 / 3 (the three classicpipes
+checks, not loadable on native MinecraftForge 65.0.1), `packedup.bag.kept` PASS on both. World files: Forbric
+inventory0/inventory1 and tombstone's saved player KEPT; native inventory0 KEPT. Config marks KEPT on both arms.
+
+With the new client (`pin.json` table of m59-derive): 40 keys — 10 CHANGED, 10 GAINED, 13 LOADER METADATA, 3 MOD
+FORMAT, 3 NO NATIVE ROW, 1 NOT IN FORBRIC'S OLD WORLD — and **3 candidates, all D77 rows**: the player's
+`active_effects[id=tombstone:silent_bond]`, `attributes[id=forge:swim_speed]` and its tombstone ForgeCaps
+(`cap_protected_entity`, `cap_tombstone`), NO NATIVE ROW because there is no native client (static evidence, as in
+wave 2). No packedup, brickfurnace, classicpipes, BiomesOPlenty, journeymap or animalgarden-owl row is a loss.
+
+### (4) gate-m59 and expected-losses.tsv
+
+`run/gate-m59-forge-swap.sh` (header = the manual) and `canary/forge-swap/expected-losses.tsv` (six rows, each the key,
+mod, verdict and why exactly as measured): the three entity ForgeCaps rows (MOD FORMAT) and the player's ForgeCaps,
+`silent_bond` effect and `forge:swim_speed` attribute (NO NATIVE ROW). These are D77's three items, measured: tombstone
+ForgeCaps, its renamed `silent_bond` effect, MinecraftForge's `forge:swim_speed`. The bag measurement adds no row.
+
+| run (fixture forge-swap-w2b) | phases | result |
+|---|---|---|
+| m59-derive (placeholder TSV) | open client pin | 6 unpinned = the six rows above, 1 stale (the placeholder); re-save check red on a reader bug (26.2 keeps regions under dimensions/; fixed before commit) |
+| m59-green | open client pin | 27 PASS / 0 FAIL |
+| m59-final, committed tip 5ae4de6a | open client pin | **27 PASS / 0 FAIL, GREEN** |
+| controls/none | open pin | 23 / 0 |
+| controls/drop-slot (vanilla chest slot 1 removed from the new world) | open pin | 22 / 1: only `unpinned`, naming `block_entities /minecraft:overworld 0 -60 0/Items[Slot=1]` |
+| controls/chest-slot (its count 64 -> 63) | open pin | 22 / 1: only `changed`, naming `.../Items[Slot=1]/count` |
+| controls/drop-row2 (the TSV's first non-player row deleted) | open pin | 22 / 1: only `unpinned`, naming the owl's ForgeCaps row |
+| controls/drop-pack (forbric/data/packedup taken out of the new level.dat) | open pin | 22 / 1: only the packs check |
+| controls/drop-region (the probe's r.0.0.mca deleted) | open pin | 21 / 2: the re-save proof and `unpinned` (every key of the deleted region), as the header says |
+
+The first drop-row run (controls/drop-row) dropped the TSV's first row, a player row, which a server-only run sets aside
+(--no-player): 23 / 0, a control that broke nothing it asked about. The control now drops the first non-player row
+(drop-row2). The per-mod table of wave 2 stands with these changes: packedup — the player's inventory and both bags
+measured, nothing lost (Forbric and, for the chest's bag, native); "Forbric-caused: OPEN" is closed by K3 (the new
+client boots and plays with packedup); tombstone — unchanged, now pinned by gate-m59.
+
+PLAN's SWAP acceptance: per-mod rows complete (journeymap's and BiomesOPlenty's configs still unmarked, as wave 2
+said); Forbric-caused losses 0; m59 green equal to expected-losses.tsv exactly; re-save proof holds (LastUpdate
+1780-1783 -> 2383-2392 on every probe chunk in every run but drop-region); red controls (a) chest-slot, (b) drop-row, (c) drop-pack,
+(d) drop-region, plus drop-slot (a kept key dropped).

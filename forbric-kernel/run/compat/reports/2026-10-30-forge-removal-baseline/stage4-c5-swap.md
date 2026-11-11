@@ -138,3 +138,48 @@ code commit: **5784 tests, 0 skipped, 5 failed: exactly the 5 names of failures-
 SharedFinalSourceActualTest x2). Log and XML: `w2/review-fixes/suite-final.log`, `suite-final-xml/`. No gate file was
 changed, so no gate was re-run. One game JVM ran (the corelib probe server, heavy.sh slot, port 46781, scratch rundir
 deleted afterwards).
+
+## SWAP wave 2b (2026-11-11): W8
+
+Branch `s4-c5-swap` reset to the stage tip b9154084; worktree `s4c5-swap`, ports 46780-46799 (native-controls' swap
+sessions take a free port of their own; every server and client stopped, nothing left bound in the block afterwards).
+Results and the per-mod verdicts are in `stage4-forge-swap.md` "Wave 2b"; evidence `c5/swap/w2b/`.
+
+Commits:
+- `4095dd7e` the packedup bag step: `ForgeSwapBagFill.java` (a `-javaagent` running packedup's own server-side
+  open-and-insert), the bag and source chests in the console, `packedup.bag.kept` in the drill, `forge-swap.py
+  bag-agent` / `bags`, make-old uses the agent on the old create and in the old client (no keys posted), MANIFEST
+  `packedup-bag-stacks`, `native-controls.py swap --create-jvm`; tests Bags x4, the native create alone gets the agent.
+- `5ae4de6a` `run/gate-m59-forge-swap.sh` + `canary/forge-swap/expected-losses.tsv` (six rows, D77) + `forge-swap.py
+  pin` / `lastupdate` / `packs` / `control`; tests Pin x6, Controls x1.
+- this record.
+
+No kernel (Java) change: no Forbric-caused loss was measured, so nothing to fix and no file of another lane to clear.
+
+Runs (all heavy.sh; client runs client.sh first): fixture `old4` (make-old, old server + old client + old A/A),
+native arm `native5`, Forbric arm `forbric5`, gate-m59 m59-derive / m59-green / m59-final (client) and six server-only
+control runs. gate-m59 at the committed tip 5ae4de6a: **27 PASS / 0 FAIL**. Red controls: drop-slot 22/1 (unpinned,
+the dropped key named), chest-slot 22/1 (changed), drop-row (first non-player row) 22/1 (unpinned), drop-pack 22/1
+(packs), drop-region 21/2 (re-save proof + unpinned); the server-only baseline 23/0.
+
+Mutation red-checks of the new unit tests (scratch copies of run/compat): the native create ignoring --create-jvm ->
+`test_the_native_create_alone_gets_the_extra_jvm_arguments` FAIL; a pin that ignores verdict mismatches ->
+`test_a_row_lost_under_another_verdict_is_stale` FAIL. Python: test_forge_swap 28 OK, test_native_controls 27 OK,
+test_world_snapshot 31 OK, test_gate_ports 11 OK, test_lib_guards 13 OK.
+
+Suite at 5ae4de6a (pinned build, D68: `heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt)
+-Pforbric.requireFixtures=all jar cleanTest test --continue`): **5858 tests, 0 skipped, 5 failed = the 5 names of
+failures-k.txt** (LB x3, SharedFinalSourceActualTest x2), 0 new. Log `c5/swap/w2b/suite.log`, XML `suite-xml/`.
+
+Open:
+- The fixture's home. `~/Forbric-backups/forge-swap-w2b/` is the new frozen fixture (old side + `native/`). The gate
+  finds it by M59_FIXTURE, else `run/forge-swap`, else `~/Forbric-backups/forge-swap`; the latter now holds a fixture
+  rewritten on 2026-11-10 20:47-20:51 (after D78's 19:55 cut: the discarded run's), which has no `native/`, so gate-m59
+  there is SKIP-FATAL (exit 3) naming the missing file. Orchestrator: set that one aside and put forge-swap-w2b at
+  `~/Forbric-backups/forge-swap` (or link `run/forge-swap` in the stage worktree, D54), before gates-all counts m59.
+- Nightly/CI has no fixture: gate-m59 SKIP-FATALs there (like the other fixture gates); whether nightly skips it is the
+  nightly owner's call.
+- Release notes / compatibility list rows for tombstone (D77: entity and player ForgeCaps, `silent_bond`, and
+  MinecraftForge's `forge:swim_speed`): RECORD / C6 docs.
+- Still not measured (unchanged from wave 2): journeymap's and BiomesOPlenty's configs (no mark), the Forge->Fabric
+  journeymap row, the energy gap, the implicit swaps, a GUI open of a bag on the new side.
