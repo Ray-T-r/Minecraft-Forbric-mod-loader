@@ -319,6 +319,13 @@ NEO_CARRIER_PACK = "forbric/carrier/2-neoforge-runtime"
 # Per-tick player state (compared with Pos/Rotation at a tolerance instead).
 PLAYER_TICK_KEYS = ("Motion", "OnGround", "fall_distance", "foodTickTimer", "current_impulse_context_reset_grace_time", "Air")
 LEVEL_CLOCK_KEYS = ("LastPlayed", "Time")
+# level.dat's fml.LoadingModList is the loader's mod list in ModList order, rewritten by every save. Across an upgrade the
+# order is the new loader's, not the save's: C5 wave 2b (lane K3b, 8db54acf) publishes a NeoForge mod with no @Mod class
+# in the dependency order, as native NeoForge does, where the old kernel put it after every constructed mod (measured on
+# gate-m58: shogi_api moved from after forbricupgradeneo to before waystones, the same twelve mods and versions). Under
+# upgrade rules the list is compared sorted by ModId; a mod added, dropped or at another version is still a difference.
+# Reopen rules keep the order (the same loader writes both sides).
+LOADER_MOD_LIST = ("fml", "LoadingModList")
 # Runtime bookkeeping files: listed, never compared.
 NOISE_FILES = re.compile(r"(^|/)data/minecraft/(random_sequences|world_clocks|stopwatches|scheduled_events|weather)\.dat$")
 RAIDS_FILE = re.compile(r"(^|/)data/minecraft/raids\.dat$")
@@ -541,6 +548,16 @@ def normalise(snap, rules, side):
                 enabled = kept
             pd["Enabled"] = ["list", "string", enabled]
             data["DataPacks"] = ["compound", pd]
+        root["Data"] = ["compound", data]
+        outer, inner = LOADER_MOD_LIST
+        fml = root.get(outer)
+        if upgrade and isinstance(fml, list) and fml[0] == "compound" and isinstance(fml[1].get(inner), list):
+            mods = fml[1][inner]
+            if len(mods) == 3 and mods[1] == "compound":
+                ordered = sorted(mods[2], key=lambda m: (_canon(m.get("ModId")), _canon(m)))
+                if ordered != mods[2]:
+                    rules.count("loader mod list order")
+                root[outer] = ["compound", dict(fml[1], **{inner: ["list", "compound", ordered]})]
         root["Data"] = ["compound", data]
         s["level"] = ["compound", root]
     # saved data

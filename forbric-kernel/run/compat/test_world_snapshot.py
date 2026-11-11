@@ -229,6 +229,37 @@ class Rules(unittest.TestCase):
         self.assertEqual(found, [])
         self.assertEqual(rules.used["drop merged-only ForgeData"], 1)
 
+    @staticmethod
+    def _with_mods(snap, mods):
+        snap = copy.deepcopy(snap)
+        snap["level"][1]["fml"] = C(LoadingModList=["list", "compound", [
+            {"ModId": S(m), "ModVersion": S(v)} for m, v in mods]])
+        return snap
+
+    def test_an_upgrade_may_reorder_the_loader_mod_list(self):
+        # The new loader publishes a mod with no @Mod class in the dependency order (C5 wave 2b K3b); the save's list
+        # is in the old kernel's order. The same mods at the same versions in another order are no difference.
+        old = self._with_mods(self.old, [("neoforge", "26.2.0.93"), ("waystones", "5"), ("shogi_api", "3")])
+        new = self._with_mods(self.new, [("neoforge", "26.2.0.93"), ("shogi_api", "3"), ("waystones", "5")])
+        found, rules = ws.diff(old, new, "upgrade")
+        self.assertEqual(found, [])
+        self.assertGreaterEqual(rules.used["loader mod list order"], 1)
+
+    def test_the_loader_mod_list_still_differs_on_a_mod_or_a_version(self):
+        old = self._with_mods(self.old, [("neoforge", "26.2.0.93"), ("waystones", "5"), ("shogi_api", "3")])
+        dropped = self._with_mods(self.new, [("shogi_api", "3"), ("neoforge", "26.2.0.93")])
+        found, _ = ws.diff(old, dropped, "upgrade")
+        self.assertTrue(any("LoadingModList" in p for _, p, _, _ in found), found)
+        bumped = self._with_mods(self.new, [("neoforge", "26.2.0.93"), ("shogi_api", "4"), ("waystones", "5")])
+        found, _ = ws.diff(old, bumped, "upgrade")
+        self.assertTrue(any("LoadingModList" in p and "ModVersion" in p for _, p, _, _ in found), found)
+
+    def test_reopen_rules_keep_the_loader_mod_list_order(self):
+        a = self._with_mods(self.new, [("neoforge", "26.2.0.93"), ("waystones", "5"), ("shogi_api", "3")])
+        b = self._with_mods(self.new, [("neoforge", "26.2.0.93"), ("shogi_api", "3"), ("waystones", "5")])
+        found, _ = ws.diff(a, b, "reopen")
+        self.assertTrue(any("LoadingModList" in p for _, p, _, _ in found), found)
+
     def test_a_changed_slot_is_exactly_one_difference(self):
         new = copy.deepcopy(self.new)
         be = new["block_entities"]["minecraft:overworld 3 -64 0"]
