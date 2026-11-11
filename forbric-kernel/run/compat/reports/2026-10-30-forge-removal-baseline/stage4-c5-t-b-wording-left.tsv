@@ -1,0 +1,159 @@
+# file	line	class	C5 owner (if another lane changed the file)	text
+net/forbric/kernel/TestFixtures.java	279	keep-concept	-	* still embeds a FABRIC index (a Forbric &le; 0.4 merged base, which no launch accepts any more) is opened alone, as
+net/forbric/kernel/compat/CompatTransportTest.java	41	history	-	// Through a throttling relay the 35 MB merged base alone stalled every later remote call for minutes.
+net/forbric/kernel/compat/FieldDriftCompatTest.java	24	stage6-name	-	assertTrue(result.output().contains("vanilla classes absent from merged base: 1"), result.output());
+net/forbric/kernel/StagedJarLiteralGuardTest.java	45	keep-guard	-	* <p>The directories Stage 4 retired, {@code merged-base/}, {@code forge-runtime/} and {@code forge-patched/}, may not be
+net/forbric/kernel/StagedJarLiteralGuardTest.java	47	keep-guard	-	* copies an older stage holds, so a test that still names one goes on reading the old merged base or MinecraftForge
+net/forbric/kernel/StagedJarLiteralGuardTest.java	76	keep-guard	-	/** The stage directories Stage 4 retired (the merged base, the MinecraftForge carrier, MinecraftForge's patched game). */
+net/forbric/kernel/StagedJarLiteralGuardTest.java	77	keep-guard	-	private static final List<String> RETIRED_DIRECTORIES = List.of("merged-base", "forge-runtime", "forge-patched");
+net/forbric/kernel/StagedJarLiteralGuardTest.java	113	keep-guard	-	"writes an old merged base's index entry names into synthetic jars (the D9 old-install signal); reads only the "
+net/forbric/kernel/StagedJarLiteralGuardTest.java	116	keep-guard	-	/** What only a merged base embedded, as a string literal spells it: its index entries, their copies, its report. */
+net/forbric/kernel/StagedJarLiteralGuardTest.java	155	keep-guard	-	* ({@code "run/merged-base"}) or a trailing slash. A whole literal, so {@code "neoforge-runtime"} does not pass for
+net/forbric/kernel/StagedJarLiteralGuardTest.java	171	keep-guard	-	* ending in a slash ({@code "run/merged-base"}), or with a path under it ({@code "forge-runtime/forbriclive.jar"}).
+net/forbric/kernel/StagedJarLiteralGuardTest.java	337	keep-guard	-	found.add(lineAt(lines, code, marker) + " reaches what only a merged base embedded, and " + lineAt(lines, code, base.start())
+net/forbric/kernel/StagedJarLiteralGuardTest.java	396	keep-guard	-	assertEquals(Map.of(), unexplainedReads, "reads of what only a merged base embedded (its native references, "
+net/forbric/kernel/StagedJarLiteralGuardTest.java	403	keep-guard	-	assertEquals(Map.of(), unexplainedRetired, "stage directories Stage 4 retired (merged-base/, forge-runtime/, "
+net/forbric/kernel/StagedJarLiteralGuardTest.java	454	keep-guard	-	for (String spelled : List.of("merged-base", "run/merged-base/", "merged-base/patched-mc-merged-26.2.jar",
+net/forbric/kernel/StagedJarLiteralGuardTest.java	455	keep-guard	-	"merged-base/forge-runtime-interop.jar", "merged-base/merge-conflicts.txt", "forge-runtime",
+net/forbric/kernel/StagedJarLiteralGuardTest.java	462	keep-guard	-	"merged-base-old", "minecraftforge-runtime")) {
+net/forbric/kernel/StagedJarLiteralGuardTest.java	465	keep-guard	-	assertEquals(List.of(), retiredSpellings(code("// " + q + "forge-runtime/forge-runtime.jar" + q + "\n/* " + q + "merged-base" + q + " */")),
+net/forbric/kernel/compat/PushAndRunTest.java	46	keep-concept	-	// The kernel, NeoForge's patched game, its one carrier and the vanilla reference: no merged base, no
+net/forbric/kernel/compat/PushAndRunTest.java	191	keep-concept	-	* A profile an older installer wrote (merged base, MinecraftForge carrier, both runtimes in one --runtimeJar, the
+net/forbric/kernel/compat/PushAndRunTest.java	192	keep-concept	-	* sidecar at the merged base's version) becomes exactly what the new installer writes: NeoForge's patched game in the
+net/forbric/kernel/compat/PushAndRunTest.java	193	keep-concept	-	* merged base's place, the carrier and the sidecar at this tree's pins, one value per flag, --libraryPath and every
+net/forbric/kernel/compat/PushAndRunTest.java	793	keep-concept	-	/** A profile an older installer wrote: the merged base and both carriers in one --runtimeJar, no vanilla reference. */
+net/forbric/kernel/boot/GateNeoCanaryContractTest.java	222	history	G-A	// Stage 4 C5: the merged base is gone, and with it the HUD javap that read it; the rundirs refuse a shared fixture.
+net/forbric/kernel/boot/LaunchInputCheckTest.java	55	keep-concept	-	* by Forbric 0.4 or earlier -- a merged base with a MinecraftForge carrier -- is refused with the one line that says
+net/forbric/kernel/boot/LaunchInputCheckTest.java	66	keep-concept	-	/** What an old merged base's Block implemented besides NeoForge's interface. */
+net/forbric/kernel/boot/LaunchInputCheckTest.java	174	keep-concept	-	assertFalse(said.contains("merged"), "nothing of the merged base is left to build: " + said);
+net/forbric/kernel/boot/LaunchInputCheckTest.java	341	keep-concept	-	/** Signal (1): the base's Block implements a MinecraftForge interface -- the merged base's shape. */
+net/forbric/kernel/boot/LaunchInputCheckTest.java	344	keep-concept	-	// The merged base is NeoForge-patched too, so the base check alone lets it through: the old-install check must.
+net/forbric/kernel/boot/LaunchInputCheckTest.java	347	keep-concept	-	assertEquals(null, LaunchInputCheck.baseProblem(merged), "premise: the merged base carries NeoForge's changes");
+net/forbric/kernel/boot/PreLaunchBeforeGameClassesTest.java	22	history	-	* boot. Measured in game with {@code -Xlog:class+load}: before, 40 classes of the merged base were defined ahead of
+net/forbric/kernel/boot/KernelTransferInteropTest.java	201	history	-	// A finding with no provider object has no class to attribute (the code here is a live one; on the merged base
+net/forbric/kernel/boot/KernelLifecycleFreezeOrderTest.java	46	history	-	* {@link ForeignType#GAME_DATA} so a rename cannot pass silently, and a MinecraftForge one at the name the merged base's
+net/forbric/kernel/access/AccessCensusGateM9ContractTest.java	20	history	-	* a COREMOD repair. The merged base now keeps both descriptors, the widener matches first time, and the replay
+net/forbric/kernel/mixin/MixinStubRebindTest.java	335	history	-	* {@code ServerExplosion.hurtEntities()}, taking that list by type. On the merged base vanilla's signature is a stub
+net/forbric/kernel/mixin/MixinStubRebindTest.java	549	history	-	* PackDetector's two-argument detectPackResources: the merged base carried it as MinecraftForge's stub, so a NeoForge
+net/forbric/kernel/mixin/MixinStubRebindTest.java	641	history	-	* Language.loadFromJson(InputStream, BiConsumer) — on the merged base a stub passing a no-op lambda to NeoForge's
+net/forbric/kernel/mixin/CreateInjectionAdaptersTest.java	57	history	-	// The merged base kept both families' lambda$startDestroyBlock$1; the genuine base has NeoForge's alone. The rule under
+net/forbric/kernel/mixin/RegistryLoaderCompanionBindingTest.java	40	history	T-A	* merged base had; NeoForge's class declares neither, and nothing twins them back — is built here from NeoForge's class
+net/forbric/kernel/mixin/NativeOnlyMethodsCensusTest.java	354	history	-	* loss they are — required, since the config says required. (On the merged base four of these were MinecraftForge's
+net/forbric/kernel/mixin/LambdaShapeEvidenceStagedTest.java	42	history	-	* {@code LevelRenderer} target against the merged base, with the duplicate-lambda pruner on and off, and held the
+net/forbric/kernel/mixin/LambdaShapeEvidenceStagedTest.java	43	history	-	* decisions to a table recorded at b37e6ae0 (lambda-decisions-b37e6ae0.tsv). The merged base and the pruner are gone; the
+net/forbric/kernel/boot/CrashAttributionTest.java	129	history	-	// merged base, a runtime carrier, the kernel jar or the JDK, and none of those is a mod.
+net/forbric/kernel/boot/CrashAttributionTest.java	149	history	-	// carrying the merged base's jar.
+net/forbric/kernel/mixin/KeyActionExitsTest.java	54	history	-	* such calls; on the merged base of Forbric 0.4 and earlier it held MinecraftForge's twin of the hook there. NeoForge's
+net/forbric/kernel/mixin/MixinFluidReactionHeadTest.java	25	history	-	* placement asks vanilla's method and whose neighbour change asks NeoForge's registry instead. On the merged base
+net/forbric/kernel/mixin/MixinFitLivenessTest.java	132	history	-	* NeoForge not at all (its HUD layers draw the four pieces). (On the merged base MinecraftForge also called it from a leaf
+net/forbric/kernel/mixin/MergedBaseGuestScanStagedTest.java	33	history	-	* (On the merged base these were LivingEntity's travelInFluid(Vec3), RegistryDataLoader's private load and
+net/forbric/kernel/mixin/NativeGameReferencesTest.java	67	keep-concept	-	* base has one (the merged base): a sidecar row is taken when the embedded index pins the same hash, or has no row for
+net/forbric/kernel/mixin/MixinStubRebindSpellingTest.java	121	history	-	* exactly as its plain spelling does, for every family. (On the merged base this was PackDetector's MinecraftForge stub,
+net/forbric/kernel/mixin/MixinNativePredicateSeamTest.java	30	history	-	// the carrier (the merged base had copied it onto AbstractBoat itself).
+net/forbric/kernel/mixin/MixinRetargetReplacedCallTest.java	51	history	-	* {@code placeEntities}, cancelling; on the merged base both points missed and the HEAD selector bound MinecraftForge's
+net/forbric/kernel/mixin/MixinRetargetReplacedCallTest.java	83	history	-	// Genuine NeoForge declares no placeEntities at all (javap): the HEAD selector simply binds nothing. The merged base
+net/forbric/kernel/mixin/MixinRetargetReplacedCallTest.java	171	history	-	// bind and be rejected, as MinecraftForge's was on the merged base).
+net/forbric/kernel/mixin/MixinExecutionPathRetargetTest.java	152	history	-	// which makes the travelInLava call itself (javap). The merged base also declared MinecraftForge's
+net/forbric/kernel/mixin/MixinFitLivenessCensusStagedTest.java	103	history	-	* <p>Changes from the merged base's pins (Stage 4 C4): fabric-registry-sync's RegistryDataLoaderMixin left the list —
+net/forbric/kernel/mixin/MixinFitLivenessCensusStagedTest.java	120	history	-	* The same, counted per pack: one mixin changes in every pack that carries it. 30 on the merged base; 25 on NeoForge's
+net/forbric/kernel/mixin/MixinFitLivenessCensusStagedTest.java	554	history	-	// on NeoForge's base (both its lines left FABRIC_API_LOST in Stage 4 C4; the merged base lost them).
+net/forbric/kernel/mixin/MixinFitLivenessCensusStagedTest.java	589	history	-	* merged base MinecraftForge's own placeEntities kept the name, so the name bound a method the
+net/forbric/kernel/mixin/MixinSharedResultTransportTest.java	126	history	C5 (4c21e0f6)	* On the merged base the furnace's redirect moved onto the carrier's remainder call and ran its HEAD snapshot there.
+net/forbric/kernel/mixin/CarrierRenameCensusTest.java	107	history	-	// defaultTrackDeltasSupplier, which its trackDeltas supplier calls. On the merged base the same name was ambiguous
+net/forbric/kernel/mixin/CarrierRenameCensusTest.java	143	history	-	// carrier call, so NeoForge's own call is a row's member only for NeoForge's own mods (on the merged base, where a
+net/forbric/kernel/mixin/MixinRetargetRenamedBodyCorpusTest.java	101	history	C5 (77191cb2)	* merged-base lambda numbering: NeoForge's {@code CreativeModeTabs} numbers its {@code bootstrap} lambdas as vanilla's
+net/forbric/kernel/mixin/weave/TwinCapturedLocalsWeaveTest.java	35	history	-	* merged base's MinecraftForge {@code removeBlock} row did), so the capture here holds the arguments alone.
+net/forbric/kernel/mixin/MixinReturnOrdinalsTest.java	25	history	T-A	* {@code ServerPlayerGameMode.destroyBlock} (ordinal 4). The merged base kept MinecraftForge's {@code onBlockStartBreak}
+net/forbric/kernel/mixin/MixinReturnOrdinalsTest.java	43	history	T-A	assertEquals(5, returns.size(), "NeoForge's destroyBlock has vanilla's exits; MinecraftForge's veto exit went with the merged base");
+net/forbric/kernel/mixin/weave/GuiRendererPipBuilderWeaveTest.java	66	history-fixture	-	// What the merged base's GuiRenderer is once the kernel's compat transformer has run.
+net/forbric/kernel/mixin/MixinFluidReactionShapesTest.java	21	history	-	* <p>(On the merged base these shapes moved whole to both families' registries, because placement asked MinecraftForge's;
+net/forbric/kernel/mixin/weave/OptionalPartnerInjectorWeaveTest.java	42	history-fixture	-	* The fixture jar is not the merged base the shipped table was derived from, so every run names the fixture's members
+net/forbric/kernel/mixin/FabricClientMixinAnchorsTest.java	201	history	C5 (fc227c9a, 080015a8)	* difference the merged base had) refuses that local, while the canvas is still carried.
+net/forbric/kernel/mixin/CarpetMixinAdapterTest.java	150	history	-	* moved is served the same. (On the merged base this rule moved into the registries' interaction and refused such a
+net/forbric/kernel/mixin/weave/BlockQueryParityWeaveTest.java	52	history-fixture	-	// The vanilla-shaped Entity, as the merged-base builder records what a Fabric mod was compiled against.
+net/forbric/kernel/mixin/MergedBaseGuestScanTest.java	34	history	-	// Rows of the shipped uncalled-methods.txt on NeoForge's base (the merged base's travelInFluid, removeBlock and
+net/forbric/kernel/mixin/weave/NativeWeaveReferences.java	4	history-fixture	-	/** Synthetic source classes are indexed just like real merged-base originals; name-shaped fixtures carry no policy. */
+net/forbric/kernel/mixin/CreateNormalsWrapBindingTest.java	18	history	-	* that call. On the merged base it did not: MinecraftForge kept that signature as a builder stub over a
+net/forbric/kernel/mixin/weave/CreateHudMixinAdapterWeaveTest.java	70	history-fixture	-	// What the merged base's Hud is once KernelBoot's HudContextQueryInjector (client only) has run.
+net/forbric/kernel/mixin/weave/CaptureLandingWeaveTest.java	36	history	-	* <p>Until Stage 4 the fixture also had the merged base's renamed twin {@code Renderers$1$forbricneo}, which the deleted
+net/forbric/kernel/mixin/weave/InsertedLambdaArgumentShimWeaveTest.java	29	history	-	* Stage 4 the merged base carried vanilla's body beside the carrier's and the duplicate-lambda pruner's record was the
+net/forbric/kernel/mixin/weave/CustomPayloadInteropSeamWeaveTest.java	82	history	-	// The funnel found vanilla's codec overload (the twin) and routes NeoForge's through it, as on the merged base.
+net/forbric/kernel/mixin/weave/CreateEntitySoundMixinAdapterWeaveTest.java	25	history	-	* level and the step's position. On the merged base the three step-sound methods hand the step to NeoForge's
+net/forbric/kernel/mixin/weave/CreateEntitySoundMixinAdapterWeaveTest.java	80	history-fixture	-	// What the merged base's IBlockExtension is once KernelBoot's BlockSoundQueryInjector has run.
+net/forbric/kernel/mixin/weave/NativeAbsentTargetsWeaveTest.java	32	history-fixture	-	* not the merged base the table was derived from, so every run but {@code unmatched} names the fixture's members digest
+net/forbric/kernel/mixin/weave/TargetArgumentCallbackWeaveTest.java	110	history-fixture	-	// The vanilla-shaped classes, as the merged-base builder records what a Fabric mod was compiled against.
+net/forbric/kernel/mixin/weave/EntitySoundCallbackParityWeaveTest.java	72	history-fixture	-	// The vanilla-shaped classes, as the merged-base builder records what a Fabric mod was compiled against.
+net/forbric/kernel/mixin/weave/MixinOverloadPinWeaveTest.java	43	history	-	* ({@link #byDefaultTheRetargetBindsTheHandlerFromTheReference}). (On the merged base the evidence was the pruner's
+net/forbric/kernel/runtime/KernelModFilePerJarTest.java	74	history	G-A	* {@code -Dforbric.modFilePerJar=off} gives back the shape the kernel built before Stage 4 (the merged base, and
+net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java	46	history	-	* The vanilla members only the merged base's MinecraftForge half kept, added back where a base lacks them: nothing on
+net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java	47	history	-	* the merged base; on the genuine NeoForge base every row lands, every member it adds links against that base and its
+net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java	114	history	-	/** The repairs that make the merged base's copies live find the genuine base's twins and do the same. */
+net/forbric/kernel/transform/VanillaMemberTwinInjectorTest.java	366	history	-	* sidecar's FABRIC index pins, which VanillaReferenceStagedTest proves is the merged base's own index. Not the
+net/forbric/kernel/transform/NeoForgeBaseStructureCensusStagedTest.java	31	history	-	* Shapes the merged base produced and kernel repairs answered, held absent on NeoForge's base and carrier so a
+net/forbric/kernel/transform/NeoForgeBaseStructureCensusStagedTest.java	45	history	-	* <p><b>A second {@code Bootstrap.bootStrap()} inside the first.</b> On the merged base MinecraftForge's
+net/forbric/kernel/transform/NeoForgeBaseStructureCensusStagedTest.java	60	history	-	* {@code lambda$x$0}; the merged base had 133 such classes (both carriers' lambdas, one body kept), and a mod's
+net/forbric/kernel/transform/ModsButtonRedirectorTest.java	81	history	-	// One live NeoForge button, re-pointed, is the whole claim (the merged base also had MinecraftForge's).
+net/forbric/kernel/transform/ModsButtonRedirectorTest.java	87	history	-	* <p>On the genuine base only NeoForge's {@code ModsButton} builds one. The merged base carried a lambda for each
+net/forbric/kernel/transform/StagedGameClasses.java	73	stage6-name	-	/** The raw-class lookup KernelBoot gives the merged-base repair and KernelMixinBootstrap gives the transfer audit. */
+net/forbric/kernel/transform/MergedBaseFrameRecomputerTest.java	46	history	-	* against the merged base. That build is a refused MinecraftForge mod and the genuine base has no such type, so those
+net/forbric/kernel/transform/MergedBaseRepairClaimsStagedTest.java	57	stage6-name	-	private static final String STREAMS_CLAIM = "forbric-merged-base-compat#wrapTheStreamsVanillaWraps";
+net/forbric/kernel/transform/VanillaCallerPayloadLookupTest.java	27	history	-	* (The merged base never reaches this: its vanilla-shaped {@code $1} keeps vanilla's id-only lookup.)
+net/forbric/kernel/transform/RegistryDirectoryOwnerInjectorTest.java	73	history	-	* 26.2, from the merged base and from MinecraftForge's patched game; NeoForge's own {@code prefixNamespace}; and the
+net/forbric/kernel/transform/InterfaceDefaultConflictRepairTest.java	37	history	-	* {@code BlockEntityRenderer}, the merged base already gave it NeoForge's, both default
+net/forbric/kernel/transform/ModsButtonRedirectorExecutionTest.java	40	history	-	* <p>Seen on a real client of Forbric 0.4 and earlier: on the merged base, which kept both families' edits of
+net/forbric/kernel/transform/VanillaMemberTwinInjectorExecutionTest.java	32	history	-	* On the merged base's shape (vanilla's member already declared) and with the switch off, the class is handed back as it
+net/forbric/kernel/transform/NeoForgeBaseClientPartTrackingStagedTest.java	35	history	-	* <p>The client used to disconnect on sight of such an entity: the merged base's {@code onTrackingStart} was once
+net/forbric/kernel/transform/NeoForgeBaseClientPartTrackingStagedTest.java	91	history	-	* every NeoForge mod's entity on the merged base (for this broken entity it is native NeoForge behaviour).
+net/forbric/kernel/transform/DeclarationReaderCensusTest.java	29	stage6-measure	-	* <p>The platform half is the scoping claim. The merged base and both carriers enumerate {@code ModList} in a dozen
+net/forbric/kernel/transform/FabricHooksCallTest.java	330	history-fixture	-	/** {@code main(String[])}: {@code if (args.length == 0) ServerModLoader.load(false);} — the merged base's shape. */
+net/forbric/kernel/transform/MergedBasePipelineDriftTest.java	58	history	-	* <p>The merged base's Minecraft half comes out of NeoForge's decompile-recompile pipeline, so it is not vanilla's
+net/forbric/kernel/transform/MergedBasePipelineDriftTest.java	86	history	-	* double ({@code f2d; ldc2_w 0.10000000149011612; dcmpg}); the merged base compares in float
+net/forbric/kernel/transform/RegistryRevertInjectorTest.java	46	history	-	* edits is NeoForge's on either base, so this is the genuine base's class as much as the merged base's.
+net/forbric/kernel/transform/RepairDriftCensusStagedTest.java	47	stage6-name	-	private static final String STREAMS_CLAIM = "forbric-merged-base-compat#wrapTheStreamsVanillaWraps";
+net/forbric/kernel/transform/RepairDriftCensusStagedTest.java	93	stage6-name	-	assertTrue(drift.declined().stream().anyMatch(d -> d.contains("forbric-merged-base-compat#bridgeOrphanedPipRenderers")),
+net/forbric/kernel/transform/MergedBaseFeaturesPerStepTest.java	19	history	S1	* {@link FeaturesPerStepRefreshStagedTest}'s subject. (Stage 4 C5: the merged base's second {@code ClearableLazy} view, its
+net/forbric/kernel/transform/MergedBaseFeaturesPerStepTest.java	20	history-fixture	S1	* provider cell, carrier class and {@code instanceof} guard were artefacts of the merged-base builder and went with it.)
+net/forbric/kernel/mixin/UncalledMethodCensusTest.java	125	history	-	// Code the kernel keeps from ever running: none. On the merged base these were the leaves MinecraftForge's builder put
+net/forbric/kernel/mixin/UncalledMethodCensusTest.java	363	history	-	* them where a base lacks them, and it adds nothing where the base declares them (the merged base). Read as names,
+net/forbric/kernel/transform/EnvironmentStripTransformerTest.java	521	history	-	// the old wording's "the merged base carries the types it names" was false for the very case at hand.
+net/forbric/kernel/transform/EnvironmentStripTransformerTest.java	683	keep-concept	-	Path unowned = jar(dir.resolve("merged-base.jar"), methodOnly(PKG + "Unowned"));
+net/forbric/kernel/transform/UntrackedFluidEyeQueryInjectorTest.java	47	history	-	* before this: the Entity guard called EntityFluidInteraction.getTracker(TagKey), declared only by the merged base's
+net/forbric/kernel/transform/ItemUseOnInjectorExecutionTest.java	234	history	-	* A body that posts no UseItemOnBlockEvent — the shape MinecraftForge's body had on the merged base — is declined: no
+net/forbric/kernel/transform/VanillaEarlyReturnsTest.java	248	history-fixture	-	/** The merged base's {@code getArmPose}: the second guard became a ternary into the tail. */
+net/forbric/kernel/transform/CommonNetworkInteropInjectorTest.java	194	history	-	* <p>The merged base's {@code ServerGamePacketListenerImpl.handleCustomPayload} was MinecraftForge's override: ask
+net/forbric/kernel/mixin/OptionalPartnerInjectorTest.java	159	history-fixture	-	* The same -1 into a method the mod's own platform declares and the merged base lost: natively that injector
+net/forbric/kernel/mixin/OptionalPartnerInjectorTest.java	170	history-fixture	-	row[0] + "#" + row[1] + " is vanilla's, and the merged base lacks it");
+net/forbric/kernel/mixin/MixinFitHandlerFitTest.java	52	history	-	* bound the method the mod was compiled against; on the merged base it can bind a carrier's overload
+net/forbric/kernel/transform/ChainReferences.java	53	history	-	* {@code EntityFluidInteraction.getTracker(TagKey)}, which only the merged base's MinecraftForge half declares, and
+net/forbric/kernel/transform/ChainReferences.java	97	stage6-name	-	* with the jars' references bound, as the merged-base repair proves against them. The transformers that need
+net/forbric/kernel/mixin/weave/LateInjectionIsolationWeaveTest.java	44	history	-	* <li><b>missing</b>: the wrapped call is not in the method (the merged base's lost {@code ClientHooks.extractScreen}),
+net/forbric/kernel/transform/VanillaDamageReadInjectorTest.java	81	history	-	* container-armouring body does, also when an earlier hook reads the parameter first (the shape the old merged base
+net/forbric/kernel/mixin/weave/CameraRotationWrapWeaveTest.java	51	history-fixture	-	// The class the mod was compiled against, as the merged-base builder ships it: the camera's own nativeAlignment
+net/forbric/kernel/transform/GenuineNativeReferencesStagedTest.java	134	history	-	// LocalRanges' one merged-base site was FluidRenderer.tesselate as the MinecraftForge fluid-model splice left it; that
+net/forbric/kernel/transform/GenuineNativeReferencesStagedTest.java	255	stage6-name	-	/** FluidRenderer after the merged-base compat edit, which the chain runs before LocalRanges. */
+net/forbric/kernel/transform/NeoForgeBaseCreativeSearchStagedTest.java	29	history	-	* <p>The merged base carried MinecraftForge's {@code SessionSearchTrees.getSearchTree(Key)},
+net/forbric/kernel/transform/NeoForgeBaseCreativeSearchStagedTest.java	36	history	-	* {@code Map.getOrDefault} within the five instructions before. The merged base had one (getSearchTree); NeoForge's
+net/forbric/kernel/mixin/weave/MixinAnonymousRetargetWeaveTest.java	21	history-fixture	-	* <p>The fixture is laid out like the merged base for {@code BoundedFloatFunction}, one of the table's
+net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	83	history	-	* <p>The same replay also pins what the chain must NOT do: the four NeoForge hook calls the merged base had lost and the
+net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	151	history	-	// NeoForge's own call sites that the merged base had lost, which the chain must leave as they are
+net/forbric/kernel/transform/ChainAnchorCensusStagedTest.java	175	history	-	* The four NeoForge hook calls the merged base had lost and the genuine base restored (Stage 4 C2): raw NeoForge 26.2.0.93
+net/forbric/kernel/mixin/weave/KeyActionExitsWeaveTest.java	116	history-fixture	-	* {@code nativeFixture}, hash-pinned under the FABRIC prefix, exactly as the merged-base builder emits it.
+net/forbric/kernel/mixin/weave/MixinHandlerShimWeaveTest.java	24	history-fixture	-	* {@code MixinHandlerShim} through the real weave: a handler written for vanilla's lambda, on a merged base that keeps
+net/forbric/kernel/transform/ForeignFluidTypeInjectorExecutionTest.java	24	history	-	* rebinds to show the answer is not cached. (The merged base's {@code Fluid} also had MinecraftForge's
+net/forbric/kernel/mixin/weave/LootSourceCallbacksSpellingTest.java	153	keep-concept	-	// The sources a launch on this base has: its embedded index (the merged base), else the vanilla-reference
+net/forbric/kernel/runtime/KernelModelFormatsTest.java	53	history	-	* <p>The one stand-in is the vanilla {@code CuboidModel$Deserializer}, because on the merged base it drags in both
+net/forbric/kernel/transform/InjectorExecutionCensusTest.java	69	history	-	// A floor that only catches a reader that sees (almost) nothing: Stage 4 deleted the merged base's repairs, and 68
+net/forbric/kernel/transform/MergedBaseKeyMappingMapTest.java	84	history	-	* The merged base declared two static {@code MAP} fields, NeoForge's and MinecraftForge's {@code KeyMappingLookup},
+net/forbric/kernel/transform/MergedBaseSavedHeightmapsTest.java	118	stage6-name	-	assertTrue(!hits.contains("forbric-merged-base-compat#saveTheHeightmapsVanillaSaves"),
+net/forbric/kernel/transform/UnboundHolderDataInjectorTest.java	181	history	-	// defaults in the carrier (2) and one answers null. The merged base's floor (> 100) counted the defaults its merge
+net/forbric/kernel/transform/NeoForgeBaseRecordOptionalsStagedTest.java	47	history	-	* merged base had one (ServerStatus's six-argument constructor, forgeData); NeoForge's base has none. And it builds
+net/forbric/kernel/transform/PackRepairInjectorsTest.java	46	history-fixture	-	* <p>These tests build the merged base's {@code readPackMetadata} shape, apply fabric-api's mixin the way Mixin
+net/forbric/kernel/transform/PackRepairInjectorsTest.java	189	history-fixture	-	* The merged base's shape:
+net/forbric/kernel/transform/PackRepairInjectorsTest.java	245	history	-	* harmless on Fabric, where nothing mutates it afterwards, and fatal one instruction later on a merged base.
+net/forbric/kernel/transform/M9MechanismLinesContractTest.java	21	history	-	* the old text: the mip-level repair (since deleted with the merged base) and the late block-state callback were both
+net/forbric/kernel/transform/M9MechanismLinesContractTest.java	36	stage6-name	-	private static final String STREAMS_CLAIM = "forbric-merged-base-compat#wrapTheStreamsVanillaWraps";
+net/forbric/kernel/transform/KeyModifierSplitStagedTest.java	39	history	G-C	* and by the merged base of Forbric 0.4 and earlier alike. On the merged base MinecraftForge's
+net/forbric/kernel/transform/KeyModifierSplitStagedTest.java	45	history	G-C	* change that brings back a call fed a value with no such split or guard is named here (the merged base had one:
+net/forbric/kernel/transform/KeyModifierSplitStagedTest.java	195	history	G-C	// --- fixtures, in the shapes javap shows (NeoForge 26.2.0.93 Options.processOptions; the merged base's
+net/forbric/kernel/transform/CustomPayloadInteropSeamTest.java	25	history	-	* The merged base's PASS 4b splice, made by the kernel: dormant on the merged base, whose codec class already asks
+net/forbric/kernel/transform/CraftingRemainderConflictTest.java	37	history	-	* a Fabric item's override still wins by dispatch and a NeoForge item's is reached too. On the merged base the same row
