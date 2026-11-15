@@ -30,15 +30,18 @@
 # which on macOS read "INVALID MESSAGE WITH QUOTES" (tinyfd; the game JVM is AWT-headless) and whose Swing form never shows
 # under -XstartOnFirstThread (measured on native NeoForge with earlyWindowControl=false). The registry-phase stops (listener,
 # try) assert the report drew on NeoForge's early window (the kernel's line, the window's renderer up, no osascript message
-# box among the client's children, on macOS with Quartz the client's own window under NeoForge's title on screen, no
-# config/fml.toml written).
+# box among the client's children, the client's main thread in NeoForge's ErrorDisplay.fatal, on macOS with Quartz the
+# client's own window under NeoForge's title on screen, no config/fml.toml written); a check that cannot run says so on a
+# SKIP line.
 #
 # RED control (D34): the kernel at 2c231c9c (before K3c) contained the registration throw, and the kernel at 421c53cc
 # (before STOP) contained construct, common and fabric and named nobody for try. The kernel at 40a71d1a (lane STOP before
 # its review) stopped datapackreg after the Fabric main in "Initializing game", and its fabric line printed "%s".
 # The early-window checks are red on the kernel at 421c53cc (FORBRIC_BOOT_JAR at its jar): NeoForge's osascript box, no
-# kernel line, no renderer (35/8, lane DLG). The fml.toml check is red on a kernel whose window setup keeps FML's in-memory
-# config in place (41/2).
+# kernel line, no renderer (35/8, lane DLG, before the main-thread check). The fml.toml check is red on a kernel whose window
+# setup keeps FML's in-memory config in place (41/2). The main-thread check (ErrorDisplay.fatal) and the rest of the
+# early-window checks are red with -Dforbric.fatalErrorWindow=off in FORBRIC_JVM (NeoForge's fallback); the control's "no
+# fatal-error window was opened" is red on a kernel that opens the window at every boot.
 # GATE-PARALLEL: rundirs=client-registerstop mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -98,7 +101,7 @@ run_client() {
   local log="$1" mode="$2" pid i code report="" crashed="" sound=""
   : > "$log"
   # Every artifact of an earlier run goes first: a stale crash report or analysis beside the log would pass for this one.
-  rm -f "$log.exit" "$log.game" "$log.crash-client.txt" "$log.suspects.json" "$log.children" "$log.windows"
+  rm -f "$log.exit" "$log.game" "$log.crash-client.txt" "$log.suspects.json" "$log.children" "$log.windows" "$log.jstack"
   FORBRIC_COMPAT_POLICY=continue FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.registerstop=$mode" RUNDIR="$CLI" \
     "$KERNEL/run/launch-kernel-client.sh" > "$log" 2>&1 < /dev/null &
   pid=$!
@@ -122,6 +125,9 @@ run_client() {
     pgrep -P "$pid" 2>/dev/null | xargs -I{} ps -o command= -p {} 2>/dev/null | cut -c1-160 > "$log.children"
     echo "[kernel] client still running; its children: $(tr '\n' ' ' < "$log.children")"
     client_windows "$pid" > "$log.windows"
+    # Where the client's main thread waits: NeoForge's error screen is ErrorDisplay.fatal's loop on it; its fallbacks
+    # wait elsewhere (tinyfd's child, Swing's JOptionPane), and a window stuck on its loading screen waits nowhere near.
+    perl -e 'alarm 60; exec @ARGV' jstack "$pid" > "$log.jstack" 2>&1 || true
     stop_tree "$pid" 15
     wait "$pid" 2>/dev/null
     if [ -n "$crashed" ] && [ -z "$sound" ] && ! grep -qa "Sound engine started" "$CLI/logs/latest.log" 2>/dev/null; then
@@ -192,11 +198,24 @@ early_window_report() { # early_window_report <log> <mode> — the report drew N
   check "$mode: the kernel opened NeoForge's early window for its fatal-error report" \
     "\[Forbric/FatalError\] opened NeoForge's early window \('fmlearlywindow'\)" "$log"
   check "$mode: NeoForge's early window rendered (its renderer reported GL)" "\[fml-loadingscreen/INFO\].*GL info: " "$log"
+  # The checks below look at the running client, so they run only when it sat in the report ("held"); each one that cannot
+  # run says so on a SKIP line (not counted as PASS or FAIL), so a run that skipped them is not mistaken for a full one.
   if [ "$(cat "$log.exit" 2>/dev/null)" = held ]; then
-    if grep -aq osascript "$log.children" 2>/dev/null; then
-      echo "[kernel] FAIL $mode: NeoForge's message-box fallback is up (osascript), not its error screen"; FAIL=1
+    # tinyfd's message box is a child process: osascript on macOS, zenity/kdialog/... elsewhere. Swing's has none, so it
+    # is the jstack check below that tells it apart.
+    if grep -aqE "osascript|zenity|kdialog|qarma|matedialog|yad|Xdialog" "$log.children" 2>/dev/null; then
+      echo "[kernel] FAIL $mode: NeoForge's message-box fallback is up ($(tr '\n' ' ' < "$log.children")), not its error screen"; FAIL=1
     else
       echo "[kernel] PASS $mode: no message-box fallback among the client's children"
+    fi
+    if grep -aq '^"main"' "$log.jstack" 2>/dev/null; then
+      if awk '/^"main"/{on=1} on&&/^$/{exit} on' "$log.jstack" | grep -aq "net\.neoforged\.fml\.earlydisplay\.error\.ErrorDisplay\.fatal"; then
+        echo "[kernel] PASS $mode: the client's main thread is in NeoForge's error screen (ErrorDisplay.fatal)"
+      else
+        echo "[kernel] FAIL $mode: the client's main thread is not in NeoForge's error screen (no ErrorDisplay.fatal on it; $log.jstack)"; FAIL=1
+      fi
+    else
+      echo "[kernel] FAIL $mode: no thread dump of the held client ($log.jstack)"; FAIL=1
     fi
     if python3 -c 'import Quartz' 2>/dev/null; then
       if grep -aqx "Minecraft: NeoForge Loading..." "$log.windows" 2>/dev/null; then
@@ -204,7 +223,11 @@ early_window_report() { # early_window_report <log> <mode> — the report drew N
       else
         echo "[kernel] FAIL $mode: no on-screen client window titled 'Minecraft: NeoForge Loading...' (saw: $(tr '\n' '|' < "$log.windows" 2>/dev/null))"; FAIL=1
       fi
+    else
+      echo "[kernel] SKIP $mode: the on-screen window check (this host's python3 has no Quartz)"
     fi
+  else
+    echo "[kernel] SKIP $mode: the running-client checks (message-box child, main thread in ErrorDisplay.fatal, on-screen window) — the client did not sit in the report (exit: $(cat "$log.exit" 2>/dev/null))"
   fi
   # The window's own setup writes its size into FML's config, which would save the kernel's in-memory one
   # (earlyWindowControl=false) to config/fml.toml, where a native NeoForge launch of this folder would read it.
