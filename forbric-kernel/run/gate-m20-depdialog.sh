@@ -48,8 +48,11 @@
 #             boot must really get past BOTH decisions — "Sound engine started" comes after the client-setup
 #             decision inside Minecraft.<init>.
 # With no required loss in the report, ask degrades to the continue case, and the gate asserts that instead -- which
-# is what the dependency canary alone produces, so the last two steps add a mod that fails on purpose
-# (build-broken-canary.sh) to put a real required loss in front of ask and of the off switch.
+# is what the dependency canary alone produces, so the last two steps add a mod with a real required loss in front of ask
+# and of the off switch: the m30 mixin canary repacked with its mixin config required and only its UnfitMixin (an injector
+# that must inject, require = 1, into a method the game lacks), so the kernel leaves the mixin out and records a CONFIRMED
+# required loss at boot. Until lane STOP that mod was the Fabric broken canary, whose main entrypoint throws; since D87 a
+# throwing entrypoint takes the game down as native Fabric Loader does (gate-m24/m24d), before anything could be asked.
 # GATE-PARALLEL: rundirs=server-depdialog,client-depdialog mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -281,18 +284,36 @@ if [ "$OREQ" != "missing" ] && [ "$OREQ" -gt 0 ] 2>/dev/null; then
 fi
 
 step "ask with a required loss: a window nobody can answer moves the question into the game"
-"$KERNEL/run/build-broken-canary.sh" >"$BUILD/gate-m20-broken-canary.log" 2>&1 \
-  || echo "[kernel] FAIL the broken canary did not build — see $BUILD/gate-m20-broken-canary.log"
-# The broken mod alone: with the dependency canary beside it the first decision (before any entrypoint has run, so
-# before this loss exists) would show the fail-open notice as a window of its own, and the count below would be two.
+"$KERNEL/run/build-attribution-canaries.sh" >"$BUILD/gate-m20-required-canary.log" 2>&1 \
+  || echo "[kernel] FAIL the mixin canary did not build — see $BUILD/gate-m20-required-canary.log"
+REQUIRED_JAR="$BUILD/gate-m20-forbricrequiredloss.jar"
+# The mixin canary with its config required and UnfitMixin alone: the kernel's fit check leaves the mixin out as a CONFIRMED
+# required loss, at boot, and nothing throws.
+python3 - "$KERNEL/run/canary/forbricmixincanary.jar" "$REQUIRED_JAR" <<'PY' || { echo "[kernel] FAIL could not make the required-loss jar"; FAIL=1; }
+import json, sys, zipfile
+src, dst = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(src) as zin, zipfile.ZipFile(dst, "w", zipfile.ZIP_DEFLATED) as zout:
+    for item in zin.infolist():
+        data = zin.read(item.filename)
+        if item.filename == "forbricmixincanary.mixins.json":
+            config = json.loads(data)
+            config["required"] = True
+            config["mixins"] = ["UnfitMixin"]
+            data = json.dumps(config).encode()
+        if item.filename.endswith("ApplyFailingMixin.class"):
+            continue
+        zout.writestr(item, data)
+PY
+# The required-loss mod alone: with the dependency canary beside it the first decision would show the fail-open notice as a
+# window of its own, and the count below would be two.
 rm -f "$CLI/mods/"*.jar
-cp "$KERNEL/run/canary/forbricbrokencanary.jar" "$CLI/mods/" 2>/dev/null
+cp "$REQUIRED_JAR" "$CLI/mods/" 2>/dev/null
 run_client "$REQLOG" ask dryRun 'asking in the game|launch stopped|Game crashed|Mod Loading has failed'
 RREQ=$(report_field "$REQLOG.json" 'report["confirmedRequired"]')
 if [ "$RREQ" != missing ] && [ "$RREQ" -gt 0 ] 2>/dev/null; then
-  echo "[kernel] PASS the broken mod is a confirmed required loss ($RREQ)"
+  echo "[kernel] PASS the unfit required mixin is a confirmed required loss ($RREQ)"
 else
-  echo "[kernel] FAIL the broken mod is a confirmed required loss (got $RREQ)"; FAIL=1
+  echo "[kernel] FAIL the unfit required mixin is a confirmed required loss (got $RREQ)"; FAIL=1
 fi
 assert_eq "one window, the confirmation" "1" "$(forks "$REQLOG.game")"
 check "it could not be shown" \
@@ -311,7 +332,7 @@ check "with no window a required loss is not approved" "continuation was not app
 assert_eq "and the launch stopped with the typed policy stop" "78" "$(cat "$REQOFFLOG.exit" 2>/dev/null)"
 check_absent "no child was forked" "forked the dialog" "$REQOFFLOG"
 check_absent "and nothing was handed to the game" "asking in the game" "$REQOFFLOG"
-rm -f "$CLI/mods/forbricbrokencanary.jar"
+rm -f "$CLI/mods/$(basename "$REQUIRED_JAR")"
 
 step "M20 result"
 if [ "${FAIL:-0}" -eq 0 ]; then
