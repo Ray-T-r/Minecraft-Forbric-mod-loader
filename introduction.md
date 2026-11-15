@@ -2252,10 +2252,10 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   fails on *any* skipped test, because a skip there means the tests did not look at the real base. The weave tests
   (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and MixinExtras, each with its
   mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK 21).
-- **Gates.** 60 scripts, `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
+- **Gates.** 61 scripts (one of them the two-hour soak, gate-m34), `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
-  gate's `# GATE-PARALLEL: rundirs=… mem=…` line (57 of 60 carry one; a gate without it runs alone), giving each
+  gate's `# GATE-PARALLEL: rundirs=… mem=…` line (60 of 61 carry one; a gate without it runs alone), giving each
   slot its own port block. Their time bounds are wall-clock seconds sized on a machine with cores to spare, and most
   count from the launcher's start, its Gradle build included; gate-m22's client window counts from the JVM's own
   start instead. On a busy machine they measure the machine. Run as two `-j 5` batches side by side, one on a
