@@ -41,6 +41,7 @@ test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[1] true	[fixtur
 test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[2] false	[fixture:third-party] stage the popular compatibility pack and the boot jar (or set fixture overrides): $ROOT/forbric-kernel/build/compat-inputs/popular/mods/badpackets-forge-0.12.2.jar, $ROOT/forbric
 test	net.forbric.kernel.boot.KernelBusSupportTest	theCarrierStillOffersEveryBusBuilderCallMakeModBusMakes()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelBusSupportTest	theModBusMarkerInterfaceStillExists()	[fixture:staged] staged NeoForge carrier absent
+test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSubscriberClassIsInitialisedOnAModloadingWorker()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSummaryGateM4CanaryReadsIsPrintedWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.boot.KernelLifecycleEarlyConfigOrderTest	theClientsOrderIsTheCarriersOwn()	[fixture:staged] staged NeoForge carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelLoadReportTest	theServerStartedHookWritesTheReportAgain()	[fixture:game-side] runtime helper not compiled
@@ -74,7 +75,10 @@ test	net.forbric.kernel.boot.NeoDeferredWorkTest	theNeoForgeSetupPhaseRunsItsQue
 test	net.forbric.kernel.boot.NeoDeferredWorkTest	theSetupPhaseAttributesAThrowingDeferredTask()	[fixture:game-side] KernelNeoSetup not compiled yet (no staged game jars)
 test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	neoForgesConfigStopsPromisingAnEarlyWindowAndNothingElseChanges()	[fixture:staged] staged neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	theCarrierDeclaresTheSpiByThatNameAndShape()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforgespi/earlywindow/GraphicsBootstrapper.class)
+test	net.forbric.kernel.boot.NeoModLoadingThreadsStagedTest	aSetupPhaseReachesEachModOnAModloadingWorkerWithItsOwnContainerActive()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.boot.NeoModLoadingThreadsStagedTest	eachModIsConstructedOnAModloadingWorkerWithItsOwnContainerActive()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.NeoPostRegisterTailCensusTest	everyStepAfterNeoForgesRegisterLoopIsOneTheKernelTakes()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent
+test	net.forbric.kernel.boot.NeoRegistryCreationPhaseTest	eachBusTakesNewRegistryEventWithItsOwnModActiveAsNatively()	[fixture:staged] staged runtime absent
 test	net.forbric.kernel.boot.NeoRegistryCreationPhaseTest	registryModificationFollowsCreationAsOnNativeNeoForge()	[fixture:staged] staged runtime absent
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theRealLithiumFindsUnlitCampfiresOverride()	[fixture:third-party] the player's pack is not here
 test	net.forbric.kernel.boot.PassiveSeederFileConfigTest	theSeededFileAnswersLithiumsQuestionFromUnlitCampfiresManifest()	[fixture:staged] staged neoforge-runtime.jar absent
