@@ -86,6 +86,69 @@ class LibGateExitTest {
 		assertTrue(!out.contains("[kernel] the gate left"), "nothing was left at the gate's own exit: " + out);
 	}
 
+	/**
+	 * A server stopped at the gate's exit leaves no pid file naming it (HARN2 review A-3). On 63e561cc the file stayed,
+	 * always naming a dead pid, for the next run's reap_stale_server to SIGKILL whatever had that number by then.
+	 */
+	@Test void aServerStoppedAtTheExitLeavesNoPidFileBehind() throws Exception {
+		Path rundir = Files.createDirectory(temporary.resolve("rundir"));
+		Path script = gate(JVM + " \"" + pid("server") + "\" &\nrecord_server_pid \"" + rundir + "\" \"$!\"\n"
+				+ "for i in $(seq 1 100); do [ -s \"" + pid("server") + "\" ] && break; sleep 0.1; done\n"
+				+ "[ -s \"" + rundir.resolve(".forbric-gate.pid") + "\" ] && echo 'pid file written'\nwait\n");
+		Process gate = start(script);
+		long jvm = await(pid("server"));
+		Thread.sleep(300);
+		gate.destroy();
+		assertTrue(gate.waitFor(30, TimeUnit.SECONDS), "the gate did not exit on TERM");
+		String out = Files.readString(output(script), StandardCharsets.UTF_8);
+		assertTrue(out.contains("pid file written"), out);
+		assertTrue(gone(jvm), out);
+		assertTrue(!Files.exists(rundir.resolve(".forbric-gate.pid")), "the pid file outlived the server it named: " + out);
+	}
+
+	/**
+	 * reap_stale_server kills only the process its file was written for (HARN2 review A-3): a process that started after
+	 * the file was written has the number by reuse, and is left alone. On 63e561cc it was SIGKILLed with its tree. A real
+	 * leftover, older than its file, is still reaped.
+	 */
+	@Test void aStaleServerIsReapedAndAReusedPidIsNot() throws Exception {
+		Path rundir = Files.createDirectory(temporary.resolve("reap"));
+		Path pidFile = rundir.resolve(".forbric-gate.pid");
+		Process unrelated = new ProcessBuilder("sleep", "300").start();
+		started.add(unrelated.pid());
+		Files.writeString(pidFile, unrelated.pid() + "\n");
+		Files.setLastModifiedTime(pidFile, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis() - 60_000));
+		Path reuse = gate("reap_stale_server \"" + rundir + "\"\n");
+		assertTrue(start(reuse).waitFor(30, TimeUnit.SECONDS));
+		String out = Files.readString(output(reuse), StandardCharsets.UTF_8);
+		assertTrue(alive(unrelated.pid()), "a process younger than the pid file was reaped: " + out);
+		assertTrue(out.contains("so the pid was reused"), out);
+		assertTrue(!Files.exists(pidFile), out);
+
+		Files.writeString(pidFile, unrelated.pid() + "\n");   // written now: the process is older than its file
+		Path stale = gate("reap_stale_server \"" + rundir + "\"\n");
+		assertTrue(start(stale).waitFor(30, TimeUnit.SECONDS));
+		String reaped = Files.readString(output(stale), StandardCharsets.UTF_8);
+		assertTrue(gone(unrelated.pid()), "a real leftover was not reaped: " + reaped);
+		assertTrue(reaped.contains("reaping server " + unrelated.pid()), reaped);
+	}
+
+	/**
+	 * A process that takes a few seconds over its shutdown after TERM gets them (HARN2 review A-5): a server JVM saves its
+	 * world in its shutdown hook. On 63e561cc it was SIGKILLed 2 s after the TERM and never wrote its marker.
+	 */
+	@Test void aSlowShutdownAfterTheTermIsLetFinish() throws Exception {
+		String slow = "sh -c 'trap \"sleep 4; echo saved > \\\"$1.term\\\"; exit 0\" TERM; echo $$ > \"$1\"; while :; do sleep 0.1; done' sh";
+		Path script = gate(slow + " \"" + pid("saver") + "\" &\n"
+				+ "for i in $(seq 1 100); do [ -s \"" + pid("saver") + "\" ] && break; sleep 0.1; done\nexit 0\n");
+		Process gate = start(script);
+		assertTrue(gate.waitFor(30, TimeUnit.SECONDS));
+		long jvm = await(pid("saver"));
+		String out = Files.readString(output(script), StandardCharsets.UTF_8);
+		assertTrue(gone(jvm), out);
+		assertTrue(Files.exists(Path.of(pid("saver") + ".term")), "the shutdown was cut short: " + out);
+	}
+
 	private String pid(String which) {
 		return temporary.resolve(which + ".pid").toString();
 	}

@@ -123,12 +123,19 @@ caught_report() {
 _gate_exit() {
   local rc="${1:-$?}"
   _stop_leftovers
+  _forget_server_pids
   caught_report || { [ "$rc" -eq 0 ] && rc=1; }
   exit "$rc"
 }
 
 # _stop_leftovers — stop every process this shell started that still runs: each child's whole tree, frozen first, asked
-# with TERM, killed after the grace (stop_tree's steps over all of them at once). C5 wave 2d.
+# with TERM, killed after 10 s (stop_tree's steps over all of them at once). C5 wave 2d.
+#
+# THE GRACE is a server's, not a client's (HARN2 review A-5): a server JVM asked with TERM saves its world in its shutdown
+# hook, and a gate killed mid-run can leave one behind (gate-m1, m2 and m3 share one world). 386 gate server logs in the
+# C5 notes went from "Stopping the server" to their last line within 0-2 s by their one-second stamps; 2 s, stop_tree's
+# client grace, would cut the slowest of them short. The wait ends as soon as everything is gone, so it costs nothing on a
+# normal run, and it stays under gates-parallel.py's GATE_TERM_GRACE (20 s) for a gate the sweep is stopping.
 #
 # WHY HERE. Under heavy.sh the signal that reaches a gate is TERM (an async child of a non-interactive shell starts with
 # INT ignored), and bash runs this EXIT trap when an untrapped TERM kills the script -- at once, even with a foreground
@@ -141,7 +148,9 @@ _gate_exit() {
 # and gates-parallel.py with a plain Popen, so its group is its launcher's -- killing the group would kill heavy.sh, the
 # scheduler and every gate running beside it. The descendants are the gate's own processes; they are all still its
 # descendants here, because the EXIT trap runs before bash exits and re-parents them. What a gate already detached
-# itself (a Gradle daemon, which outlives the build that started it by design) is not its own and is left alone.
+# itself (a Gradle daemon, which outlives the build that started it by design) is not its own and is left alone -- once
+# the Gradle client that spawned it has exited; a daemon whose client is still running at the TERM is still a descendant
+# and is stopped with it (read from the code, not measured; HARN2 review B-6).
 # Subshells and command substitutions do not run the EXIT trap, so this runs in the gate's main shell only.
 _stop_leftovers() {
   local child pids="" pid alive i shown
@@ -155,13 +164,13 @@ _stop_leftovers() {
   printf '[kernel] the gate left %s process(es) running at its exit; stopping them: %s\n' "$(echo $pids | wc -w | tr -d ' ')" "$shown"
   for pid in $pids; do kill -TERM "$pid" 2>/dev/null; done
   for pid in $pids; do kill -CONT "$pid" 2>/dev/null; done
-  for i in 1 2 3 4 5 6 7 8; do
+  for i in $(seq 1 40); do   # 10 s
     alive=""
     for pid in $pids; do _running "$pid" && alive="$alive $pid"; done
     [ -n "$alive" ] || return 0
     sleep 0.25
   done
-  for pid in $alive; do _running "$pid" && kill_tree "$pid"; done
+  for pid in $pids; do _running "$pid" && kill_tree "$pid"; done
   return 0
 }
 trap '_gate_exit $?' EXIT
@@ -538,20 +547,64 @@ _running() {
 
 # reap_stale_server <rundir> — clean up a server left running by an INTERRUPTED earlier run of this same gate.
 # Replaces the old blanket pkill pre-clean, which could never have found anything anyway.
+#
+# ONLY THE PROCESS THE FILE WAS WRITTEN FOR (HARN2 review A-3). The file holds a pid, and a pid is reused: a process that
+# started after the file was written is not the one it names, and it is left alone -- the old check (`kill -0`, then
+# SIGKILL to its tree) killed whatever had the number now. record_server_pid writes the file after `&` has started the
+# server, so the server is never younger than its file; two seconds of slack cover the one-second clocks below. Where
+# either age cannot be read, the old behaviour stands.
 reap_stale_server() {
   local pf; pf="$(_pidfile "${1:-}")"
   [ -f "$pf" ] || return 0
-  local stale; stale="$(cat "$pf" 2>/dev/null)"
+  local stale written age; stale="$(cat "$pf" 2>/dev/null)"
+  written="$(_mtime_s "$pf")"
   rm -f "$pf"
   case "$stale" in ''|*[!0-9]*) return 0;; esac
   if kill -0 "$stale" 2>/dev/null; then
+    age="$(_elapsed_s "$stale")"
+    if [ -n "$written" ] && [ -n "$age" ] && [ "$age" -lt $(( $(date +%s) - written - 2 )) ]; then
+      echo "[kernel] not reaping $stale: it started ${age}s ago, after $pf was written, so the pid was reused"
+      return 0
+    fi
     echo "[kernel] reaping server $stale left behind by an interrupted run"
     kill_tree "$stale"
     sleep 1
   fi
 }
+# _elapsed_s <pid> — seconds since <pid> started (ps's etime, [[dd-]hh:]mm:ss); nothing when it cannot be read.
+_elapsed_s() {
+  local e d=0 h=0 m s a b c
+  e="$(ps -o etime= -p "$1" 2>/dev/null | tr -d ' ')"
+  case "$e" in ''|*[!0-9:-]*) return 0;; esac
+  case "$e" in *-*) d="${e%%-*}"; e="${e#*-}";; esac
+  IFS=: read -r a b c <<< "$e"
+  if [ -n "$c" ]; then h=$a; m=$b; s=$c; else m=$a; s=$b; fi
+  echo $(( 10#$d * 86400 + 10#$h * 3600 + 10#$m * 60 + 10#${s:-0} ))
+}
+# _mtime_s <file> — its modification time in epoch seconds (GNU stat, then BSD stat); nothing when neither answers.
+_mtime_s() { stat -c %Y "$1" 2>/dev/null || stat -f %m "$1" 2>/dev/null || true; }
 
-record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
+# record_server_pid <rundir> <pid> — and remember the file, so the gate's EXIT trap can remove it once the server is gone
+# (HARN2 review A-3). Until then every gate that exited left its file behind naming a dead pid -- since wave 2d's
+# _stop_leftovers on every exit, always -- for the next run's reap_stale_server to find. A call in a subshell writes the
+# file but cannot remember it; reap_stale_server's age check covers that one.
+_GATE_PIDFILES=""
+record_server_pid() {
+  local pf; pf="$(_pidfile "$1")"
+  echo "$2" > "$pf"
+  _GATE_PIDFILES="$_GATE_PIDFILES$pf"$'\n'
+}
+# _forget_server_pids — remove each file record_server_pid wrote whose pid no longer runs. One whose server still runs
+# (it escaped _stop_leftovers) is kept, for the next run to reap.
+_forget_server_pids() {
+  local pf pid
+  while IFS= read -r pf; do
+    [ -n "$pf" ] && [ -f "$pf" ] || continue
+    pid="$(cat "$pf" 2>/dev/null)"
+    case "$pid" in ''|*[!0-9]*) rm -f "$pf"; continue;; esac
+    _running "$pid" || rm -f "$pf"
+  done <<< "$_GATE_PIDFILES"
+}
 
 # server_ready <server-log> <seconds> [settle-seconds] — return once <seconds> have passed AND the server has printed
 # "Done (", so a console line written now is one it can run; return 1 instead when the log says the server is gone
