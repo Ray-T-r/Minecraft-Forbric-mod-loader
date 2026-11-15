@@ -3,8 +3,12 @@
 #
 # WHY THIS EXISTS. The login and configuration phases -- each end telling the other what it runs, and the server pushing
 # its per-world SERVER configs to the client -- are their own pipeline, before any PLAY-phase packet. This gate also
-# makes every check gate-m15 made on its play-phase join (FallingTree on both ends, a superset of m15's mods), which is
-# why m15 was removed (lane OPT, 2026-11-16). It was written for MinecraftForge's handshake, three of whose links lost
+# makes every check gate-m15 made on its play-phase join (FallingTree on both ends, a superset of m15's mods), and since
+# lane OPT's review fixes it also runs what m15's client ran and m16's did not: -Dforbric.clientSmokeModsScreen, the
+# Mods screen, both mods buttons and the resource-pack screen opened on a client connected to a REMOTE server. m15 was
+# removed for being a subset (lane OPT, 2026-11-16); its review (lens A, B1) measured that it was not one -- a Mods
+# screen that throws only when no single-player server exists was red on m15 (19/3) and green on m16 (39/0), and gate-m9,
+# the only other gate with the switch, plays a single-player world -- so the switch moved here with checks of its own. It was written for MinecraftForge's handshake, three of whose links lost
 # the byte-merge to NeoForge's; that family left in Stages 3 and 4 (below), and the gate is now about NeoForge's own
 # configuration-phase sync.
 #
@@ -138,7 +142,8 @@ fi
 step "connect a real client and let it play"
 # Ready at 60, the server pings within a second of seeing the player, the pong comes straight back; 200 ticks is
 # ample and keeps the run short.
-FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M16_EXTRA_JVM:-}" \
+# The Mods screen at tick 80 (gate-m15's, before it was folded in here): on a client connected to a remote server.
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M16_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!
@@ -222,6 +227,25 @@ check_absent "every payload encodes (server)"  "Failed to encode packet"        
 check_absent "every payload encodes (client)"  "Failed to encode packet"                  "$CLOG"
 check_absent "every payload decodes"  "Failed to decode packet|Failed decoding custom payload|Unknown custom packet" "$CLOG"
 check_absent "no configuration task failed" "Failed to start configuration task|Failed to tick configuration task|This should never be called" "$SLOG"
+
+step "the Mods screen, the mods buttons and the pack screen, on a client connected to a remote server (must PASS)"
+# What gate-m15's client did and no other gate does: gate-m9 opens the same screens in a single-player world, where the
+# integrated server is in the same JVM. Here the only server is across the socket, so anything in these screens that
+# assumes a local server (or its level, its registries, its player list) is exercised. The window title says which.
+check "the client is in a multiplayer session" "ClientSmoke\] window title: .*Multiplayer \(3rd-party Server\)" "$CLOG"
+check "the pause menu's mods button opens the unified list" \
+  "the mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen" "$CLOG"
+check_absent "and pressing it did not fail" "could not press the pause menu's mods button" "$CLOG"
+check "the title screen's mods button opens the unified list" \
+  "the title screen's mods button opened: net\.forbric\.kernel\.runtime\.KernelModListScreen" "$CLOG"
+check_absent "and pressing that did not fail" "could not press the title screen's mods button" "$CLOG"
+check "the Mods screen opened"  "ClientSmoke\] opened the unified Mods screen" "$CLOG"
+FRAMES=$(grep -aoE 'unified Mods screen drew [0-9]+ frame' "$CLOG" | grep -oE '[0-9]+' | head -1)
+[ "${FRAMES:-0}" -ge 1 ] && echo "[kernel] PASS and it rendered ($FRAMES frames)" \
+  || { echo "[kernel] FAIL the Mods screen drew no frames (got ${FRAMES:-none}) -- constructed is not rendered"; FAIL=1; }
+check_absent "the Mods screen did not throw" "the unified Mods screen could not be opened" "$CLOG"
+check "the resource-pack screen listed its rows" "resource-pack screen lists [0-9]+ pack row" "$CLOG"
+check_absent "the resource-pack screen opened" "could not open the resource-pack screen" "$CLOG"
 
 step "it played and left cleanly (must PASS)"
 check "survived real simulation"     "ClientSmoke\] client-ready after"                 "$CLOG"
