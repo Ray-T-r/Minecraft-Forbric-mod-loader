@@ -146,7 +146,8 @@ that name the same rundir, and keeps the running set inside a memory budget. **A
 `# GATE-PARALLEL:` line runs alone** and the run says so on stderr — a new gate is slow, not silently broken. A
 gate whose verdict is a timing adds the bare word `alone` to its line and runs alone too: gate-m12's late-tick ceiling
 and `check_kept_up` (m12, m16) count a neighbour's CPU as the server falling behind, and `GatesAllTest` fails on
-a gate that uses either without saying `alone`.
+a gate that uses either without saying `alone`. Any other word on the line stops the sweep before a gate runs (a
+misspelt `alon` used to be skipped in silence); a note goes after ` # ` on the same line.
 
 Four things keep verification short (`gates-all.sh --help` has the switches, `run/compat/gate_cache.py` the reasoning):
 

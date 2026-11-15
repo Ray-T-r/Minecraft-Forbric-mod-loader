@@ -412,6 +412,7 @@ says so in the progress log; a new gate is slow rather than silently unsound. A 
 verdict is a timing adds the bare word `alone` (gate-m12's late-tick ceiling, and every gate
 that calls `check_kept_up`): a neighbour's CPU would read as the server falling behind, so it
 runs with no other gate, and `GatesAllTest` fails on such a gate that does not say `alone`.
+Any other word on the line stops the sweep before a gate runs; a note goes after ` # `.
 
 A gate that wants a shared fixture to itself declares `clone=<dir>:<ENV_VAR>` instead, and the
 scheduler points that variable at a private copy under `run/.gate-clones/`. Four gates want

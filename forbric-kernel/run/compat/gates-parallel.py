@@ -97,6 +97,9 @@ PORT_STRIDE = 10
 PORT_VARS = ("GATE_PORT", "M12_PORT", "M13_PORT", "M14_PORT", "M16_PORT", "M28_PORT", "M32_PORT")
 
 DECL = re.compile(r"^#\s*GATE-PARALLEL:\s*(.*)$", re.M)
+# A comment on the declaration line: a `#` at its start or after whitespace, to the end of the line.
+COMMENT = re.compile(r"(?:^|\s)#")
+DECL_WORDS = ("rundirs", "clone", "mem", "alone")
 
 
 class Gate:
@@ -112,24 +115,42 @@ class Gate:
         self._parse()
 
     def _parse(self) -> None:
+        # Every word on the line is one of the four below, or the sweep refuses to start. Until C5 wave 2d an unknown
+        # word was skipped in silence, so a misspelt `alon` or `rundir=` ran the gate beside others with nothing said,
+        # and gate-m0's "(builds and runs the unit suite)" was read as five ignored words. Prose goes after ` # `:
+        #     # GATE-PARALLEL: rundirs=server-m0-definitions mem=3500  # builds and runs the unit suite
         name = self.name
-        m = DECL.search(self.source)
-        if not m:
+        found = list(DECL.finditer(self.source))
+        if not found:
             return
-        for field in m.group(1).split():
-            key, _, value = field.partition("=")
+        if len(found) > 1:
+            raise SystemExit(f"{name}: {len(found)} '# GATE-PARALLEL:' lines; one gate has one declaration")
+        body = COMMENT.split(found[0].group(1), maxsplit=1)[0]
+        seen: set[str] = set()
+        for field in body.split():
+            key, eq, value = field.partition("=")
+            if key not in DECL_WORDS:
+                raise SystemExit(f"{name}: unknown word {field!r} on its GATE-PARALLEL line (it takes "
+                                 f"rundirs=<dir>[,<dir>...] clone=<dir>:<ENV_VAR> mem=<MB> alone; prose goes after ' # ')")
+            if key in seen:
+                raise SystemExit(f"{name}: {key} given twice on its GATE-PARALLEL line")
+            seen.add(key)
             if key == "rundirs":
                 self.rundirs = {r for r in value.replace(",", " ").split() if r}
+                if not self.rundirs:
+                    raise SystemExit(f"{name}: rundirs= wants one or more <dir>, got {field!r}")
             elif key == "clone":
                 source, _, variable = value.partition(":")
                 if not source or not variable:
                     raise SystemExit(f"{name}: clone= wants <dir>:<ENV_VAR>, got {value!r}")
                 self.clone = (source, variable)
             elif key == "mem":
+                if not value.isdigit():
+                    raise SystemExit(f"{name}: mem= wants a whole number of MB, got {field!r}")
                 self.mem = int(value)
             elif key == "alone":
-                if value:
-                    raise SystemExit(f"{name}: alone takes no value, got alone={value!r}")
+                if eq:
+                    raise SystemExit(f"{name}: alone takes no value, got {field!r}")
                 self.alone = True
         self.declared = True
 

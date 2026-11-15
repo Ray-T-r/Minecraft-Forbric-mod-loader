@@ -188,13 +188,52 @@ class GatesAllTest {
 				if (!readsSampler && !judgesOverload) continue;
 				var line = declaration.matcher(text);
 				// An undeclared gate already runs alone; a declared one has to ask for it.
-				if (line.find() && !List.of(line.group(1).trim().split("\\s+")).contains("alone")) sharing.add(name);
+				// Prose after ` # ` on the line is not a word of the declaration (gates-parallel.py's COMMENT).
+				if (line.find() && !List.of(line.group(1).split("(?:^|\\s)#", 2)[0].trim().split("\\s+")).contains("alone"))
+					sharing.add(name);
 			}
 		}
 		assertTrue(sampler.contains("gate-m12-multiplayer.sh"), "the rule no longer finds gate-m12's tick check: " + sampler);
 		assertTrue(overload.contains("gate-m12-multiplayer.sh"), "the rule no longer finds a check_kept_up call: " + overload);
 		assertEquals(List.of(), sharing, "these gates judge a timing but may run beside other gates: add `alone` to their"
 				+ " # GATE-PARALLEL: line");
+	}
+
+	/**
+	 * Every word of a GATE-PARALLEL line is one the scheduler knows, or the sweep stops before any gate runs (C5 wave 2d).
+	 * On 421c53cc an unknown word was skipped in silence: a misspelt {@code alon} ran a timing gate beside others, and a
+	 * {@code rundir=} (no s) shared a rundir, with nothing said. Prose goes after {@code  # }, which gate-m0 needs for its
+	 * note, and a word there is not read: on 421c53cc the {@code alone} in this test's prose made the gate run alone.
+	 */
+	@Test void aDeclarationWordTheSchedulerDoesNotKnowStopsTheSweep() throws Exception {
+		String[][] wrong = {{"rundirs=a mem=10 alon", "unknown word 'alon'"}, {"rundir=a mem=10", "unknown word 'rundir=a'"},
+				{"rundirs=a mem=lots", "mem= wants a whole number"}, {"rundirs=a mem=10 alone=yes", "alone takes no value"},
+				{"rundirs=a rundirs=b mem=10", "rundirs given twice"}, {"rundirs=a mem=10 (prose without a hash)", "unknown word '(prose'"},
+				{"rundirs=a mem=10\n# GATE-PARALLEL: rundirs=b mem=10", "2 '# GATE-PARALLEL:' lines"}};
+		for (int i = 0; i < wrong.length; i++) {
+			Path gates = Files.createDirectory(temporary.resolve("wrong-gates-" + i));
+			Path ran = temporary.resolve("wrong-ran-" + i);
+			write(gates, "gate-m1.sh", "touch \"" + ran + "\"\n");
+			write(gates, "gate-m2.sh", "# GATE-PARALLEL: " + wrong[i][0] + "\ntouch \"" + ran + "\"\n");
+			var env = Map.of("FORBRIC_GATE_DIR", gates.toString(), "FORBRIC_GATE_RESULTS",
+					temporary.resolve("wrong-results-" + i).toString());
+			var result = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "-j", "2");
+			assertNotEquals(0, result.exitCode(), wrong[i][0] + ": " + result.output());
+			assertTrue(result.output().contains("gate-m2.sh: ") && result.output().contains(wrong[i][1]),
+					wrong[i][0] + ": " + result.output());
+			assertFalse(Files.exists(ran), wrong[i][0] + ": a gate ran although the sweep could not read a declaration");
+		}
+
+		Path gates = Files.createDirectory(temporary.resolve("prose-gates"));
+		write(gates, "gate-m1.sh", "# GATE-PARALLEL: rundirs=a mem=10\nexit 0\n");
+		write(gates, "gate-m2.sh", "# GATE-PARALLEL: rundirs=b mem=10  # not alone here, this is prose\nexit 0\n");
+		Path results = temporary.resolve("prose-results");
+		var env = Map.of("FORBRIC_GATE_DIR", gates.toString(), "FORBRIC_GATE_RESULTS", results.toString());
+		var result = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "-j", "2");
+		assertEquals(0, result.exitCode(), result.output());
+		assertEquals(List.of("RESULT gate-m1.sh GREEN (exit=0)", "RESULT gate-m2.sh GREEN (exit=0)"), result.output().lines().toList());
+		assertFalse(Files.readString(results.resolve("progress.log")).contains("runs with no other gate"),
+				"a word in the comment was read as `alone`: " + Files.readString(results.resolve("progress.log")));
 	}
 
 	private static String describe(Map<String, double[]> ran) {

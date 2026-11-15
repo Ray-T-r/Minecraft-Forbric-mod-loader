@@ -40,7 +40,7 @@
 # java process of the suite together peaked at 3.4 GB resident in the two forked runs whose whole-java total was
 # sampled (the four workers 2.9-3.1 GB in all three), against 2.7 GB in one fork (sampled after its first minutes;
 # workers alone 2.1 GB over the whole run). mem is what the scheduler reserves beside the other gates of a sweep.
-# GATE-PARALLEL: rundirs=server-m0-definitions mem=3500  (builds and runs the unit suite)
+# GATE-PARALLEL: rundirs=server-m0-definitions mem=3500  # builds and runs the unit suite
 # GATE-CACHE: tests   (runs test sources, so a test-only change re-runs it; see run/compat/gate_cache.py)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
