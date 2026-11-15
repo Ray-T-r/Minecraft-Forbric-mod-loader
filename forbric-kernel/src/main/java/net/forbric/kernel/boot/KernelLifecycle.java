@@ -1282,11 +1282,21 @@ public final class KernelLifecycle {
 				// The active container matters here too: a mod may resolve itself while building its codec.
 				KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
 				try {
-					post.invoke(e.getValue().bus(), event);
+					// Through the mod's container, as RegistryManager.postNewRegistryEvent hands it on natively
+					// (ModLoader.postEventWrapContainerInModOrder): a listener's throw becomes NeoForge's error naming the mod.
+					Object container = e.getValue().container();
+					Method accept = container == null ? null : modContainerClass(cl).getMethod("acceptEvent", baseEvent);
+					if (accept != null) accept.invoke(container, event);
+					else post.invoke(e.getValue().bus(), event);
 					posted++;
+				} catch (java.lang.reflect.InvocationTargetException perMod) {
+					// Natively this ends the "Registry initialization" task and the boot stops on it (D87); the mod used to
+					// lose only its datapack registries.
+					Throwable cause = perMod.getCause() != null ? perMod.getCause() : perMod;
+					ForbricLog.error("[Forbric/Lifecycle] %s failed declaring its datapack registries", e.getKey());
+					throw RegistrationStop.propagate(RegistrationStop.stop(cl, cause));
 				} catch (Throwable perMod) {
-					Caught.warn(perMod, "[Forbric/Lifecycle] " + e.getKey()
-							+ " failed declaring its datapack registries");
+					Caught.warn(perMod, "[Forbric/Lifecycle] could not hand the datapack-registry declaration to %s", e.getKey());
 				} finally {
 					KernelModLoader.setNeoActiveContainer(cl, null);
 				}
@@ -1314,6 +1324,8 @@ public final class KernelLifecycle {
 			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
+			// A mod's declaration that threw stops the boot (above); that stop leaves as it is.
+			if (RegistrationStop.isStop(t)) throw RegistrationStop.propagate(t);
 			// A class that failed to initialise is a different failure from a declaration that failed, and a far
 			// bigger one; it gets a finding, so the player hears it before the title screen and not at "Create".
 			CompatibilityFinding poisoned = DatapackRegistryDeclaration.poisonedLoader(t);
