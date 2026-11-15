@@ -16,12 +16,14 @@
 
 package net.forbric.kernel.runtime;
 
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 
 import net.forbric.api.ForeignType;
 import net.forbric.kernel.boot.KernelModLoader;
 import net.forbric.kernel.boot.NeoDeferredWork;
+import net.forbric.kernel.boot.NeoParallelDispatch;
 import net.forbric.kernel.boot.DeferredWorkFailures;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.Reflect;
@@ -61,23 +63,38 @@ public final class KernelNeoSetup {
 		DeferredWorkQueue queue = new DeferredWorkQueue(label);
 		int fired = 0;
 
-		for (Map.Entry<String, KernelModLoader.NeoIdentity> e : mods.entrySet()) {
-			// The active container has to be set for the DISPATCH, not just for construction. A setup listener
-			// that registers anything through ModLoadingContext.get() reads getActiveContainer(), which with none
-			// set falls back to the "minecraft" container and throws "Where is minecraft???!". That killed
-			// CreativeCore's and Sound Physics' reload-listener registration outright, and CreativeCore then
-			// half-initialised: GuiStyle.mc stayed null ("Could not load default style"), and the next reload
-			// re-ran registerDefault and died on 'default' already exists — three failures, one missing line.
-			KernelModLoader.setNeoActiveContainer(KernelNeoSetup.class.getClassLoader(), e.getValue().container());
-			try {
-				post(event, (IEventBus) e.getValue().bus(), (ModContainer) e.getValue().container(), queue);
+		// Each mod on NeoForge's own modloading-worker pool, as soon as the mods it waits for have taken the phase, the
+		// way ModLoader.dispatchParallelEvent posts it (NeoParallelDispatch). It ran on the caller's thread, one mod
+		// after another — on a client the render thread, where a listener's Minecraft.execute ran inline instead of
+		// queueing. DeferredWorkQueue takes enqueueWork from several workers at once, as natively.
+		ClassLoader cl = KernelNeoSetup.class.getClassLoader();
+		List<Map.Entry<String, KernelModLoader.NeoIdentity>> entries = new ArrayList<>(mods.entrySet());
+		List<Throwable> failed = NeoParallelDispatch.run(NeoParallelDispatch.parallelExecutor(cl), entries,
+				Map.Entry::getKey, KernelModLoader.dependencyAfter(), e -> {
+					// The active container has to be set for the DISPATCH, not just for construction, and on the thread
+					// that dispatches: ModLoadingContext is per thread. A setup listener that registers anything through
+					// ModLoadingContext.get() reads getActiveContainer(), which with none set falls back to the
+					// "minecraft" container and throws "Where is minecraft???!". That killed CreativeCore's and Sound
+					// Physics' reload-listener registration outright, and CreativeCore then half-initialised:
+					// GuiStyle.mc stayed null ("Could not load default style"), and the next reload re-ran
+					// registerDefault and died on 'default' already exists — three failures, one missing line.
+					KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
+					try {
+						post(event, (IEventBus) e.getValue().bus(), (ModContainer) e.getValue().container(), queue);
+					} finally {
+						KernelModLoader.setNeoActiveContainer(cl, null);
+					}
+				});
+		// What each mod's listeners came to, handled here in the order the mods are walked.
+		for (int i = 0; i < entries.size(); i++) {
+			Throwable perMod = failed.get(i);
+			if (perMod == null) {
 				fired++;
-			} catch (Throwable perMod) {
-				Caught.warn(perMod, "[Forbric/Lifecycle] %s failed during %s", e.getKey(), label);
-				ModCatalog.mark(e.getKey(), ModCatalog.Status.DEGRADED, "it threw during " + label);
-			} finally {
-				KernelModLoader.setNeoActiveContainer(KernelNeoSetup.class.getClassLoader(), null);
+				continue;
 			}
+			String modId = entries.get(i).getKey();
+			Caught.warn(perMod, "[Forbric/Lifecycle] %s failed during %s", modId, label);
+			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "it threw during " + label);
 		}
 
 		// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference — see

@@ -28,7 +28,10 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Consumer;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -43,6 +46,7 @@ import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.DiscoveredMod;
 import net.forbric.api.Ecosystem;
+import net.forbric.api.ForeignType;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
@@ -50,8 +54,9 @@ import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
- * NeoForge mods are constructed on NeoForge's own {@code modloading-worker} threads with their own mod active in
- * {@code ModLoadingContext} there, a mod only after the mods it requires — on the real NeoForge carrier (26.2.0.93).
+ * NeoForge mods are constructed, and take their setup phases, on NeoForge's own {@code modloading-worker} threads with
+ * their own mod active in {@code ModLoadingContext} there, a mod only after the mods it requires — on the real NeoForge
+ * carrier (26.2.0.93).
  *
  * <p>Native NeoForge's {@code ModLoader.constructMods} and {@code dispatchParallelEvent} hand every container to
  * {@code ModWorkManager.parallelExecutor()}, whose threads are named {@code modloading-worker-<n>}; on the native .93
@@ -95,6 +100,46 @@ class NeoModLoadingThreadsStagedTest {
 		}
 		assertEquals("true", System.getProperty(PREFIX + "thrtest_dep.libFirst"),
 				"a mod is constructed only after the mod it requires");
+	}
+
+	@Test
+	void aSetupPhaseReachesEachModOnAModloadingWorkerWithItsOwnContainerActive() throws Exception {
+		ClassLoader game = game();
+		KernelModLoader.constructMods(game, List.of(modsJar), Side.DEDICATED_SERVER);
+		Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
+		assertEquals(Set.copyOf(IDS), mods.keySet(), "every mod of the jar is published");
+
+		Class<?> setup = Class.forName("net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent", false, game);
+		Class<?> context = Class.forName("net.neoforged.fml.ModLoadingContext", false, game);
+		Map<String, String> threads = new ConcurrentHashMap<>();
+		Map<String, String> active = new ConcurrentHashMap<>();
+		for (Map.Entry<String, KernelModLoader.NeoIdentity> mod : mods.entrySet()) {
+			Object bus = mod.getValue().bus();
+			Consumer<Object> listener = event -> {
+				threads.put(mod.getKey(), Thread.currentThread().getName());
+				try {
+					Object here = context.getMethod("get").invoke(null);
+					active.put(mod.getKey(), (String) context.getMethod("getActiveNamespace").invoke(here));
+				} catch (ReflectiveOperationException e) {
+					throw new IllegalStateException(e);
+				}
+			};
+			Class.forName("net.neoforged.bus.api.IEventBus", false, game).getMethod("addListener", Class.class, Consumer.class)
+					.invoke(bus, setup, listener);
+		}
+
+		Object fired = Class.forName("net.forbric.kernel.runtime.KernelNeoSetup", true, game)
+				.getMethod("firePhase", Map.class, ForeignType.class, String.class)
+				.invoke(null, mods, ForeignType.FML_COMMON_SETUP_EVENT, "common setup");
+
+		assertEquals(IDS.size(), fired, "the phase reached every mod");
+		String caller = Thread.currentThread().getName();
+		for (String id : IDS) {
+			assertNotEquals(caller, threads.get(id), id + "'s setup listener does not run on the caller's thread");
+			assertTrue(threads.get(id).startsWith("modloading-worker"),
+					id + "'s setup listener runs on NeoForge's modloading-worker pool, as natively: " + threads);
+			assertEquals(id, active.get(id), "with its own container active on that worker");
+		}
 	}
 
 	private static DiscoveredMod declared(String id, UnifiedDependency... deps) {
