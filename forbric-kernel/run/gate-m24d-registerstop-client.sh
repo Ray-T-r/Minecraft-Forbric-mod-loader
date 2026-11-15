@@ -20,6 +20,7 @@
 # RED control (D34): the kernel at 2c231c9c (before K3c) contained the throw, so the stop phases boot on to the sound engine
 # and every stop check is red there.
 # GATE-PARALLEL: rundirs=client-registerstop mem=3000
+# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

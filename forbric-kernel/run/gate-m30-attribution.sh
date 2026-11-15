@@ -40,6 +40,7 @@
 #                                                     in the report — forbricabicanary is still named, by its
 #                                                     deferred task (J5), which is why the check is on the reason
 # GATE-PARALLEL: rundirs=server-attribution mem=1800
+# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

@@ -51,6 +51,7 @@
 # is what the dependency canary alone produces, so the last two steps add a mod that fails on purpose
 # (build-broken-canary.sh) to put a real required loss in front of ask and of the off switch.
 # GATE-PARALLEL: rundirs=server-depdialog,client-depdialog mem=3000
+# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

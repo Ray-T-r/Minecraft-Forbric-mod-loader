@@ -40,13 +40,25 @@ mkdir -p "$RUNDIR"
 
 # Build the boot jar. FAIL LOUDLY: a swallowed build error here silently launches a STALE jar, and every gate
 # downstream then reports on code that is not the code in the tree.
-if ! "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/tmp/forbric-kernel-jar.log 2>&1; then
+# A sweep (run/compat/gates-all.sh) builds the jar and resolves the boot classpath ONCE and hands every launch the
+# result: FORBRIC_PREBUILT_JAR/_DEPS/_STAMP. Two Gradle invocations per launch were 6-41 s each, ~120 launches a
+# sweep, and they also let a sweep test two different jars if the tree changed under it. The stamp (size:mtime) must
+# still match, so a jar rebuilt since -- a mutation check, a manual build -- sends this launch down the normal path.
+_jar_stamp() { stat -c '%s:%Y' "$1" 2>/dev/null || stat -f '%z:%m' "$1" 2>/dev/null; }
+PREBUILT=0
+if [ -n "${FORBRIC_PREBUILT_JAR:-}" ] && [ -n "${FORBRIC_PREBUILT_DEPS:-}" ] \
+   && [ "$(_jar_stamp "$FORBRIC_PREBUILT_JAR")" = "${FORBRIC_PREBUILT_STAMP:-}" ]; then
+  PREBUILT=1
+fi
+if [ "$PREBUILT" = 0 ] && ! "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/tmp/forbric-kernel-jar.log 2>&1; then
   echo "[kernel-launch] FATAL: kernel jar build failed — refusing to launch a stale jar" >&2
   grep -vE 'WARNING: |native-access|Restricted method|--enable-native' /tmp/forbric-kernel-jar.log >&2
   exit 3
 fi
 BOOT_JAR="$(ls "$KERNEL"/build/libs/forbric-kernel-*.jar | head -1)"
-BOOT_DEPS="$("$KERNEL/gradlew" --offline -q -p "$KERNEL" printBootClasspath 2>/dev/null | grep -vE 'WARNING|native|Restricted|enable' | tail -1)"
+if [ "$PREBUILT" = 1 ]; then BOOT_DEPS="$FORBRIC_PREBUILT_DEPS"; else
+  BOOT_DEPS="$("$KERNEL/gradlew" --offline -q -p "$KERNEL" printBootClasspath 2>/dev/null | grep -vE 'WARNING|native|Restricted|enable' | tail -1)"
+fi
 
 # MC 26.2 libraries (parent-loaded), resolved from the Mojang install's version json.
 VANILLA_CP="$(python3 - "$MC" <<'PY'

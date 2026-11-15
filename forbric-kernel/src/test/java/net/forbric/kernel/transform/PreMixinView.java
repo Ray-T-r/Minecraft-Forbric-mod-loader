@@ -93,7 +93,9 @@ public final class PreMixinView {
 			for (VanillaMemberTwinInjector.Row row : VanillaMemberTwinInjector.ROWS) owners.add(row.owner());
 			if (!Files.isRegularFile(out)) {
 				Files.createDirectories(out.getParent());
-				Path partial = out.resolveSibling("base.jar.partial");
+				// This JVM's own part file: the suite runs in several worker JVMs, and `synchronized` only orders this
+				// one's threads. Two workers writing one fixed `base.jar.partial` corrupted it and failed both censuses.
+				Path partial = out.resolveSibling("base.jar." + ProcessHandle.current().pid() + ".partial");
 				try (ZipFile in = new ZipFile(base.toFile()); ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(partial))) {
 					for (ZipEntry entry : Collections.list(in.entries())) {
 						byte[] bytes;

@@ -350,6 +350,10 @@ test {
 	// default left a few MB of headroom and a G1 humongous allocation after an unrelated test could end the worker with
 	// OutOfMemoryError. Kept at 1g on the genuine base until the remaining staged tests are re-measured (C5).
 	maxHeapSize = '1g'
+	// Test classes are spread over several worker JVMs. In one fork the suite took 838 s of wall time for 496 s of
+	// summed class time on a 10-core machine (gate-m0, 2026-11-15), and it runs several times per development round.
+	// -Pforbric.testForks=1 is the old single-JVM run, for a test suspected of depending on another class's state.
+	maxParallelForks = (project.findProperty('forbric.testForks') ?: Math.max(1, Math.min(4, Runtime.runtime.availableProcessors().intdiv(2)))) as int
 	// A gate that runs this suite (m0) exports FORBRIC_CAUGHT_FILE for the game JVMs it starts. The failures these tests
 	// cause on purpose are not the game's, and CaughtErrorsExtension already judges every one of them per test.
 	environment 'FORBRIC_CAUGHT_FILE', ''

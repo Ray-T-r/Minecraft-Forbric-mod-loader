@@ -14,6 +14,7 @@
 # post-main" ~15s after main returns if a non-daemon thread is still alive, which is how a leaked mod thread
 # announces itself — so the gate waits for the process to end on its own rather than killing it at the disconnect.
 # GATE-PARALLEL: clone=client-merged-pack:M9_RUNDIR mem=3000
+# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

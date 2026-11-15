@@ -12,6 +12,7 @@
 # watchdog-canary.fabric.mod.json) beside fabric-api on a plain kernel server: the thread dump keeps every frame, and the
 # strict report calls the mixin RESOLVED.
 # GATE-PARALLEL: mem=2000
+# GATE-CACHE: tests   (runs test sources, so a test-only change re-runs it; see run/compat/gate_cache.py)
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 # The launcher's own inputs and their defaults: NeoForge's patched game and its one carrier.

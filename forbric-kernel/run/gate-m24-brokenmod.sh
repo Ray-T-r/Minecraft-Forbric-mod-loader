@@ -24,6 +24,7 @@
 # the minecraft server", no world, no Fabric main, exit status 1 (FML's launcher, finding no server thread). The same jar with =off is in the clean control. Until D82 the
 # kernel contained both (that mod lost the registry; a roll-back left the boot running on vanilla registries).
 # GATE-PARALLEL: rundirs=server-brokenmod mem=1500
+# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

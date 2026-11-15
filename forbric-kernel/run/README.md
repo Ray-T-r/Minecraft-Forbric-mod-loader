@@ -102,6 +102,25 @@ about a third of the unit tests skip; CI holds that set to `src/test/skip-baseli
 change makes a test skip there, or stop skipping, update that file in the same commit: the failing job prints the
 `+`/`-` lines, and its `kernel-test-results` artifact holds the complete `skips-actual-ci-unstaged.tsv`.
 
+## Spend verification time where it can still find something
+
+A full round used to sweep every gate five or six times (each lane, its reviewers' replays, the merger, VERIFY in
+English, VERIFY in Chinese), several of them on the same tree, plus the unit suite in a single JVM each time. Most
+of that re-derived verdicts that were already known. The tools now skip that part; use them by tier:
+
+| Tier | Run | Why that is enough |
+| --- | --- | --- |
+| While changing code | the unit tests of the area, then `gates-all.sh --only <gate> ...` for the gates that exercise it | a red here is cheap to act on; the full sweep comes later anyway |
+| Before merging a lane | full unit suite, then `gates-all.sh -j 4` | the verdict cache re-runs only the gates whose inputs changed since the last GREEN on this machine, in any worktree |
+| After a merge / VERIFY | full unit suite in English and Chinese, `gates-all.sh -j 4`, then `gates-all.sh -j 4 --only-tag localized` with the zh `FORBRIC_JVM` | a sweep of a tip another tree already swept is answered from the cache; the zh sweep runs only the gates whose output changes with the language |
+| Release acceptance | `gates-all.sh --release` (never cached, no skip allowed), plus the soak | an acceptance is a fresh measurement by definition |
+
+A reviewer who wants to reproduce a lane's sweep rather than read it passes `--no-cache`, and so does anyone who
+changed a fixture *world* by hand (the cache keys on jars and sources, not on saves). A cached line says so:
+`RESULT gate-mN.sh GREEN (exit=0; cached: same inputs went GREEN at <time>)`, and its log is that run's log, so
+`[kernel] PASS` counts still read real output. The unit suite now runs in up to four worker JVMs
+(`-Pforbric.testForks=1` restores the single-JVM run when a test is suspected of depending on another's state).
+
 ## Repository navigation
 
 | Location | Purpose |

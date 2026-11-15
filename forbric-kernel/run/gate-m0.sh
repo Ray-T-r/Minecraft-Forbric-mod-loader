@@ -37,6 +37,7 @@
 # Step 6's two installer checks (the packaged link tools and the bundled baseline) still pass on what the installer
 # bundles today; C6 rewrites them with the link check.
 # GATE-PARALLEL: rundirs=server-m0-definitions mem=2000  (builds and runs the unit suite)
+# GATE-CACHE: tests   (runs test sources, so a test-only change re-runs it; see run/compat/gate_cache.py)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

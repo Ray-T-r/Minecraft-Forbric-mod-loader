@@ -23,6 +23,7 @@ JOBS="${FORBRIC_GATE_JOBS:-auto}"
 MEM=""
 ARGS=()
 LIST=0
+CACHE=1
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --list) LIST=1; ARGS+=(--list); shift;;
@@ -34,14 +35,25 @@ while [ "$#" -gt 0 ]; do
       MEM="$2"; shift 2;;
     --progress) ARGS+=(--progress); shift;;
     --release) ARGS+=(--release); shift;;
+    --only) [ "$#" -ge 2 ] || { echo '--only needs a gate name' >&2; exit 2; }
+      ARGS+=(--only "$2"); shift 2;;
+    --only-tag) [ "$#" -ge 2 ] || { echo '--only-tag needs a tag' >&2; exit 2; }
+      ARGS+=(--only-tag "$2"); shift 2;;
+    --no-cache) CACHE=0; shift;;
     --help)
       cat <<'USAGE'
-gates-all.sh [-j N|auto] [--mem-budget MB] [--skip gate-m12-multiplayer.sh] ... [--release] [--list]
+gates-all.sh [-j N|auto] [--mem-budget MB] [--skip gate-m12-multiplayer.sh] ... [--only gate-m9-client.sh] ...
+             [--only-tag localized] [--no-cache] [--release] [--list]
 
   -j N           run up to N gates at once (default: auto — one slot per ~2 GB of budget, capped by cores).
                  -j 1 reproduces the old strictly-sequential run.
   --mem-budget   MB the running gates may claim between them (default: ~55% of physical RAM).
   --skip         do not run this gate; it is reported SKIP.
+  --only         run only this gate (repeatable); every other gate is SKIP (not selected).
+  --only-tag     run only the gates whose `# GATE-TAGS:` line has this tag. `--only-tag localized` is the zh
+                 sweep: the gates that read output that changes with the language (load report, merge report,
+                 crash attribution, dialogs). Every other gate's log is English in any locale.
+  --no-cache     run every gate even when the same inputs already went GREEN (see the verdict cache below).
   --list         print the gate order and exit.
   --progress     also stream the running commentary to stderr.
   --release      an acceptance run: a --skip'd or EXPECTED_RED gate fails it (exit 1). A gate that did not run,
@@ -54,6 +66,13 @@ when, on which slot and port, what each gate cost) goes to build/gates/progress.
 The scheduler owns the ports: each concurrent slot gets its own block from 25700 up, and GATE_PORT / M1x_PORT /
 M28_PORT / M32_PORT are exported per gate from it. A GATE_PORT set in the environment moves where the blocks start
 instead, so two sweeps at once (two working trees) need two different GATE_PORTs.
+
+THE VERDICT CACHE. A gate whose inputs -- every non-prose file in the repository, its own script, every jar under
+run/ and the staged/game directories, the inherited FORBRIC_*/MC_*/JAVA_* environment, the JVM -- are identical
+to a run that went GREEN is not run again; its RESULT line says `cached:` and when, and its log is that run's log.
+The cache lives in git's common directory, so every worktree of this repository shares it (FORBRIC_GATE_CACHE=<dir>
+moves it, FORBRIC_GATE_CACHE=0 or --no-cache turns it off). --release never reads it. A hand-edited world in a
+fixture is the one input it cannot see: use --no-cache after changing one. Details: run/compat/gate_cache.py.
 USAGE
       exit 0;;
     *) echo "Unknown argument: $1" >&2; exit 2;;
@@ -74,9 +93,33 @@ if [ "$LIST" -eq 0 ] && [ "$RUN" = "$KERNEL/run" ]; then
     grep -vE 'WARNING: |native-access|Restricted method|--enable-native' "$KERNEL/build/gates-prebuild.log" >&2
     exit 3
   fi
+  # ...and resolve the boot classpath once, and hand both to every launch (FORBRIC_PREBUILT_*; the launchers and
+  # lib.sh skip their own two Gradle runs while the jar still has this size and mtime). Every gate of the sweep then
+  # boots this one jar, even if someone edits the tree mid-sweep.
+  PREBUILT_JAR="$(ls "$KERNEL"/build/libs/forbric-kernel-*.jar 2>/dev/null | head -1)"
+  PREBUILT_DEPS="$("$KERNEL/gradlew" --offline -q -p "$KERNEL" printBootClasspath 2>/dev/null \
+                   | grep -vE 'WARNING|native|Restricted|enable' | tail -1)"
+  if [ -n "$PREBUILT_JAR" ] && [ -n "$PREBUILT_DEPS" ]; then
+    export FORBRIC_PREBUILT_JAR="$PREBUILT_JAR" FORBRIC_PREBUILT_DEPS="$PREBUILT_DEPS"
+    FORBRIC_PREBUILT_STAMP="$(stat -c '%s:%Y' "$PREBUILT_JAR" 2>/dev/null || stat -f '%z:%m' "$PREBUILT_JAR")"
+    export FORBRIC_PREBUILT_STAMP
+  fi
+fi
+
+# The verdict cache: on for a run of the real gates, shared by every worktree of the repository (a lane, the
+# merger and VERIFY sweep the same tip from three trees). Off for GatesAllTest's stub gates unless it asks.
+CACHE_DIR=""
+if [ "$LIST" -eq 0 ] && [ "$CACHE" = 1 ] && [ "${FORBRIC_GATE_CACHE:-}" != 0 ]; then
+  if [ -n "${FORBRIC_GATE_CACHE:-}" ]; then
+    CACHE_DIR="$FORBRIC_GATE_CACHE"
+  elif [ "$RUN" = "$KERNEL/run" ]; then
+    common="$(git -C "$KERNEL" rev-parse --git-common-dir 2>/dev/null || true)"
+    if [ -n "$common" ]; then CACHE_DIR="$(cd "$KERNEL" && cd "$common" && pwd)/forbric-gate-cache"; fi
+  fi
 fi
 
 # -u: the progress lines are the only view of a run that now takes minutes with nothing on the terminal,
 # and a redirected stdout is block-buffered, so without this they all arrive at the end.
 exec python3 -u "$HERE/gates-parallel.py" \
-  --run-dir "$RUN" --out-dir "$OUT" --jobs "$JOBS" ${MEM:+--mem-budget "$MEM"} ${ARGS[@]+"${ARGS[@]}"}
+  --run-dir "$RUN" --out-dir "$OUT" --jobs "$JOBS" ${MEM:+--mem-budget "$MEM"} \
+  ${CACHE_DIR:+--cache-dir "$CACHE_DIR"} ${ARGS[@]+"${ARGS[@]}"}

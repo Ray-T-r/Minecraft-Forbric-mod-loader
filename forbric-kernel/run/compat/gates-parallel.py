@@ -38,6 +38,20 @@ fails on one that does not say `alone`.
 
 -j 1 is exactly the old sequential behaviour: same order, same summary.txt, same exit code.
 
+LONGEST FIRST. With more than one slot the gates start in order of how long they took last time, longest first
+(gate-durations.tsv next door is the checked-in prior; each run's own timings, kept in the cache directory, win over
+it). In numerical order gate-m58 -- the longest gate -- was the last one started and then ran alone for twelve minutes
+while three slots sat idle; started first it overlaps everything else. summary.txt keeps numerical order whatever
+order the gates ran in.
+
+THE VERDICT CACHE (gate_cache.py). With --cache-dir, a gate whose inputs are byte-identical to a run that went GREEN
+is not run again: its RESULT says GREEN with `cached:` and the time of that run, and its log is the cached run's
+log, so a count of its [kernel] PASS lines still reads the real thing. --release never reads the cache.
+
+SELECTION. --only <gate> and --only-tag <tag> (a gate's `# GATE-TAGS:` line) run a subset; the rest are SKIP with
+the reason, which a --release run treats as any other skip. `--only-tag localized` is the zh sweep: the gates that
+read the load report, the merge report, a crash attribution or a dialog -- the only output that changes language.
+
 --release IS AN ACCEPTANCE, NOT A SWEEP. An ordinary sweep reports an explicit --skip as SKIP and a declared
 EXPECTED_RED as itself, and exits 0 when nothing else is red -- the right answer while developing. For a release
 both are the same fact: a gate whose assertions did not pass. So in release mode either one makes the exit code 1,
@@ -52,12 +66,20 @@ for an interactive run.
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
+import shutil
 import subprocess
 import sys
 import time
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import gate_cache  # noqa: E402
+
+DURATIONS_PRIOR = Path(__file__).resolve().parent / "gate-durations.tsv"
+TAGS = re.compile(r"^#\s*GATE-TAGS:\s*(.*)$", re.M)
 
 # Port blocks are handed out one per CONCURRENT SLOT, not one per gate: slot i gets PORT_BASE + i*PORT_STRIDE.
 # A GATE_PORT already in the environment becomes the base, so `GATE_PORT=25599 gates-all.sh` still puts 25599 in
@@ -89,6 +111,8 @@ class Gate:
         self.mem = 0
         self.declared = False
         self.alone = False
+        t = TAGS.search(self.source)
+        self.tags: set[str] = set(t.group(1).split("(")[0].split()) if t else set()   # "(why)" is prose
         self._parse()
 
     def _parse(self) -> None:
@@ -196,6 +220,31 @@ def verdict_for(gate: Gate, rc: int, log_path: Path) -> str:
     return "RED"
 
 
+def load_durations(history: Path | None) -> dict[str, float]:
+    """Seconds per gate: the checked-in prior, overlaid by this machine's own last measurements."""
+    durations: dict[str, float] = {}
+    try:
+        for line in DURATIONS_PRIOR.read_text(encoding="utf-8").splitlines():
+            if line and not line.startswith("#"):
+                name, secs = line.split("\t")[:2]
+                durations[name] = float(secs)
+    except (OSError, ValueError):
+        pass
+    if history and history.is_file():
+        try:
+            durations.update({k: float(v) for k, v in json.loads(history.read_text()).items()})
+        except (OSError, ValueError):
+            pass
+    return durations
+
+
+def save_durations(history: Path | None, durations: dict[str, float]) -> None:
+    if not history:
+        return
+    history.parent.mkdir(parents=True, exist_ok=True)
+    history.write_text(json.dumps({k: round(v, 1) for k, v in sorted(durations.items())}, indent=0))
+
+
 def main() -> int:
     ap = argparse.ArgumentParser(add_help=False)
     ap.add_argument("--jobs", "-j", default="auto")
@@ -206,6 +255,10 @@ def main() -> int:
     ap.add_argument("--list", action="store_true")
     ap.add_argument("--progress", action="store_true",
                     help="mirror <results>/progress.log to stderr as the run goes")
+    ap.add_argument("--only", action="append", default=[], help="run only this gate (repeatable)")
+    ap.add_argument("--only-tag", action="append", default=[], help="run only gates with this GATE-TAGS tag")
+    ap.add_argument("--cache-dir", default=None,
+                    help="verdict cache and duration history; without it nothing is cached")
     ap.add_argument("--release", action="store_true",
                     help="acceptance run: a skipped or expected-red gate fails the run")
     args = ap.parse_args()
@@ -225,6 +278,22 @@ def main() -> int:
         if s not in known:
             print(f"Unknown --skip gate: {s}", file=sys.stderr)
             return 2
+    for s in args.only:
+        if s not in known:
+            print(f"Unknown --only gate: {s}", file=sys.stderr)
+            return 2
+    all_tags = set().union(*(g.tags for g in gates))
+    for t in args.only_tag:
+        if t not in all_tags:
+            print(f"No gate has the tag {t!r} (tags: {' '.join(sorted(all_tags)) or 'none'})", file=sys.stderr)
+            return 2
+    # Why each gate that will not run is not running, for its RESULT line.
+    skip_reason = {s: "explicit --skip" for s in args.skip}
+    if args.only or args.only_tag:
+        wanted = " ".join([*(f"--only {n}" for n in args.only), *(f"--only-tag {t}" for t in args.only_tag)])
+        for g in gates:
+            if g.name not in args.only and not (g.tags & set(args.only_tag)) and g.name not in skip_reason:
+                skip_reason[g.name] = f"not selected by {wanted}"
 
     port_base = int(os.environ.get("GATE_PORT") or PORT_BASE)
     budget = args.mem_budget if args.mem_budget is not None else default_budget_mb()
@@ -240,8 +309,8 @@ def main() -> int:
     else:
         jobs = max(1, int(args.jobs))
 
-    undeclared = [g.name for g in gates if not g.declared and g.name not in args.skip]
-    alone = [g.name for g in gates if g.declared and g.alone and g.name not in args.skip]
+    undeclared = [g.name for g in gates if not g.declared and g.name not in skip_reason]
+    alone = [g.name for g in gates if g.declared and g.alone and g.name not in skip_reason]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     progress_file = (out_dir / "progress.log").open("w", encoding="utf-8", buffering=1)
@@ -251,9 +320,37 @@ def main() -> int:
         if args.progress:
             print(line, file=sys.stderr, flush=True)
 
-    pending = [g for g in gates if g.name not in args.skip]
-    skipped = [g for g in gates if g.name in args.skip]
-    results: dict[str, tuple[str, int, float]] = {n: ("SKIP", 0, 0.0) for n in args.skip}
+    pending = [g for g in gates if g.name not in skip_reason]
+    results: dict[str, tuple[str, int, float]] = {n: ("SKIP", 0, 0.0) for n in skip_reason}
+
+    cache = None
+    keys: dict[str, str] = {}
+    cached: dict[str, dict] = {}
+    if args.cache_dir:
+        try:
+            cache = gate_cache.Cache(Path(args.cache_dir), run_dir, dict(os.environ), say,
+                                     scratch_dirs=set().union(*(g.rundirs for g in gates)))
+        except (OSError, subprocess.CalledProcessError) as e:
+            say(f"[gates] cache: could not fingerprint the inputs ({e}); every gate runs")
+    if cache:
+        for g in list(pending):
+            keys[g.name] = cache.key(g.name, g.source)
+            hit = None if args.release else cache.lookup(g.name, keys[g.name])
+            if hit:
+                pending.remove(g)
+                cached[g.name] = hit
+                shutil.copyfile(hit["log"], out_dir / f"{g.name}.log")
+                results[g.name] = ("GREEN", 0, 0.0)
+                say(f"[gates]    0s CACHED GREEN {g.name} (same inputs went GREEN at {hit['when']}, {hit['secs']:.0f}s)")
+        if cached:
+            say(f"[gates] cache: {len(cached)} of {len(cached) + len(pending)} gates already GREEN on these inputs")
+
+    # Longest first, from the last measured durations (see LONGEST FIRST above). -j 1 keeps numerical order.
+    history_path = Path(args.cache_dir) / "durations.json" if args.cache_dir else None
+    durations = load_durations(history_path)
+    if jobs > 1:
+        order = {g.name: i for i, g in enumerate(gates)}
+        pending.sort(key=lambda g: (-durations.get(g.name, 60.0), order[g.name]))
 
     running: list[Running] = []
     free_slots = list(range(jobs))
@@ -351,6 +448,9 @@ def main() -> int:
             v = verdict_for(r.gate, rc, out_dir / f"{r.gate.name}.log")
             results[r.gate.name] = (v, rc, elapsed)
             say(f"[gates] +{int(time.time() - t0):4d}s {v:12s} {r.gate.name} ({elapsed:.0f}s)")
+            durations[r.gate.name] = elapsed
+            if cache:
+                cache.record(r.gate.name, keys[r.gate.name], v, elapsed, out_dir / f"{r.gate.name}.log")
 
     wall = time.time() - t0
     failed = 0
@@ -358,20 +458,24 @@ def main() -> int:
     for g in gates:
         v, rc, secs = results.get(g.name, ("RED", -1, 0.0))
         if v == "SKIP":
+            why = skip_reason.get(g.name, "explicit --skip")
             if args.release:
                 failed = 1
-                lines.append(f"RESULT {g.name} SKIP (explicit --skip; not run, so the release run fails)")
+                lines.append(f"RESULT {g.name} SKIP ({why}; not run, so the release run fails)")
             else:
-                lines.append(f"RESULT {g.name} SKIP (explicit --skip)")
+                lines.append(f"RESULT {g.name} SKIP ({why})")
             continue
         if v == "RED" or (v == "EXPECTED_RED" and args.release):
             failed = 1
         if v == "EXPECTED_RED" and args.release:
             lines.append(f"RESULT {g.name} {v} (exit={rc}; still red, so the release run fails)")
+        elif g.name in cached:
+            lines.append(f"RESULT {g.name} {v} (exit={rc}; cached: same inputs went GREEN at {cached[g.name]['when']})")
         else:
             lines.append(f"RESULT {g.name} {v} (exit={rc})")
     (out_dir / "summary.txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
+    save_durations(history_path, durations)
 
     serial = sum(r[2] for r in results.values())
     speedup = f" ({serial / wall:.1f}x)" if wall > 0 else ""

@@ -288,6 +288,11 @@ PY
 # Rebuild the kernel jar, FAILING LOUDLY. A swallowed build error leaves a stale jar in build/libs and every
 # gate downstream then silently reports on code that is not the code in the tree.
 kernel_jar() {
+  # Prebuilt by the sweep and not rebuilt since (see launch-kernel-server.sh): nothing to do.
+  if [ -n "${FORBRIC_PREBUILT_JAR:-}" ] && [ "$(stat -c '%s:%Y' "$FORBRIC_PREBUILT_JAR" 2>/dev/null \
+       || stat -f '%z:%m' "$FORBRIC_PREBUILT_JAR" 2>/dev/null)" = "${FORBRIC_PREBUILT_STAMP:-}" ]; then
+    return 0
+  fi
   if ! "$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >"$BUILD/kernel-jar.log" 2>&1; then
     echo "[kernel] FATAL: kernel jar build failed — refusing to run against a stale jar" >&2
     grep -vE 'WARNING: |native-access|Restricted method|--enable-native' "$BUILD/kernel-jar.log" >&2
@@ -302,8 +307,13 @@ kernel_classpath() {
     kernel_jar
   fi
   local cp
-  cp=$("$KERNEL/gradlew" --offline -q -p "$KERNEL" printBootClasspath 2>/dev/null \
-        | grep -vE 'WARNING|native|Restricted|enable' | tail -1)
+  if [ -n "${FORBRIC_PREBUILT_DEPS:-}" ] && [ "$(stat -c '%s:%Y' "$jar" 2>/dev/null \
+       || stat -f '%z:%m' "$jar" 2>/dev/null)" = "${FORBRIC_PREBUILT_STAMP:-}" ]; then
+    cp="$FORBRIC_PREBUILT_DEPS"
+  else
+    cp=$("$KERNEL/gradlew" --offline -q -p "$KERNEL" printBootClasspath 2>/dev/null \
+          | grep -vE 'WARNING|native|Restricted|enable' | tail -1)
+  fi
   KERNEL_CP="$jar:$cp"
 }
 

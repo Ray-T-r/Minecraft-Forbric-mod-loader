@@ -55,6 +55,7 @@
 #   review fixes the phase also asserts that CAUGHT line absent on both ends; the same clone, re-run
 #   (c5/g-c/w2b/rf/gates/m26-noclientclear): 47 PASS / 2 FAIL, the comparison and the client's line (present x6).
 # GATE-PARALLEL: rundirs=client-forge-registration,client-forge-refusal,server-forge-registration mem=3000
+# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

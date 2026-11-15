@@ -145,8 +145,24 @@ quarter-of-RAM ceiling. The scheduler hands every concurrent slot its own port b
 that name the same rundir, and keeps the running set inside a memory budget. **A gate with no
 `# GATE-PARALLEL:` line runs alone** and the run says so on stderr — a new gate is slow, not silently broken. A
 gate whose verdict is a timing adds the bare word `alone` to its line and runs alone too: gate-m12's late-tick ceiling
-and `check_kept_up` (m12, m15, m16) count a neighbour's CPU as the server falling behind, and `GatesAllTest` fails on
+and `check_kept_up` (m12, m16) count a neighbour's CPU as the server falling behind, and `GatesAllTest` fails on
 a gate that uses either without saying `alone`.
+
+Four things keep a sweep short (`gates-all.sh --help` has the switches, `run/compat/gate_cache.py` the reasoning):
+
+- **Longest first.** With more than one slot the gates start in the order of their last measured duration,
+  longest first (`run/compat/gate-durations.tsv` is the prior). In numerical order `gate-m58`, the longest gate,
+  started last and then ran alone for twelve minutes.
+- **One build per sweep.** `gates-all.sh` builds the jar and resolves the boot classpath once and hands them to every
+  launch (`FORBRIC_PREBUILT_*`); the launchers skip their own two Gradle runs while the jar is unchanged.
+- **A verdict cache.** A gate whose inputs are identical to a run that went GREEN is reported `GREEN (…; cached: …)`
+  with that run's log instead of being run again. The inputs are every non-prose file in the repository, the gate's own
+  script, every jar under `run/` and the staged/game directories (by entry CRC, not timestamp), the inherited
+  `FORBRIC_*`/`MC_*`/`JAVA_*` environment and the JVM. The cache is shared by all worktrees; `--release` never reads
+  it; `--no-cache` turns it off, which you need after hand-editing a fixture world.
+- **The zh sweep is the localized subset.** Only the load report, merge report, crash attribution and dialogs
+  follow the language; every log line a gate asserts on is English in any locale. `--only-tag localized` runs the
+  gates that read that output (`# GATE-TAGS: localized`; `test_gate_cache.py` fails on a gate that reads it untagged).
 
 Portable Windows baseline collection and the negative controls are described in
 [the compatibility protocol](run/compat/PROTOCOL.md).

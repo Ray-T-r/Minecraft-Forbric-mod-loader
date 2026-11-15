@@ -470,6 +470,31 @@ both language switches the kernel reads -- `-Duser.language` (the load report) a
 the locale) -- the second by a tag DialogLang has a table for: `zh` names two tables and is ignored, so
 a sweep that wants the dialog in Chinese adds `-Dforbric.dialogLanguage=zh_cn`.
 
+Three things keep repeated sweeps cheap (2026-11-15; a development round had swept every gate five or six times,
+several of them on one tree, and a zh sweep is the whole sweep again):
+
+- **Longest first.** With more than one slot, `gates-parallel.py` starts gates by their last measured duration,
+  longest first: `run/compat/gate-durations.tsv` is the checked-in prior, and each run's own timings
+  (`<cache dir>/durations.json`) win over it. `-j 1` keeps numerical order; `summary.txt` is always numerical.
+- **The verdict cache** (`run/compat/gate_cache.py`). A gate whose inputs are identical to a run that went GREEN
+  is reported `GREEN (exit=0; cached: same inputs went GREEN at <time>)`, and its log in the results directory is
+  that run's log. The key is every non-prose file git sees (each gate keys on its own script and the gate scripts
+  it names, not the others'; test sources only for a gate that says `# GATE-CACHE: tests`), every jar under `run/`
+  outside the gates' own declared rundirs and under the staged and game directories (by entry name, CRC-32 and size,
+  so a re-zipped canary still hits), the inherited `FORBRIC_*`/`MC_*`/`M<n>_*`/`JAVA_*`/`LANG` environment minus
+  ports and the scheduler's own knobs, and `java -version`. It lives in git's common directory and is shared by
+  every worktree; `FORBRIC_GATE_CACHE=<dir>` moves it, `=0` or `--no-cache` turns it off, and `--release` never
+  reads it. It cannot see a hand-edited fixture world: run `--no-cache` after changing one.
+- **The zh sweep is a subset.** Only the load report, merge report, crash attribution and DialogLang's dialogs follow
+  the language (lane ZH, 2026-11-15: a full zh sweep differed from en in no verdict). `--only-tag localized` runs the
+  gates marked `# GATE-TAGS: localized`; `python3 run/compat/test_gate_cache.py` fails on a gate that reads that
+  output without the tag, on a gate that runs test sources without `# GATE-CACHE: tests`, and on every way the
+  cache key could miss a change it must see.
+
+`gates-all.sh` also builds the jar and resolves the boot classpath once and exports them as `FORBRIC_PREBUILT_JAR`,
+`FORBRIC_PREBUILT_DEPS` and `FORBRIC_PREBUILT_STAMP`; the launchers and `lib.sh` skip their own two Gradle runs
+while the jar still has that size and mtime, so every gate of a sweep boots the same jar.
+
 A gate's rundir must not be a fixture other worktrees share. A worktree links `client-merged-pack`,
 `client-kernel`, `client-neo-pack`, `carry-on`, `modmenu` and `neoforge-builds` to the main
 checkout's, and a gate that wiped or wrote one of them through a fixed or default rundir changed a
