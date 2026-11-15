@@ -106,8 +106,8 @@ run_client() {
   cat "$log.game" >> "$log"
 }
 
-client_stopped() { # client_stopped <log> <mode> <expected first suspect> [allowed exit codes, default "1 held"]
-  local log="$1" mode="$2" who="$3" allowed="${4:-1 held}" code
+client_stopped() { # client_stopped <log> <mode> <expected first suspect> [allowed exit codes, default "1 held"] [saves: absent|empty]
+  local log="$1" mode="$2" who="$3" allowed="${4:-1 held}" saves="${5:-absent}" code
   code=$(cat "$log.exit" 2>/dev/null)
   if [ -n "$code" ] && [[ " $allowed " == *" $code "* ]]; then
     echo "[kernel] PASS $mode: the client stopped as its loader stops it (exit: $code; allowed: $allowed)"
@@ -131,16 +131,21 @@ PY
   else
     echo "[kernel] FAIL $mode: Forbric's crash analysis does not name $who first ($log.suspects.json)"; FAIL=1
   fi
-  if [ -d "$CLI/saves" ]; then
-    echo "[kernel] FAIL $mode: a saves directory was created after the stop"; FAIL=1
-  else
+  # A stop at ClientModLoader.finish comes after Minecraft.<init> built its LevelStorageSource, whose constructor creates the
+  # saves directory (javap of 26.2.0.93: LevelStorageSource.<init> -> FileUtil.createDirectoriesSafe, before finish), so
+  # there an empty saves/ is native; no world may be in it. Earlier stops create nothing.
+  if [ "$saves" = empty ] && [ -z "$(ls -A "$CLI/saves" 2>/dev/null)" ]; then
+    echo "[kernel] PASS $mode: no world was created (saves/ is empty, as natively at this point)"
+  elif [ "$saves" = absent ] && [ ! -d "$CLI/saves" ]; then
     echo "[kernel] PASS $mode: no saves directory was created"
+  else
+    echo "[kernel] FAIL $mode: saves/ is not $saves after the stop: $(ls -A "$CLI/saves" 2>/dev/null | tr '\n' ' ')"; FAIL=1
   fi
 }
 
-client_neo_stop() { # client_neo_stop <log> <mode> <NeoForge init task>
+client_neo_stop() { # client_neo_stop <log> <mode> <NeoForge init task> [saves: absent|empty]
   local log="$1" mode="$2" task="$3"
-  client_stopped "$log" "$mode" forbricregisterstop
+  client_stopped "$log" "$mode" forbricregisterstop "1 held" "${4:-absent}"
   check "$mode: NeoForge's ModLoader ended its task"             "Failed to wait for future $task, 1 errors found" "$log"
   check "$mode: the kernel stops the boot as native does"        "the boot stops here, as native NeoForge stops it" "$log"
   check "$mode: the crash report carries NeoForge's mod-loading error" "net\.neoforged\.fml\.ModLoadingException: Loading errors encountered" "$log.crash-client.txt"
@@ -183,8 +188,8 @@ step "a NeoForge mod whose common setup throws stops the client at ClientModLoad
 stage
 run_client "$STOP_COMMON" common
 check "common: the listener really ran and threw" "\[ForbricRegisterStop\] its FMLCommonSetupEvent listener is about to fail on purpose" "$STOP_COMMON"
-client_neo_stop "$STOP_COMMON" common "Common setup"
-check "common: the crash report is ClientModLoader.finish's" "-- Finish mod loading --" "$STOP_COMMON.crash-client.txt"
+client_neo_stop "$STOP_COMMON" common "Common setup" empty
+check "common: the crash report is ClientModLoader.finish's" "^-- Finish mod loading --" "$STOP_COMMON.crash-client.txt"
 check "common: NeoForge's error names the mod and the event" \
   "\(forbricregisterstop\) encountered an error while dispatching the net\.neoforged\.fml\.event\.lifecycle\.FMLCommonSetupEvent event" "$STOP_COMMON.crash-client.txt"
 check_absent "common: not Main's Initializing-game handler" "Description: Initializing game" "$STOP_COMMON.crash-client.txt"

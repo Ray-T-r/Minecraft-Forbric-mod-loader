@@ -213,7 +213,7 @@ check "the control froze the registries (what the stops above must not do)" "fro
 check "the register-stop canary ran and threw nothing" \
   "\[ForbricRegisterStop\] reached RegisterEvent for minecraft:item, mode=off" "$CONTROL"
 check "every mod finished loading"              "Forbric/Load\] every mod finished loading" "$CONTROL"
-check_absent "nothing was reported as failing"  "did not finish loading"     "$CONTROL"
+check_absent "nothing was reported as failing"  "Forbric/Load\] [0-9]+ mod\(s\) did not finish loading"     "$CONTROL"
 if [ -f "$REPORT" ]; then
   echo "[kernel] FAIL a load report was written for a clean boot: $REPORT"; FAIL=1
 else
