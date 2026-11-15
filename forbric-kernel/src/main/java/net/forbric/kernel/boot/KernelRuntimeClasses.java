@@ -173,6 +173,10 @@ public final class KernelRuntimeClasses {
 		// The NeoForge setup phases: NeoForge dispatches on a per-mod IEventBus. See KernelNeoSetup.
 		CLASSES.put("net.forbric.kernel.runtime.KernelNeoSetup", new Entry(Origin.COMPILED, List.of(
 				new Call("firePhase", int.class, Map.class, net.forbric.api.ForeignType.class, String.class))));
+		// The client's end of a mod-loading stop after the registry phase: ClientModLoader.finish's handler. See
+		// KernelNeoClientStop and KernelLifecycle.onNeoClientSetup.
+		CLASSES.put("net.forbric.kernel.runtime.KernelNeoClientStop", new Entry(Origin.COMPILED, List.of(
+				new Call("asClientModLoaderFinishDoes", void.class, Throwable.class))));
 		// NeoForge's registry phase: NewRegistryEvent on the mods' buses. RegisterEvent is posted by NeoForge's own
 		// GameData.postRegisterEvents (RegisterEventsSeam); which buses stay boot-side, as does the unfreeze/freeze
 		// window it all runs inside. See KernelNeoRegistries.
