@@ -32,12 +32,14 @@ class LibStopWhenReadyContractTest {
 	@TempDir Path temporary;
 
 	@Test void aBootDoneASettleBeforeTheTimerEndsGetsTheLineWhenTheTimerEnds() throws Exception {
-		// Done is in the log from the start, three seconds before the timer and so two more than the one-second settle:
-		// the server has had its ticks, and the line goes out at the timer's own moment, as it always did.
+		// Done is in the log from the start, a full three-second settle before a three-second timer ends: the server has
+		// had its ticks, and the line goes out at the timer's own moment, as it always did. A helper that added the settle
+		// after the timer anyway would write it at six seconds, so the window stops short of that (HARN review B-1: with
+		// timer 3 and settle 1 such a helper wrote it at 4.1 s, inside the old 3-6 s window).
 		Path log = log(BOOTING + DONE);
-		Result r = run("stop_when_ready \"" + log + "\" 3 1");
+		Result r = run("stop_when_ready \"" + log + "\" 3 3");
 		assertEquals("stop\n", r.out(), "the line, and only the line");
-		assertTrue(r.millis() >= 3000 && r.millis() < 6000,
+		assertTrue(r.millis() >= 3000 && r.millis() < 5000,
 				"nothing added to a timer that already held the settle (" + r.millis() + " ms)");
 	}
 
@@ -48,16 +50,15 @@ class LibStopWhenReadyContractTest {
 		// second before a two-second timer, and the line must still wait three seconds after it.
 		Path log = log(BOOTING);
 		Path doneAt = temporary.resolve("done-at");
-		Result r = run("( sleep 1.5; python3 -c 'import time; print(time.time())' > \"" + doneAt + "\"; "
-				+ "printf '%s' '" + DONE.replace("'", "'\\''") + "' >> \"" + log + "\" ) &\n"
-				+ "stop_when_ready \"" + log + "\" 2 3\n"
-				+ "python3 -c 'import time; print(time.time())' > \"" + temporary.resolve("stop-at") + "\"\nwait");
+		Path stopAt = temporary.resolve("stop-at");
+		Result r = run(appendDoneAt(1.5, log, doneAt) + "stop_when_ready \"" + log + "\" 2 3" + stampTheLine(stopAt)
+				+ "\nwait");
 		assertEquals("stop\n", r.out());
-		double done = Double.parseDouble(Files.readString(doneAt).trim());
-		double stop = Double.parseDouble(Files.readString(temporary.resolve("stop-at")).trim());
-		assertTrue(stop - done >= 3.0, "the line came " + (stop - done) + " s after a Done that beat the timer, not after"
-				+ " the 3 s settle");
-		assertTrue(r.millis() < 10000, "and not much later either (" + r.millis() + " ms)");
+		double gap = seconds(stopAt) - seconds(doneAt);
+		assertTrue(gap >= 3.0, "the line came " + gap + " s after a Done that beat the timer, not after the 3 s settle");
+		// Done is first seen at the two-second step, so the line is due at about five seconds; a settle counted twice
+		// would put it at eight (HARN review F3: the old bound of ten seconds let that through).
+		assertTrue(r.millis() < 7500, "and not much later either (" + r.millis() + " ms)");
 	}
 
 	@Test void aTimerOrSettleThatIsNotWholeSecondsIsRefusedOutLoud() throws Exception {
@@ -82,18 +83,36 @@ class LibStopWhenReadyContractTest {
 	@Test void aBootSlowerThanTheTimerGetsTheLineOnlyAfterDoneAndTheSettle() throws Exception {
 		Path log = log(BOOTING);
 		Path doneAt = temporary.resolve("done-at");
+		Path stopAt = temporary.resolve("stop-at");
 		// Done lands three seconds in, two after a one-second timer: the old feeder had already written "stop" by then.
-		// Done's moment is taken BEFORE the line is written, so it can only be early. Taken after, it was the append plus
-		// a python start-up, and when that start-up was slower than the one stamping the stop (a loaded machine) the
-		// test measured 1.999 s for a settle lib.sh had given in full (C5 G-C wave 2b, one red in a suite run).
-		Result r = run("( sleep 3; python3 -c 'import time; print(time.time())' > \"" + doneAt + "\"; "
-				+ "printf '%s' '" + DONE.replace("'", "'\\''") + "' >> \"" + log + "\" ) &\n"
-				+ "stop_when_ready \"" + log + "\" 1 2\n"
-				+ "python3 -c 'import time; print(time.time())' > \"" + temporary.resolve("stop-at") + "\"\nwait");
+		Result r = run(appendDoneAt(3, log, doneAt) + "stop_when_ready \"" + log + "\" 1 2" + stampTheLine(stopAt)
+				+ "\nwait");
 		assertEquals("stop\n", r.out());
-		double done = Double.parseDouble(Files.readString(doneAt).trim());
-		double stop = Double.parseDouble(Files.readString(temporary.resolve("stop-at")).trim());
-		assertTrue(stop - done >= 2.0, "the line came " + (stop - done) + " s after Done, not after the 2 s settle");
+		double gap = seconds(stopAt) - seconds(doneAt);
+		assertTrue(gap >= 2.0, "the line came " + gap + " s after Done, not after the 2 s settle");
+	}
+
+	/**
+	 * Both moments the settle is measured between are taken where they happen, with no process start-up on either side.
+	 * Done's is stamped by the one python that appends the line, just before it writes; the line's by a python already
+	 * waiting on the helper's stdout, just after it reads it. With a python started after the append (C5 G-C wave 2b) the
+	 * test once measured 1.999 s for a settle lib.sh had given in full; with a python started after the helper returned
+	 * (HARN wave 2c) its start-up was added to every gap, and a lib.sh whose settle was a second short stayed green in
+	 * one run of four (HARN review B-5).
+	 */
+	private static String appendDoneAt(double after, Path log, Path at) {
+		return "( sleep " + after + "; python3 -c 'import sys, time\nf = open(sys.argv[1], \"a\")\nt = time.time()\n"
+				+ "f.write(sys.argv[2])\nf.close()\nopen(sys.argv[3], \"w\").write(repr(t))' \"" + log + "\" '"
+				+ DONE.replace("'", "'\\''") + "' \"" + at + "\" ) &\n";
+	}
+
+	private static String stampTheLine(Path at) {
+		return " | python3 -c 'import sys, time\nline = sys.stdin.readline()\nt = time.time()\nsys.stdout.write(line)\n"
+				+ "sys.stdout.flush()\nopen(sys.argv[1], \"w\").write(repr(t))' \"" + at + "\"";
+	}
+
+	private static double seconds(Path stamp) throws Exception {
+		return Double.parseDouble(Files.readString(stamp).trim());
 	}
 
 	@Test void aServerThatStopsWithoutReachingDoneGetsNoLine() throws Exception {
