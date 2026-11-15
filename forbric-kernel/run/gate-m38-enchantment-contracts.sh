@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
 # M38: actual command, loot and table decisions through the unmodified Fabric item module.
+# Each phase boots in a rundir of its own (build/enchantment-runs/<uuid>) on the scheduler's GATE_PORT and writes
+# its evidence to build/verification/m38-entity, which no other gate touches; its canary builder writes only its
+# own files under run/canary. So it runs beside other gates: undeclared, it ran alone in every sweep (lane OPT).
+# GATE-PARALLEL: mem=2000
 set -euo pipefail
 GATE_PORT="${GATE_PORT:-25598}"
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"

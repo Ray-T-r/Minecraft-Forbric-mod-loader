@@ -9,6 +9,10 @@
 # NeoForge's inherited default with fabric-api's own handler at the vanilla write: every bed that inherits that default
 # (vanilla's beds, the stone spot ALLOW_BED turns into a bed, a mod's own BedBlock — bed-inherit-*) is exact; a bed that
 # overrides it keeps its own setter, untouched, and those two cases now assert exactly that.
+# Each phase boots in a rundir of its own (build/entity-callback-runs/<uuid>) on the scheduler's GATE_PORT and writes
+# its evidence to build/verification/m37-entity, which no other gate touches; its canary builder writes only its
+# own files under run/canary. So it runs beside other gates: undeclared, it ran alone in every sweep (lane OPT).
+# GATE-PARALLEL: mem=2000
 set -euo pipefail
 GATE_PORT="${GATE_PORT:-25597}"
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
