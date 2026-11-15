@@ -25,6 +25,14 @@ nothing:
 A gate that does not declare itself runs ALONE. That is the safe direction to be wrong in: a new gate added by
 someone who never read this file is slow, not silently broken. It says so on stderr when it happens.
 
+A gate whose verdict is a TIMING says `alone` on its line, and runs alone too. gate-m12 counts the server ticks that
+ran at twice their budget from the client's dial to the leave, against a ceiling; that count is a measure of what
+else the host was doing as much as of the server. VERIFY run 1 of C5 had it red at -j 4 (11 of 220 late, ceiling 7)
+next to gate-m0's unit suite and four server boots, green alone 5 of 5, and red alone in one of two runs under ten
+`yes` CPU hogs: the ceiling was measuring the scheduler's neighbours. Raising the ceiling would blind it to a server that really
+falls behind, so the gate keeps it and the scheduler gives it a quiet machine instead. What it cannot quiet is load
+from outside this sweep.
+
 -j 1 is exactly the old sequential behaviour: same order, same summary.txt, same exit code.
 
 --release IS AN ACCEPTANCE, NOT A SWEEP. An ordinary sweep reports an explicit --skip as SKIP and a declared
@@ -77,6 +85,7 @@ class Gate:
         self.clone: tuple[str, str] | None = None
         self.mem = 0
         self.declared = False
+        self.alone = False
         self._parse()
 
     def _parse(self) -> None:
@@ -95,11 +104,15 @@ class Gate:
                 self.clone = (source, variable)
             elif key == "mem":
                 self.mem = int(value)
+            elif key == "alone":
+                if value:
+                    raise SystemExit(f"{name}: alone takes no value, got alone={value!r}")
+                self.alone = True
         self.declared = True
 
     @property
     def exclusive(self) -> bool:
-        return not self.declared
+        return not self.declared or self.alone
 
     def expects_red(self) -> bool:
         return re.search(r"^# EXPECTED: RED until ", self.source, re.M) is not None
@@ -224,7 +237,8 @@ def main() -> int:
     else:
         jobs = max(1, int(args.jobs))
 
-    undeclared = [g.name for g in gates if g.exclusive and g.name not in args.skip]
+    undeclared = [g.name for g in gates if not g.declared and g.name not in args.skip]
+    alone = [g.name for g in gates if g.declared and g.alone and g.name not in args.skip]
 
     out_dir.mkdir(parents=True, exist_ok=True)
     progress_file = (out_dir / "progress.log").open("w", encoding="utf-8", buffering=1)
@@ -248,6 +262,8 @@ def main() -> int:
     say(f"[gates] {len(pending)} gates, -j {jobs}, budget {budget} MB, ports {port_base}+")
     if undeclared and jobs > 1:
         say("[gates] no '# GATE-PARALLEL:' line, so each of these runs ALONE: " + " ".join(undeclared))
+    if alone and jobs > 1:
+        say("[gates] declared 'alone' (a timing verdict), so each of these runs with no other gate: " + " ".join(alone))
 
     def start(gate: Gate) -> None:
         nonlocal used_mb, exclusive_running

@@ -9,7 +9,9 @@
 #
 # rundirs names the run/ directories it owns while it runs (two gates naming the same one never run together),
 # and mem is what it costs in MB. A gate without that line runs ALONE, and the run says so on stderr — a new
-# gate written by someone who never read this is slow, not silently broken.
+# gate written by someone who never read this is slow, not silently broken. A gate whose verdict is a timing adds
+# `alone` to its line (gate-m12's tick-lateness ceiling): it then runs with no other gate beside it, because a
+# neighbour's CPU shows up in that measurement as the server falling behind.
 #
 # `-j 1` is the old behaviour exactly: same order, same summary.txt, same exit code.
 set -euo pipefail

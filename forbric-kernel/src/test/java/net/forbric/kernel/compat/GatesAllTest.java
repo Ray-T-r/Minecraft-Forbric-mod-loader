@@ -115,6 +115,58 @@ class GatesAllTest {
 		assertEquals("changed\n", Files.readString(copy.resolve("options.txt")));
 	}
 
+	/**
+	 * A gate whose verdict is a timing says {@code alone} on its GATE-PARALLEL line and runs with no other gate.
+	 * gate-m12's tick-lateness ceiling went red at -j 4 beside gate-m0's unit suite and four server boots (VERIFY run 1
+	 * of C5: 11 of 220 late, ceiling 7) and was green alone: it had counted its neighbours' CPU. Every stub gate here
+	 * stamps when it ran; the one declared alone must share no moment with any other, while the others still overlap
+	 * each other, so the sweep really did run several wide.
+	 */
+	@Test void aGateDeclaredAloneRunsWithNoOtherGateBesideIt() throws Exception {
+		Path gates = Files.createDirectory(temporary.resolve("alone-gates"));
+		Path stamps = Files.createDirectory(temporary.resolve("alone-stamps"));
+		String now = "$(python3 -c 'import time; print(time.time())')";
+		String body = "n=$(basename \"$0\" .sh)\necho \"" + now + "\" > \"" + stamps + "/$n.start\"\nsleep SECONDS\n"
+				+ "echo \"" + now + "\" > \"" + stamps + "/$n.end\"\n";
+		String[][] declared = {{"gate-m0.sh", "rundirs=a mem=10", "2"}, {"gate-m1.sh", "rundirs=b mem=10", "2"},
+				{"gate-m12.sh", "rundirs=c mem=10 alone", "1"}, {"gate-m13.sh", "rundirs=d mem=10", "2"},
+				{"gate-m14.sh", "rundirs=e mem=10", "1"}};
+		for (String[] gate : declared) {
+			write(gates, gate[0], "# GATE-PARALLEL: " + gate[1] + "\n" + body.replace("SECONDS", gate[2]));
+		}
+		Path results = temporary.resolve("alone-results");
+		var env = Map.of("FORBRIC_GATE_DIR", gates.toString(), "FORBRIC_GATE_RESULTS", results.toString());
+		var result = CompatProbeProcess.run(temporary, env, "bash", "gates-all.sh", "-j", "4", "--mem-budget", "1000");
+		assertEquals(0, result.exitCode(), result.output());
+
+		Map<String, double[]> ran = new java.util.TreeMap<>();
+		for (String[] gate : declared) {
+			String name = gate[0].replace(".sh", "");
+			ran.put(name, new double[] {Double.parseDouble(Files.readString(stamps.resolve(name + ".start")).trim()),
+					Double.parseDouble(Files.readString(stamps.resolve(name + ".end")).trim())});
+		}
+		double[] alone = ran.get("gate-m12");
+		int overlappingPairs = 0;
+		for (var a : ran.entrySet()) {
+			if (a.getKey().equals("gate-m12")) continue;
+			assertFalse(a.getValue()[0] < alone[1] && alone[0] < a.getValue()[1],
+					a.getKey() + " ran beside gate-m12, which is declared alone: " + describe(ran));
+			for (var b : ran.entrySet()) {
+				if (b.getKey().compareTo(a.getKey()) > 0 && !b.getKey().equals("gate-m12")
+						&& a.getValue()[0] < b.getValue()[1] && b.getValue()[0] < a.getValue()[1]) overlappingPairs++;
+			}
+		}
+		assertTrue(overlappingPairs >= 3, "the other gates did not overlap, so this proves nothing: " + describe(ran));
+		assertTrue(Files.readString(results.resolve("progress.log")).contains("declared 'alone' (a timing verdict), so each"
+				+ " of these runs with no other gate: gate-m12.sh"), "the sweep says which gates it ran alone and why");
+	}
+
+	private static String describe(Map<String, double[]> ran) {
+		double t0 = ran.values().stream().mapToDouble(r -> r[0]).min().orElse(0);
+		return ran.entrySet().stream().map(e -> String.format("%s %.2f-%.2f", e.getKey(), e.getValue()[0] - t0,
+				e.getValue()[1] - t0)).collect(Collectors.joining(", "));
+	}
+
 	private static void write(Path gates, String name, String body) throws Exception {
 		Files.writeString(gates.resolve(name), "#!/usr/bin/env bash\n" + body);
 	}
