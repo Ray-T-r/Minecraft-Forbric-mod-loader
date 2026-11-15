@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotSame;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.ArrayList;
@@ -32,6 +33,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 
@@ -149,6 +151,31 @@ class NeoParallelDispatchTest {
 		assertNull(failures.get(2));
 		assertEquals(Set.of("lib", "dep", "free"), ran,
 				"what a failure means is the caller's business: the dispatch runs the dependent as before");
+	}
+
+	/**
+	 * A mod's own code can throw {@link RejectedExecutionException} (a task submitted to an executor it shut down). That is
+	 * the mod's failure, handed back at its index like any other; it must not be taken for the pool refusing the work,
+	 * which would end the whole phase for every mod and name none of them (review THR wave 2d, F1).
+	 */
+	@Test
+	void aModsOwnRejectedExecutionExceptionIsHandedBackAsItsFailure() {
+		RejectedExecutionException modsOwn = new RejectedExecutionException("thrown by the mod's own code");
+		List<Throwable> failures = NeoParallelDispatch.run(pool, List.of("lib", "free"), ID, Map.of(), id -> {
+			if (id.equals("lib")) throw modsOwn;
+		});
+		assertSame(modsOwn, failures.get(0), "the mod's own throw comes back as its failure");
+		assertNull(failures.get(1));
+	}
+
+	/** The pool refusing the work is not a mod's failure: no body began, and the caller gets the refusal. */
+	@Test
+	void aPoolThatRefusesTheWorkIsThrownToTheCaller() {
+		pool.shutdownNow();
+		Set<String> ran = ConcurrentHashMap.newKeySet();
+		assertThrows(RejectedExecutionException.class,
+				() -> NeoParallelDispatch.run(pool, List.of("lib", "free"), ID, Map.of(), ran::add));
+		assertEquals(Set.of(), ran, "no body ran");
 	}
 
 	/** A checked throw comes back as itself too, not wrapped. */

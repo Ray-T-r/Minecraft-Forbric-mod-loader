@@ -29,6 +29,8 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.atomic.AtomicIntegerArray;
 import java.util.function.Function;
 
 import net.forbric.kernel.util.Caught;
@@ -123,10 +125,14 @@ public final class NeoParallelDispatch {
 
 		Map<String, CompletableFuture<Void>> latest = new HashMap<>();
 		List<CompletableFuture<Void>> all = new ArrayList<>(items.size());
+		// Which bodies began: a task that ends in RejectedExecutionException without its body having begun is the pool
+		// refusing the work; one whose body began is that mod's own throw, whatever its type.
+		AtomicIntegerArray began = new AtomicIntegerArray(items.size());
 		CompletableFuture<Void> previous = CompletableFuture.completedFuture(null);
 		for (int i = 0; i < items.size(); i++) {
 			T item = items.get(i);
 			String id = ids.get(i);
+			int index = i;
 			List<CompletableFuture<Void>> before = new ArrayList<>();
 			if (waits == null) {
 				before.add(previous);
@@ -144,6 +150,7 @@ public final class NeoParallelDispatch {
 			// The body's own throw completes this task exceptionally; it is read back below, per item.
 			CompletableFuture<Void> task = CompletableFuture.allOf(before.toArray(new CompletableFuture[0]))
 					.handleAsync((ignored, dependencyFailed) -> {
+						began.set(index, 1);
 						try {
 							body.run(item);
 						} catch (RuntimeException | Error unchecked) {
@@ -160,12 +167,13 @@ public final class NeoParallelDispatch {
 		CompletableFuture.allOf(all.toArray(new CompletableFuture[0])).handle((ignored, someFailed) -> null).join();
 
 		List<Throwable> failures = new ArrayList<>(items.size());
-		for (CompletableFuture<Void> task : all) {
-			Throwable failed = task.handle((ignored, thrown) -> thrown).join();
+		for (int i = 0; i < all.size(); i++) {
+			Throwable failed = all.get(i).handle((ignored, thrown) -> thrown).join();
 			Throwable cause = failed instanceof CompletionException wrapped && wrapped.getCause() != null
 					? wrapped.getCause() : failed;
-			// Not a mod's failure: the pool refused the work.
-			if (cause instanceof java.util.concurrent.RejectedExecutionException refused) throw refused;
+			// Not a mod's failure: the pool refused the work, so the body never began. A mod's own code may throw the same
+			// type (a task submitted to an executor it shut down); that is its failure, handed back like any other.
+			if (cause instanceof RejectedExecutionException refused && began.get(i) == 0) throw refused;
 			failures.add(cause);
 		}
 		return failures;
