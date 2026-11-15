@@ -1,0 +1,13 @@
+modLoader="javafml"
+loaderVersion="[1,)"
+license="Apache-2.0"
+[[mods]]
+modId="forbricregisterstop"
+version="1.0.0"
+displayName="Forbric Register Stop Canary"
+description='''
+Fails inside NeoForge's registration on purpose: its RegisterEvent listener throws (-Dforbric.registerstop=listener, the
+default), or its mixin on GameData.postRegisterEvents throws right after a registry's dispatch (=try), or neither (=off).
+'''
+[[mixins]]
+config="forbricregisterstop.mixins.json"
