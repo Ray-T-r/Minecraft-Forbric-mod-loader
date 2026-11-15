@@ -369,6 +369,10 @@ def main() -> int:
         nonlocal used_mb, exclusive_running
         slot = free_slots.pop(0)
         env = dict(os.environ)
+        # A gate's control arms (lib.sh control_arm_dir) are measured afresh exactly when its verdict is: in an
+        # acceptance, and in a sweep that keeps no cache.
+        if args.release or not args.cache_dir:
+            env["FORBRIC_GATE_FRESH"] = "1"
         base = port_base + slot * PORT_STRIDE
         for i, var in enumerate(PORT_VARS):
             env[var] = str(base + i)

@@ -40,7 +40,7 @@ class Tree:
         self.root = Path(self.tmp.name)
         self.run = self.root / 'forbric-kernel' / 'run'
         self.run.mkdir(parents=True)
-        (self.root / '.gitignore').write_text('forbric-kernel/run/*/\ncache/\nout/\nran.txt\n')
+        (self.root / '.gitignore').write_text('forbric-kernel/run/*/\nforbric-kernel/build/\ncache/\nout/\nran.txt\n')
         (self.root / 'forbric-kernel' / 'Kernel.java').write_text('class Kernel {}\n')
         (self.root / 'forbric-kernel' / 'README.md').write_text('prose\n')
         (self.root / 'forbric-kernel' / 'src' / 'test').mkdir(parents=True)
@@ -136,6 +136,29 @@ class KeyTest(unittest.TestCase):
                                                      'FORBRIC_PREBUILT_STAMP': '1:2'}))
         self.assertNotEqual(self.base, self.t.key(env={**ENV, 'FORBRIC_JVM': '-Duser.language=zh'}))
 
+    def test_the_jvm_the_launchers_start_counts_and_forbric_java_does_not(self):
+        # The launchers `exec java` from PATH; the key must follow that java, and nothing they do not read.
+        bins = {}
+        for name, version in (('a', '25.0.3'), ('b', '21.0.9')):
+            d = self.t.root / 'jdk' / name
+            d.mkdir(parents=True)
+            (d / 'java').write_text(f'#!/bin/sh\necho "openjdk version \\"{version}\\"" >&2\n')
+            (d / 'java').chmod(0o755)
+            bins[name] = str(d)
+        on_a = self.t.key(env={**ENV, 'PATH': f"{bins['a']}:{ENV['PATH']}"})
+        self.assertNotEqual(on_a, self.t.key(env={**ENV, 'PATH': f"{bins['b']}:{ENV['PATH']}"}),
+                            'another JDK first on PATH is another JVM for every launcher')
+        named = gate_cache._java_version({**ENV, 'PATH': f"{bins['a']}:{ENV['PATH']}", 'FORBRIC_JAVA': bins['b']})
+        self.assertIn('25.0.3', named, 'no launcher reads FORBRIC_JAVA, so it must not decide which JVM the key names')
+        self.assertNotIn('21.0.9', named)
+
+    def test_a_fixture_mod_under_build_counts(self):
+        fixture = self.t.root / 'forbric-kernel' / 'build' / 'compat-inputs' / 'carpet' / 'mods' / 'carpet.jar'
+        jar(fixture, {'c/C.class': b'one'})
+        before = self.t.key()
+        jar(fixture, {'c/C.class': b'two'})
+        self.assertNotEqual(before, self.t.key(), 'gate-m62 stages this jar: a new build of it is a new input')
+
     def test_this_trees_own_path_does_not_count(self):
         here = str(self.t.root)
         self.assertEqual(gate_cache.env_digest({'FORBRIC_OLD': f'{here}/x'}, self.t.root),
@@ -186,6 +209,31 @@ class SweepTest(unittest.TestCase):
                                   f'echo gate-m3 >> "{self.ran}"\nexit 0  # edited\n')
         _, ran, _ = self.sweep()
         self.assertEqual(['gate-m3'], ran)
+
+    def test_a_timing_gate_is_answered_from_the_cache_like_any_other(self):
+        # RULE (lane OPT, D89): a gate declared `alone` -- its verdict is a timing (check_kept_up, m12's late ticks) --
+        # is cached like any other. Its inputs fix the code that has to keep up; a second run of the same inputs can
+        # only add the host's load to the answer, which this project already reads as no evidence about the kernel
+        # (a red from a loaded run is checked against its boot times before anything is concluded). So a GREEN on
+        # these inputs stands, a RED is never kept, and any input change -- the kernel included -- runs it again.
+        self.t.gate('gate-m2.sh', '# GATE-PARALLEL: rundirs=server-2 mem=10 alone\n'
+                                  f'echo gate-m2 >> "{self.ran}"\necho "[kernel] PASS kept up"\nexit 0\n')
+        _, ran, _ = self.sweep(jobs='2')
+        self.assertIn('gate-m2', ran)
+        r, ran, _ = self.sweep(jobs='2')
+        self.assertEqual([], ran)
+        self.assertIn('RESULT gate-m2.sh GREEN (exit=0; cached: ', r.stdout)
+        (self.t.root / 'forbric-kernel' / 'Kernel.java').write_text('class Kernel { int slower; }\n')
+        _, ran, _ = self.sweep(jobs='2')
+        self.assertIn('gate-m2', ran, 'a kernel change re-runs the timing gate')
+
+    def test_a_gate_is_told_to_measure_its_control_arms_afresh_only_when_the_sweep_is(self):
+        self.t.gate('gate-m1.sh', '# GATE-PARALLEL: rundirs=server-1 mem=10\n'
+                                  f'echo "gate-m1 fresh=${{FORBRIC_GATE_FRESH:-}}" >> "{self.ran}"\nexit 0\n')
+        _, ran, _ = self.sweep('--only', 'gate-m1.sh')
+        self.assertEqual(['gate-m1', 'fresh='], ran)
+        _, ran, _ = self.sweep('--only', 'gate-m1.sh', '--release')
+        self.assertEqual(['gate-m1', 'fresh=1'], ran, 'an acceptance measures every control arm afresh')
 
     def test_a_release_run_ignores_the_cache(self):
         self.sweep()
@@ -251,6 +299,17 @@ class DeclarationTest(unittest.TestCase):
         keyed = {g.name for g in self.gates if 'tests' in gate_cache.gate_cache_flags(g.source)}
         self.assertEqual(sorted(runs - keyed), [],
                          'these run test sources: add `# GATE-CACHE: tests`, or a test-only change reuses a stale GREEN')
+
+    def test_every_fixture_jar_a_gate_reads_from_build_is_under_a_root_the_key_hashes(self):
+        # build/ is not hashed as a whole: most of it is this tree's own output. The jars a gate stages from it by default
+        # must be in FIXTURE_BUILD_DIRS, or a new build of one would reuse a GREEN measured on the old one.
+        outputs = {'libs'}
+        unhashed = set()
+        for g in self.gates:
+            for d in re.findall(r'\$(?:BUILD|KERNEL/build)/([A-Za-z0-9._+-]+)/[^"\s]*\.jar', COMMENT.sub('', g.source)):
+                if d not in outputs and not d.startswith('gate-') and d not in gate_cache.FIXTURE_BUILD_DIRS:
+                    unhashed.add(f'{g.name}: build/{d}')
+        self.assertEqual(sorted(unhashed), [])
 
     def test_the_duration_prior_names_only_real_gates(self):
         prior = scheduler.load_durations(None)

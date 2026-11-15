@@ -24,6 +24,15 @@ GREEN, not a needless re-run:
     therefore never reuses an en verdict: FORBRIC_JVM differs.
   * `java -version` of the JVM the launchers will find, and the platform.
 
+TIMING GATES. A gate declared `alone` (its verdict is a timing: check_kept_up, gate-m12's late ticks) is cached like any
+other. Its inputs fix the code that has to keep up; another run of the same inputs adds only the host's load to the
+answer, and a red from a loaded run is already read as no evidence about the kernel until its boot times say otherwise.
+A RED is never kept, so a loaded run that went red runs again next time. test_gate_cache.py holds this rule.
+
+CONTROL ARMS. Inside a gate, a run whose inputs hold nothing of this tree (gate-m31's pure-vanilla server) is kept by
+lib.sh's control_arm_dir beside these verdicts, under the same switches: FORBRIC_GATE_FRESH=1 (an acceptance, or a sweep
+without a cache) measures it afresh.
+
 WHAT IS NOT. World saves, configs and logs under run/ -- gates write those on every run, so including them would
 make every key unique. A hand-edited fixture WORLD is the one change this cache cannot see: run with --no-cache
 after changing one. Only GREEN is cached; a RED or EXPECTED_RED gate always runs again. A release run (--release)
@@ -43,7 +52,7 @@ import time
 import zipfile
 from pathlib import Path
 
-CACHE_VERSION = "2"   # 2: nested jars digested by their entries
+CACHE_VERSION = "3"   # 2: nested jars digested by their entries; 3: the launchers' java, build/ fixture roots
 
 # Prose no gate executes. A path matching this is left out of every key.
 _PROSE = re.compile(r"(\.md$|(^|/)(LICENSE|NOTICE)$|^forbric-kernel/run/compat/reports/)")
@@ -198,16 +207,21 @@ class JarDigest:
 
 
 def _java_version(env: dict) -> str:
-    java = "java"
-    home = env.get("FORBRIC_JAVA") or env.get("JAVA_HOME")
-    if home:
-        cand = Path(home) / "bin" / "java"
-        java = str(cand) if cand.exists() else home
+    """`java -version` of the JVM the launchers start: they run a bare `java` from PATH (launch-kernel-server.sh,
+    launch-kernel-client.sh, launch-vanilla-server.sh), and on macOS /usr/bin/java is a stub that follows JAVA_HOME. So
+    this runs the `java` that the gate's own PATH finds, with the gate's JAVA_HOME, and nothing else: FORBRIC_JAVA is
+    read by no launcher, and keying on it once let a PATH that found another JDK reuse the first JDK's GREEN."""
+    java = shutil.which("java", path=env.get("PATH")) or "java"
+    child = {k: v for k, v in os.environ.items() if k not in ("JAVA_HOME", "PATH")}
+    child.update({k: env[k] for k in ("JAVA_HOME", "PATH") if k in env})
     try:
-        r = subprocess.run([java, "-version"], capture_output=True, text=True, timeout=30)
-        return r.stderr + r.stdout
+        r = subprocess.run([java, "-version"], capture_output=True, text=True, timeout=30, env=child)
+        return f"{java}\n{r.stderr}{r.stdout}"
     except (OSError, subprocess.TimeoutExpired):
         return "no java"
+
+
+FIXTURE_BUILD_DIRS = ("compat-inputs", "purefabric-2026-10-03")
 
 
 def external_roots(kernel: Path, env: dict) -> list[Path]:
@@ -218,6 +232,10 @@ def external_roots(kernel: Path, env: dict) -> list[Path]:
     old = Path(env.get("FORBRIC_OLD") or kernel.parent / "forbric-loader") / "run"
     mc = Path(env.get("MC_DIR") or Path(home) / "Library/Application Support/minecraft")
     roots = [old, mc, kernel.parent / ".stage", kernel.parent / ".stage4", kernel / ".dev"]
+    # The fixture mod sets under build/ that gates stage by default (gate-m60's BCLib from compat-inputs/sweep90 and
+    # WunderLib from purefabric-2026-10-03, gate-m61's Create Fly, gate-m62's Carpet). Everything else a gate reads from
+    # build/ it built from this tree's sources. test_gate_cache.py holds every gate's $BUILD/<dir>/*.jar to this list.
+    roots += [kernel / "build" / d for d in FIXTURE_BUILD_DIRS]
     swap = env.get("FORBRIC_FORGE_SWAP") or (home and f"{home}/Forbric-backups/forge-swap")
     if swap:
         roots.append(Path(swap))
