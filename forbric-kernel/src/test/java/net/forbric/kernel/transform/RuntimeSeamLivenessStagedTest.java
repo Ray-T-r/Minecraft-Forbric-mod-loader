@@ -80,6 +80,7 @@ class RuntimeSeamLivenessStagedTest {
 			boot("KernelForeignShimKeys", "boot/KernelForeignShimContext.java", "key mappings registered on a bus outside ModList"),
 			boot("KernelConfigLoad", "boot/KernelLifecycle.java", "NeoForge's early and late config passes"),
 			boot("KernelNeoSetup", "boot/KernelLifecycle.java", "NeoForge's setup phases on each mod's bus"),
+			boot("KernelNeoClientStop", "boot/KernelLifecycle.java", "ClientModLoader.finish's handler for a mod-loading stop"),
 			boot("KernelNeoRegistries", "boot/KernelLifecycle.java", "NewRegistryEvent and RegisterEvent"),
 			boot("KernelScanData", "discovery/ModFileScanner.java", "NeoForge's ModFileScanData from the kernel's scan"),
 			boot("KernelNeoDataMapWatch", "boot/KernelServerDutiesInstaller.java", "the data-map watch the server duties install"),
