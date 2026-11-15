@@ -102,11 +102,12 @@ check "it staged Forbric's own jars"   "staged [1-9][0-9]* Forbric and kernel-de
 check "it staged the game artifacts"   "staged 3 game artifact"                          "$LOG"
 # Stage 3 of dropping MinecraftForge: the install's last line names the two ecosystems the kernel loads, and says it no
 # longer loads MinecraftForge mods. The old line ("Fabric, MinecraftForge and NeoForge mods all go in") sent a player
-# straight into the kernel's refusal of a MinecraftForge-only jar.
+# straight into the kernel's refusal of a MinecraftForge-only jar. Its absence was asserted here too until 2026-11-16, and
+# so was the absence of "bundled (merged|game) base": nothing in the installer, the kernel or forbric-loader prints
+# either any more (git grep: one javadoc mention), so neither absence could fail (D34, lane OPT); the positive line
+# below and InstallerWindowInputTest's English mods-folder line hold the wording.
 check "it says Fabric and NeoForge mods go in the mods folder" "Fabric and NeoForge mods go in .*Forbric no longer loads MinecraftForge mods" "$LOG"
-check_absent "and no longer offers MinecraftForge mods" "MinecraftForge and NeoForge mods all go in" "$LOG"
 check "it built the vanilla reference" "^\[vanilla-reference\] wrote vanilla-reference-26.2.jar: [1-9][0-9]* vanilla classes" "$LOG"
-check_absent "it never claimed to ship Minecraft" "bundled (merged|game) base"            "$LOG"
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
   || { echo "[kernel] FAIL the profile exists"; FAIL=1; }
 
