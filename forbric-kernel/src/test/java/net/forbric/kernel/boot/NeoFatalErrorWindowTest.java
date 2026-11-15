@@ -27,7 +27,8 @@ import org.junit.jupiter.api.parallel.ResourceLock;
 /**
  * {@link NeoFatalErrorWindow} against stand-ins of the FML classes it drives, built under their real names in a child
  * loader: FML's window holder, the provider SPI, {@code ProgramArgs}, {@code FMLConfig}, and a GLFW whose
- * {@code glfwInit} answers what the test says (no real window is ever opened). Each stand-in provider records what it was
+ * {@code glfwInit} answers what the test says (no real window is ever opened), and the game's {@code Minecraft} whose
+ * constructor reports. Each stand-in provider records what it was
  * given and whether FML's config data was set aside while it initialised.
  */
 @ResourceLock("system-properties")
@@ -90,6 +91,12 @@ class NeoFatalErrorWindowTest {
 							Recorded.configDuringInit = net.neoforged.fml.loading.FMLConfig.data();
 						}
 					}""",
+			"net/minecraft/client/Minecraft.java", """
+					package net.minecraft.client;
+					public class Minecraft {
+						public static Object outcome;
+						public Minecraft(java.util.function.Supplier<Object> report) { outcome = report.get(); }
+					}""",
 			"test/OtherWindow.java", """
 					package test;
 					public class OtherWindow implements net.neoforged.neoforgespi.earlywindow.ImmediateWindowProvider {
@@ -129,7 +136,8 @@ class NeoFatalErrorWindowTest {
 
 		@Override
 		protected Class<?> loadClass(String name, boolean resolve) throws ClassNotFoundException {
-			if (!name.startsWith("net.neoforged.") && !name.startsWith("org.lwjgl.") && !name.startsWith("test.")) {
+			if (!name.startsWith("net.neoforged.") && !name.startsWith("org.lwjgl.") && !name.startsWith("test.")
+					&& !name.equals("net.minecraft.client.Minecraft")) {
 				return super.loadClass(name, resolve);
 			}
 			synchronized (getClassLoadingLock(name)) {
@@ -176,6 +184,22 @@ class NeoFatalErrorWindowTest {
 		assertNull(recorded(loader, "configDuringInit"), "the kernel's config is set aside while the window sets up, so "
 				+ "FML's updateConfig cannot save it to config/fml.toml");
 		assertEquals("kernel-in-memory", configData(loader), "and it is put back afterwards");
+	}
+
+	@Test
+	void aReportFromInsideTheGameOpensNoSecondWindow() throws Exception {
+		ClassLoader loader = fml();
+		NeoFatalErrorWindow.noteGameArguments(new String[] {"--assetsDir", "/a"});
+		// The game's constructor (a stand-in under its name) reports, as ClientModLoader.finish does natively once the
+		// game has its window: the kernel must not open the early window beside it.
+		Class<?> game = Class.forName("net.minecraft.client.Minecraft", true, loader);
+		java.util.function.Supplier<Object> report = () -> NeoFatalErrorWindow.open(loader);
+		game.getConstructor(java.util.function.Supplier.class).newInstance(report);
+		assertEquals(NeoFatalErrorWindow.Outcome.IN_GAME, game.getField("outcome").get(null));
+		assertNull(provider(loader), "no provider installed");
+		assertNull(recorded(loader, "name"), "no early window initialised beside the game's");
+		// The same report outside the game opens it, so the stand-ins above would have let it open.
+		assertEquals(NeoFatalErrorWindow.Outcome.OPENED, NeoFatalErrorWindow.open(loader));
 	}
 
 	@Test

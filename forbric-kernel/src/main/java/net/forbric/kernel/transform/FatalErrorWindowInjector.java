@@ -14,9 +14,11 @@ import net.forbric.kernel.util.ForbricLog;
 
 /**
  * Prepends {@code KernelLifecycle.onClientFatalError()} to NeoForge's {@code ClientModLoader.reportFatalError}, the one
- * entry through which a NeoForge client reports an error that stops it ({@code Main.main}'s handler, and
- * {@code ClientModLoader}'s own). The hook gives NeoForge the early window its report draws the error screen on
- * ({@code NeoFatalErrorWindow}); the carrier's body then runs unchanged.
+ * entry through which a NeoForge client reports an error that stops it. In the carrier its callers are {@code Main.main}'s
+ * "Initialization" handler (before {@code new Minecraft}) and {@code ClientModLoader.finish} (inside
+ * {@code Minecraft.<init>}); under the kernel {@code finish} is neutered, so Main's handler is the one live caller. The hook
+ * gives NeoForge the early window its report draws the error screen on ({@code NeoFatalErrorWindow}, which leaves a report
+ * made from inside the game to NeoForge's fallback); the carrier's body then runs unchanged.
  *
  * <p>The METHOD is rewritten, not a call site, so every caller is covered. No argument is read, no branch moves: one
  * {@code invokestatic ()V} at the head.

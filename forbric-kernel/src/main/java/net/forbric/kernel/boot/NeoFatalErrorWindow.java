@@ -34,6 +34,16 @@ import net.forbric.kernel.util.ForbricLog;
  * main thread, which GLFW needs on macOS) — and installs it as the handler's provider. NeoForge's own report then runs
  * unchanged and shows its own screen, with its own text. Nothing of Forbric's is drawn.
  *
+ * <p><b>Only before the game has a window.</b> Natively the early window exists from startup and the game takes it over in
+ * {@code Minecraft.<init>}, so a report made later (ClientModLoader's {@code finish}, inside {@code Minecraft.<init>}) draws
+ * the error screen on the game's own window ({@code DisplayWindow.displayFatalErrorAndExit} takes the window over again and
+ * hands it to {@code ErrorDisplay.fatal}). Under the kernel the game's window is the game's own, not the provider's; opening
+ * the provider then would put a second GLFW window, with its own render thread, beside the game's. So a report made from
+ * inside the game ({@code net.minecraft.client.Minecraft} on the calling thread's stack: its constructor or anything it
+ * runs) is left to NeoForge's fallback, as before this class. Under the kernel the one live caller is {@code Main.main}'s
+ * handler, before {@code new Minecraft} (the carrier's other caller, {@code ClientModLoader.finish}, is neutered by the
+ * kernel); the check is for any caller that reports from inside the game.
+ *
  * <p>It never makes the report worse: when GLFW cannot start (no display), or anything here fails, the provider stays null
  * and NeoForge's fallback runs as before. The provider's initialisation writes the window size into FML's config, which
  * would save {@code config/fml.toml}; the kernel's config is an in-memory one ({@code earlyWindowControl=false}), so it is
@@ -66,8 +76,13 @@ public final class NeoFatalErrorWindow {
 		/** The kernel opened NeoForge's early window; NeoForge's report draws its error screen on it. */
 		OPENED,
 		/** Switched off, or no window could be opened: NeoForge's message-box fallback runs as before. */
-		FALLBACK
+		FALLBACK,
+		/** Reported from inside the game, which already has its own window: NeoForge's fallback, no second window. */
+		IN_GAME
 	}
+
+	/** The game's class whose constructor creates the game's window and whose loop runs the game. */
+	static final String GAME_CLASS = "net.minecraft.client.Minecraft";
 
 	/**
 	 * Makes sure NeoForge's window provider exists before NeoForge's fatal-error report asks it for the error screen.
@@ -78,6 +93,11 @@ public final class NeoFatalErrorWindow {
 			ForbricLog.warn("[Forbric/FatalError] -D%s=off — NeoForge reports this error without its early window "
 					+ "(its message-box fallback)", PROPERTY);
 			return Outcome.FALLBACK;
+		}
+		if (reportedFromInsideTheGame()) {
+			ForbricLog.warn("[Forbric/FatalError] the error is reported from inside the game, which has its own window — "
+					+ "NeoForge reports it with its message-box fallback; no second window is opened");
+			return Outcome.IN_GAME;
 		}
 		try {
 			Class<?> handler = Class.forName(ForeignType.IMMEDIATE_WINDOW_HANDLER.binary(Ecosystem.NEOFORGE), true,
@@ -124,6 +144,15 @@ public final class NeoFatalErrorWindow {
 					+ "NeoForge falls back to its message box");
 			return Outcome.FALLBACK;
 		}
+	}
+
+	/**
+	 * Whether {@link #GAME_CLASS} is on the calling thread's stack: the report comes from the game's constructor (after it
+	 * has created its window, or on the way to it) or from anything the game runs. By class name, so a stand-in under the
+	 * game's name counts in the tests.
+	 */
+	static boolean reportedFromInsideTheGame() {
+		return StackWalker.getInstance().walk(frames -> frames.anyMatch(f -> GAME_CLASS.equals(f.getClassName())));
 	}
 
 	/** {@code earlyWindowProvider} from FML's config, as {@code ImmediateWindowHandler.load} reads it. */
