@@ -42,6 +42,8 @@ final class RegistrationStop {
 	static final String TASK = "Registry initialization";
 	/** What FML's {@code Server.main} exits with when {@code Main} returned without starting the server thread. */
 	static final int SERVER_EXIT = 1;
+	/** The only exception {@code ModLoader.waitForTask} stops a failed init task with (javap of 26.2.0.93). */
+	static final String MOD_LOADING_EXCEPTION = "net.neoforged.fml.ModLoadingException";
 
 	/** The exception this boot stops on, once there is one. */
 	private static volatile Throwable stopping;
@@ -52,7 +54,9 @@ final class RegistrationStop {
 	/**
 	 * The exception native NeoForge stops the boot with for {@code failure}, what {@code GameData.postRegisterEvents} threw,
 	 * built by NeoForge's own {@code ModLoader.waitForTask} (so its issues, log lines and emptied {@code ModList} are NeoForge's).
-	 * The caller throws it. When NeoForge's {@code ModLoader} cannot build it, the boot stops on {@code failure} itself.
+	 * The caller throws it. When NeoForge's {@code ModLoader} cannot build it — it is not there, or what it throws is not its
+	 * {@code ModLoadingException} — the boot stops on {@code failure} itself (unwrapped from reflection), never on
+	 * whatever {@code ModLoader} threw instead.
 	 */
 	static Throwable stop(ClassLoader cl, Throwable failure) {
 		Throwable cause = failure instanceof InvocationTargetException reflected && reflected.getCause() != null
@@ -92,14 +96,32 @@ final class RegistrationStop {
 			Runnable noProgress = () -> { };
 			waitForTask.invoke(null, TASK, noProgress, CompletableFuture.failedFuture(cause));
 		} catch (InvocationTargetException thrown) {
-			// The answer: NeoForge's ModLoadingException, handed on to be thrown.
-			Caught.expected(thrown);
-			if (thrown.getCause() != null) return thrown.getCause();
+			Throwable built = thrown.getCause();
+			if (isModLoadingException(cl, built)) {
+				// The answer: NeoForge's ModLoadingException, handed on to be thrown.
+				Caught.expected(thrown);
+				return built;
+			}
+			// Not the error native NeoForge stops with (an NPE of ModLoader's own, say): stopping on it would put a
+			// loader's accident in front of the player in place of the mod's failure.
+			Caught.warn(thrown, "[Forbric/Lifecycle] NeoForge's ModLoader threw %s instead of its mod-loading error — the boot "
+					+ "stops on what NeoForge's registration threw instead", built);
 		} catch (ReflectiveOperationException | LinkageError | RuntimeException unavailable) {
 			Caught.warn(unavailable, "[Forbric/Lifecycle] NeoForge's ModLoader could not build its mod-loading error — the boot "
 					+ "stops on what NeoForge's registration threw instead");
 		}
 		return cause;
+	}
+
+	/** Whether {@code t} is NeoForge's {@code ModLoadingException}, as {@code cl} defines it. */
+	private static boolean isModLoadingException(ClassLoader cl, Throwable t) {
+		if (t == null) return false;
+		try {
+			return Class.forName(MOD_LOADING_EXCEPTION, false, cl).isInstance(t);
+		} catch (ClassNotFoundException | LinkageError absent) {
+			Caught.expected(absent);
+			return false;
+		}
 	}
 
 	/**
