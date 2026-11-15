@@ -1990,3 +1990,8 @@ test	net.forbric.kernel.transform.ChainAnchorCensusStagedTest	theRestoredNeoForg
 test	net.forbric.kernel.mixin.SupersededFurnaceRemainderStagedTest	theClaimFitsTheShippedMixinAndNothingLikeIt()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.SupersededFurnaceRemainderStagedTest	theRowsAreResolvedWhenTheStagedClassIsDefinedAndStaySuspectedWhenItIsBroken()	[fixture:staged] actual Fabric API fixture required
 test	net.forbric.kernel.mixin.SupersededFurnaceRemainderStagedTest	theWitnessIsNeoForgesConsumeFuelAndNotVanillasOrABrokenOne()	[fixture:staged] the furnace class's jar
+test	net.forbric.kernel.boot.KernelModConstructionStopTest	aConstructorThatThrowsStopsTheBootOnceEveryModIsConstructed()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aDeferredTaskThatThrowsStopsTheBootUnderThePhasesDeferredQueue()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aNewRegistryEventListenerThatThrowsEndsTheRegistryPhase()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aPhaseNobodyFailsReturnsAndRunsItsDeferredWork()	[fixture:staged] the staged game is absent
+test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aSetupListenerThatThrowsStopsTheBootOnceEveryModHadThePhase()	[fixture:staged] the staged game is absent
