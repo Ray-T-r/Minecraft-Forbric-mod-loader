@@ -86,7 +86,35 @@ if ! diff <(grep -v '^server-port=' "$DIR_V/server.properties") <(grep -v '^serv
   echo "[kernel] FAIL the two arms were staged with different settings — nothing below would mean anything"; FAIL=1
 fi
 kernel_jar
-boot "$LOG_V" "$DIR_V" "$KERNEL/run/launch-vanilla-server.sh"
+# The vanilla arm is a control arm (lib.sh control_arm_dir): the vanilla jar, its libraries, this seed and feeder, the
+# JVM -- nothing of the kernel. What the comparison reads from it reproduces exactly from vanilla to vanilla (biomes,
+# structure starts, the dungeon mob: see the header), so a passed arm is kept for these inputs and reused, and only the
+# Forbric arm boots. Every input is in the key below; FORBRIC_GATE_FRESH=1 (an acceptance, --no-cache) boots it again.
+VANILLA="${VANILLA_JAR:-$MC/versions/26.2/26.2.jar}"
+ARM_KEY="$BUILD/gate-m31-vanilla-arm.key"
+{
+  echo "gate-m31 vanilla arm"
+  for f in "$0" "$KERNEL/run/launch-vanilla-server.sh" "$VANILLA" "$MC/versions/26.2/26.2.json"; do
+    echo "$(shasum -a 256 "$f" 2>/dev/null | cut -d' ' -f1) $(basename "$f")"
+  done
+  echo "VANILLA_JVM=${VANILLA_JVM:-}"
+  grep -v '^server-port=' "$DIR_V/server.properties"
+  echo "forceload=$FORCELOAD generate=$GENERATE_SECONDS"
+  java -version 2>&1
+  uname -sm
+} > "$ARM_KEY"
+ARM="$(control_arm_dir gate-m31-vanilla "$ARM_KEY")"
+ARM_REUSED=0
+if [ -n "$ARM" ] && [ -f "$ARM/complete" ] && [ -d "$ARM/world" ] && [ -f "$ARM/vanilla.log" ]; then
+  rm -rf "$DIR_V/world"
+  cp -c -R "$ARM/world" "$DIR_V/world" 2>/dev/null || cp -R "$ARM/world" "$DIR_V/world"
+  cp "$ARM/vanilla.log" "$LOG_V"
+  ARM_REUSED=1
+  echo "[kernel] the vanilla arm's inputs are those of a passed run at $(cat "$ARM/complete"): its saved world and log are"
+  echo "[kernel]   reused, not regenerated ($ARM)"
+else
+  boot "$LOG_V" "$DIR_V" "$KERNEL/run/launch-vanilla-server.sh"
+fi
 if [ "${M31_UNFIXED:-0}" = 1 ]; then
   echo "[kernel] M31_UNFIXED=1 — the Forbric arm runs on the float-rounded nextDouble() this gate exists to catch"
   FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.randomSourcePrecision=off" boot "$LOG_F" "$DIR_F" "$KERNEL/run/launch-kernel-server.sh"
@@ -145,6 +173,16 @@ if [ -s "$REPORT" ]; then
        "block_entities=$(field 'differ block_entities')"
 else
   echo "[kernel] FAIL the comparison produced no report at $REPORT"; FAIL=1
+fi
+
+# Keep a vanilla arm that passed everything asked of it -- Done, the square marked, saved, and every chunk of the square
+# fully generated -- for the next run on the same inputs. A failed or short arm is never kept.
+if [ "$ARM_REUSED" = 0 ] && [ -n "$ARM" ] && [ "${full_v:-0}" -ge 256 ] \
+   && grep -aqE 'Done \(' "$LOG_V" && grep -aqE 'Marked 256 chunks' "$LOG_V" && grep -aqE 'All dimensions are saved' "$LOG_V"; then
+  cp "$LOG_V" "$DIR_V/vanilla.log"
+  control_arm_store "$ARM" "$DIR_V/world" "$DIR_V/vanilla.log"
+  rm -f "$DIR_V/vanilla.log"
+  [ -f "$ARM/complete" ] && echo "[kernel] the vanilla arm passed and is kept for these inputs ($ARM)"
 fi
 
 step "M31 result"

@@ -285,6 +285,46 @@ destination.write_bytes(re.sub(rb'\x1b\[[0-?]*[ -/]*[@-~]', b'', data))
 PY
 }
 
+# control_arm_dir <arm> <key-file> — where a CONTROL ARM's output for exactly these inputs is kept, or nothing when the
+# cache is off.
+#
+# A control arm is a game run whose inputs hold nothing of this tree. gate-m31's pure-vanilla server is the vanilla jar,
+# its libraries, the seed, the JVM and the gate's own feeder; the kernel is not in it. The facets the gate asserts on
+# (biomes, structure starts, the dungeon mob) reproduce exactly from vanilla to vanilla, so booting it again on every
+# run re-derives the same answer and can find nothing about the kernel (lane OPT, D89): about three minutes of game time
+# per run. The key file lists every input of the arm, one per line; its sha256 names the directory, beside the gate
+# verdicts in git's common directory (gate_cache.py), so every worktree shares it. The arm runs when nothing is kept for
+# its key, and its gate stores the output only after the arm's own checks passed.
+#
+# Off -- the arm always runs -- when FORBRIC_GATE_CACHE=0, or FORBRIC_GATE_FRESH=1, which gates-all exports for
+# --no-cache and --release: an acceptance measures every arm afresh.
+control_arm_dir() {
+  local arm="$1" keyfile="$2" root common key
+  if [ "${FORBRIC_GATE_CACHE:-}" = 0 ] || [ "${FORBRIC_GATE_FRESH:-}" = 1 ]; then return 0; fi
+  if [ -n "${FORBRIC_GATE_CACHE:-}" ]; then
+    root="$FORBRIC_GATE_CACHE/arms"
+  else
+    common="$(git -C "$KERNEL" rev-parse --path-format=absolute --git-common-dir 2>/dev/null)" || return 0
+    [ -n "$common" ] || return 0
+    root="$common/forbric-gate-cache/arms"
+  fi
+  key="$(shasum -a 256 "$keyfile" 2>/dev/null | cut -c1-32)"
+  [ -n "$key" ] || return 0
+  printf '%s/%s/%s\n' "$root" "$arm" "$key"
+}
+
+# control_arm_store <dir> <file-or-dir>... — keeps a passed arm's output under <dir>, whole or not at all: copied into a
+# sibling first and renamed into place, with a "complete" stamp a reader requires.
+control_arm_store() {
+  local dir="$1" part item; shift
+  [ -n "$dir" ] || return 0
+  part="$dir.part.$$"
+  rm -rf "$part"; mkdir -p "$part" || return 0
+  for item in "$@"; do cp -c -R "$item" "$part/" 2>/dev/null || cp -R "$item" "$part/" || { rm -rf "$part"; return 0; }; done
+  date '+%Y-%m-%dT%H:%M:%S' > "$part/complete"
+  rm -rf "$dir"; mv "$part" "$dir" 2>/dev/null || rm -rf "$part"
+}
+
 # Rebuild the kernel jar, FAILING LOUDLY. A swallowed build error leaves a stale jar in build/libs and every
 # gate downstream then silently reports on code that is not the code in the tree.
 kernel_jar() {
