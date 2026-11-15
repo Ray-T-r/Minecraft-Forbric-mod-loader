@@ -241,7 +241,7 @@ cp "$KERNEL/run/canary/forge-refused/forbriclive.jar" "$PROMPT_DIR/mods/" || exi
 cp "$RUNDIR/options.txt" "$PROMPT_DIR/options.txt" || exit 3
 : > "$PROMPT_LOG"
 # No quick-play: a launch told to open a world at once is refused instead of asked (gate-m20 says why).
-FORBRIC_COMPAT_POLICY=ask FORBRIC_DEP_DIALOG=dryRun FORBRIC_JVM="${FORBRIC_JVM:-} -Duser.language=en -Duser.country=US ${M26_EXTRA_JVM:-}" \
+FORBRIC_COMPAT_POLICY=ask FORBRIC_DEP_DIALOG=dryRun FORBRIC_JVM="${FORBRIC_JVM:-} -Duser.language=en -Duser.country=US -Dforbric.dialogLanguage=en ${M26_EXTRA_JVM:-}" \
   RUNDIR="$PROMPT_DIR" "$KERNEL/run/launch-kernel-client.sh" > "$PROMPT_LOG" 2>&1 &
 PROMPT_PID=$!
 record_server_pid "$PROMPT_DIR" "$PROMPT_PID"

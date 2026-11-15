@@ -259,7 +259,7 @@ def run_control(family, engine, timeout):
         stage = forbric_stage()
         env["FORBRIC_OLD"] = str(stage)
         env["FORBRIC_COMPAT_POLICY"] = "strict"
-        env["FORBRIC_JVM"] = " ".join(java_args) + " " + env.get("FORBRIC_JVM", "")
+        env["FORBRIC_JVM"] = (env.get("FORBRIC_JVM", "") + " " + " ".join(java_args)).strip()
         old = stage / "run"
         # What launch-kernel-server.sh runs: NeoForge's patched game (BASE) and its one carrier (NEO_RT), the same
         # defaults. MERGED/FORGE_RT are retired with MinecraftForge; the launcher refuses a caller that still sets them.
@@ -477,7 +477,7 @@ def run_set(engine, family, mods, ticks=200, timeout=900, xmx="3G", level_type="
         env["FORBRIC_OLD"] = str(stage)
         # A dedicated server has no window to ask on, so the product default (ask) refuses exactly like strict.
         env["FORBRIC_COMPAT_POLICY"] = policy
-        env["FORBRIC_JVM"] = " ".join(java_args) + " " + env.get("FORBRIC_JVM", "")
+        env["FORBRIC_JVM"] = (env.get("FORBRIC_JVM", "") + " " + " ".join(java_args)).strip()
         old = stage / "run"
         # The launcher's two inputs, with launch-kernel-server.sh's BASE and NEO_RT defaults (as run_control records them).
         carriers = {"base": Path(env.get("BASE", old / "neoforge-patched/patched-mc-neoforge-26.2.jar")),
@@ -795,7 +795,7 @@ def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world
             stage = forbric_stage()
             neo_env = os.environ.copy()
             neo_env.update({"RUNDIR": str(neo), "FORBRIC_OLD": str(stage), "FORBRIC_COMPAT_POLICY": "strict",
-                            "FORBRIC_JVM": " ".join(java_args) + " " + os.environ.get("FORBRIC_JVM", "")})
+                            "FORBRIC_JVM": (os.environ.get("FORBRIC_JVM", "") + " " + " ".join(java_args)).strip()})
             neo_command = [str(KERNEL / "run/launch-kernel-server.sh")]
             inputs["stage"] = {"FORBRIC_OLD": str(stage),
                                "base": record(Path(neo_env.get("BASE", stage / "run/neoforge-patched/patched-mc-neoforge-26.2.jar"))),

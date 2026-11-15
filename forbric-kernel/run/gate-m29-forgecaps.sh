@@ -26,8 +26,10 @@
 #      CONFIRMED, required "unsupported:minecraftforge" finding per jar and a FAILED MinecraftForge row (the Lost row) for
 #      each; the load report names each mod, says MinecraftForge is no longer supported and which file to replace; the
 #      launch stops with the typed policy stop (exit 78) and never reaches Done; nothing of either jar ran.
-#   2. strict (zh): the same refusal under FORBRIC_JVM="-Duser.language=zh -Duser.country=CN" — the load report and the
-#      finding's detail are in Chinese (DialogLang), the evidence stays machine words.
+#   2. strict (zh): the same refusal under "-Duser.language=zh -Duser.country=CN -Dforbric.dialogLanguage=zh_cn" — the
+#      load report and the finding's detail are in Chinese (DialogLang), the evidence stays machine words.
+#   Boots 1 and 2 pin both language switches after the caller's FORBRIC_JVM: the load report follows the JVM's locale,
+#   the finding's detail follows -Dforbric.dialogLanguage first, and a sweep may set either (test_gate_locale.py).
 #   3. control: the NeoForge canary alone, strict — reaches Done with zero confirmed required findings and a clean save,
 #      so the stop in 1 and 2 is the refusal's and nothing else's.
 #
@@ -169,7 +171,7 @@ refused_and_stopped() {
 }
 
 step "1. strict, English: two MinecraftForge-only jars beside a NeoForge mod"
-boot "$LOG" "${M29_POLICY:-strict}" "-Duser.language=en -Duser.country=US" ${REFUSED[@]+"${REFUSED[@]}"} "$NEOLIVE"
+boot "$LOG" "${M29_POLICY:-strict}" "-Duser.language=en -Duser.country=US -Dforbric.dialogLanguage=en" ${REFUSED[@]+"${REFUSED[@]}"} "$NEOLIVE"
 refused_and_stopped "$LOG" en
 check "en: the load report says why, per mod" "not loaded: Forbric no longer supports MinecraftForge" "$LOG.report" 2
 check "en: and names the file to replace" \
@@ -179,7 +181,7 @@ check "en: for the owl build too" \
 check "en: and what to do in general" "Forbric now loads Fabric and NeoForge mods only\." "$LOG.report"
 
 step "2. strict, Chinese: the same refusal in the player's language"
-boot "$ZH_LOG" strict "-Duser.language=zh -Duser.country=CN" ${REFUSED[@]+"${REFUSED[@]}"} "$NEOLIVE"
+boot "$ZH_LOG" strict "-Duser.language=zh -Duser.country=CN -Dforbric.dialogLanguage=zh_cn" ${REFUSED[@]+"${REFUSED[@]}"} "$NEOLIVE"
 refused_and_stopped "$ZH_LOG" zh
 check "zh: the load report says why, per mod" "没有加载：Forbric 已不再支持 MinecraftForge" "$ZH_LOG.report" 2
 check "zh: and names the file to replace" \

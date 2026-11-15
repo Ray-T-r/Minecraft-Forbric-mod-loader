@@ -462,9 +462,13 @@ caller's value first: `FORBRIC_JVM="${FORBRIC_JVM:-} -D..."` in the shell, `os.e
 command line (gate-m17). First, so what the gate sets on purpose still wins (the JVM keeps the last `-D`
 of a name). Until 2026-11 most gates wrote their own value over it and a sweep "in Chinese" reached the
 game JVMs of 16 of 60 gates. `python3 run/compat/test_gate_locale.py` (also run by gate-m0 step 6) holds
-every gate, its Python heredocs and the `run/compat/*.py` drivers it names to that, and lists the gates
-that pin a language on purpose with the reason: gate-m26's refusal-prompt boot (English) and gate-m29's
-English and Chinese refusal boots.
+every gate, its Python heredocs and the `run/compat/*.py` drivers it names to that (the caller's value
+first, not only present), and lists each launch that pins a language on purpose with the reason:
+gate-m26's refusal-prompt boot (English) and gate-m29's English and Chinese refusal boots. A pin pins
+both language switches the kernel reads -- `-Duser.language` (the load report) and
+`-Dforbric.dialogLanguage` (DialogLang: the dependency dialog and a refused mod's finding, read before
+the locale) -- the second by a tag DialogLang has a table for: `zh` names two tables and is ignored, so
+a sweep that wants the dialog in Chinese adds `-Dforbric.dialogLanguage=zh_cn`.
 
 A gate's rundir must not be a fixture other worktrees share. A worktree links `client-merged-pack`,
 `client-kernel`, `client-neo-pack`, `carry-on`, `modmenu` and `neoforge-builds` to the main
