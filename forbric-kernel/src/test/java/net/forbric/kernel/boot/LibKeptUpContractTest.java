@@ -30,6 +30,9 @@ class LibKeptUpContractTest {
 	private static final Path LIB = Path.of("run/lib.sh");
 	private static final String JOIN = "[12:00:00] [Server thread/INFO]: Steve[/127.0.0.1:1] logged in with entity id 42 at (0.5, 64.0, 0.5)\n";
 	private static final String OVERLOAD = "[12:00:05] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2531ms or 50 ticks behind\n";
+	private static final String EARLY = "[11:59:43] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 30000ms or 600 ticks behind\n";
+	private static final String LEAVE = "[12:00:20] [Server thread/INFO]: Steve left the game\n";
+	private static final String LATE = "[12:00:25] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 4000ms or 80 ticks behind\n";
 	private static final String WORSE = "[12:00:09] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 9100ms or 182 ticks behind\n";
 
 	@TempDir Path temporary;
@@ -62,6 +65,47 @@ class LibKeptUpContractTest {
 		// The worst line, not the last one: a gate report that says "one warning" without saying how far behind
 		// is the same as no measurement at all.
 		assertTrue(r.out().contains("Running 9100ms or 182 ticks behind"), r.out());
+	}
+
+	/**
+	 * The callers' wording is "server kept up while the player was on", so only a warning printed while a player was on
+	 * counts (C5 wave 2d, VERIFY run 2's C-1): gate-m12 went red on one overload 17 s before the join, printed while the
+	 * gate's own client JVM was booting beside the server. Red on 421c53cc, which counted the whole log.
+	 */
+	@Test void anOverloadBeforeTheJoinOrAfterTheLeaveIsNotCounted() throws Exception {
+		Result r = check(log(EARLY + JOIN + "[12:00:20] [Server thread/INFO]: Steve lost connection: Disconnected\n"
+				+ LEAVE + LATE + "[12:00:40] [Server thread/INFO]: Stopping server\n"));
+		assertEquals(0, r.exit(), r.out());
+		assertTrue(r.out().contains("PASS kept up (1 player session(s), 0 overload warnings while a player was on)"), r.out());
+		// Not asserted, but not hidden either: the gate log still says what happened outside the session.
+		assertTrue(r.out().contains("2 overload warning(s) with no player on"), r.out());
+	}
+
+	@Test void anOverloadWhileThePlayerIsOnIsRedAndTheWorstNamedIsFromInsideTheSession() throws Exception {
+		// The 30000 ms one is before the join: it is not the worst of the warnings the verdict counts.
+		Result r = check(log(EARLY + JOIN + OVERLOAD + LEAVE + LATE));
+		assertEquals(1, r.exit(), r.out());
+		assertTrue(r.out().contains("FAIL kept up (1 overload warning(s) while a player was on; worst: Running 2531ms or 50 ticks behind)"),
+				r.out());
+	}
+
+	@Test void aSessionWithNoLeaveRunsToTheEndOfTheLog() throws Exception {
+		// The client was killed or the server stopped with the player on: a missing leave counts more, never less.
+		Result r = check(log(JOIN + "[12:00:20] [Server thread/INFO]: Steve lost connection: Disconnected\n" + LATE));
+		assertEquals(1, r.exit(), r.out());
+		assertTrue(r.out().contains("1 overload warning(s) while a player was on"), r.out());
+	}
+
+	@Test void eachSessionIsAWindowOfItsOwn() throws Exception {
+		// Between two sessions nobody is on; in a session that overlaps another, someone is until the last one leaves.
+		String alex = "[12:01:00] [Server thread/INFO]: Alex[/127.0.0.1:2] logged in with entity id 43 at (0.5, 64.0, 0.5)\n";
+		String alexLeft = "[12:01:30] [Server thread/INFO]: Alex left the game\n";
+		Result between = check(log(JOIN + LEAVE + LATE + alex + alexLeft));
+		assertEquals(0, between.exit(), between.out());
+		assertTrue(between.out().contains("2 player session(s), 0 overload warnings while a player was on"), between.out());
+		Result overlapping = check(log(JOIN + alex + LEAVE + LATE + alexLeft));
+		assertEquals(1, overlapping.exit(), overlapping.out());
+		assertTrue(overlapping.out().contains("1 overload warning(s) while a player was on"), overlapping.out());
 	}
 
 	@Test void theKernelsOwnExplanationOfABugIsNotTheGameDoingIt() throws Exception {

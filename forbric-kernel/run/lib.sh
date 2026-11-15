@@ -228,22 +228,44 @@ check_exactly() {
 # defaults to 60), so on a gate where nobody joins, "no overload warnings" is a statement about a JVM that
 # stopped ticking -- the exact shape of a green that means nothing. `logged in with entity id` is the server's
 # own line and a client never prints it, so it cannot be satisfied by the wrong log.
+#
+# ONLY WHILE A PLAYER IS ON (C5 wave 2d, VERIFY run 2's C-1). The callers say "server kept up while the player was on",
+# and until then the count was the whole log: gate-m12 went red on one overload printed 17 s before the join, while the
+# gate's own client JVM was booting beside the server -- the stretch gate-m12's tick-lateness window prints and does
+# not assert, for the same reason. A session opens at the server's "logged in with entity id" line and closes at its
+# "<name> left the game" (vanilla broadcasts it for every player that logged in, kicked or not); one that never closes
+# runs to the end of the log, so a missing leave can only count more, never less. The warnings outside every session
+# are printed, not asserted, and the worst one named is the worst inside a session.
 check_kept_up() {
-  local what="$1" file="$2" joined behind worst
+  local what="$1" file="$2" counts joined behind outside worst
   if ! readable "$file"; then
     printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
   fi
-  joined=$(grep -acE "logged in with entity id" "$file" 2>/dev/null || true)
+  # joined <tab> warnings while a player was on <tab> warnings outside <tab> the worst inside, as vanilla words it
+  counts=$(LC_ALL=C awk '
+    /logged in with entity id/ { joined++; on++; next }
+    / left the game/ { if (on > 0) on--; next }
+    /Can.t keep up/ {
+      if (on == 0) { outside++; next }
+      inside++
+      if (match($0, /Running [0-9]+ms or [0-9]+ ticks behind/)) {
+        line = substr($0, RSTART, RLENGTH); ms = line; sub(/^Running /, "", ms); sub(/ms.*/, "", ms)
+        if (worst == "" || ms + 0 > worstms) { worst = line; worstms = ms + 0 }
+      }
+    }
+    END { printf "%d\t%d\t%d\t%s\n", joined, inside, outside, worst }' "$file" 2>/dev/null)
+  IFS=$'\t' read -r joined behind outside worst <<< "$counts"
   if [ "${joined:-0}" -eq 0 ]; then
     printf '[kernel] FAIL %s (no player session in this log, so the server never had to keep up)\n' "$what"
     FAIL=1; return
   fi
-  behind=$(grep -acE "Can.t keep up" "$file" 2>/dev/null || true)
+  if [ "${outside:-0}" -gt 0 ]; then
+    echo "[kernel] ${outside} overload warning(s) with no player on (before the join or after the leave; not asserted)"
+  fi
   if [ "${behind:-0}" -eq 0 ]; then
-    printf '[kernel] PASS %s (%s player session(s), 0 overload warnings)\n' "$what" "$joined"
+    printf '[kernel] PASS %s (%s player session(s), 0 overload warnings while a player was on)\n' "$what" "$joined"
   else
-    worst=$(grep -aoE "Running [0-9]+ms or [0-9]+ ticks behind" "$file" 2>/dev/null | sort -t' ' -k2 -n | tail -1)
-    printf '[kernel] FAIL %s (%s overload warning(s); worst: %s)\n' "$what" "$behind" "${worst:-unparsed}"
+    printf '[kernel] FAIL %s (%s overload warning(s) while a player was on; worst: %s)\n' "$what" "$behind" "${worst:-unparsed}"
     FAIL=1
   fi
 }
