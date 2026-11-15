@@ -161,6 +161,33 @@ class GatesAllTest {
 				+ " of these runs with no other gate: gate-m12.sh"), "the sweep says which gates it ran alone and why");
 	}
 
+	/**
+	 * Which gates must say {@code alone} is read from what they judge, not kept as a list: a gate that reads the server
+	 * tick sampler (its {@code [Forbric/Tick]} lines, turned up by {@code -Dforbric.tickSamplerEvery}) gives a verdict on
+	 * how late ticks ran, which a neighbouring gate's CPU moves. Comment lines are prose, not a use.
+	 */
+	@Test void everyGateThatJudgesTickTimingIsDeclaredAlone() throws Exception {
+		var declaration = java.util.regex.Pattern.compile("(?m)^#\\s*GATE-PARALLEL:\\s*(.*)$");
+		List<String> timing = new java.util.ArrayList<>();
+		List<String> sharing = new java.util.ArrayList<>();
+		try (var paths = Files.list(Path.of("run"))) {
+			for (Path gate : paths.filter(p -> p.getFileName().toString().matches("gate-m.*\\.sh")).sorted().toList()) {
+				String text = Files.readString(gate);
+				String code = text.replaceAll("(?m)^\\s*#.*$", "");
+				if (!code.contains("Forbric/Tick") && !code.contains("tickSamplerEvery")) continue;
+				timing.add(gate.getFileName().toString());
+				var line = declaration.matcher(text);
+				// An undeclared gate already runs alone; a declared one has to ask for it.
+				if (line.find() && !List.of(line.group(1).trim().split("\\s+")).contains("alone")) {
+					sharing.add(gate.getFileName().toString());
+				}
+			}
+		}
+		assertTrue(timing.contains("gate-m12-multiplayer.sh"), "the rule no longer finds gate-m12's tick check: " + timing);
+		assertEquals(List.of(), sharing, "these gates judge tick timing but may run beside other gates: add `alone` to"
+				+ " their # GATE-PARALLEL: line");
+	}
+
 	private static String describe(Map<String, double[]> ran) {
 		double t0 = ran.values().stream().mapToDouble(r -> r[0]).min().orElse(0);
 		return ran.entrySet().stream().map(e -> String.format("%s %.2f-%.2f", e.getKey(), e.getValue()[0] - t0,

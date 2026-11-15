@@ -41,7 +41,11 @@
 # Each is pinned below by an assertion that fails on the log line it used to produce. Both ends Forbric is what this
 # gate exercises; a Forbric client against a PURE Fabric server is gate-m14's job.
 # Rundirs: M12_SERVER_RUNDIR / M12_CLIENT_RUNDIR (default run/mp-server, run/mp-client, which the gate wipes).
-# GATE-PARALLEL: rundirs=mp-server,mp-client mem=3500
+# `alone`: the tick-lateness ceiling below is a timing verdict, and a neighbouring gate's CPU shows up in it as the server
+# falling behind. VERIFY run 1 of C5 had this gate red at -j 4 beside gate-m0's unit suite and four server boots (11 of 220
+# late, ceiling 7), green alone 5 of 5, and red alone in one of two runs under ten `yes` CPU hogs. So gates-all runs it
+# with no other gate, and the ceiling stays where it is (stage4-c5-harn.md).
+# GATE-PARALLEL: rundirs=mp-server,mp-client mem=3500 alone
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
