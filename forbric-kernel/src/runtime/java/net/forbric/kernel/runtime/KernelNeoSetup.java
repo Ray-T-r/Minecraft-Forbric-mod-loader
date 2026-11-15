@@ -76,11 +76,18 @@ public final class KernelNeoSetup {
 		int fired = 0;
 		List<Throwable> failures = new ArrayList<>();
 
+		// What an earlier step of the same task recorded (construction: a constructor or a subscriber class that threw),
+		// and the mods it belongs to, which natively take no further part in the task. A mod waiting for one of them
+		// waits for what that one waits for (NeoParallelDispatch follows an edge through a mod it does not dispatch).
+		java.util.Set<String> alreadyFailed = RegistrationStop.pendingMods(task);
+		List<Map.Entry<String, KernelModLoader.NeoIdentity>> entries = new ArrayList<>();
+		for (Map.Entry<String, KernelModLoader.NeoIdentity> e : mods.entrySet()) {
+			if (!alreadyFailed.contains(e.getKey())) entries.add(e);
+		}
 		// Each mod on NeoForge's own modloading-worker pool, as soon as the mods it waits for have taken the phase, the
 		// way ModLoader.dispatchParallelEvent posts it (NeoParallelDispatch). It ran on the caller's thread, one mod
 		// after another — on a client the render thread, where a listener's Minecraft.execute ran inline instead of
 		// queueing. DeferredWorkQueue takes enqueueWork from several workers at once, as natively.
-		List<Map.Entry<String, KernelModLoader.NeoIdentity>> entries = new ArrayList<>(mods.entrySet());
 		List<Throwable> failed = NeoParallelDispatch.run(NeoParallelDispatch.parallelExecutor(cl), entries,
 				Map.Entry::getKey, KernelModLoader.dependencyAfter(), e -> {
 					// The active container has to be set for the DISPATCH, not just for construction, and on the thread
@@ -110,7 +117,9 @@ public final class KernelNeoSetup {
 			failures.add(perMod);
 			ModCatalog.mark(entries.get(i).getKey(), ModCatalog.Status.FAILED, "it threw during " + label);
 		}
-		if (!failures.isEmpty()) throw RegistrationStop.propagate(RegistrationStop.stopAll(cl, task, failures));
+		List<Throwable> all = RegistrationStop.takePending(task);
+		all.addAll(failures);
+		if (!all.isEmpty()) throw RegistrationStop.propagate(RegistrationStop.stopAll(cl, task, all));
 
 		// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference — see
 		// NeoDeferredWork for the resource-manager window this was landing in.

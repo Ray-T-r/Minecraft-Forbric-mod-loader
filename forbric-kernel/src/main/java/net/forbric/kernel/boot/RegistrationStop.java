@@ -219,6 +219,45 @@ public final class RegistrationStop {
 		}
 	}
 
+	/** Failures recorded for a task before the step that ends it, by task: see {@link #pending}. */
+	private static final java.util.Map<String, List<Pending>> PENDING = new java.util.LinkedHashMap<>();
+
+	/** One mod's failure waiting for its task to end; {@code modId} may be null when no mod owns it. */
+	public record Pending(String modId, Throwable failure) {
+	}
+
+	/**
+	 * Records {@code failure}, {@code modId}'s, for {@code task} without stopping yet: natively one mod failing a parallel
+	 * task does not stop the others' turns, and {@code waitForFuture} reports every failure together when the task ends. The
+	 * kernel runs construction in steps (every constructor, then every {@code @EventBusSubscriber}, then
+	 * {@code FMLConstructModEvent}); what the earlier steps record here joins the last step's stop ({@link #takePending}),
+	 * or {@link #stopPending} stops on it alone.
+	 */
+	public static synchronized void pending(String task, String modId, Throwable failure) {
+		PENDING.computeIfAbsent(task, t -> new java.util.ArrayList<>()).add(new Pending(modId, failure));
+	}
+
+	/** The mods {@code task} already has a failure of, which natively take no further part in it. */
+	public static synchronized java.util.Set<String> pendingMods(String task) {
+		java.util.Set<String> ids = new java.util.LinkedHashSet<>();
+		for (Pending p : PENDING.getOrDefault(task, List.of())) if (p.modId() != null) ids.add(p.modId());
+		return ids;
+	}
+
+	/** Takes what {@link #pending} recorded for {@code task}, in the order it was recorded. */
+	public static synchronized List<Throwable> takePending(String task) {
+		List<Throwable> failures = new java.util.ArrayList<>();
+		for (Pending p : PENDING.getOrDefault(task, List.of())) failures.add(p.failure());
+		PENDING.remove(task);
+		return failures;
+	}
+
+	/** Stops the boot on what {@link #pending} recorded for {@code task}, if anything; returns otherwise. */
+	public static void stopPending(ClassLoader cl, String task) {
+		List<Throwable> failures = takePending(task);
+		if (!failures.isEmpty()) throw propagate(stopAll(cl, task, failures));
+	}
+
 	/** Whether {@code t} is the exception this boot stops on. */
 	public static boolean isStop(Throwable t) {
 		return t != null && t == stopping;

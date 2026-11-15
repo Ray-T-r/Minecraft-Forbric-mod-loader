@@ -283,8 +283,14 @@ public final class KernelModLoader {
 				built.add(constructed.get(i));
 			} else {
 				ModAnnotationScanner.ModClassInfo info = claimed.get(i);
-				recordNeoOutcome(info, true, threw.get(k), otherSide, failedNeo);
-				Caught.warn(threw.get(k), "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
+				Throwable t = threw.get(k);
+				recordNeoOutcome(info, true, t, otherSide, failedNeo);
+				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
+				// Natively FMLModContainer.constructMod throws fml.modloadingissue.failedtoloadmod naming the mod, and once
+				// every mod has been constructed "Mod Construction" stops the boot on it (RegistrationStop, D87).
+				NeoIdentity identity = neo.get(safeId(info));
+				RegistrationStop.pending(RegistrationStop.CONSTRUCTION, safeId(info),
+						RegistrationStop.failedToLoadMod(cl, identity == null ? null : identity.container(), t));
 			}
 		}
 		// A mod whose constructor threw must come back OUT. A NeoForge mod whose constructor threw used to stay in

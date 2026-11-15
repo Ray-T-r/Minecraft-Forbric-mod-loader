@@ -683,6 +683,10 @@ public final class KernelLifecycle {
 			// earliest mod-bus phase there is — never happened. Posted after the subscribers are wired, so a
 			// handler declared on an @EventBusSubscriber receives it too.
 			fireSetupPhase(cl, KernelModLoader.publishedNeoMods(), ForeignType.FML_CONSTRUCT_MOD_EVENT, "construct");
+			// A constructor or subscriber class that threw stops the boot once construction is over, as native NeoForge's
+			// "Mod Construction" task does; the construction event stops on it together with its own failures, and this
+			// covers a boot in which no mod was left to post it to.
+			RegistrationStop.stopPending(cl, RegistrationStop.CONSTRUCTION);
 
 			// The baseline's bus, then every mod's: NewRegistryEvent goes to the mods' buses below, all inside the one
 			// unfreeze/freeze window. RegisterEvent goes to the same containers, through NeoForge's own method.
@@ -2372,6 +2376,8 @@ public final class KernelLifecycle {
 		} catch (Throwable t) {
 			// A phase stopped the boot (RegistrationStop): what ClientModLoader.finish's own handler does with NeoForge's
 			// ModLoadingException — the crash report and NeoForge's fatal-error window — not Main's "Initializing game".
+			// Anything else leaves unchanged.
+			Caught.expected(t);
 			if (!RegistrationStop.isStop(t) || !RegistrationStop.isModLoadingException(cl, t)) throw RegistrationStop.propagate(t);
 			asClientModLoaderFinishDoes(cl, t);
 		}

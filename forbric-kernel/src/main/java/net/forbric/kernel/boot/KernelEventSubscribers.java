@@ -142,6 +142,11 @@ public final class KernelEventSubscribers {
 					Throwable real = Reflect.unwrap(t);
 					Caught.warn(real, "[Forbric/EBS] could not register %s%s", sub.className(), causeChain(real));
 					registrationFailed(modId, sub.className(), real);
+					// Natively AutomaticEventSubscriber.inject runs inside FMLModContainer.constructMod, which turns this into
+					// fml.modloadingissue.failedtoloadmod naming the mod, and "Mod Construction" stops the boot (D87).
+					KernelModLoader.NeoIdentity owner = modId == null ? null : KernelModLoader.publishedNeoMods().get(modId);
+					RegistrationStop.pending(RegistrationStop.CONSTRUCTION, modId,
+							RegistrationStop.failedToLoadMod(cl, owner == null ? null : owner.container(), real));
 				}
 			}
 		}
