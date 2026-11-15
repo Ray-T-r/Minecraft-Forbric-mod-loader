@@ -50,6 +50,7 @@ import net.forbric.api.ForeignType;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
+import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -105,7 +106,14 @@ class NeoModLoadingThreadsStagedTest {
 	@Test
 	void aSetupPhaseReachesEachModOnAModloadingWorkerWithItsOwnContainerActive() throws Exception {
 		ClassLoader game = game();
-		KernelModLoader.constructMods(game, List.of(modsJar), Side.DEDICATED_SERVER);
+		// thrtest_dep requires thrtest_lib: the phase waits by the dependency order this construction computes.
+		ModPresence.publishForgeFamily(List.of(declared("thrtest_lib"),
+				declared("thrtest_dep", new UnifiedDependency("thrtest_lib", "*", true)), declared("thrtest_free")));
+		try {
+			KernelModLoader.constructMods(game, List.of(modsJar), Side.DEDICATED_SERVER);
+		} finally {
+			ModPresence.publishForgeFamily(List.of());
+		}
 		Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
 		assertEquals(Set.copyOf(IDS), mods.keySet(), "every mod of the jar is published");
 
@@ -113,14 +121,22 @@ class NeoModLoadingThreadsStagedTest {
 		Class<?> context = Class.forName("net.neoforged.fml.ModLoadingContext", false, game);
 		Map<String, String> threads = new ConcurrentHashMap<>();
 		Map<String, String> active = new ConcurrentHashMap<>();
+		Map<String, String> libFinished = new ConcurrentHashMap<>();
 		for (Map.Entry<String, KernelModLoader.NeoIdentity> mod : mods.entrySet()) {
 			Object bus = mod.getValue().bus();
 			Consumer<Object> listener = event -> {
+				// Before anything else: had the mod it requires finished taking the phase when this one started?
+				if (mod.getKey().equals("thrtest_dep")) libFinished.put("atDepStart", String.valueOf(libFinished.containsKey("lib")));
 				threads.put(mod.getKey(), Thread.currentThread().getName());
 				try {
 					Object here = context.getMethod("get").invoke(null);
 					active.put(mod.getKey(), (String) context.getMethod("getActiveNamespace").invoke(here));
-				} catch (ReflectiveOperationException e) {
+					// Long enough that a dependent started at the same time would see this one unfinished.
+					if (mod.getKey().equals("thrtest_lib")) {
+						Thread.sleep(100);
+						libFinished.put("lib", "true");
+					}
+				} catch (ReflectiveOperationException | InterruptedException e) {
 					throw new IllegalStateException(e);
 				}
 			};
@@ -140,6 +156,62 @@ class NeoModLoadingThreadsStagedTest {
 					id + "'s setup listener runs on NeoForge's modloading-worker pool, as natively: " + threads);
 			assertEquals(id, active.get(id), "with its own container active on that worker");
 		}
+		assertEquals("true", libFinished.get("atDepStart"),
+				"a mod takes the phase only after the mod it requires has finished taking it, as natively a container's "
+						+ "task waits for its dependencies' (review THR wave 2d, F4a)");
+	}
+
+	/**
+	 * Each mod's bus takes {@code NewRegistryEvent} with that mod active in {@code ModLoadingContext}, and nothing is left
+	 * active after: natively {@code RegistryManager.postNewRegistryEvent} posts it through
+	 * {@code ModLoader.postEventWrapContainerInModOrder} (measured on the native .93 server, Stage 4 C5 lane THR). Run, not
+	 * read off the bytecode: a kernel that calls the setter with no container passes a shape check (review THR wave 2d, F3).
+	 */
+	@Test
+	// This loader has the NeoForge carrier and no game jar, so filling the event afterwards finds no Registry class: the
+	// kernel reports that and goes on, and delivery to the buses, which is what this checks, has already happened.
+	@ExpectCaught("NewRegistryEvent.fill failed")
+	void newRegistryEventReachesEachBusWithItsOwnModActive() throws Exception {
+		ClassLoader game = game();
+		KernelModLoader.constructMods(game, List.of(modsJar), Side.DEDICATED_SERVER);
+		Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
+		assertEquals(Set.copyOf(IDS), mods.keySet(), "every mod of the jar is published");
+
+		Class<?> newRegistry = Class.forName("net.neoforged.neoforge.registries.NewRegistryEvent", false, game);
+		Class<?> context = Class.forName("net.neoforged.fml.ModLoadingContext", false, game);
+		Map<String, String> active = new ConcurrentHashMap<>();
+		List<Object> buses = new java.util.ArrayList<>();
+		for (Map.Entry<String, KernelModLoader.NeoIdentity> mod : mods.entrySet()) {
+			Object bus = mod.getValue().bus();
+			buses.add(bus);
+			Consumer<Object> listener = event -> {
+				try {
+					Object here = context.getMethod("get").invoke(null);
+					active.put(mod.getKey(), (String) context.getMethod("getActiveNamespace").invoke(here));
+				} catch (ReflectiveOperationException e) {
+					throw new IllegalStateException(e);
+				}
+			};
+			Class.forName("net.neoforged.bus.api.IEventBus", false, game).getMethod("addListener", Class.class, Consumer.class)
+					.invoke(bus, newRegistry, listener);
+		}
+
+		System.setProperty("forbric.modifyRegistriesEvent", "off");
+		Object delivered;
+		try {
+			delivered = Class.forName("net.forbric.kernel.runtime.KernelNeoRegistries", true, game)
+					.getMethod("postNewRegistryEvent", List.class).invoke(null, buses);
+		} finally {
+			System.clearProperty("forbric.modifyRegistriesEvent");
+		}
+
+		assertEquals(IDS.size(), delivered, "every bus took the event");
+		for (String id : IDS) {
+			assertEquals(id, active.get(id), id + "'s NewRegistryEvent listener runs with its own mod active, as natively");
+		}
+		Object here = context.getMethod("get").invoke(null);
+		assertEquals("minecraft", context.getMethod("getActiveNamespace").invoke(here),
+				"no mod is left active on the caller's thread after the phase");
 	}
 
 	private static DiscoveredMod declared(String id, UnifiedDependency... deps) {

@@ -68,10 +68,23 @@ class KernelEventSubscribersGenuineBaseTest {
 	 * libraries, Mixin and ASM on its parent, where its delegation policy sends them in a launch.
 	 */
 	private static ForbricClassLoader genuine(List<Path> mods) throws Exception {
+		return genuine(mods, false);
+	}
+
+	/**
+	 * {@link #genuine(List)}; with {@code gameSide}, also the kernel's compiled game side, owned as in a launch, with the
+	 * kernel's boot classes it links to on the parent — this test's own, so it shares their state.
+	 */
+	private static ForbricClassLoader genuine(List<Path> mods, boolean gameSide) throws Exception {
 		Path game = TestFixtures.stagedBase(), neo = TestFixtures.neoCarrier();
 		TestFixtures.requireFiles(Fixture.STAGED, "the genuine NeoForge base or its carrier is absent", game, neo);
 		List<URL> owned = new ArrayList<>();
 		for (Path mod : mods) owned.add(mod.toUri().toURL());
+		if (gameSide) {
+			Path compiled = Path.of(System.getProperty("forbric.testRuntimeClasses", "build/classes/java/runtime"));
+			TestFixtures.require(Fixture.GAME_SIDE, Files.isDirectory(compiled), "the compiled game side is absent");
+			owned.add(compiled.toUri().toURL());
+		}
 		owned.add(game.toUri().toURL());
 		owned.add(neo.toUri().toURL());
 		// Mixin and ASM come with the kernel in a launch (NeoForge's bus generates its listeners with ASM), and so does
@@ -89,8 +102,8 @@ class KernelEventSubscribersGenuineBaseTest {
 			Path jar = root.resolve(artifact.group(1));
 			if (Files.isRegularFile(jar)) libraries.add(jar.toUri().toURL());
 		}
-		return new ForbricClassLoader(owned.toArray(new URL[0]),
-				new URLClassLoader(libraries.toArray(new URL[0]), ClassLoader.getPlatformClassLoader()));
+		return new ForbricClassLoader(owned.toArray(new URL[0]), new URLClassLoader(libraries.toArray(new URL[0]),
+				gameSide ? KernelEventSubscribersGenuineBaseTest.class.getClassLoader() : ClassLoader.getPlatformClassLoader()));
 	}
 
 	/** A NeoForge mod's {@code @EventBusSubscriber} with one {@code @SubscribeEvent} on a game-bus event. */
@@ -103,6 +116,14 @@ class KernelEventSubscribersGenuineBaseTest {
 	 * of the thread it runs on into that system property.
 	 */
 	private Path neoForgeMod(String subscriber, String threadKey) throws Exception {
+		return neoForgeMod(subscriber, threadKey, null);
+	}
+
+	/**
+	 * {@link #neoForgeMod(String, String)}; with {@code activeKey}, its static initialiser also writes the namespace
+	 * {@code ModLoadingContext.get().getActiveNamespace()} names there into that system property.
+	 */
+	private Path neoForgeMod(String subscriber, String threadKey, String activeKey) throws Exception {
 		ClassWriter cw = new ClassWriter(0);
 		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, subscriber, null, "java/lang/Object", null);
 		if (threadKey != null) {
@@ -114,6 +135,16 @@ class KernelEventSubscribersGenuineBaseTest {
 			clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "setProperty",
 					"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false);
 			clinit.visitInsn(Opcodes.POP);
+			if (activeKey != null) {
+				clinit.visitLdcInsn(activeKey);
+				clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "net/neoforged/fml/ModLoadingContext", "get",
+						"()Lnet/neoforged/fml/ModLoadingContext;", false);
+				clinit.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "net/neoforged/fml/ModLoadingContext", "getActiveNamespace",
+						"()Ljava/lang/String;", false);
+				clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "setProperty",
+						"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false);
+				clinit.visitInsn(Opcodes.POP);
+			}
 			clinit.visitInsn(Opcodes.RETURN);
 			clinit.visitMaxs(2, 0);
 			clinit.visitEnd();
@@ -152,6 +183,39 @@ class KernelEventSubscribersGenuineBaseTest {
 					"on NeoForge's modloading-worker pool, as natively, not on the caller's thread: " + thread);
 		} finally {
 			System.clearProperty(key);
+		}
+	}
+
+	/**
+	 * The subscriber class is initialised with its own mod active in {@code ModLoadingContext}, as
+	 * {@code FMLModContainer.constructMod} injects it natively with the container active (measured on the native .93
+	 * server, Stage 4 C5 lane THR); it saw {@code "minecraft"}. The mod's container is NeoForge's own
+	 * {@code FMLModContainer}, built by the kernel's game side and published as {@code constructMods} publishes it
+	 * (review THR wave 2d, F4b).
+	 */
+	@Test
+	void theSubscriberClassIsInitialisedWithItsOwnModActive() throws Exception {
+		String threadKey = "forbric.ebstest.active.thread", activeKey = "forbric.ebstest.active.namespace";
+		System.clearProperty(threadKey);
+		System.clearProperty(activeKey);
+		Path mod = neoForgeMod("probe/ActiveEvents", threadKey, activeKey);
+		java.lang.reflect.Field published = KernelModLoader.class.getDeclaredField("publishedNeo");
+		published.setAccessible(true);
+		Object before = published.get(null);
+		try (ForbricClassLoader cl = genuine(List.of(mod), true)) {
+			Object bus = KernelBusSupport.makeModBus(cl);
+			Object container = Class.forName("net.forbric.kernel.runtime.KernelContainers", true, cl)
+					.getMethod("container", String.class, Object.class, Path.class).invoke(null, "genuineprobe", bus, null);
+			published.set(null, java.util.Map.of("genuineprobe", new KernelModLoader.NeoIdentity(bus, container)));
+			KernelEventSubscribers.registerAll(cl, List.of(mod), Side.DEDICATED_SERVER);
+			assertTrue(String.valueOf(System.getProperty(threadKey)).startsWith("modloading-worker"),
+					"premise: initialised on a modloading-worker: " + System.getProperty(threadKey));
+			assertEquals("genuineprobe", System.getProperty(activeKey),
+					"ModLoadingContext names the subscriber's own mod while its class initialises, as natively");
+		} finally {
+			published.set(null, before);
+			System.clearProperty(threadKey);
+			System.clearProperty(activeKey);
 		}
 	}
 
