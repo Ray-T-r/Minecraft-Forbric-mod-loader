@@ -68,6 +68,17 @@ class LibStopWhenReadyContractTest {
 				"no line, and a reason on stderr: " + r.out());
 	}
 
+	@Test void aTimerOrSettleWithALeadingZeroIsRefusedOutLoud() throws Exception {
+		// bash arithmetic reads a leading zero as octal: "01" happens to mean 1, "010" would mean 8, and "08" is an error
+		// that ends the whole shell, so in a gate the feeder died and no line was ever written (HARN review F4).
+		Path log = log(BOOTING + DONE);
+		Result r = run("stop_when_ready \"" + log + "\" 1 01; echo \"rc=$?\"; "
+				+ "stop_when_ready \"" + log + "\" 1 08; echo \"rc=$?\"");
+		assertTrue(r.out().split("leading zero", -1).length == 3 && r.out().endsWith("rc=0\n")
+				&& r.out().split("rc=0\n", -1).length == 3 && !r.out().contains("stop\n"),
+				"two refusals with a reason, no line, and the shell still running: " + r.out());
+	}
+
 	@Test void aBootSlowerThanTheTimerGetsTheLineOnlyAfterDoneAndTheSettle() throws Exception {
 		Path log = log(BOOTING);
 		Path doneAt = temporary.resolve("done-at");

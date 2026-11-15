@@ -424,9 +424,10 @@ record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
 # Vanilla 26.2, MinecraftForge's and NeoForge's bodies and the merged one are the same instructions there; the server
 # prints "An unexpected error occurred while trying to execute that command" and runs on. A gate that fed "stop" on a
 # fixed timer therefore went red as "never announced a stop" whenever the machine was loaded enough that the boot
-# outlasted the timer (measured: gate-m3 with a 28 s boot against its 22 s timer). With a boot inside the timer this
-# writes the line at the same moment the timer did; only a slower boot moves it, to <settle> (default 5) seconds after
-# "Done (", so what the gate wanted to see run after the boot still gets some ticks.
+# outlasted the timer (measured: gate-m3 with a 28 s boot against its 22 s timer). With a boot done <settle> or more
+# seconds before the timer ends this writes the line at the same moment the timer did; a later boot, inside the timer's
+# last <settle> seconds or past it, moves it to <settle> (default 5) seconds after "Done (", so what the gate wanted to
+# see run after the boot still gets some ticks.
 #
 # THE SETTLE COUNTS FROM DONE, WHENEVER DONE CAME. Until C5 the timer was a bare sleep, and a Done already in the log
 # when it ran out was taken as "the boot was inside the timer", with no settle at all. A boot that ended in the timer's
@@ -437,10 +438,12 @@ record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
 # timer still gets the line when the timer ends, as before. Seconds are counted by the one-second sleeps themselves,
 # so every count runs late, never early: the timer is never shorter than <seconds> and the settle never shorter than
 # <settle>. A Done that is already in the log when this is called has no known moment and is taken as seen at 0.
+# Both counts are plain decimals: a leading zero is refused with the fraction, since bash arithmetic reads "010" as
+# octal 8 and "08" as an error that ends the whole shell (in a gate, the feeder dies and no line is ever written).
 server_ready() {
   local log="$1" seconds="$2" settle="${3:-5}" cap="${STOP_READY_CAP:-150}" stall="${STOP_READY_STALL:-60}"
   local elapsed=0 seen=-1 waited=0 still=0 size last=-1 rest
-  case "$seconds:$settle" in *[!0-9:]*|:*|*:) echo "server_ready: <seconds> and <settle> are whole seconds, got '$seconds' '$settle'" >&2; return 1;; esac
+  case "$seconds:$settle" in *[!0-9:]*|:*|*:|0[0-9]*|*:0[0-9]*) echo "server_ready: <seconds> and <settle> are whole seconds written without a leading zero, got '$seconds' '$settle'" >&2; return 1;; esac
   while [ "$elapsed" -lt "$seconds" ]; do
     if [ "$seen" -lt 0 ] && grep -aq 'Done (' "$log" 2>/dev/null; then seen=$elapsed; fi
     sleep 1; elapsed=$((elapsed + 1))
