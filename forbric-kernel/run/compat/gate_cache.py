@@ -52,7 +52,8 @@ import time
 import zipfile
 from pathlib import Path
 
-CACHE_VERSION = "3"   # 2: nested jars digested by their entries; 3: the launchers' java, build/ fixture roots
+CACHE_VERSION = "4"   # 2: nested jars digested by their entries; 3: the launchers' java, build/ fixture roots;
+                      # 4: run/canary out, staged canary sources in
 
 # Prose no gate executes. A path matching this is left out of every key.
 _PROSE = re.compile(r"(\.md$|(^|/)(LICENSE|NOTICE)$|^forbric-kernel/run/compat/reports/)")
@@ -223,6 +224,35 @@ def _java_version(env: dict) -> str:
 
 FIXTURE_BUILD_DIRS = ("compat-inputs", "purefabric-2026-10-03")
 
+# What the canary builders (run/build-*.sh) write: run/canary/ is ignored by git and holds nothing but their output, and
+# every input of theirs is already in the key -- the canary sources and builders are repository files, the jars they
+# compile against sit in hashed roots, and the sources two of them read from the staged root are hashed below. Keying
+# on their OUTPUT made the first sweep of a fresh worktree (where no gate had built them yet) and the sweep after it
+# different inputs, so that second sweep re-ran every gate (measured, lane OPT 2026-11-16: 55 jars "new").
+BUILT_RUN_DIRS = ("canary",)
+
+# Sources in the staged root that canary builders compile (build-neolive-canary.sh: livemod-src-neoforge;
+# build-forge-refusal-fixtures.sh: livemod-src; build-testmods.sh builds the staged canaries from these). Not jars, so
+# the jar walk does not see them.
+STAGED_CANARY_SOURCES = ("livemod-src", "livemod-src-neoforge", "testmod-src", "bridge-src", "bridge-src-neoforge",
+                         "build-testmods.sh")
+
+
+def staged_source_digest(old_run: Path, record: dict) -> str:
+    h = hashlib.sha256()
+    for name in STAGED_CANARY_SOURCES:
+        top = old_run / name
+        files = [top] if top.is_file() else sorted(q for q in top.rglob("*") if q.is_file()) if top.is_dir() else []
+        for f in files:
+            rel = str(f.relative_to(old_run))
+            try:
+                digest = _sha(rel.encode(), f.read_bytes())
+            except OSError:
+                digest = "unreadable"
+            h.update(f"{rel}\t{digest}\n".encode())
+            record[f"{old_run}/{rel}"] = digest
+    return h.hexdigest()
+
 
 def external_roots(kernel: Path, env: dict) -> list[Path]:
     """The directories outside run/ whose jars the launchers and gates read. Mirrors lib.sh's and old-kernel.sh's
@@ -277,7 +307,10 @@ class Cache:
         jars = JarDigest(cache_dir / f"jar-memo-v{CACHE_VERSION}.json")   # a new digest rule, a new memo
         jar_rows: dict[str, str] = {}
         parts = [CACHE_VERSION.encode(), self.sources.common.encode(),
-                 jars.tree(run_dir, {".gate-clones"}, set(scratch_dirs), jar_rows).encode()]
+                 jars.tree(run_dir, {".gate-clones"}, set(scratch_dirs) | set(BUILT_RUN_DIRS), jar_rows).encode()]
+        staged_rows: dict[str, str] = {}
+        old_run = Path(env.get("FORBRIC_OLD") or kernel.parent / "forbric-loader") / "run"
+        parts.append(staged_source_digest(old_run, staged_rows).encode())
         for root in external_roots(kernel, env):
             parts.append(str(root).replace(str(repo), "<repo>").encode())
             parts.append(jars.tree(root, {".gate-clones", "saves", "logs", "crash-reports"}, record=jar_rows).encode())
@@ -287,7 +320,7 @@ class Cache:
         jars.save()
         self.common = _sha(*parts)
         say(f"[gates] cache: inputs fingerprinted in {time.time() - t0:.1f}s ({cache_dir})")
-        self._explain({"sources": {k: v for k, v in self.sources.files.items()},
+        self._explain({"sources": {**self.sources.files, **{k.replace(str(repo), "<repo>"): v for k, v in staged_rows.items()}},
                        "jars": {k.replace(str(repo), "<repo>"): v for k, v in jar_rows.items()}, "env": {r: "" for r in env_rows},
                        "jvm": {java.strip(): "", platform.platform(): ""}}, say)
 

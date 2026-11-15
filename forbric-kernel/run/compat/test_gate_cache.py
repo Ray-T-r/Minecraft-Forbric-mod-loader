@@ -112,7 +112,7 @@ class KeyTest(unittest.TestCase):
             buf = io.BytesIO()
             with zipfile.ZipFile(buf, 'w') as z:
                 z.writestr(zipfile.ZipInfo('lib/L.class', inner_stamp), inner_data)
-            jar(self.t.run / 'canary' / 'live.jar', {'META-INF/jars/lib.jar': buf.getvalue(), 'C.class': b'c'})
+            jar(self.t.run / 'fixture' / 'mods' / 'live.jar', {'META-INF/jars/lib.jar': buf.getvalue(), 'C.class': b'c'})
         outer((2020, 1, 1, 0, 0, 0), b'lib')
         before = self.t.key()
         outer((2025, 2, 2, 2, 2, 2), b'lib')
@@ -158,6 +158,32 @@ class KeyTest(unittest.TestCase):
         before = self.t.key()
         jar(fixture, {'c/C.class': b'two'})
         self.assertNotEqual(before, self.t.key(), 'gate-m62 stages this jar: a new build of it is a new input')
+
+    def test_a_canary_the_gates_build_is_their_output_and_its_sources_are_the_input(self):
+        # run/canary holds only what the builders write, from sources the key already has. Counting the jars made a
+        # fresh tree's first sweep (none built yet) and the sweep after it two different sets of inputs.
+        built = self.t.run / 'canary' / 'forbricfabriclive.jar'
+        jar(built, {'C.class': b'one'})
+        self.assertEqual(self.base, self.t.key(), 'a canary a gate built is not an input')
+        jar(built, {'C.class': b'two'})
+        self.assertEqual(self.base, self.t.key())
+        source = self.t.root / 'forbric-kernel' / 'canary' / 'fabriclive' / 'Live.java'
+        source.parent.mkdir(parents=True)
+        source.write_text('class Live {}\n')
+        self.assertNotEqual(self.base, self.t.key(), "the canary's source is")
+
+    def test_the_canary_sources_in_the_staged_root_count(self):
+        outside = tempfile.TemporaryDirectory()   # a staged root is outside the repository, as .stage4 is to git
+        self.addCleanup(outside.cleanup)
+        staged = Path(outside.name)
+        src = staged / 'run' / 'livemod-src-neoforge' / 'forbric' / 'Live.java'
+        src.parent.mkdir(parents=True)
+        src.write_text('class Live {}\n')
+        env = {**ENV, 'FORBRIC_OLD': str(staged)}
+        before = self.t.key(env=env)
+        self.assertEqual(before, self.t.key(env=env))
+        src.write_text('class Live { int changed; }\n')
+        self.assertNotEqual(before, self.t.key(env=env), 'build-neolive-canary.sh compiles this into a canary gates stage')
 
     def test_this_trees_own_path_does_not_count(self):
         here = str(self.t.root)
@@ -293,6 +319,21 @@ class DeclarationTest(unittest.TestCase):
                 if d not in outputs and not d.startswith('gate-') and d not in gate_cache.FIXTURE_BUILD_DIRS:
                     unhashed.add(f'{g.name}: build/{d}')
         self.assertEqual(sorted(unhashed), [])
+
+    def test_every_canary_a_gate_stages_from_run_canary_is_built_by_that_gate(self):
+        # run/canary is the builders' output and not part of the key, so a gate the cache runs alone must build what it
+        # stages: gate-m14 read the Fabric canary an earlier gate had left there, and went SKIP-FATAL in a tree where
+        # none had.
+        builders = {b.name: b.read_text() for b in RUN.glob('build-*.sh')}
+        missing = []
+        for g in self.gates:
+            code = '\n'.join(l for l in COMMENT.sub('', g.source).splitlines()
+                              if 'SKIP-FATAL' not in l and 'echo ' not in l)
+            runs = set(re.findall(r'(build-[A-Za-z0-9-]+\.sh)', code))
+            for name in set(re.findall(r'canary/(?:forge-refused/)?([A-Za-z0-9_-]+\.jar)', code)):
+                if not any(name.removesuffix('.jar') in builders.get(b, '') for b in runs):
+                    missing.append(f'{g.name}: {name}')
+        self.assertEqual(sorted(missing), [])
 
     def test_the_duration_prior_names_only_real_gates(self):
         prior = scheduler.load_durations(None)

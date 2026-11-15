@@ -83,8 +83,11 @@ MOD_BLOCK="mcwbridges:andesite_bridge"
 MOD_STATE="[connection=middle_ns]"
 MOD_ITEM="mcwbridges:andesite_bridge"
 VANILLA_BLOCK="minecraft:diamond_block"
+# Built here, as every other gate that stages it builds it: this gate used to read whatever an earlier gate had left in
+# run/canary, so it went SKIP-FATAL in a tree where none had (the verdict cache can run it alone).
+"$KERNEL/run/build-fabric-canary.sh" >"$BUILD/gate-m14-canary.log" 2>&1
 for f in "$LAUNCHER" "$FABRIC_API" "$SHARED" "$CANARY" "$UNIVERSAL_SOURCE"; do
-  [ -f "$f" ] || { echo "[kernel] SKIP-FATAL: missing $f (run/build-fabric-canary.sh builds the canary)" >&2; exit 3; }
+  [ -f "$f" ] || { echo "[kernel] SKIP-FATAL: missing $f (the Fabric canary's build: $BUILD/gate-m14-canary.log)" >&2; exit 3; }
 done
 
 kernel_jar
