@@ -31,6 +31,7 @@ class LibKeptUpContractTest {
 	private static final String JOIN = "[12:00:00] [Server thread/INFO]: Steve[/127.0.0.1:1] logged in with entity id 42 at (0.5, 64.0, 0.5)\n";
 	private static final String OVERLOAD = "[12:00:05] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2531ms or 50 ticks behind\n";
 	private static final String EARLY = "[11:59:43] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 30000ms or 600 ticks behind\n";
+	private static final String DIAL = "[11:59:55] [Render thread/INFO]: Connecting to 127.0.0.1, 25604\n";
 	private static final String LEAVE = "[12:00:20] [Server thread/INFO]: Steve left the game\n";
 	private static final String LATE = "[12:00:25] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 4000ms or 80 ticks behind\n";
 	private static final String WORSE = "[12:00:09] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 9100ms or 182 ticks behind\n";
@@ -68,44 +69,95 @@ class LibKeptUpContractTest {
 	}
 
 	/**
-	 * The callers' wording is "server kept up while the player was on", so only a warning printed while a player was on
-	 * counts (C5 wave 2d, VERIFY run 2's C-1): gate-m12 went red on one overload 17 s before the join, printed while the
-	 * gate's own client JVM was booting beside the server. Red on 421c53cc, which counted the whole log.
+	 * Only what comes before the client's dial is left out (C5 wave 2d, VERIFY run 2's C-1): gate-m12 went red on one
+	 * overload printed 13 s before the client dialled, while the gate's own client JVM was booting beside the server. Red on
+	 * 421c53cc, which counted the whole log.
 	 */
-	@Test void anOverloadBeforeTheJoinOrAfterTheLeaveIsNotCounted() throws Exception {
+	@Test void anOverloadBeforeTheClientDialledIsNotCounted() throws Exception {
 		Result r = check(log(EARLY + JOIN + "[12:00:20] [Server thread/INFO]: Steve lost connection: Disconnected\n"
-				+ LEAVE + LATE + "[12:00:40] [Server thread/INFO]: Stopping server\n"));
+				+ LEAVE + "[12:00:40] [Server thread/INFO]: Stopping server\n"), client(DIAL));
 		assertEquals(0, r.exit(), r.out());
-		assertTrue(r.out().contains("PASS kept up (1 player session(s), 0 overload warnings while a player was on)"), r.out());
-		// Not asserted, but not hidden either: the gate log still says what happened outside the session.
-		assertTrue(r.out().contains("2 overload warning(s) with no player on"), r.out());
+		assertTrue(r.out().contains("PASS kept up (1 player session(s), 0 overload warnings from the client's dial on)"), r.out());
+		// Not asserted, but not hidden either: the gate log still says what happened before the dial.
+		assertTrue(r.out().contains("1 overload warning(s) before the client dialled"), r.out());
 	}
 
-	@Test void anOverloadWhileThePlayerIsOnIsRedAndTheWorstNamedIsFromInsideTheSession() throws Exception {
-		// The 30000 ms one is before the join: it is not the worst of the warnings the verdict counts.
-		Result r = check(log(EARLY + JOIN + OVERLOAD + LEAVE + LATE));
+	/**
+	 * The handshake counts (HARN2's review A-1): the server's "logged in" line comes after the configuration phase, which
+	 * runs on the server thread over several ticks and is what gate-m16 exists for. Green on 63e561cc, whose window opened
+	 * at the join.
+	 */
+	@Test void anOverloadBetweenTheDialAndTheJoinCounts() throws Exception {
+		String handshake = "[11:59:58] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 5000ms or 100 ticks behind\n";
+		Result r = check(log(EARLY + handshake + JOIN + LEAVE), client(DIAL));
 		assertEquals(1, r.exit(), r.out());
-		assertTrue(r.out().contains("FAIL kept up (1 overload warning(s) while a player was on; worst: Running 2531ms or 50 ticks behind)"),
+		assertTrue(r.out().contains("FAIL kept up (1 overload warning(s) from the client's dial on; worst: Running 5000ms or 100 ticks behind)"),
 				r.out());
 	}
 
-	@Test void aSessionWithNoLeaveRunsToTheEndOfTheLog() throws Exception {
-		// The client was killed or the server stopped with the player on: a missing leave counts more, never less.
-		Result r = check(log(JOIN + "[12:00:20] [Server thread/INFO]: Steve lost connection: Disconnected\n" + LATE));
-		assertEquals(1, r.exit(), r.out());
-		assertTrue(r.out().contains("1 overload warning(s) while a player was on"), r.out());
+	/**
+	 * The leave's own tick counts (HARN2's review A-1): vanilla warns at the start of the tick after a late one, and the
+	 * leave's tick prints "left the game" before it fires the logged-out event and saves the player, so a stall there is
+	 * printed after the leave. Nor does a chat or mod line that happens to say "left the game" end anything (review A-2).
+	 * Both green on 63e561cc, which closed the window at the first line saying "left the game".
+	 */
+	@Test void anOverloadAfterTheLeaveOrAfterALineSayingItCounts() throws Exception {
+		Result logout = check(log(JOIN + LEAVE + LATE + "[12:00:40] [Server thread/INFO]: Stopping server\n"), client(DIAL));
+		assertEquals(1, logout.exit(), logout.out());
+		assertTrue(logout.out().contains("1 overload warning(s) from the client's dial on"), logout.out());
+		String chat = "[12:00:03] [Server thread/INFO]: <Steve> I left the game settings alone\n";
+		Result said = check(log(JOIN + chat + OVERLOAD + LEAVE), client(DIAL));
+		assertEquals(1, said.exit(), said.out());
+		assertTrue(said.out().contains("1 overload warning(s) from the client's dial on"), said.out());
 	}
 
-	@Test void eachSessionIsAWindowOfItsOwn() throws Exception {
-		// Between two sessions nobody is on; in a session that overlaps another, someone is until the last one leaves.
+	@Test void anOverloadAfterTheDialIsRedAndTheWorstNamedIsFromTheCountedOnes() throws Exception {
+		// The 30000 ms one is before the dial: it is not the worst of the warnings the verdict counts.
+		Result r = check(log(EARLY + JOIN + OVERLOAD + LEAVE), client(DIAL));
+		assertEquals(1, r.exit(), r.out());
+		assertTrue(r.out().contains("FAIL kept up (1 overload warning(s) from the client's dial on; worst: Running 2531ms or 50 ticks behind)"),
+				r.out());
+	}
+
+	@Test void withoutAUsableDialTheWholeLogCounts() throws Exception {
+		// No client log, a client log that never dialled, and one whose dial is stamped before the server's first line (a
+		// stale log from an earlier run, not a run across midnight): a missing or doubtful boundary counts more, never less.
+		String serverLog = "[11:59:00] [Server thread/INFO]: Starting minecraft server version 26.2\n" + EARLY + JOIN + LEAVE;
+		for (Path clientLog : List.of(temporary.resolve("never-written-client.log"),
+				client("[11:59:50] [Render thread/INFO]: Setting user: Steve\n"),
+				client("[09:12:00] [Render thread/INFO]: Connecting to 127.0.0.1, 25604\n"))) {
+			Result r = check(log(serverLog), clientLog);
+			assertEquals(1, r.exit(), clientLog + ": " + r.out());
+			assertTrue(r.out().contains("no client dial to open the window at"), r.out());
+			assertTrue(r.out().contains("1 overload warning(s) from the client's dial on; worst: Running 30000ms"), r.out());
+		}
+	}
+
+	@Test void aRunAcrossMidnightKeepsTheDialWhereItWas() throws Exception {
+		String serverLog = "[23:59:30] [Server thread/INFO]: Starting minecraft server version 26.2\n"
+				+ "[23:59:50] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 7000ms or 140 ticks behind\n"
+				+ "[00:00:09] [Server thread/INFO]: Steve[/127.0.0.1:1] logged in with entity id 42 at (0.5, 64.0, 0.5)\n"
+				+ "[00:00:11] [Server thread/WARN]: Can't keep up! Is the server overloaded? Running 2100ms or 42 ticks behind\n";
+		// Dialled after midnight: the 23:59:50 one is before it, the 00:00:11 one after.
+		Result after = check(log(serverLog), client("[00:00:05] [Render thread/INFO]: Connecting to 127.0.0.1, 25604\n"));
+		assertEquals(1, after.exit(), after.out());
+		assertTrue(after.out().contains("1 overload warning(s) before the client dialled"), after.out());
+		assertTrue(after.out().contains("1 overload warning(s) from the client's dial on; worst: Running 2100ms"), after.out());
+		// Dialled before midnight: both are after it.
+		Result before = check(log(serverLog), client("[23:59:40] [Render thread/INFO]: Connecting to 127.0.0.1, 25604\n"));
+		assertTrue(before.out().contains("2 overload warning(s) from the client's dial on; worst: Running 7000ms"), before.out());
+	}
+
+	@Test void aWarningBetweenTwoSessionsCounts() throws Exception {
+		// The server is still serving the gate between them; the session count is the denominator, not the window.
 		String alex = "[12:01:00] [Server thread/INFO]: Alex[/127.0.0.1:2] logged in with entity id 43 at (0.5, 64.0, 0.5)\n";
 		String alexLeft = "[12:01:30] [Server thread/INFO]: Alex left the game\n";
-		Result between = check(log(JOIN + LEAVE + LATE + alex + alexLeft));
-		assertEquals(0, between.exit(), between.out());
-		assertTrue(between.out().contains("2 player session(s), 0 overload warnings while a player was on"), between.out());
-		Result overlapping = check(log(JOIN + alex + LEAVE + LATE + alexLeft));
-		assertEquals(1, overlapping.exit(), overlapping.out());
-		assertTrue(overlapping.out().contains("1 overload warning(s) while a player was on"), overlapping.out());
+		Result between = check(log(JOIN + LEAVE + LATE + alex + alexLeft), client(DIAL));
+		assertEquals(1, between.exit(), between.out());
+		assertTrue(between.out().contains("1 overload warning(s) from the client's dial on"), between.out());
+		Result quiet = check(log(JOIN + LEAVE + alex + alexLeft), client(DIAL));
+		assertEquals(0, quiet.exit(), quiet.out());
+		assertTrue(quiet.out().contains("2 player session(s), 0 overload warnings"), quiet.out());
 	}
 
 	@Test void theKernelsOwnExplanationOfABugIsNotTheGameDoingIt() throws Exception {
@@ -141,8 +193,18 @@ class LibKeptUpContractTest {
 		return p;
 	}
 
+	private Path client(String contents) throws Exception {
+		Path p = temporary.resolve("client-" + System.nanoTime() + ".log");
+		Files.writeString(p, contents, StandardCharsets.UTF_8);
+		return p;
+	}
+
 	private Result check(Path log) throws Exception {
 		return run("check_kept_up \"kept up\" \"" + log + "\"");
+	}
+
+	private Result check(Path log, Path clientLog) throws Exception {
+		return run("check_kept_up \"kept up\" \"" + log + "\" \"" + clientLog + "\"");
 	}
 
 	private Result run(String call) throws Exception {

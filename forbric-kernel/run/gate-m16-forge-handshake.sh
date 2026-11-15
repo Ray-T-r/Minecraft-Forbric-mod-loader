@@ -68,7 +68,7 @@
 # the clean leave are unchanged. The file keeps its name until Stage 6 (D4).
 #
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
-# `alone`: check_kept_up (vanilla's "Can't keep up!" while the player is on) is a timing verdict, and a neighbouring
+# `alone`: check_kept_up (vanilla's "Can't keep up!" from the client's dial on) is a timing verdict, and a neighbouring
 # gate's CPU shows up in it as the server falling behind: side-by-side -j 5 batches had the former gate-m15 red on it on
 # both trees in two rounds of three and gate-m16 red with the full test suites beside it (introduction.md, gates). So
 # gates-all runs it with no other gate (stage4-c5-harn.md, HARN review fixes).
@@ -175,7 +175,7 @@ grep -aE 'ForbricNeoLive/CFG' "$SLOG" "$CLOG" | sed 's#^.*gate-m16-\(server\|cli
 step "a real client joined a real server, with the same NeoForge mods on both ends (must PASS)"
 check "client dialled the address"    "Connecting to 127.0.0.1"                           "$CLOG"
 check "server accepted the login"     "logged in with entity id"                          "$SLOG"
-check_kept_up "server kept up while the player was on" "$SLOG"
+check_kept_up "server kept up from the client's dial on" "$SLOG" "$CLOG"
 check "client finished configuring"   "ClientSmoke\] joined world via quick-play"         "$CLOG"
 check_absent "nothing was refused on the server" "\[Forbric/Unsupported\] refusing" "$SLOG"
 check_absent "nothing was refused on the client" "\[Forbric/Unsupported\] refusing" "$CLOG"

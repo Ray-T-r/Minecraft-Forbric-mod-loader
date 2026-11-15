@@ -190,7 +190,7 @@ check "server accepted the login"    "logged in with entity id"                 
 check "player joined on the server"  "joined the game"                                 "$SLOG"
 # The tree's only performance assertion. Safe to make here and nowhere generic: the login check one line up
 # is the denominator — vanilla pauses an empty server, so "no overload warnings" means nothing without it.
-check_kept_up "server kept up while the player was on" "$SLOG"
+check_kept_up "server kept up from the client's dial on" "$SLOG" "$CLOG"
 
 step "the configuration phase and registry sync completed (must PASS)"
 # This is the surface no other gate reaches: known-pack negotiation, then registry + tag sync over the wire.

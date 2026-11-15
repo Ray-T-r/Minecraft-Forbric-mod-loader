@@ -259,7 +259,7 @@ check_exactly() {
   else printf '[kernel] FAIL %s (want exactly %s got %s)\n' "$what" "$want" "${got:-0}"; FAIL=1; fi
 }
 
-# check_kept_up <what> <server-log> — the one performance assertion this project has.
+# check_kept_up <what> <server-log> [client-log] — the one performance assertion this project has.
 #
 # WHY IT IS TWO ASSERTIONS. "Can't keep up! Is the server overloaded?" is vanilla's own line, and it is the only
 # performance signal anywhere in this tree: there is no tick-time, frame-time, TPS or memory assertion in any
@@ -271,43 +271,76 @@ check_exactly() {
 # stopped ticking -- the exact shape of a green that means nothing. `logged in with entity id` is the server's
 # own line and a client never prints it, so it cannot be satisfied by the wrong log.
 #
-# ONLY WHILE A PLAYER IS ON (C5 wave 2d, VERIFY run 2's C-1). The callers say "server kept up while the player was on",
-# and until then the count was the whole log: gate-m12 went red on one overload printed 17 s before the join, while the
-# gate's own client JVM was booting beside the server -- the stretch gate-m12's tick-lateness window prints and does
-# not assert, for the same reason. A session opens at the server's "logged in with entity id" line and closes at its
-# "<name> left the game" (vanilla broadcasts it for every player that logged in, kicked or not); one that never closes
-# runs to the end of the log, so a missing leave can only count more, never less. The warnings outside every session
-# are printed, not asserted, and the worst one named is the worst inside a session.
+# FROM THE CLIENT'S DIAL ON (C5 wave 2d, VERIFY run 2's C-1, and HARN2's review A-1). Until wave 2d the count was the
+# whole log: gate-m12 went red on one overload printed 16 s before the join and 13 s before the client dialled, while the
+# gate's own client JVM was booting beside the server. What comes before the client's "Connecting to" (vanilla prints it
+# before the first packet; the client has finished booting by then) is printed, not asserted -- the same boundary
+# gate-m12's tick-lateness window opens at. Everything from the dial's second to the end of the server log counts:
+#  - the handshake. The server's "logged in" line comes after the configuration phase (known packs, registry and tag
+#    sync, NeoForge's configuration tasks, all on the server thread over several ticks), which is what gate-m16 exists
+#    for. Wave 2d's first cut opened at the join and left it out; so had gate-m12's first tick window (wave 2b review A-1).
+#  - the leave. Vanilla prints "Can't keep up!" at the START of the tick after a late one (MinecraftServer.runServer warns
+#    before processPacketsAndTick), and the leave's tick broadcasts "left the game" before PlayerList.remove fires the
+#    logged-out event and saves the player -- so a stall there is always printed after "left the game", with nothing in
+#    the log marking where that tick ended. Wave 2d's first cut closed at the leave line (matched anywhere, so a chat line
+#    saying it closed it too) and missed it. The server stops ticking at "Stopping the server": nothing after it can warn.
+# A client log with no dial in it (or none given) counts the whole server log, and so does a dial stamped before the
+# server's first line by less than half a day (a stale client log, not a run that crossed midnight): a missing or
+# doubtful boundary can only count more, never less. A warning line with no stamp counts.
 check_kept_up() {
-  local what="$1" file="$2" counts joined behind outside worst
+  local what="$1" file="$2" clog="${3:-}" cfile=/dev/null counts joined behind outside dialled worst
   if ! readable "$file"; then
     printf '[kernel] FAIL %s (no log to read: %s)\n' "$what" "$file"; FAIL=1; return
   fi
-  # joined <tab> warnings while a player was on <tab> warnings outside <tab> the worst inside, as vanilla words it
-  counts=$(LC_ALL=C awk '
-    /logged in with entity id/ { joined++; on++; next }
-    / left the game/ { if (on > 0) on--; next }
+  if [ -n "$clog" ] && readable "$clog"; then cfile="$clog"; fi
+  # joined <tab> warnings counted <tab> warnings before the dial <tab> dial found <tab> the worst counted, as vanilla words it
+  counts=$(LC_ALL=C awk -v cfile="$cfile" '
+    function stamp(s) {
+      if (s !~ /^\[[0-9][0-9]:[0-9][0-9]:[0-9][0-9]\]/) return -1
+      return substr(s, 2, 2) * 3600 + substr(s, 5, 2) * 60 + substr(s, 8, 2)
+    }
+    BEGIN {
+      dial = -1
+      while ((getline l < cfile) > 0) if (l ~ /: Connecting to / && stamp(l) >= 0) { dial = stamp(l); break }
+      close(cfile)
+      first = -1; prev = -1; wrap = 0
+    }
+    {
+      t = stamp($0)
+      if (t >= 0) {
+        if (prev >= 0 && t < prev - 43200) wrap += 86400   # the run crossed midnight
+        prev = t; t += wrap
+        if (first < 0) {
+          first = t
+          if (dial >= 0 && dial < first) { if (first - dial > 43200) dial += 86400; else dial = -1 }
+        }
+      }
+    }
+    /logged in with entity id/ { joined++; next }
     /Can.t keep up/ {
-      if (on == 0) { outside++; next }
+      if (dial >= 0 && t >= 0 && t < dial) { outside++; next }
       inside++
       if (match($0, /Running [0-9]+ms or [0-9]+ ticks behind/)) {
         line = substr($0, RSTART, RLENGTH); ms = line; sub(/^Running /, "", ms); sub(/ms.*/, "", ms)
         if (worst == "" || ms + 0 > worstms) { worst = line; worstms = ms + 0 }
       }
     }
-    END { printf "%d\t%d\t%d\t%s\n", joined, inside, outside, worst }' "$file" 2>/dev/null)
-  IFS=$'\t' read -r joined behind outside worst <<< "$counts"
+    END { printf "%d\t%d\t%d\t%d\t%s\n", joined, inside, outside, (dial >= 0), worst }' "$file" 2>/dev/null)
+  IFS=$'\t' read -r joined behind outside dialled worst <<< "$counts"
   if [ "${joined:-0}" -eq 0 ]; then
     printf '[kernel] FAIL %s (no player session in this log, so the server never had to keep up)\n' "$what"
     FAIL=1; return
   fi
+  if [ "${dialled:-0}" -eq 0 ]; then
+    echo "[kernel] no client dial to open the window at, or one stamped before the server started (client log: ${clog:-none given}); every overload warning in the server log counts"
+  fi
   if [ "${outside:-0}" -gt 0 ]; then
-    echo "[kernel] ${outside} overload warning(s) with no player on (before the join or after the leave; not asserted)"
+    echo "[kernel] ${outside} overload warning(s) before the client dialled (its boot beside the server; not asserted)"
   fi
   if [ "${behind:-0}" -eq 0 ]; then
-    printf '[kernel] PASS %s (%s player session(s), 0 overload warnings while a player was on)\n' "$what" "$joined"
+    printf '[kernel] PASS %s (%s player session(s), 0 overload warnings from the client'"'"'s dial on)\n' "$what" "$joined"
   else
-    printf '[kernel] FAIL %s (%s overload warning(s) while a player was on; worst: %s)\n' "$what" "$behind" "${worst:-unparsed}"
+    printf '[kernel] FAIL %s (%s overload warning(s) from the client'"'"'s dial on; worst: %s)\n' "$what" "$behind" "${worst:-unparsed}"
     FAIL=1
   fi
 }
