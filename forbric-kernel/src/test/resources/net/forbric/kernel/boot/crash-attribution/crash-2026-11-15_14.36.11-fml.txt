@@ -1,0 +1,99 @@
+---- Minecraft Crash Report ----
+// But it works on my machine.
+
+Time: 2026-11-15 14:36:11
+Description: Mod loading failures have occurred; consult the issue messages for more details
+
+net.neoforged.neoforge.logging.CrashReportExtender$ModLoadingCrashException: Mod loading has failed
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: main
+Stacktrace:
+	at forbric/forbric.registerstop.ForbricRegisterStop.onRegister(ForbricRegisterStop.java:41) ~[forbricregisterstop.jar:?] {}
+-- Mod loading issue for: forbricregisterstop --
+Details:
+	Mod file: <rundir>/mods/forbricregisterstop.jar
+	Failure message: Forbric Register Stop Canary (forbricregisterstop) encountered an error while dispatching the net.neoforged.neoforge.registries.RegisterEvent event
+		java.lang.IllegalStateException: forbricregisterstop's RegisterEvent listener fails on purpose on minecraft:item
+	Mod version: 1.0.0
+	Mod issues URL: <No issues URL found>
+	Exception message: java.lang.IllegalStateException: forbricregisterstop's RegisterEvent listener fails on purpose on minecraft:item
+Stacktrace:
+	at forbric/forbric.registerstop.ForbricRegisterStop.onRegister(ForbricRegisterStop.java:41) ~[forbricregisterstop.jar:?] {}
+	at forbric/net.neoforged.bus.ConsumerEventHandler.invoke(ConsumerEventHandler.java:27) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at forbric/net.neoforged.bus.EventBus.post(EventBus.java:360) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at forbric/net.neoforged.bus.EventBus.post(EventBus.java:342) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at forbric/net.neoforged.fml.ModContainer.acceptEvent(ModContainer.java:177) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.deliverInModOrder(KernelLifecycle.java:1755) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.onRegisterEvent(KernelLifecycle.java:878) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at forbric/net.neoforged.neoforge.registries.GameData.postRegisterEvents(GameData.java:102) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.postRegisterEvents(KernelLifecycle.java:834) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.dispatchRegisterEvents(KernelLifecycle.java:777) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.registerNeoForgeContent(KernelLifecycle.java:715) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.driveNativeRegistration(KernelLifecycle.java:169) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.onServerModLoading(KernelLifecycle.java:112) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at forbric/net.minecraft.server.Main.main(Main.java:117) [patched-mc-neoforge-26.2.jar:?] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.KernelBoot.launch(KernelBoot.java:1167) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelServerLaunch.lambda$main$0(KernelServerLaunch.java:32) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.CompatibilityLaunchBoundary.run(CompatibilityLaunchBoundary.java:24) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelServerLaunch.main(KernelServerLaunch.java:32) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+
+
+-- System Details --
+Details:
+	Minecraft Version: 26.2
+	Minecraft Version ID: 26.2
+	Operating System: Mac OS X (aarch64) version 27.3
+	Java Version: 25.0.3, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	Memory: <redacted>
+	Memory (heap): init: 256MiB, used: 396MiB, committed: 512MiB, max: 4096MiB
+	Memory (non-head): init: 007MiB, used: 124MiB, committed: 127MiB, max: 000MiB
+	CPUs: <redacted>
+	Processor Vendor: <redacted>
+	Processor Name: <redacted>
+	Identifier: <redacted>
+	Microarchitecture: <redacted>
+	Frequency (GHz): <redacted>
+	Number of physical packages: <redacted>
+	Number of physical CPUs: <redacted>
+	Number of logical CPUs: <redacted>
+	Graphics card #0 name: <redacted>
+	Graphics card #0 vendor: <redacted>
+	Graphics card #0 VRAM (MiB): <redacted>
+	Graphics card #0 deviceId: <redacted>
+	Graphics card #0 versionInfo: <redacted>
+	Memory slot #0 capacity (MiB): <redacted>
+	Memory slot #0 clockSpeed (GHz): <redacted>
+	Memory slot #0 type: <redacted>
+	Virtual memory max (MiB): <redacted>
+	Virtual memory used (MiB): <redacted>
+	Swap memory total (MiB): <redacted>
+	Swap memory used (MiB): <redacted>
+	Space in storage for jna.tmpdir (MiB): <redacted>
+	Space in storage for org.lwjgl.system.SharedLibraryExtractPath (MiB): <redacted>
+	Space in storage for io.netty.native.workdir (MiB): <redacted>
+	Space in storage for java.io.tmpdir (MiB): <redacted>
+	Space in storage for workdir (MiB): <redacted>
+	Operating System Version: <redacted>
+	Process Elevated: false
+	Process Loads: Uptime: 9s, user: 21s (234.70%), kernel: 0s (5.44%), total: 21s (240.13%)
+	Process Virtual Size (MiB): <redacted>
+	Process Resident Size (MiB): <redacted>
+	JVM Flags: 0 total; 
+	Debug Flags: 0 total; 
+	Mod List: 
+		
+	Crash Report UUID: <redacted>
+	FML: 11.0.16
+	NeoForge: 26.2.0.93

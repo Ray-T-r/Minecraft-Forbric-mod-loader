@@ -54,6 +54,26 @@ class CrashAttributionTest {
 	private static final String WORLDGEN = "crash-2026-07-12_13.23.39-client.txt";
 	/** Mixin naming the mod that failed to apply, from the old forbric-loader (the repository's crash/ folder). */
 	private static final String MIXIN_APPLY = "crash-report.txt";
+	/**
+	 * NeoForge's mod-loading crash report from a Forbric server whose NeoForge mod's RegisterEvent listener threw
+	 * (gate-m24's register-stop canary): above the divider only "Mod loading has failed"; the mod is named in
+	 * {@code -- Mod loading issue for: forbricregisterstop --}.
+	 */
+	private static final String NEO_ISSUE_SERVER = "crash-2026-11-15_14.36.11-fml.txt";
+	/** The same report for a throw inside NeoForge's registration try: {@code -- Mod loading issue --}, no mod attached. */
+	private static final String NEO_ISSUE_UNATTACHED = "crash-2026-11-15_14.52.06-fml.txt";
+	/** The client's crash report for the same listener: the mod only in the ModLoadingException's issue lines. */
+	private static final String NEO_ISSUE_CLIENT = "crash-2026-11-15_14.57.44-client.txt";
+
+	/** The register-stop canary and the two healthy mods staged beside it in those runs. */
+	private static void publishRegisterStopRun() {
+		ModCatalog.publish(List.of(
+				new ModCatalog.Entry(Ecosystem.NEOFORGE, "forbricregisterstop", "Forbric Register Stop Canary", "1.0.0", "",
+						List.of(), "forbricregisterstop.jar", "", ""),
+				new ModCatalog.Entry(Ecosystem.NEOFORGE, "forbricneolive", "Forbric Neo Live", "1.0.0", "", List.of(),
+						"forbricneolive.jar", "", ""),
+				mod("forbricfabriclive", "Forbric Fabric Live", "forbricfabriclive.jar")));
+	}
 
 	@AfterEach
 	void clearCatalogue() {
@@ -101,7 +121,7 @@ class CrashAttributionTest {
 
 	@Test
 	void everyFixtureKeepsTheSectionsTheAttributionMustIgnore() throws Exception {
-		for (String name : List.of(CORE_LIB, WORLDGEN, MIXIN_APPLY)) {
+		for (String name : List.of(CORE_LIB, WORLDGEN, MIXIN_APPLY, NEO_ISSUE_SERVER, NEO_ISSUE_UNATTACHED, NEO_ISSUE_CLIENT)) {
 			String text = report(name);
 			assertTrue(CrashAttribution.exceptionChain(text).length() < text.length(), name);
 		}
@@ -234,6 +254,71 @@ class CrashAttributionTest {
 		// Everything below the divider is Minecraft's own report -- thread dumps, the mod lists, the graphics
 		// card. A mod named there is named for being installed, not for being involved.
 		assertFalse(chain.contains("Mod List:"), "the mod list is not evidence");
+	}
+
+	@Test
+	void neoForgesModLoadingIssueSectionNamesTheMod() throws Exception {
+		publishRegisterStopRun();
+
+		List<CrashAttribution.Suspect> suspects = CrashAttribution.suspects(report(NEO_ISSUE_SERVER));
+
+		assertEquals(List.of("forbricregisterstop"), suspects.stream().map(CrashAttribution.Suspect::modId).toList(),
+				"NeoForge wrote the failing mod under its issue section, and nothing above the divider: " + suspects);
+		assertEquals(CrashAttribution.NEOFORGE_ISSUE, suspects.get(0).reason());
+		assertEquals("forbricregisterstop.jar", suspects.get(0).jar());
+		assertTrue(CrashAttribution.render(false, NEO_ISSUE_SERVER, suspects).contains("(forbricregisterstop)"));
+		assertTrue(CrashAttribution.render(true, NEO_ISSUE_SERVER, suspects).contains("NeoForge 的模组加载报错里点了它的名字"));
+	}
+
+	@Test
+	void anIssueNoModIsAttachedToIsReadThroughItsOwnTrace() throws Exception {
+		publishRegisterStopRun();
+
+		List<CrashAttribution.Suspect> suspects = CrashAttribution.suspects(report(NEO_ISSUE_UNATTACHED));
+
+		// "-- Mod loading issue --" carries no id; its stack trace is the failure's, and the top frame is the mod's
+		// mixin handler inside NeoForge's GameData.
+		assertEquals(List.of("forbricregisterstop"), suspects.stream().map(CrashAttribution.Suspect::modId).toList(),
+				suspects.toString());
+		assertEquals("its mixin was running", suspects.get(0).reason());
+	}
+
+	@Test
+	void aClientsModLoadingErrorNamesTheModInItsIssueLines() throws Exception {
+		publishRegisterStopRun();
+
+		List<CrashAttribution.Suspect> suspects = CrashAttribution.suspects(report(NEO_ISSUE_CLIENT));
+
+		// "net.neoforged.fml.ModLoadingException: Loading errors encountered:" then "\t- Forbric Register Stop Canary
+		// (forbricregisterstop) encountered an error while dispatching ..." — every frame is NeoForge's or the kernel's.
+		assertEquals(List.of("forbricregisterstop"), suspects.stream().map(CrashAttribution.Suspect::modId).toList(),
+				suspects.toString());
+		assertEquals(CrashAttribution.NEOFORGE_ISSUE, suspects.get(0).reason());
+	}
+
+	@Test
+	void ofTheWalkthroughOnlyNeoForgesIssueSectionsAreRead() throws Exception {
+		String whole = report(NEO_ISSUE_SERVER);
+		String issues = CrashAttribution.modLoadingIssues(whole);
+
+		assertTrue(issues.contains("-- Mod loading issue for: forbricregisterstop --"), issues);
+		assertFalse(issues.contains("-- Head --"), "the head section repeats a frame; it is not read: " + issues);
+		assertFalse(issues.contains("-- System Details --") || issues.contains("Mod List:"), issues);
+		// A report Minecraft wrote, without NeoForge's sections, reads exactly as before.
+		assertEquals("", CrashAttribution.modLoadingIssues(report(WORLDGEN)));
+	}
+
+	@Test
+	void parenthesesOutsideNeoForgesIssueLinesNameNobody() {
+		publishRegisterStopRun();
+		String report = "java.lang.IllegalStateException: broke while (forbricregisterstop) was mentioned\n"
+				+ "\tat forbric/net.minecraft.Foo.bar(Foo.java:1) ~[patched-mc-neoforge-26.2.jar:?] {}\n"
+				+ "\n\nA detailed walkthrough of the error, its code path and all known details is as follows:\n"
+				+ "---------------------------------------------------------------------------------------\n\n"
+				+ "-- System Details --\nDetails:\n\tMod List: \n\t\tforbricregisterstop.jar |Forbric Register Stop Canary |forbricregisterstop |1.0.0\n";
+
+		assertEquals(List.of(), CrashAttribution.suspects(report),
+				"an id in parentheses counts only on a NeoForge issue line; the mod list counts never");
 	}
 
 	@Test

@@ -1,0 +1,125 @@
+---- Minecraft Crash Report ----
+// Don't be sad, have a hug! <3
+
+Time: 2026-11-15 14:57:44
+Description: Bootstrap
+
+net.neoforged.fml.ModLoadingException: Loading errors encountered:
+	- Forbric Register Stop Canary (forbricregisterstop) encountered an error while dispatching the net.neoforged.neoforge.registries.RegisterEvent event
+	  java.lang.IllegalStateException: forbricregisterstop's RegisterEvent listener fails on purpose on minecraft:item
+
+	at forbric/net.neoforged.fml.ModLoader.waitForFuture(ModLoader.java:253) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at forbric/net.neoforged.fml.ModLoader.waitForTask(ModLoader.java:155) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.RegistrationStop.nativeStop(RegistrationStop.java:93) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.RegistrationStop.stop(RegistrationStop.java:62) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.dispatchRegisterEvents(KernelLifecycle.java:779) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.registerNeoForgeContent(KernelLifecycle.java:715) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.driveNativeRegistration(KernelLifecycle.java:169) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.onClientModLoading(KernelLifecycle.java:130) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at forbric/net.minecraft.client.main.Main.main(Main.java:167) [patched-mc-neoforge-26.2.jar:?] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.KernelBoot.launch(KernelBoot.java:1167) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelClientLaunch.lambda$main$0(KernelClientLaunch.java:34) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.CompatibilityLaunchBoundary.run(CompatibilityLaunchBoundary.java:24) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelClientLaunch.main(KernelClientLaunch.java:34) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+
+
+A detailed walkthrough of the error, its code path and all known details is as follows:
+---------------------------------------------------------------------------------------
+
+-- Head --
+Thread: main
+Stacktrace:
+	at forbric/net.neoforged.fml.ModLoader.waitForFuture(ModLoader.java:253) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at forbric/net.neoforged.fml.ModLoader.waitForTask(ModLoader.java:155) ~[neoforge-runtime.jar:26.2.0.93] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.RegistrationStop.nativeStop(RegistrationStop.java:93) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.RegistrationStop.stop(RegistrationStop.java:62) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.dispatchRegisterEvents(KernelLifecycle.java:779) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.registerNeoForgeContent(KernelLifecycle.java:715) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.driveNativeRegistration(KernelLifecycle.java:169) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelLifecycle.onClientModLoading(KernelLifecycle.java:130) ~[forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+-- Initialization --
+Details:
+	Modules: 
+Stacktrace:
+	at forbric/net.minecraft.client.main.Main.main(Main.java:167) [patched-mc-neoforge-26.2.jar:?] {}
+	at java.base/jdk.internal.reflect.DirectMethodHandleAccessor.invoke(DirectMethodHandleAccessor.java:104) ~[?:?] {}
+	at java.base/java.lang.reflect.Method.invoke(Method.java:565) ~[?:?] {}
+	at net.forbric.kernel.boot.KernelBoot.launch(KernelBoot.java:1167) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelClientLaunch.lambda$main$0(KernelClientLaunch.java:34) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.CompatibilityLaunchBoundary.run(CompatibilityLaunchBoundary.java:24) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+	at net.forbric.kernel.boot.KernelClientLaunch.main(KernelClientLaunch.java:34) [forbric-kernel-0.1.0-SNAPSHOT.jar:?] {}
+
+
+-- System Details --
+Details:
+	Minecraft Version: 26.2
+	Minecraft Version ID: 26.2
+	Operating System: Mac OS X (aarch64) version 27.3
+	Java Version: 25.0.3, Eclipse Adoptium
+	Java VM Version: OpenJDK 64-Bit Server VM (mixed mode, sharing), Eclipse Adoptium
+	Memory: <redacted>
+	Memory (heap): init: 256MiB, used: 381MiB, committed: 568MiB, max: 4096MiB
+	Memory (non-head): init: 007MiB, used: 130MiB, committed: 131MiB, max: 000MiB
+	CPUs: <redacted>
+	Processor Vendor: <redacted>
+	Processor Name: <redacted>
+	Identifier: <redacted>
+	Microarchitecture: <redacted>
+	Frequency (GHz): <redacted>
+	Number of physical packages: <redacted>
+	Number of physical CPUs: <redacted>
+	Number of logical CPUs: <redacted>
+	Graphics card #0 name: <redacted>
+	Graphics card #0 vendor: <redacted>
+	Graphics card #0 VRAM (MiB): <redacted>
+	Graphics card #0 deviceId: <redacted>
+	Graphics card #0 versionInfo: <redacted>
+	Memory slot #0 capacity (MiB): <redacted>
+	Memory slot #0 clockSpeed (GHz): <redacted>
+	Memory slot #0 type: <redacted>
+	Virtual memory max (MiB): <redacted>
+	Virtual memory used (MiB): <redacted>
+	Swap memory total (MiB): <redacted>
+	Swap memory used (MiB): <redacted>
+	Space in storage for jna.tmpdir (MiB): <redacted>
+	Space in storage for org.lwjgl.system.SharedLibraryExtractPath (MiB): <redacted>
+	Space in storage for io.netty.native.workdir (MiB): <redacted>
+	Space in storage for java.io.tmpdir (MiB): <redacted>
+	Space in storage for workdir (MiB): <redacted>
+	Operating System Version: <redacted>
+	Process Elevated: false
+	Process Loads: Uptime: 8s, user: 21s (253.90%), kernel: 1s (6.12%), total: 21s (260.01%)
+	Process Virtual Size (MiB): <redacted>
+	Process Resident Size (MiB): <redacted>
+	JVM Flags: 0 total; 
+	Debug Flags: 0 total; 
+	Launched Version: 26.2-forbric-kernel
+	Backend library: LWJGL version 3.4.1+2
+	Window size: <not initialized>
+	Surface Info: <no surface>
+	GFLW Platform: null
+	Graphics Device: <none>
+	GL debug messages: <no renderer available>
+	Is Modded: Definitely; Client brand changed to 'neoforge'
+	Universe: 404
+	Type: Client
+	Locale: en_US
+	System encoding: UTF-8
+	File encoding: UTF-8
+	CPU: <redacted>
+	Mod List: 
+		
+	Crash Report UUID: <redacted>
+	FML: 11.0.16
+	NeoForge: 26.2.0.93
+	Mod List: 
+		
+	Crash Report UUID: <redacted>
+	FML: 11.0.16
+	NeoForge: 26.2.0.93

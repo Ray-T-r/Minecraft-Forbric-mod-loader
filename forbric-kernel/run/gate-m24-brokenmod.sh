@@ -20,8 +20,8 @@
 # 26.2.0.93 rolls every registry back to vanilla and stops the boot — whatever the compatibility policy, since nothing
 # could run on what is left. The register-stop canary does both (-Dforbric.registerstop=listener / try) and must stop the
 # boot as native does: NeoForge's own roll-back and "Failed to wait for future Registry initialization", the
-# crash-*-fml.txt report naming the mod and the cause, "Failed to start the minecraft server", no world, no Fabric main,
-# exit status 1 (FML's launcher, finding no server thread). The same jar with =off is in the clean control. Until D82 the
+# crash-*-fml.txt report naming the mod and the cause, Forbric's crash analysis naming the mod from it, "Failed to start
+# the minecraft server", no world, no Fabric main, exit status 1 (FML's launcher, finding no server thread). The same jar with =off is in the clean control. Until D82 the
 # kernel contained both (that mod lost the registry; a roll-back left the boot running on vanilla registries).
 # GATE-PARALLEL: rundirs=server-brokenmod mem=1500
 set -uo pipefail
@@ -187,6 +187,24 @@ registration_stop() { # registration_stop <log> <mode listener|try>
   else
     echo "[kernel] FAIL $mode: no crash-reports/crash-*-fml.txt (NeoForge's ServerModLoader writes one)"; FAIL=1
   fi
+  # The player's answer to "which mod?": NeoForge's report names the mod only below the walkthrough divider, in its
+  # "-- Mod loading issue for: <id> --" section (or the issue's own trace), which Forbric's crash analysis must read.
+  local suspects="$RUNDIR/.forbric-kernel/crash-suspects.json"
+  cp "$suspects" "$log.suspects.json" 2>/dev/null || : > "$log.suspects.json"
+  if python3 - "$suspects" <<'PY'
+import json, sys
+with open(sys.argv[1], encoding="utf-8") as stream:
+    report = json.load(stream)
+ids = [s["modId"] for s in report["suspects"]]
+assert ids[:1] == ["forbricregisterstop"], ids
+PY
+  then
+    echo "[kernel] PASS $mode: Forbric's crash analysis names the mod that failed"
+  else
+    echo "[kernel] FAIL $mode: Forbric's crash analysis does not name forbricregisterstop ($log.suspects.json)"; FAIL=1
+  fi
+  check_absent "$mode: and does not tell the player no installed mod is in the crash" \
+    "No mod you installed appears in this crash|这次崩溃里没有出现任何一个你装的 mod" "$log"
   check_absent "$mode: no server came up"                        "Done \("                           "$log"
   check_absent "$mode: no Fabric main ran after the roll-back"   "\[ForbricFabricLive\] onInitialize" "$log"
   # Natively freezeData never runs after the roll-back; the clean control below shows the line on a boot that froze.

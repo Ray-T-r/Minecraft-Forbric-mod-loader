@@ -113,6 +113,31 @@ public final class CrashAttribution {
 	 */
 	private static final Pattern CLASHING = Pattern.compile("Sources?: ([A-Za-z0-9_\\-]+(?:(?:, and |, ?| and )[A-Za-z0-9_\\-]+)+)");
 
+	/**
+	 * A section NeoForge's {@code CrashReportExtender.dumpModLoadingCrashReport} writes for each mod-loading issue:
+	 * {@code -- Mod loading issue for: <mod id> --}, or {@code -- Mod loading issue --} for one no mod is attached to
+	 * (javap of 26.2.0.93). Its details and stack trace are the failure itself, not the system report.
+	 *
+	 * <p>Read because that report is the one a mod-loading failure leaves: above the divider it has only
+	 * {@code ModLoadingCrashException: Mod loading has failed}, with no frame and no name, so reading the exception chain
+	 * alone named nobody for every one of them.
+	 */
+	private static final Pattern MOD_LOADING_ISSUE = Pattern.compile("^-- Mod loading issue(?: for: ([A-Za-z0-9_\\-.]+))? --$");
+
+	/** Any section header of a crash report's walkthrough: {@code -- System Details --}, {@code -- Head --}. */
+	private static final Pattern SECTION = Pattern.compile("^-- .+ --$");
+
+	/**
+	 * One of the issues in NeoForge's {@code ModLoadingException} message — {@code Loading errors encountered:} and then
+	 * a {@code \t- } line per issue — naming its mod the way NeoForge's issue texts do,
+	 * {@code {name} ({id}) encountered an error while dispatching ...} ({@code fml.modloadingissue.*}). A client's crash
+	 * report carries the issues only there.
+	 */
+	private static final Pattern ISSUE_NAMES = Pattern.compile("\\(([A-Za-z0-9_\\-.]+)\\)");
+
+	/** The reason a suspect carries when NeoForge's mod-loading error names it. */
+	static final String NEOFORGE_ISSUE = "NeoForge's mod-loading error names it";
+
 	/** The reason a suspect carries when the error names it as one side of a clash. */
 	static final String CLASH = "the error names it as clashing with another mod";
 
@@ -293,15 +318,28 @@ public final class CrashAttribution {
 	 *
 	 * <p>Only the exception chain at the top is read, not the whole file. Everything below the walkthrough
 	 * divider is Minecraft's own system report — thread dumps, the mod lists, the graphics card — and a mod
-	 * named there is named for being installed, not for being involved.
+	 * named there is named for being installed, not for being involved. The one exception is NeoForge's mod-loading
+	 * issue sections ({@link #modLoadingIssues}): NeoForge writes the failure there and not above the divider.
 	 */
 	static List<Suspect> suspects(String crashReport) {
-		String trace = exceptionChain(crashReport);
+		String trace = exceptionChain(crashReport) + modLoadingIssues(crashReport);
 		Map<String, Suspect> byId = new LinkedHashMap<>();
 
 		int depth = 0;
+		boolean issues = false;
 		for (String line : trace.split("\n")) {
 			depth++;
+			Matcher issueFor = MOD_LOADING_ISSUE.matcher(line);
+			if (issueFor.matches() && issueFor.group(1) != null) remember(byId, issueFor.group(1), NEOFORGE_ISSUE, depth);
+			// NeoForge's ModLoadingException lists its issues under this line, up to the first frame or its warnings.
+			if (line.endsWith("Loading errors encountered:")) {
+				issues = true;
+			} else if (line.startsWith("\tat ") || line.endsWith("Loading warnings encountered:")) {
+				issues = false;
+			} else if (issues && line.startsWith("\t- ")) {
+				Matcher named = ISSUE_NAMES.matcher(line);
+				while (named.find()) remember(byId, named.group(1), NEOFORGE_ISSUE, depth);
+			}
 			// The handler form FIRST: such a frame carries the vanilla jar, so reading its bracket would
 			// blame Minecraft for a mod's mixin.
 			Matcher handler = MIXIN_HANDLER.matcher(line);
@@ -389,6 +427,23 @@ public final class CrashAttribution {
 			}
 		}
 		return "";
+	}
+
+	/**
+	 * NeoForge's mod-loading issue sections ({@link #MOD_LOADING_ISSUE}), each up to the next section header, with a
+	 * leading newline each; empty when the report has none. Below the divider, but the failure's own words and trace —
+	 * {@code -- System Details --} and the other sections stay unread.
+	 */
+	static String modLoadingIssues(String crashReport) {
+		int divider = crashReport.indexOf("\n------------");
+		if (divider < 0) return "";
+		StringBuilder out = new StringBuilder();
+		boolean in = false;
+		for (String line : crashReport.substring(divider + 1).split("\n")) {
+			if (SECTION.matcher(line).matches()) in = MOD_LOADING_ISSUE.matcher(line).matches();
+			if (in) out.append('\n').append(line);
+		}
+		return out.toString();
 	}
 
 	/**
@@ -530,6 +585,7 @@ public final class CrashAttribution {
 			case CLASH -> "报错里把它和另一个 mod 列为冲突的双方";
 			case "its mixin was running" -> "它改过的代码正在运行";
 			case "Mixin named it" -> "报错里直接点了它的名字";
+			case NEOFORGE_ISSUE -> "NeoForge 的模组加载报错里点了它的名字";
 			default -> "报错里有它的代码";
 		};
 	}
