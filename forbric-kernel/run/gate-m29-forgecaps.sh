@@ -26,24 +26,27 @@
 #      CONFIRMED, required "unsupported:minecraftforge" finding per jar and a FAILED MinecraftForge row (the Lost row) for
 #      each; the load report names each mod, says MinecraftForge is no longer supported and which file to replace; the
 #      launch stops with the typed policy stop (exit 78) and never reaches Done; nothing of either jar ran.
-#   2. strict (zh): the same refusal under "-Duser.language=zh -Duser.country=CN -Dforbric.dialogLanguage=zh_cn" — the
-#      load report and the finding's detail are in Chinese (DialogLang), the evidence stays machine words.
-#   Boots 1 and 2 pin both language switches after the caller's FORBRIC_JVM: the load report follows the JVM's locale,
-#   the finding's detail follows -Dforbric.dialogLanguage first, and a sweep may set either (test_gate_locale.py).
-#   3. control: the NeoForge canary alone, strict — reaches Done with zero confirmed required findings and a clean save,
-#      so the stop in 1 and 2 is the refusal's and nothing else's.
+#   Boot 1 pins both language switches after the caller's FORBRIC_JVM: the load report follows the JVM's locale, the
+#   finding's detail follows -Dforbric.dialogLanguage first, and a sweep may set either (test_gate_locale.py).
+#   2. control: the NeoForge canary alone, strict — reaches Done with zero confirmed required findings and a clean save,
+#      so the stop in 1 is the refusal's and nothing else's.
 #
-# RED, measured 2026-10-30 and again 2026-11-10 on the genuine base (stage4-c5-g-a.md). M29_POLICY=continue (boot 1
-# only) turns exactly boot 1's four stop checks red — "the report says strict decided" (CONTINUE), "strict stopped the
-# launch with the typed policy stop" (exit 0), "and said so", "it never came up" (Done reached) — while its refusal,
-# machine-report and load-report checks stay green: a refused jar is refused and reported whether or not anything stops
-# the launch (34/4). M29_REFUSED='' (only the NeoForge canary staged in boots 1 and 2) turns 11 checks of each of those
-# boots red: the three refusal checks, the machine report, three of the four stop checks ("strict stopped the launch",
-# "and said so", "it never came up") and the four load-report checks (en: why, the file, the owl build, what to do; zh:
-# why, the file, what to do, no English wording). Five checks of each boot stay green, because nothing is refused and
-# the policy is still strict: "the report says strict decided", "nothing of the refused jars ran", "the Forge-family
-# mixin configs registered are NeoForge's alone", "and not the refused canary's under another name" and "no crash
-# report". The control boot's six stay green: 16/22 in all.
+# A zh boot of the same jars stood between 1 and 2 until 2026-11-16 (lane OPT, D88b/D89). Its twelve refusal, report
+# and stop checks were boot 1's on the same jars and policy, only the locale differed; its Chinese wording is asserted
+# by the unit suite on the path the boot takes: MinecraftForgeRefusalTest (the finding's detail by the switch and by
+# the system language, the load report's three refusal lines and no English one) and KernelLoadReportTest (the writer
+# asks the system which language).
+#
+# RED, measured 2026-10-30, 2026-11-10 (stage4-c5-g-a.md) and, with boot 1 and the control only, 2026-11-16
+# (stage4-c5-opt.md). M29_POLICY=continue turns exactly boot 1's four stop checks red — "the report says strict decided"
+# (CONTINUE), "strict stopped the launch with the typed policy stop" (exit 0), "and said so", "it never came up" (Done
+# reached) — while its refusal, machine-report and load-report checks stay green: a refused jar is refused and reported
+# whether or not anything stops the launch (18/4). M29_REFUSED='' (only the NeoForge canary staged in boot 1) turns 11
+# checks red: the three refusal checks, the machine report, three of the four stop checks ("strict stopped the launch",
+# "and said so", "it never came up") and the four load-report checks (why, the file, the owl build, what to do). Five
+# checks of boot 1 stay green, because nothing is refused and the policy is still strict: "the report says strict
+# decided", "nothing of the refused jars ran", "the Forge-family mixin configs registered are NeoForge's alone", "and
+# not the refused canary's under another name" and "no crash report". The control boot's six stay green: 11/11.
 # GATE-PARALLEL: rundirs=server-forgecaps mem=1500
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -51,7 +54,6 @@ set -uo pipefail
 RUNDIR="$KERNEL/run/server-forgecaps"
 refuse_shared_rundir "$RUNDIR"
 LOG="$BUILD/gate-m29-refusal.log"
-ZH_LOG="$BUILD/gate-m29-refusal-zh.log"
 CONTROL_LOG="$BUILD/gate-m29-control.log"
 # The live canary's manifest and @Mod, compiled against stand-ins for MinecraftForge (run/build-forge-refusal-fixtures.sh):
 # the refusal reads only those, and the stage needs no MinecraftForge carrier to build it.
@@ -99,7 +101,7 @@ boot() {
 }
 
 # refusal_report <json> <lang> — the machine report: one CONFIRMED required unsupported:minecraftforge finding and one
-# FAILED MinecraftForge row per refused mod; the NeoForge canary neither. <lang> picks the detail's wording.
+# FAILED MinecraftForge row per refused mod; the NeoForge canary neither. <lang> picks the detail's wording (en).
 refusal_report() {
   python3 - "$1" "$2" <<'PY'
 import json, sys
@@ -112,7 +114,7 @@ expected = {'forbriclive': ('forbriclive.jar', 'Forbric Live Canary'),
             'animalgarden_owl': ('animalgarden-owl-1.2.8-forge-26.2-65.0.0.jar', 'Animal Garden - Owl')}
 words = {'en': 'is a MinecraftForge mod. Forbric no longer supports MinecraftForge, so it is not loaded. '
                'Get the NeoForge or Fabric build of {name} instead.',
-         'zh': '是 MinecraftForge mod。Forbric 已不再支持 MinecraftForge，所以它不会被加载。请改用 {name} 的 NeoForge 或 Fabric 版本。'}[lang]
+         }[lang]
 problems = []
 for mod, (jar, name) in expected.items():
     found = [f for f in report['findings'] if f['id'] == 'unsupported:minecraftforge' and f['modId'] == mod]
@@ -141,7 +143,7 @@ print(f'[kernel]   {report["confirmedRequired"]} confirmed required finding(s); 
 PY
 }
 
-# refused_and_stopped <log> <lang> — every assertion boots 1 and 2 share.
+# refused_and_stopped <log> <lang> — the refusal, report and stop assertions of a refusal boot.
 refused_and_stopped() {
   local log="$1" lang="$2"
   check "$lang: forbriclive is refused by name" \
@@ -180,16 +182,7 @@ check "en: for the owl build too" \
   "Get the NeoForge or Fabric build of Animal Garden - Owl and put it in the mods folder in place of animalgarden-owl-1\.2\.8-forge-26\.2-65\.0\.0\.jar\." "$LOG.report"
 check "en: and what to do in general" "Forbric now loads Fabric and NeoForge mods only\." "$LOG.report"
 
-step "2. strict, Chinese: the same refusal in the player's language"
-boot "$ZH_LOG" strict "-Duser.language=zh -Duser.country=CN -Dforbric.dialogLanguage=zh_cn" ${REFUSED[@]+"${REFUSED[@]}"} "$NEOLIVE"
-refused_and_stopped "$ZH_LOG" zh
-check "zh: the load report says why, per mod" "没有加载：Forbric 已不再支持 MinecraftForge" "$ZH_LOG.report" 2
-check "zh: and names the file to replace" \
-  "请下载 Forbric Live Canary 的 NeoForge 或 Fabric 版本，放进 mods 文件夹替换 forbriclive\.jar。" "$ZH_LOG.report"
-check "zh: and what to do in general" "Forbric 现在只加载 Fabric 和 NeoForge mod。" "$ZH_LOG.report"
-check_absent "zh: no English refusal wording in the load report" "Forbric no longer supports MinecraftForge" "$ZH_LOG.report"
-
-step "3. control: the NeoForge canary alone, strict"
+step "2. control: the NeoForge canary alone, strict"
 boot "$CONTROL_LOG" strict "" "$NEOLIVE"
 check "control: the server reached Done" 'Done \(' "$CONTROL_LOG"
 assert_eq "control: it stopped normally" "0" "$(cat "$CONTROL_LOG.exit" 2>/dev/null)"
@@ -200,8 +193,8 @@ check "control: the server saved cleanly" 'All dimensions are saved' "$CONTROL_L
 
 step "M29 result"
 if [ "$FAIL" -eq 0 ]; then
-  echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE GREEN — MinecraftForge-only jars are refused by name, in the player's language, and a strict server stops on them"
+  echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE GREEN — MinecraftForge-only jars are refused by name and a strict server stops on them"
 else
-  echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE RED — see $LOG, $ZH_LOG and $CONTROL_LOG"
+  echo "[kernel] M29 MINECRAFTFORGE-REFUSAL GATE RED — see $LOG and $CONTROL_LOG"
 fi
 exit "$FAIL"

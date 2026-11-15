@@ -50,9 +50,8 @@ _spec.loader.exec_module(scheduler)
 PINS = {
     'gate-m26-forgeclient.sh': ('its refusal-prompt boot asserts the English finding detail the client reports',
                                 [('user.language=en', 'forbric.dialogLanguage=en')]),
-    'gate-m29-forgecaps.sh': ('boot 1 asserts the English load report and finding detail, boot 2 the Chinese ones',
-                              [('user.language=en', 'forbric.dialogLanguage=en'),
-                               ('user.language=zh', 'forbric.dialogLanguage=zh_cn')]),
+    'gate-m29-forgecaps.sh': ('its refusal boot asserts the English load report and finding detail',
+                              [('user.language=en', 'forbric.dialogLanguage=en')]),
 }
 LANGUAGE_SWITCHES = ('user.language', 'forbric.dialogLanguage')
 DIALOG_LANG = RUN.parent / 'src/main/java/net/forbric/kernel/ui/DialogLang.java'
