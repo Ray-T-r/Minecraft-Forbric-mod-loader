@@ -14,36 +14,52 @@ import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * NeoForge's registration failing stops the boot, as native NeoForge 26.2.0.93 stops it (owner ruling D82, "stop like
- * native").
+ * NeoForge's mod loading failing stops the boot, as native NeoForge 26.2.0.93 stops it (owner ruling D82, "stop like
+ * native", extended by D87 to every phase).
  *
- * <p>Natively, {@code CommonModLoader.begin} runs {@code GameData.postRegisterEvents} as the init task "Registry
- * initialization" ({@code ModLoader.runInitTask}). When a mod's RegisterEvent listener throws, {@code ModContainer.acceptEvent}
- * rethrows it as a {@code ModLoadingException} naming the mod, which ends that registry's dispatch; anything else thrown
- * inside the per-registry try is collected the same way. After the loop {@code postRegisterEvents} logs "Rolling back to
- * VANILLA state", calls {@code RegistryManager.revertToVanilla()} and throws, and {@code ModLoader.waitForFuture} turns that
- * into the {@code ModLoadingException} the boot ends on: one issue per failure (a listener's own, or
- * {@code fml.modloadingissue.uncaughterror} with the cause), the FATAL line "Failed to wait for future Registry initialization,
- * N errors found", "ERROR DURING MOD LOADING" and an emptied {@code ModList}. A dedicated server's {@code ServerModLoader.load}
- * then writes the {@code crash-*-fml.txt} report and rethrows, {@code Main} logs "Failed to start the minecraft server" and
- * returns, and FML's launcher, finding no server thread, exits with status 1. A client's {@code Main} writes its crash report,
- * shows NeoForge's fatal-error window ({@code ClientModLoader.reportFatalError}) and exits. No world is created or loaded.
- * (javap of 26.2.0.93's GameData, CommonModLoader, ModLoader, ModContainer, ServerModLoader, server and client Main, FML's
- * Server and FatalErrorReporting; measured on the native server with the register-stop canary.)
+ * <p>Natively, {@code CommonModLoader.begin} and {@code load} run every step of mod loading as an init task of
+ * {@code ModLoader}: "Mod Construction" (each mod's constructor, its {@code @EventBusSubscriber} classes, its
+ * {@code FMLConstructModEvent}), "Registry initialization" ({@code NewRegistryEvent}, {@code GameData.postRegisterEvents},
+ * the freeze), "Common setup", "Sided setup", "Registration events", "Enqueue IMC", "Process IMC", "Complete loading of N
+ * mods", "Network registry lock", and each parallel phase's "&lt;phase&gt;: Deferred Queue". A mod's listener that throws
+ * becomes, in {@code ModContainer.acceptEvent}, a {@code ModLoadingException} naming the mod; a constructor or subscriber
+ * class that throws becomes {@code fml.modloadingissue.failedtoloadmod} naming the mod; anything else is collected as it is.
+ * When the task ends, {@code ModLoader.waitForFuture} turns what was collected into the {@code ModLoadingException} the boot
+ * ends on: one issue per failure (a mod's own, or {@code fml.modloadingissue.uncaughterror} with the task's name and the
+ * cause), the FATAL line "Failed to wait for future &lt;task&gt;, N errors found", "ERROR DURING MOD LOADING" and an emptied
+ * {@code ModList}. A dedicated server's {@code ServerModLoader.load} then writes the {@code crash-*-fml.txt} report and
+ * rethrows, {@code Main} logs "Failed to start the minecraft server" and returns, and FML's launcher, finding no server
+ * thread, exits with status 1. A client's {@code Main} (construction and registration, inside {@code ClientModLoader.begin})
+ * or {@code ClientModLoader.finish}'s own handler (every later task) writes the crash report and shows NeoForge's
+ * fatal-error window. No world is created or loaded. (javap of 26.2.0.93's ModLoader, CommonModLoader, ModContainer,
+ * FMLModContainer, AutomaticEventSubscriber, DeferredWorkQueue, ModList, GameData, ServerModLoader, ClientModLoader, server
+ * and client Main, FML's Server and FatalErrorReporting; measured on the native server with the register-stop canary.)
  *
- * <p>The kernel calls {@code postRegisterEvents} itself, from the redirected {@code ServerModLoader.load} /
- * {@code ClientModLoader.begin}, so it builds that exception with NeoForge's own {@code ModLoader.waitForTask} and lets it
- * leave the redirect: from there the game's own handlers do the rest, as natively. It used to contain the failure instead
- * — one mod's listener cost that mod the registry, and a throw that rolled everything back left the boot running on vanilla
- * registries with one ERROR line.
+ * <p>The kernel drives those steps itself, so it builds that exception with NeoForge's own {@code ModLoader.waitForTask} and
+ * lets it leave the redirected {@code ServerModLoader.load} / {@code ClientModLoader.begin} / {@code ClientModLoader.finish}
+ * call site: from there the game's own handlers do the rest, as natively. It used to contain each failure instead — the
+ * mod lost that phase (its registry, its setup, its deferred work) and the boot carried on without it.
  */
-final class RegistrationStop {
+public final class RegistrationStop {
 	/** The init task {@code CommonModLoader.begin} runs NeoForge's registry phase as (javap of 26.2.0.93). */
-	static final String TASK = "Registry initialization";
+	public static final String TASK = "Registry initialization";
+	/** The init task {@code ModLoader.gatherAndInitializeMods} constructs the mods in. */
+	public static final String CONSTRUCTION = "Mod Construction";
+	/** {@code CommonModLoader.load}'s task for {@code RegistrationEvents.init}. */
+	public static final String REGISTRATION_EVENTS = "Registration events";
+	/** {@code CommonModLoader.load}'s task for {@code NetworkRegistry.setup}. */
+	public static final String NETWORK = "Network registry lock";
+	/** {@code ClientModLoader.finish}'s task for {@code ClientNetworkRegistry.setup}. */
+	public static final String CLIENT_NETWORK = "Client network registry lock";
 	/** What FML's {@code Server.main} exits with when {@code Main} returned without starting the server thread. */
 	static final int SERVER_EXIT = 1;
 	/** The only exception {@code ModLoader.waitForTask} stops a failed init task with (javap of 26.2.0.93). */
 	static final String MOD_LOADING_EXCEPTION = "net.neoforged.fml.ModLoadingException";
+
+	/** The task a parallel phase's deferred work runs as: {@code ModLoader.dispatchParallelEvent}'s "\u0001: Deferred Queue". */
+	public static String deferredQueue(String task) {
+		return task + ": Deferred Queue";
+	}
 
 	/** The exception this boot stops on, once there is one. */
 	private static volatile Throwable stopping;
@@ -58,23 +74,85 @@ final class RegistrationStop {
 	 * {@code ModLoadingException} — the boot stops on {@code failure} itself (unwrapped from reflection), never on
 	 * whatever {@code ModLoader} threw instead.
 	 */
-	static Throwable stop(ClassLoader cl, Throwable failure) {
+	public static Throwable stop(ClassLoader cl, Throwable failure) {
+		return stop(cl, TASK, failure);
+	}
+
+	/**
+	 * The same for the init task {@code task}, whose one failure is {@code failure}: what the task's future failed with
+	 * natively — a mod's {@code ModLoadingException}, an aggregate carrying each failure as a suppressed exception
+	 * ({@code GameData.postRegisterEvents}' roll-back, {@code DeferredWorkQueue.runTasks}), or a step's own throw.
+	 */
+	public static Throwable stop(ClassLoader cl, String task, Throwable failure) {
 		Throwable cause = failure instanceof InvocationTargetException reflected && reflected.getCause() != null
 				? reflected.getCause() : failure;
 		ForbricLog.error("[Forbric/Lifecycle] %s — the boot stops here, as native NeoForge stops it: NeoForge's mod-loading error "
-				+ "follows, and the mods' content does not keep running on what is left", describe(cause));
-		Throwable stop = nativeStop(cl, cause);
+				+ "follows, and the mods' content does not keep running on what is left", describe(task, cause));
+		Throwable stop = nativeStop(cl, task, cause);
 		stopping = stop;
 		return stop;
 	}
 
+	/**
+	 * The same for a parallel phase ({@code ModLoader.dispatchParallelTask}) in which every mod took its turn and
+	 * {@code failures} are the ones that threw, in mod order: natively they meet in {@code ModList.completableFutureFromExceptionList}
+	 * as the suppressed exceptions of one {@code RuntimeException}, which is what {@code waitForFuture} reads. One failure
+	 * alone is the same aggregate with one suppressed exception.
+	 */
+	public static Throwable stopAll(ClassLoader cl, String task, List<? extends Throwable> failures) {
+		RuntimeException aggregate = new RuntimeException();
+		for (Throwable failure : failures) aggregate.addSuppressed(failure);
+		return stop(cl, task, aggregate);
+	}
+
+	/**
+	 * What {@code FMLModContainer.constructMod} throws for a mod whose constructor, or one of whose
+	 * {@code @EventBusSubscriber} classes, threw: {@code new ModLoadingException(ModLoadingIssue.error(
+	 * "fml.modloadingissue.failedtoloadmod").withCause(cause).withAffectedMod(modInfo))} (javap of 26.2.0.93). {@code container}
+	 * is the mod's NeoForge {@code ModContainer}. When NeoForge's classes cannot build it, {@code cause} itself.
+	 */
+	public static Throwable failedToLoadMod(ClassLoader cl, Object container, Throwable cause) {
+		Throwable unwrapped = cause instanceof InvocationTargetException reflected && reflected.getCause() != null
+				? reflected.getCause() : cause;
+		try {
+			Class<?> issueClass = Class.forName("net.neoforged.fml.ModLoadingIssue", true, cl);
+			Object issue = issueClass.getMethod("error", String.class, Object[].class)
+					.invoke(null, "fml.modloadingissue.failedtoloadmod", new Object[0]);
+			issue = issueClass.getMethod("withCause", Throwable.class).invoke(issue, unwrapped);
+			if (container != null) {
+				Object info = container.getClass().getMethod("getModInfo").invoke(container);
+				Class<?> modInfo = Class.forName("net.neoforged.neoforgespi.language.IModInfo", false, cl);
+				issue = issueClass.getMethod("withAffectedMod", modInfo).invoke(issue, info);
+			}
+			return (Throwable) Class.forName(MOD_LOADING_EXCEPTION, true, cl).getConstructor(issueClass).newInstance(issue);
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException unbuilt) {
+			Caught.warn(unbuilt, "[Forbric/Lifecycle] could not build NeoForge's failedtoloadmod issue — the boot stops on the "
+					+ "mod's own failure instead");
+			return unwrapped;
+		}
+	}
+
 	/** What the stop line says about {@code failure}: NeoForge's roll-back with its causes, or the throw itself. */
 	static String describe(Throwable failure) {
-		if (!rolledBackToVanilla(failure)) return "NeoForge's GameData.postRegisterEvents threw " + failure;
+		return describe(TASK, failure);
+	}
+
+	/**
+	 * What the stop line says about {@code failure} in {@code task}: NeoForge's roll-back with its causes, an aggregate's
+	 * causes, or the throw itself.
+	 */
+	static String describe(String task, Throwable failure) {
 		StringBuilder causes = new StringBuilder();
 		for (Throwable cause : failure.getSuppressed()) causes.append("; ").append(cause);
-		return "NeoForge's GameData.postRegisterEvents failed for " + failure.getSuppressed().length + " registr(ies) and rolled "
-				+ "every registry back to vanilla (RegistryManager.revertToVanilla)" + causes;
+		if (TASK.equals(task)) {
+			if (!rolledBackToVanilla(failure)) return "NeoForge's GameData.postRegisterEvents threw " + failure;
+			return "NeoForge's GameData.postRegisterEvents failed for " + failure.getSuppressed().length + " registr(ies) and "
+					+ "rolled every registry back to vanilla (RegistryManager.revertToVanilla)" + causes;
+		}
+		if (failure.getClass() == RuntimeException.class && failure.getMessage() == null && failure.getSuppressed().length > 0) {
+			return "NeoForge's mod loading failed in \"" + task + "\" (" + failure.getSuppressed().length + " error(s))" + causes;
+		}
+		return "NeoForge's mod loading failed in \"" + task + "\": " + failure;
 	}
 
 	/**
@@ -88,13 +166,13 @@ final class RegistrationStop {
 				&& at[0].getMethodName().equals("postRegisterEvents") && at[0].getClassName().endsWith(".GameData");
 	}
 
-	private static Throwable nativeStop(ClassLoader cl, Throwable cause) {
+	private static Throwable nativeStop(ClassLoader cl, String task, Throwable cause) {
 		try {
 			Class<?> loader = Class.forName("net.neoforged.fml.ModLoader", true, cl);
 			Method waitForTask = loader.getMethod("waitForTask", String.class, Runnable.class, CompletableFuture.class);
 			bindModList(cl, loader);
 			Runnable noProgress = () -> { };
-			waitForTask.invoke(null, TASK, noProgress, CompletableFuture.failedFuture(cause));
+			waitForTask.invoke(null, task, noProgress, CompletableFuture.failedFuture(cause));
 		} catch (InvocationTargetException thrown) {
 			Throwable built = thrown.getCause();
 			if (isModLoadingException(cl, built)) {
@@ -142,12 +220,12 @@ final class RegistrationStop {
 	}
 
 	/** Whether {@code t} is the exception this boot stops on. */
-	static boolean isStop(Throwable t) {
+	public static boolean isStop(Throwable t) {
 		return t != null && t == stopping;
 	}
 
-	/** Whether this boot stopped on a NeoForge registration failure. */
-	static boolean stopped() {
+	/** Whether this boot stopped on a mod-loading failure. */
+	public static boolean stopped() {
 		return stopping != null;
 	}
 
@@ -200,7 +278,7 @@ final class RegistrationStop {
 
 	/** Throws {@code failure} unchanged from a method that declares nothing. */
 	@SuppressWarnings("unchecked")
-	static <T extends Throwable> RuntimeException propagate(Throwable failure) throws T {
+	public static <T extends Throwable> RuntimeException propagate(Throwable failure) throws T {
 		throw (T) failure;
 	}
 }
