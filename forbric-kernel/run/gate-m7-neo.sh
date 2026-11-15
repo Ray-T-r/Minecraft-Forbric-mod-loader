@@ -70,7 +70,7 @@ step "boot the kernel with them, reach Done, stop cleanly"
   done
   sleep 6
   echo stop
-) | FORBRIC_JVM="${M7_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M7_EXTRA_JVM:-}" RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 240

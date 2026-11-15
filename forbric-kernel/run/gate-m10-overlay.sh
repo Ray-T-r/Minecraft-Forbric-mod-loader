@@ -65,7 +65,7 @@ echo "[kernel] staged: $(ls -1 "$RUNDIR/mods" | tr '\n' ' ')"
 
 step "boot the game base under the kernel (no compatibility flags)"
 : > "$LOG"
-( stop_when_ready "$LOG" 90 ) | FORBRIC_JVM="${M10_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
+( stop_when_ready "$LOG" 90 ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M10_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
   "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"

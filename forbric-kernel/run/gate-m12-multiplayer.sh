@@ -113,7 +113,7 @@ FIFO="$SRV/.stdin"; rm -f "$FIFO"; mkfifo "$FIFO"
 # covers half the system under test is worse than no knob.
 # The tick sampler prints its running totals every 20 ticks (one second) instead of every 600, so the lateness check below
 # can read them at the client's dial, the player's join and the leave.
-FORBRIC_JVM="-Dforbric.tickSamplerEvery=20 ${M12_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.tickSamplerEvery=20 ${M12_EXTRA_JVM:-}" \
 RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$SLOG" 2>&1 &
 SRVPID=$!
 record_server_pid "$SRV" "$SRVPID"
@@ -155,7 +155,7 @@ echo "forceload remove -1 -1 1 1" >&9
 PROBE_JVM="-Dforbric.clientSmokeProbe=$PROBE_AT -Dforbric.clientSmokeProbeTicks=100"
 
 step "connect a real client to 127.0.0.1:$PORT"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 $PROBE_JVM ${M12_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 $PROBE_JVM ${M12_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!

@@ -150,7 +150,7 @@ done
 
 step "connect the client, let the server place the two probe blocks, read them back"
 # The probe reads at world tick 160; the blocks are placed as soon as the client reports it joined (well before).
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=260 -Dforbric.clientSmokeProbe=0,-57,4;0,-57,6 -Dforbric.clientSmokeProbeIds=item:mcwbridges:andesite_bridge ${M14_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=260 -Dforbric.clientSmokeProbe=0,-57,4;0,-57,6 -Dforbric.clientSmokeProbeIds=item:mcwbridges:andesite_bridge ${M14_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!

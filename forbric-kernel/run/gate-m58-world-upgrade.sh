@@ -170,7 +170,7 @@ start_server() {
   # the new launchers refuse MERGED/FORGE_RT, and old_launch strips MERGED, so nothing leaks from one side to the other.
   (
     [ $# -gt 0 ] && export "$@"
-    export RUNDIR="$dir" FORBRIC_JVM="$jvm"
+    export RUNDIR="$dir" FORBRIC_JVM="${FORBRIC_JVM:-} $jvm"
     if [ "$side" = old ]; then old_launch server; else "$KERNEL/run/launch-kernel-server.sh"; fi
   ) < "$fifo" > "$log" 2>&1 &
   SRV_PID=$!
@@ -220,7 +220,7 @@ run_client() {
   fi
   : > "$log"
   (
-    export RUNDIR="$dir" FORBRIC_JVM="$jvm"
+    export RUNDIR="$dir" FORBRIC_JVM="${FORBRIC_JVM:-} $jvm"
     if [ "$side" = old ]; then old_launch client "${args[@]}"; else "$KERNEL/run/launch-kernel-client.sh" "${args[@]}"; fi
   ) < /dev/null > "$log" 2>&1 &
   pid=$!

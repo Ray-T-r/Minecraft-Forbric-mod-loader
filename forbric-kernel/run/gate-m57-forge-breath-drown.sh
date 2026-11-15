@@ -72,7 +72,7 @@ run_server() {
   python3 "$TOOL" properties >> "$SERVER_DIR/server.properties"
   # The NeoForge canary drives.
   RUNDIR="$SERVER_DIR" FORBRIC_COMPAT_POLICY="$policy" \
-    FORBRIC_JVM="-Dforbric.breathDrownDriver=neo -Dforbric.breathDrownProbe=$RESULTS/$phase.json $extra" \
+    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.breathDrownDriver=neo -Dforbric.breathDrownProbe=$RESULTS/$phase.json $extra" \
     "$KERNEL/run/launch-kernel-server.sh" < /dev/null > "$RESULTS/$phase.log" 2>&1 &
   pid=$!; record_server_pid "$SERVER_DIR" "$pid"
   await_server "$pid" "$RESULTS/$phase.log" 400 30

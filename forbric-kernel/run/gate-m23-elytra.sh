@@ -37,7 +37,7 @@ refuse_shared_rundir "$RUNDIR"
 step "fly an elytra in a real client"
 : > "$LOG"
 reap_stale_server "$RUNDIR"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
 -Dforbric.clientSmokeElytra=$AT -Dforbric.clientSmokeDisconnectTicks=$((AT + 120)) ${M23_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &

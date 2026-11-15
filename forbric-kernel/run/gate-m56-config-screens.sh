@@ -136,7 +136,7 @@ run_client() {
   for jar in $CANARIES; do cp "$CANARY/$jar.jar" "$RUNDIR/mods/"; done
   for jar in "$@"; do cp "$jar" "$RUNDIR/mods/"; done
   printf 'onboardAccessibility:false\npauseOnLostFocus:false\nlang:en_us\nguiScale:2\nnarrator:0\ntutorialStep:none\n' > "$RUNDIR/options.txt"
-  FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
+  FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
 -Dforbric.clientSmokeConfigScreens=$WALK -Dforbric.clientSmokeConfigScreensAt=$AT \
 -Dforbric.clientSmokeDisconnectTicks=$((AT + 260)) $extra" \
   RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \

@@ -234,7 +234,7 @@ if want client; then
   printf 'onboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nskipMultiplayerWarning:true\njoinedFirstServer:true\nsoundCategory_master:0.0\nrenderDistance:4\nsimulationDistance:5\nguiScale:2\nnarrator:0\n' > "$C/options.txt"
   cp -c -R "$FIX/old-save" "$C/saves/$WORLD"
   $FS client --log "$RESULTS/client.log" --rundir "$C" --env "RUNDIR=$C" --env "FORBRIC_COMPAT_POLICY=strict" \
-    --env "FORBRIC_JVM=-Dforbric.compatibilityPolicy=strict -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=400" \
+    --env "FORBRIC_JVM=${FORBRIC_JVM:-} -Dforbric.compatibilityPolicy=strict -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=400" \
     --timeout 900 -- "$KERNEL/run/launch-kernel-client.sh" --quickPlayPath "$C/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" \
     > "$RESULTS/client.result.json" 2>&1
   cat "$RESULTS/client.result.json"

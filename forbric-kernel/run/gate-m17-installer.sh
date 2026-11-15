@@ -353,8 +353,10 @@ check_exactly "the reference has its own flag"      "^--nativeReference$"       
 
 if [ "$PY_RC" -eq 0 ]; then
   echo "[kernel] launching the resolved command (mainClass $(grep -c . "$CMD_FILE") argv entries)"
-  ( cd "$DEST" && FORBRIC_JVM="" tr '\n' '\0' < "$CMD_FILE" | xargs -0 env \
-      JAVA_TOOL_OPTIONS="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140" \
+  # The resolved command is a java line of its own (no launcher reads FORBRIC_JVM there): the caller's FORBRIC_JVM -- a
+  # sweep's locale, say -- reaches the game through JAVA_TOOL_OPTIONS, ahead of the smoke properties.
+  ( cd "$DEST" && tr '\n' '\0' < "$CMD_FILE" | xargs -0 env \
+      JAVA_TOOL_OPTIONS="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140" \
       ) > "$CLOG" 2>&1 &
   CLIENT_PID=$!
   echo "[kernel] client pid=$CLIENT_PID (killed by pid only — another client may be running)"
@@ -417,7 +419,7 @@ old_launch() {
     if [ "${#argv[@]}" -eq 1 ] && [ -n "$extra" ]; then argv+=("$extra"); fi
     prev="$line"
   done < "$CMD_FILE"
-  ( cd "$DEST" && FORBRIC_JVM="" JAVA_TOOL_OPTIONS="" "${argv[@]}" ) > "$BUILD/gate-m17-old-$label.log" 2>&1 &
+  ( cd "$DEST" && JAVA_TOOL_OPTIONS="${FORBRIC_JVM:-}" "${argv[@]}" ) > "$BUILD/gate-m17-old-$label.log" 2>&1 &
   local pid=$!
   for i in $(seq 1 120); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
   if kill -0 "$pid" 2>/dev/null; then stop_tree "$pid" >&2; fi

@@ -77,7 +77,7 @@ echo "[kernel] staged: $(ls -1 "$SRV/mods" | paste -sd' ' -)"
 
 step "boot the dedicated server and hold it open"
 FIFO="$SRV/.stdin"; rm -f "$FIFO"; mkfifo "$FIFO"
-FORBRIC_JVM="${M15_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} ${M15_EXTRA_JVM:-}" \
 RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$SLOG" 2>&1 &
 SRVPID=$!
 record_server_pid "$SRV" "$SRVPID"
@@ -98,7 +98,7 @@ fi
 
 step "connect a real client and let FallingTree sync its config"
 # Ready at 60; FallingTree's config sync goes out on join, so 200 ticks is ample and keeps the run short.
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M15_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=200 ${M15_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!

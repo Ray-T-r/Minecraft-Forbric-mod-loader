@@ -20,7 +20,7 @@ for phase,mode,policy,required in [('required-strict','required','strict',True),
  shutil.copy2(kernel/'run/canary/forbricoutcome.jar',run/'mods/forbricoutcome.jar')
  (run/'eula.txt').write_text('eula=true\n')
  (run/'server.properties').write_text(f'server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nmax-tick-time=-1\npause-when-empty-seconds=0\nview-distance=2\nsimulation-distance=2\n')
- env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY=policy,FORBRIC_JVM=f'-Dforbric.outcomeMode={mode} -Dforbric.mixinAtWiden=' + ('off' if phase=='widened-off' else 'on'))
+ env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY=policy,FORBRIC_JVM=os.environ.get('FORBRIC_JVM','')+f' -Dforbric.outcomeMode={mode} -Dforbric.mixinAtWiden=' + ('off' if phase=='widened-off' else 'on'))
  # The game base (NeoForge's patched game) and its one carrier the canary was built and recorded against, handed to the
  # launcher as BASE and NEO_RT and attested under the neo-patched / neo-runtime roles. (Stage 4: no merged base, no
  # MinecraftForge carrier.)

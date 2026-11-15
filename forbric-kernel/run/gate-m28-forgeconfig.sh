@@ -50,7 +50,7 @@ cleanup() {
 trap 'rc=$?; cleanup; _gate_exit "$rc"' EXIT
 trap 'exit 130' INT TERM
 : > "$NEO_WATCH_LOG"
-FORBRIC_JVM="${M28_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
+FORBRIC_JVM="${FORBRIC_JVM:-} ${M28_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
   "$KERNEL/run/launch-kernel-server.sh" < "$FIFO" > "$LOG" 2>&1 &
 SRVPID=$!
 record_server_pid "$RUNDIR" "$SRVPID"

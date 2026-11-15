@@ -64,7 +64,7 @@ run_client() {
   # Without onboardAccessibility:false a fresh client sits on the first-launch accessibility screen forever; without
   # pauseOnLostFocus:false another window taking focus opens the pause menu, and the probe's screen never gets in front.
   printf 'onboardAccessibility:false\npauseOnLostFocus:false\nlang:en_us\nguiScale:2\nnarrator:0\ntutorialStep:none\n' > "$RUNDIR/options.txt"
-  FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
+  FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
 -Dforbric.clientSmokeCreativeSearch=$AT -Dforbric.clientSmokeDisconnectTicks=$((AT + 110)) $extra ${M55_EXTRA_JVM:-}" \
   RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
     --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$RESULTS/$phase.log" 2>&1 &

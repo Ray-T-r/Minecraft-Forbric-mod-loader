@@ -112,7 +112,7 @@ class GateForgeConfigContractTest {
 	void bothProductionScriptsParseAndKeepTheRealLaunchAndNegativeControl() throws Exception {
 		for (Path gate : new Path[] { M16, M28 }) assertGreen(execute(new ProcessBuilder("bash", "-n", gate.toString())));
 		String gate = Files.readString(M28);
-		assertTrue(gate.contains("FORBRIC_JVM=\"${M28_EXTRA_JVM:-}\" RUNDIR=\"$RUNDIR\""));
+		assertTrue(gate.contains("FORBRIC_JVM=\"${FORBRIC_JVM:-} ${M28_EXTRA_JVM:-}\" RUNDIR=\"$RUNDIR\""));
 		assertTrue(gate.contains("launch-kernel-server.sh\" < \"$FIFO\" > \"$LOG\""));
 		assertTrue(gate.contains("-Dforbric.earlyConfigs=off"));
 		assertTrue(gate.indexOf("# M28_NEO_EDIT_BEGIN") < gate.indexOf("# M28_NEO_WATCH_BEGIN"));

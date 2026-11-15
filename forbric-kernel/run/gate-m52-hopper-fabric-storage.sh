@@ -55,7 +55,7 @@ run_server() {
   seed_server_properties "$SERVER_DIR"
   printf 'level-name=world\nlevel-type=minecraft:flat\ngenerate-structures=false\nmax-tick-time=-1\npause-when-empty-seconds=0\nonline-mode=false\nspawn-animals=false\n' >> "$SERVER_DIR/server.properties"
   RUNDIR="$SERVER_DIR" FORBRIC_COMPAT_POLICY="$policy" \
-    FORBRIC_JVM="-Dforbric.hopperProbe=$RESULTS/$phase.json -Dforbric.hopperPhase=$phase $extra" \
+    FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.hopperProbe=$RESULTS/$phase.json -Dforbric.hopperPhase=$phase $extra" \
     "$KERNEL/run/launch-kernel-server.sh" < /dev/null > "$RESULTS/$phase.log" 2>&1 &
   pid=$!; record_server_pid "$SERVER_DIR" "$pid"
   await_server "$pid" "$RESULTS/$phase.log" 300 30

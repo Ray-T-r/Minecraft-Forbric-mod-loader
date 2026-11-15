@@ -36,7 +36,7 @@ seed_server_properties "$RUNDIR"
   done
   sleep 5
   echo stop
-) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+) | FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 90

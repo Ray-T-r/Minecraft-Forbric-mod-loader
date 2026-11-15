@@ -67,7 +67,7 @@ carry_run() {
   printf 'version:4903\nonboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nlang:en_us\n' \
     > "$RUNDIR/options.txt"
   : > "$log"
-  FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
+  FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 \
 -Dforbric.clientSmokeCarry=$AT -Dforbric.clientSmokeDisconnectTicks=$((AT + 260)) $extra ${M54_EXTRA_JVM:-}" \
   RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
     --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$log" 2>&1 &

@@ -166,7 +166,7 @@ step "launch the client into $WORLD via quick-play ($(ls -1 "$RUNDIR/mods"/*.jar
 #     datapackDeclarationAfterFabric=off 2.
 # (-Dforbric.pruneDuplicateLambdas=off was a control here on the merged base, where it brought back StubException and the
 # failed world load; NeoForge's base carries no lambda name twice and the pruner was deleted in Stage 4.)
-FORBRIC_JVM="-Dmixin.debug.export=true -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dmixin.debug.export=true -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeModsScreen=80 -Dforbric.clientSmokeKeyBinds=70 -Dforbric.clientSmokeDisconnectTicks=140 ${M9_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -1063,7 +1063,7 @@ else
   cp -R "$RUNDIR/saves/$WORLD" "$MP_RUNDIR/saves/"
   printf 'version:4903\nonboardAccessibility:false\npauseOnLostFocus:false\ntutorialStep:none\nlang:en_us\n' > "$MP_RUNDIR/options.txt"
   : > "$MP_LOG"
-  FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeMultipart=80 -Dforbric.clientSmokeMultipartTypes=tofucraft:shudofuspider,minecraft:ender_dragon -Dforbric.clientSmokeDisconnectTicks=180 ${M9_MULTIPART_EXTRA_JVM:-}" \
+  FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeMultipart=80 -Dforbric.clientSmokeMultipartTypes=tofucraft:shudofuspider,minecraft:ender_dragon -Dforbric.clientSmokeDisconnectTicks=180 ${M9_MULTIPART_EXTRA_JVM:-}" \
   RUNDIR="$MP_RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
     --quickPlayPath "$MP_RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$MP_LOG" 2>&1 &
   MP_PID=$!

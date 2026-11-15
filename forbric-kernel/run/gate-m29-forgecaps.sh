@@ -82,7 +82,7 @@ boot() {
   echo "eula=true" > "$RUNDIR/eula.txt"
   : > "$log"; rm -f "$log.exit"
   (
-    ( stop_when_ready "$log" 8 ) | FORBRIC_COMPAT_POLICY="$policy" FORBRIC_JVM="${M29_EXTRA_JVM:-} $extra" \
+    ( stop_when_ready "$log" 8 ) | FORBRIC_COMPAT_POLICY="$policy" FORBRIC_JVM="${FORBRIC_JVM:-} ${M29_EXTRA_JVM:-} $extra" \
       RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-server.sh"
     code=$?
     printf '%s\n' "$code" > "$log.exit"

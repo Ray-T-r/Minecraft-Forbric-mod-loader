@@ -42,7 +42,7 @@ seed_server_properties "$RUNDIR"
 
 step "boot to Done and stop cleanly"
 : > "$LOG"
-( stop_when_ready "$LOG" 80 ) | FORBRIC_JVM="${M11_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
+( stop_when_ready "$LOG" 80 ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M11_EXTRA_JVM:-}" RUNDIR="$RUNDIR" \
   "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"

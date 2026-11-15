@@ -128,7 +128,7 @@ def main():
             f'server-ip=127.0.0.1\nserver-port={port}\nlevel-name=world\nlevel-seed=4242\ngenerate-structures=false\n'
             'online-mode=false\nenforce-secure-profile=false\nmax-tick-time=-1\npause-when-empty-seconds=0\n'
             'view-distance=2\nsimulation-distance=2\nspawn-protection=0\n')
-        env = dict(os.environ, FORBRIC_OLD=str(stage.parent), RUNDIR=str(run), FORBRIC_JVM=('-Xmx2G ' + switch).strip())
+        env = dict(os.environ, FORBRIC_OLD=str(stage.parent), RUNDIR=str(run), FORBRIC_JVM=' '.join(filter(None, [os.environ.get('FORBRIC_JVM', ''), '-Xmx2G', switch])))
         with (run / 'console.log').open('w') as log:
             subprocess.run([str(kernel / 'run/launch-kernel-server.sh')], env=env,
                            stdin=subprocess.DEVNULL, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=420)

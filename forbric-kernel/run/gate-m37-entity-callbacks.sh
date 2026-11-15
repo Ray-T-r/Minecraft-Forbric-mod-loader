@@ -45,7 +45,7 @@ for phase in ('positive','off','guard-off'):
  (run/'server.properties').write_text(f'server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nlevel-type=minecraft:flat\nlevel-seed=8035262\nmax-tick-time=-1\npause-when-empty-seconds=0\nview-distance=2\nsimulation-distance=2\n')
  for item in [inputs['mod'],*inputs['modules']]:source=pathlib.Path(item['path']);shutil.copy2(source,run/'mods'/source.name)
  env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='continue' if phase=='off' else 'strict',M37_RESULT_COMPATIBILITY=str(results/(phase+'-compatibility.json')),
-   FORBRIC_JVM=f'-Dforbric.entityPhase={phase} -Dforbric.entityNonce={nonce} -Dforbric.entityRoot={run}'
+   FORBRIC_JVM=os.environ.get('FORBRIC_JVM','')+f' -Dforbric.entityPhase={phase} -Dforbric.entityNonce={nonce} -Dforbric.entityRoot={run}'
    # Every case is repaired by mechanisms that know no mod, each with its own switch, so the negative control turns every
    # one of them off: CarrierDefaultChains moves the bed occupancy redirect onto the state's setBedOccupied; the generic
    # renamed-body retarget (MixinRetarget R3) moves the sleep redirect into NeoForge's lambda; the carrier-stub rebind

@@ -155,7 +155,7 @@ step "the dedicated server must report it, open nothing, and stop exactly as its
 # ABSENCE of a fork -- and that absence is also produced by launch-kernel-server.sh's -Djava.awt.headless=true,
 # so the assertion would stay green with the side check deleted. Asserting the line names WHICH guard fired.
 (
-  ( stop_when_ready "$SLOG" 25 ) | FORBRIC_COMPAT_POLICY=strict FORBRIC_JVM="-Dforbric.debug=true" \
+  ( stop_when_ready "$SLOG" 25 ) | FORBRIC_COMPAT_POLICY=strict FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.debug=true" \
     RUNDIR="$SRV" "$KERNEL/run/launch-kernel-server.sh"
   code=$?
   printf '%s\n' "$code" > "$SLOG.exit"
@@ -192,7 +192,7 @@ run_client() {
   local log="$1" policy="$2" mode="$3" until="${4:-Sound engine started|Game crashed|Mod Loading has failed}" pid i code
   : > "$log"
   rm -f "$log.exit" "$CLI/logs/latest.log" "$CLI/.forbric-kernel/compatibility-report.json"
-  FORBRIC_COMPAT_POLICY="$policy" FORBRIC_DEP_DIALOG="$mode" FORBRIC_JVM="${M20_EXTRA_JVM:-}" RUNDIR="$CLI" \
+  FORBRIC_COMPAT_POLICY="$policy" FORBRIC_DEP_DIALOG="$mode" FORBRIC_JVM="${FORBRIC_JVM:-} ${M20_EXTRA_JVM:-}" RUNDIR="$CLI" \
     "$KERNEL/run/launch-kernel-client.sh" > "$log" 2>&1 &
   pid=$!
   echo "[kernel] client pid=$pid policy=$policy dialog=$mode (killed by pid only — another client may be running)"

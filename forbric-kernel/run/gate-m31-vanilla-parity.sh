@@ -89,7 +89,7 @@ kernel_jar
 boot "$LOG_V" "$DIR_V" "$KERNEL/run/launch-vanilla-server.sh"
 if [ "${M31_UNFIXED:-0}" = 1 ]; then
   echo "[kernel] M31_UNFIXED=1 — the Forbric arm runs on the float-rounded nextDouble() this gate exists to catch"
-  FORBRIC_JVM="-Dforbric.randomSourcePrecision=off" boot "$LOG_F" "$DIR_F" "$KERNEL/run/launch-kernel-server.sh"
+  FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.randomSourcePrecision=off" boot "$LOG_F" "$DIR_F" "$KERNEL/run/launch-kernel-server.sh"
 else
   boot "$LOG_F" "$DIR_F" "$KERNEL/run/launch-kernel-server.sh"
 fi

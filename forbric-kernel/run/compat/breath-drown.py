@@ -205,7 +205,7 @@ def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout
         env['RUNDIR'] = str(out); env['FORBRIC_COMPAT_POLICY'] = policy
         if staged: env['FORBRIC_OLD'] = str(staged)
         env['GRADLE_OPTS'] = (env.get('GRADLE_OPTS', '') + ' -Dorg.gradle.daemon=false').strip()
-        env['FORBRIC_JVM'] = ' '.join(['-Djava.awt.headless=true', *props])
+        env['FORBRIC_JVM'] = ' '.join([env.get('FORBRIC_JVM', ''), '-Djava.awt.headless=true', *props]).strip()
     else:
         raise SystemExit(f'unknown engine {engine}')
     started = time.time()

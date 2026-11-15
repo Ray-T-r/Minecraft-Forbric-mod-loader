@@ -121,7 +121,7 @@ sleep 2
 
 step "connect the client and run the movement drill"
 # Disconnect at world tick 1100: ready at 60, the drill runs ~920 ticks after that (~48 s), then it leaves.
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=1100 -Dforbric.clientSmokeDrill=true -Dforbric.clientSmokeDrillControl=true ${M13_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=127.0.0.1:$PORT -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=1100 -Dforbric.clientSmokeDrill=true -Dforbric.clientSmokeDrillControl=true ${M13_EXTRA_JVM:-}" \
 RUNDIR="$CLI" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$CLI/quickPlay/log.json" --quickPlayMultiplayer "127.0.0.1:$PORT" > "$CLOG" 2>&1 &
 CLIENT_PID=$!

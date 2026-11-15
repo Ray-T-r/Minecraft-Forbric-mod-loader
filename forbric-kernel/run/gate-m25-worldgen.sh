@@ -66,7 +66,7 @@ boot() {
     sleep 45
     echo save-all
     echo stop
-  ) | FORBRIC_JVM="${M25_EXTRA_JVM:-} $extra" RUNDIR="$RUNDIR" \
+  ) | FORBRIC_JVM="${FORBRIC_JVM:-} ${M25_EXTRA_JVM:-} $extra" RUNDIR="$RUNDIR" \
     "$KERNEL/run/launch-kernel-server.sh" > "$log" 2>&1 &
   BOOTPID=$!
   record_server_pid "$RUNDIR" "$BOOTPID"

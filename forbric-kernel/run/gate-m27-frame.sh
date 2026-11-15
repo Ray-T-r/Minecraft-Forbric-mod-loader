@@ -39,7 +39,7 @@ Path(sys.argv[1]).write_text(str(time.time_ns()))
 PY
 
 step "capture a frame at world tick ${SHOT_TICKS:-<disabled>}"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeScreenshots=$SHOT_TICKS -Dforbric.clientSmokeDisconnectTicks=160 ${M27_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeScreenshots=$SHOT_TICKS -Dforbric.clientSmokeDisconnectTicks=160 ${M27_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!

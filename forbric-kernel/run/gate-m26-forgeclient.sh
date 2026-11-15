@@ -120,7 +120,7 @@ Path(sys.argv[2]).write_text(f'version:{version}\nonboardAccessibility:false\nke
 PY_OPTIONS
 # M26_OPTIONS_END
 : > "$LOG"
-FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 -Dforbricfabriclive.lateBlock=true -Dforbricneolive.placeWater=true ${M26_EXTRA_JVM:-}" \
+FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=160 -Dforbricfabriclive.lateBlock=true -Dforbricneolive.placeWater=true ${M26_EXTRA_JVM:-}" \
 RUNDIR="$RUNDIR" "$KERNEL/run/launch-kernel-client.sh" \
   --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1 &
 CLIENT_PID=$!
@@ -200,7 +200,7 @@ printf 'server-ip=127.0.0.1\nserver-port=%s\nonline-mode=false\nlevel-name=M26Se
   "$GATE_PORT" > "$SERVER_DIR/server.properties"
 SERVER_FIFO="$SERVER_DIR/.stdin"; rm -f "$SERVER_FIFO"; mkfifo "$SERVER_FIFO"
 : > "$SERVER_LOG"
-FORBRIC_JVM="${M26_EXTRA_JVM:-}" RUNDIR="$SERVER_DIR" "$KERNEL/run/launch-kernel-server.sh" < "$SERVER_FIFO" > "$SERVER_LOG" 2>&1 &
+FORBRIC_JVM="${FORBRIC_JVM:-} ${M26_EXTRA_JVM:-}" RUNDIR="$SERVER_DIR" "$KERNEL/run/launch-kernel-server.sh" < "$SERVER_FIFO" > "$SERVER_LOG" 2>&1 &
 SERVER_PID=$!
 record_server_pid "$SERVER_DIR" "$SERVER_PID"
 exec 8>"$SERVER_FIFO"
@@ -241,7 +241,7 @@ cp "$KERNEL/run/canary/forge-refused/forbriclive.jar" "$PROMPT_DIR/mods/" || exi
 cp "$RUNDIR/options.txt" "$PROMPT_DIR/options.txt" || exit 3
 : > "$PROMPT_LOG"
 # No quick-play: a launch told to open a world at once is refused instead of asked (gate-m20 says why).
-FORBRIC_COMPAT_POLICY=ask FORBRIC_DEP_DIALOG=dryRun FORBRIC_JVM="-Duser.language=en -Duser.country=US ${M26_EXTRA_JVM:-}" \
+FORBRIC_COMPAT_POLICY=ask FORBRIC_DEP_DIALOG=dryRun FORBRIC_JVM="${FORBRIC_JVM:-} -Duser.language=en -Duser.country=US ${M26_EXTRA_JVM:-}" \
   RUNDIR="$PROMPT_DIR" "$KERNEL/run/launch-kernel-client.sh" > "$PROMPT_LOG" 2>&1 &
 PROMPT_PID=$!
 record_server_pid "$PROMPT_DIR" "$PROMPT_PID"

@@ -28,7 +28,7 @@ for phase in ('positive','off'):
  (run/'server.properties').write_text(f'server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nlevel-type=minecraft:flat\nlevel-seed=8035262\nmax-tick-time=-1\npause-when-empty-seconds=0\nview-distance=2\nsimulation-distance=2\n')
  for item in [inputs['mod'],*inputs['modules']]:source=pathlib.Path(item['path']);shutil.copy2(source,run/'mods'/source.name)
  env=os.environ.copy();env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='strict' if phase=='positive' else 'continue',M38_RESULT_COMPATIBILITY=str(results/(phase+'-compatibility.json')),
-   FORBRIC_JVM=f'-Dforbric.fabricItemContracts={"on" if phase=="positive" else "off"} -Dforbric.enchantPhase={phase} -Dforbric.enchantNonce={nonce} -Dforbric.enchantRoot={run}'
+   FORBRIC_JVM=os.environ.get('FORBRIC_JVM','')+f' -Dforbric.fabricItemContracts={"on" if phase=="positive" else "off"} -Dforbric.enchantPhase={phase} -Dforbric.enchantNonce={nonce} -Dforbric.enchantRoot={run}'
    # The command, loot and anvil redirects move onto the carrier's supportsEnchantment by CarrierDecisions, and the table's
    # primary-item redirect onto the carrier's isPrimaryItemFor method reference by CarrierMethodReferences (the native lambda
    # runs there with fabric-api's handler, its "|| isBook" kept); both know no mod and have their own switches: the negative

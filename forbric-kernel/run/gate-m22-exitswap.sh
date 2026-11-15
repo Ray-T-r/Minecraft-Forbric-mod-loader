@@ -55,7 +55,7 @@ reap_stale_server "$RUNDIR"
 LAUNCHED=$SECONDS
 (
   FORBRIC_BOOT_JAR="$COPY" RUNDIR="$RUNDIR" \
-  FORBRIC_JVM="-Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 ${M22_EXTRA_JVM:-}" \
+  FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140 ${M22_EXTRA_JVM:-}" \
   "$KERNEL/run/launch-kernel-client.sh" \
     --quickPlayPath "$RUNDIR/quickPlay/log.json" --quickPlaySingleplayer "$WORLD" > "$LOG" 2>&1
 ) &

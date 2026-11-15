@@ -26,7 +26,7 @@ if [ -f "$CANARY" ]; then cp "$CANARY" "$RUNDIR/mods/"; else echo "[kernel] WARN
 # Pin a seed for reproducible worldgen (entity spawns exercise NeoForge's fluid-type RegistryObjects).
 seed_server_properties "$RUNDIR"
 : > "$LOG"
-( stop_when_ready "$LOG" 22 ) | FORBRIC_JVM="-Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
+( stop_when_ready "$LOG" 22 ) | FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.debug=true" "$KERNEL/run/launch-kernel-server.sh" > "$LOG" 2>&1 &
 BOOTPID=$!
 record_server_pid "$RUNDIR" "$BOOTPID"
 await_server "$BOOTPID" "$LOG" 90
