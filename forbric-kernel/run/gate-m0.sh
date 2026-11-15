@@ -36,9 +36,10 @@
 # jar was not refused. Step 5b withholds the set-asides with the refusals, and must fail on exactly both sets of mods.
 # Step 6's two installer checks (the packaged link tools and the bundled baseline) still pass on what the installer
 # bundles today; C6 rewrites them with the link check.
-# The unit suite runs in up to four worker JVMs (build.gradle maxParallelForks): measured 2026-11-16 (lane OPT, three
-# forked runs), every java process of the suite together peaked at 3.4 GB resident (the four workers 2.9-3.1 GB),
-# against 2.7 GB in one fork. mem is what the scheduler reserves beside the other gates of a sweep.
+# The unit suite runs in up to four worker JVMs (build.gradle maxParallelForks): measured 2026-11-16 (lane OPT), every
+# java process of the suite together peaked at 3.4 GB resident in the two forked runs whose whole-java total was
+# sampled (the four workers 2.9-3.1 GB in all three), against 2.7 GB in one fork (sampled after its first minutes;
+# workers alone 2.1 GB over the whole run). mem is what the scheduler reserves beside the other gates of a sweep.
 # GATE-PARALLEL: rundirs=server-m0-definitions mem=3500  (builds and runs the unit suite)
 # GATE-CACHE: tests   (runs test sources, so a test-only change re-runs it; see run/compat/gate_cache.py)
 set -uo pipefail
