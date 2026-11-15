@@ -102,6 +102,8 @@ class KeyTest(unittest.TestCase):
         # gate-m0's suite reads every gate script (GatesAllTest, test_gate_locale, one contract test per gate) and
         # PROTOCOL.md (CompatProtocolTest): editing gate-m1 or a README must re-run it. The records under reports/ are
         # read by none of its tests, and a record commit must not re-run the suite (review OPT wave 2d, lens A, B2).
+        with open(self.t.root / '.gitignore', 'a') as ignore:   # run/compat/ is tracked, as in the real tree
+            ignore.write('!forbric-kernel/run/compat/\n')
         m2 = self.t.key('gate-m2.sh')
         self.t.gate('gate-m1.sh', '# GATE-PARALLEL: rundirs=server-a mem=100\nexit 0 # a check renamed\n')
         self.assertNotEqual(m2, self.t.key('gate-m2.sh'), "gate-m2 runs tests that read gate-m1's script")
@@ -114,8 +116,13 @@ class KeyTest(unittest.TestCase):
         record = self.t.root / 'forbric-kernel' / 'run' / 'compat' / 'reports' / 'r' / 'stage.md'
         record.parent.mkdir(parents=True)
         record.write_text('a record\n')
+        self.assertIn('forbric-kernel/run/compat/reports/r/stage.md', gate_cache.repo_files(self.t.root),
+                      'the record must be a file git sees, or this proves nothing')
         self.assertEqual(m2, self.t.key('gate-m2.sh'), 'a record commit must not re-run the suite')
         self.assertEqual(m1, self.t.key('gate-m1.sh'))
+        protocol = self.t.root / 'forbric-kernel' / 'run' / 'compat' / 'PROTOCOL.md'
+        protocol.write_text('the protocol\n')
+        self.assertNotEqual(m2, self.t.key('gate-m2.sh'), 'CompatProtocolTest reads PROTOCOL.md')
 
     def test_the_launchers_unprefixed_knobs_and_the_jars_they_name_count(self):
         # launch-kernel-*.sh take the game base, the carrier and the vanilla reference from BASE, NEO_RT and NATIVE_REF;
