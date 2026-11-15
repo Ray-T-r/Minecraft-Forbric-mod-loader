@@ -69,6 +69,7 @@ import json
 import os
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import time
@@ -86,6 +87,8 @@ DURATIONS_PRIOR = Path(__file__).resolve().parent / "gate-durations.tsv"
 # The default moved off 25599 because that is also gate-m12's own default (M12_PORT). The two could never
 # collide while the gates ran one at a time; they collide on the first overlapping run.
 PORT_BASE = 25700
+# Seconds a gate has to stop after the sweep forwards it a TERM (lib.sh's _gate_exit gives what it started 2 s).
+GATE_TERM_GRACE = 20
 PORT_STRIDE = 10
 
 # The per-gate knobs that select a port, drawn from the slot's block in this order. A gate uses at most one of
@@ -160,6 +163,21 @@ class Gate:
 
     def expects_red(self) -> bool:
         return re.search(r"^# EXPECTED: RED until ", self.source, re.M) is not None
+
+
+def kill_tree(root: int) -> None:
+    """SIGKILL <root> and everything under it, each stopped before its children are listed (lib.sh's kill_tree)."""
+    try:
+        os.kill(root, signal.SIGSTOP)
+    except OSError:
+        return
+    listed = subprocess.run(["pgrep", "-P", str(root)], capture_output=True, text=True).stdout.split()
+    for child in listed:
+        kill_tree(int(child))
+    try:
+        os.kill(root, signal.SIGKILL)
+    except OSError:
+        pass
 
 
 def discover(run_dir: Path) -> list[Gate]:
@@ -425,47 +443,87 @@ def main() -> int:
             return False
         return True
 
-    while pending or running:
-        progressed = False
-        for gate in list(pending):
-            if can_start(gate):
-                pending.remove(gate)
+    stopping: list[int] = []   # the signal that asked the sweep to stop, once one has
+
+    def schedule() -> None:
+        nonlocal used_mb, exclusive_running
+        while (pending or running) and not stopping:
+            progressed = False
+            for gate in list(pending):
+                if stopping:
+                    return
+                if can_start(gate):
+                    pending.remove(gate)
+                    start(gate)
+                    progressed = True
+            # Nothing runnable and nothing running: the head of the queue does not fit the budget on its own.
+            # Run it anyway rather than hang -- the budget is a throttle, not a promise.
+            if not running and pending and not stopping:
+                gate = pending.pop(0)
+                say(f"[gates] {gate.name} wants {gate.mem} MB, over the {budget} MB budget — running it alone")
                 start(gate)
                 progressed = True
-        # Nothing runnable and nothing running: the head of the queue does not fit the budget on its own.
-        # Run it anyway rather than hang -- the budget is a throttle, not a promise.
-        if not running and pending:
-            gate = pending.pop(0)
-            say(f"[gates] {gate.name} wants {gate.mem} MB, over the {budget} MB budget — running it alone")
-            start(gate)
-            progressed = True
-        if not running:
-            break
-        if progressed and pending:
-            continue
-        # Wait for whichever gate finishes first.
-        while True:
-            done = [r for r in running if r.proc.poll() is not None]
-            if done:
+            if not running:
                 break
-            time.sleep(0.25)
-        for r in done:
-            rc = r.proc.returncode
+            if progressed and pending:
+                continue
+            # Wait for whichever gate finishes first.
+            while not stopping:
+                done = [r for r in running if r.proc.poll() is not None]
+                if done:
+                    break
+                time.sleep(0.25)
+            if stopping:
+                return
+            for r in done:
+                rc = r.proc.returncode
+                r.log.close()
+                running.remove(r)
+                free_slots.append(r.slot)
+                free_slots.sort()
+                held.difference_update(r.gate.rundirs)
+                used_mb -= r.gate.mem
+                if r.gate.exclusive:
+                    exclusive_running = False
+                elapsed = time.time() - r.started
+                v = verdict_for(r.gate, rc, out_dir / f"{r.gate.name}.log")
+                results[r.gate.name] = (v, rc, elapsed)
+                say(f"[gates] +{int(time.time() - t0):4d}s {v:12s} {r.gate.name} ({elapsed:.0f}s)")
+                durations[r.gate.name] = elapsed
+                if cache:
+                    cache.record(r.gate.name, keys[r.gate.name], v, elapsed, out_dir / f"{r.gate.name}.log")
+
+    # A TERM, INT or HUP to the sweep reaches its running gates (C5 wave 2d). gates-all.sh execs this script, so when
+    # heavy.sh forwards a TERM it lands here, and until now Python died of it on the spot: every running gate went on
+    # to the end on its own, re-parented to launchd, booting servers on the slot's ports with nobody to read its verdict.
+    # Each gate is sent TERM, which runs lib.sh's _gate_exit (it stops what the gate started), and given GATE_TERM_GRACE
+    # seconds to go; a gate shell still there after that is killed. No verdict is recorded for an interrupted sweep.
+    # The handler only records the signal; the loop stops at its next step, so a gate is never half started.
+    def interrupted(signum, _frame):
+        stopping.append(signum)
+
+    for signum in (signal.SIGTERM, signal.SIGINT, signal.SIGHUP):
+        signal.signal(signum, interrupted)
+    schedule()
+    if stopping:
+        signum = stopping[0]
+        say(f"[gates] +{int(time.time() - t0):4d}s {signal.Signals(signum).name}: stopping "
+            + (" ".join(r.gate.name for r in running) or "nothing (no gate was running)"))
+        for r in running:
+            if r.proc.poll() is None:
+                r.proc.send_signal(signal.SIGTERM)
+        deadline = time.time() + GATE_TERM_GRACE
+        for r in running:
+            try:
+                r.proc.wait(timeout=max(0.0, deadline - time.time()))
+            except subprocess.TimeoutExpired:
+                # A gate that traps TERM itself runs the trap only once its foreground command returns.
+                say(f"[gates] {r.gate.name} was still there {GATE_TERM_GRACE}s after its TERM; killed with its tree")
+                kill_tree(r.proc.pid)
+                r.proc.wait()
             r.log.close()
-            running.remove(r)
-            free_slots.append(r.slot)
-            free_slots.sort()
-            held.difference_update(r.gate.rundirs)
-            used_mb -= r.gate.mem
-            if r.gate.exclusive:
-                exclusive_running = False
-            elapsed = time.time() - r.started
-            v = verdict_for(r.gate, rc, out_dir / f"{r.gate.name}.log")
-            results[r.gate.name] = (v, rc, elapsed)
-            say(f"[gates] +{int(time.time() - t0):4d}s {v:12s} {r.gate.name} ({elapsed:.0f}s)")
-            durations[r.gate.name] = elapsed
-            if cache:
-                cache.record(r.gate.name, keys[r.gate.name], v, elapsed, out_dir / f"{r.gate.name}.log")
+        progress_file.close()
+        return 128 + signum
 
     wall = time.time() - t0
     failed = 0

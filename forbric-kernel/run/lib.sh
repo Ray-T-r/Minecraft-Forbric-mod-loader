@@ -117,10 +117,52 @@ caught_report() {
 
 # _gate_exit [status] — the EXIT trap: report, and under strict turn a green exit red. A gate that sets its own EXIT
 # trap calls this from it (gate-m28, canary_scratch below), because a second `trap … EXIT` replaces the first.
+#
+# Before the report it stops whatever the gate started and is still running (_stop_leftovers), so a JVM's shutdown hooks
+# write their caught lines first and nothing outlives the gate holding a port.
 _gate_exit() {
   local rc="${1:-$?}"
+  _stop_leftovers
   caught_report || { [ "$rc" -eq 0 ] && rc=1; }
   exit "$rc"
+}
+
+# _stop_leftovers — stop every process this shell started that still runs: each child's whole tree, frozen first, asked
+# with TERM, killed after the grace (stop_tree's steps over all of them at once). C5 wave 2d.
+#
+# WHY HERE. Under heavy.sh the signal that reaches a gate is TERM (an async child of a non-interactive shell starts with
+# INT ignored), and bash runs this EXIT trap when an untrapped TERM kills the script -- at once, even with a foreground
+# child running; a trapped TERM would wait for that child to finish first. Until now the trap only reported: the gate
+# died and its server, client and evidence.py were re-parented to launchd, a JVM still on the gate's port (gate-m39's
+# evidence.py chain, measured by G-B2 in wave 2b; walls.md). The trap cannot tell a TERM from a normal end ($? is 0 in
+# both), and it needs to: anything still running when the gate's shell exits is an orphan from that moment on.
+#
+# WHY NOT THE PROCESS GROUP. A gate is not its group's leader: heavy.sh starts it with `cmd &` in a non-interactive shell
+# and gates-parallel.py with a plain Popen, so its group is its launcher's -- killing the group would kill heavy.sh, the
+# scheduler and every gate running beside it. The descendants are the gate's own processes; they are all still its
+# descendants here, because the EXIT trap runs before bash exits and re-parents them. What a gate already detached
+# itself (a Gradle daemon, which outlives the build that started it by design) is not its own and is left alone.
+# Subshells and command substitutions do not run the EXIT trap, so this runs in the gate's main shell only.
+_stop_leftovers() {
+  local child pids="" pid alive i shown
+  for child in $(pgrep -P $$ 2>/dev/null); do
+    _running "$child" || continue    # the command substitution's own subshell is a child of $$ too, gone by now
+    pids="$pids $(_freeze_tree "$child")"
+  done
+  pids="$(echo $pids)"
+  [ -n "$pids" ] || return 0
+  shown="$(ps -o pid=,command= -p "$(echo "$pids" | tr ' ' ',')" 2>/dev/null | cut -c1-120 | head -5 | sed 's/^ *//' | tr '\n' ';')"
+  printf '[kernel] the gate left %s process(es) running at its exit; stopping them: %s\n' "$(echo $pids | wc -w | tr -d ' ')" "$shown"
+  for pid in $pids; do kill -TERM "$pid" 2>/dev/null; done
+  for pid in $pids; do kill -CONT "$pid" 2>/dev/null; done
+  for i in 1 2 3 4 5 6 7 8; do
+    alive=""
+    for pid in $pids; do _running "$pid" && alive="$alive $pid"; done
+    [ -n "$alive" ] || return 0
+    sleep 0.25
+  done
+  for pid in $alive; do _running "$pid" && kill_tree "$pid"; done
+  return 0
 }
 trap '_gate_exit $?' EXIT
 

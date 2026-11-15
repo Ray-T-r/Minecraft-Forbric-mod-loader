@@ -7,6 +7,7 @@ import java.nio.file.Path;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.TimeUnit;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
@@ -234,6 +235,47 @@ class GatesAllTest {
 		assertEquals(List.of("RESULT gate-m1.sh GREEN (exit=0)", "RESULT gate-m2.sh GREEN (exit=0)"), result.output().lines().toList());
 		assertFalse(Files.readString(results.resolve("progress.log")).contains("runs with no other gate"),
 				"a word in the comment was read as `alone`: " + Files.readString(results.resolve("progress.log")));
+	}
+
+	/**
+	 * A TERM to the sweep reaches the gates it is running, and through lib.sh's EXIT trap what they started (C5 wave 2d).
+	 * gates-all.sh execs the scheduler, so heavy.sh's forwarded TERM lands on Python; on 421c53cc it died of it on the spot
+	 * and the running gate went on alone, its stand-in JVM still there after the sweep had exited.
+	 */
+	@Test void aTermToTheSweepStopsItsRunningGatesAndWhatTheyStarted() throws Exception {
+		Path gates = Files.createDirectory(temporary.resolve("term-gates"));
+		Path pidFile = temporary.resolve("term-jvm.pid");
+		Path lib = Path.of("run/lib.sh").toAbsolutePath();
+		write(gates, "gate-m1.sh", "# GATE-PARALLEL: rundirs=a mem=10\n. \"" + lib + "\"\n"
+				+ "sh -c 'echo $$ > \"$1\"; while :; do sleep 0.1; done' sh \"" + pidFile + "\" &\nwait\n");
+		Path results = temporary.resolve("term-results");
+		ProcessBuilder builder = new ProcessBuilder(List.of("bash", Path.of("run/compat/gates-all.sh").toAbsolutePath().toString(),
+				"-j", "2")).redirectErrorStream(true).redirectOutput(temporary.resolve("term-sweep.log").toFile());
+		builder.environment().put("FORBRIC_GATE_DIR", gates.toString());
+		builder.environment().put("FORBRIC_GATE_RESULTS", results.toString());
+		builder.environment().remove("FORBRIC_CAUGHT_FILE");
+		builder.environment().remove("FORBRIC_CAUGHT_GATE");
+		Process sweep = builder.start();
+		long jvm = -1;
+		try {
+			for (int i = 0; i < 200 && (!Files.exists(pidFile) || Files.size(pidFile) == 0); i++) Thread.sleep(100);
+			jvm = Long.parseLong(Files.readString(pidFile).trim());
+			Thread.sleep(300);
+			sweep.destroy();   // SIGTERM, as heavy.sh forwards it
+			assertTrue(sweep.waitFor(60, TimeUnit.SECONDS), "the sweep did not exit on TERM");
+			boolean gone = false;
+			for (int i = 0; i < 50 && !(gone = ProcessHandle.of(jvm).map(h -> !h.isAlive()).orElse(true)); i++) Thread.sleep(100);
+			String progress = Files.readString(results.resolve("progress.log"));
+			assertTrue(gone, "the gate's process outlived the sweep's TERM: " + progress);
+			assertEquals(143, sweep.exitValue(), progress);
+			assertTrue(progress.contains("SIGTERM: stopping gate-m1.sh"), progress);
+			assertTrue(Files.readString(results.resolve("gate-m1.sh.log")).contains(" process(es) running at its exit; stopping them: "),
+					Files.readString(results.resolve("gate-m1.sh.log")));
+		} finally {
+			sweep.descendants().forEach(ProcessHandle::destroyForcibly);
+			sweep.destroyForcibly();
+			if (jvm > 0) ProcessHandle.of(jvm).ifPresent(ProcessHandle::destroyForcibly);
+		}
 	}
 
 	private static String describe(Map<String, double[]> ran) {
