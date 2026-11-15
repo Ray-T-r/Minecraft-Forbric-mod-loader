@@ -47,7 +47,8 @@ checked: m2, m2b, m3, m4, m4-canary, m8, m10, m11, m18, m19, m20, m21, m24, m24b
 **Contract tests** (LibStopWhenReadyContractTest, 9 -> 11):
 - `aBootDoneASettleBeforeTheTimerEndsGetsTheLineWhenTheTimerEnds` (was `aBootInsideTheTimerGetsTheLineWhenTheTimerEnds`, which
   asserted "no settle when Done was already there", i.e. pinned the defect): Done in the log from the start, timer 3, settle 1 ->
-  line at 3-6 s. Green on both lib.sh versions: the unchanged half.
+  line at 3-6 s. Green on both lib.sh versions: the unchanged half. (Review fixes, B-1: that window also passed a helper that
+  always adds the settle after the timer, 4.1 s; the case now runs timer 3, settle 3 and accepts 3 s to under 5 s.)
 - new `aBootThatEndsJustBeforeTheTimerStillGetsItsSettle`: Done half a second before a 2 s timer, settle 3 -> the line comes >= 3 s
   after Done.
 - new `aTimerOrSettleThatIsNotWholeSecondsIsRefusedOutLoud`.
@@ -61,7 +62,7 @@ lib.sh 11/0.
 
 | arm | runs | result | Done -> "Stopping the server" |
 |---|---|---|---|
-| lib.sh of 2c231c9c (control) | 5 | 2 green, **3 red** (12/1, the same FAIL line as VERIFY) | red runs 1 s; green runs 4 s and 2 s (boot past the timer, settle path) |
+| lib.sh of 2c231c9c (control) | 5 | 2 green, **3 red** (12/1, the same FAIL line as VERIFY) | red runs 1 s; green runs 4 s and 2 s (Done came inside the 22 s timer, 4 s and 2 s before its end, so the timer's end gave those ticks; corrected per review B-2) |
 | lib.sh of 42b11b10 | 5 | **5 green** (13/0 each) | 5, 5, 6, 5, 6 s; "20 server ticks observed" in every run |
 
 Example (new run 1): Done 13:25:19, 20 ticks 13:25:20, stop 13:25:24. Old run 2: Done 13:23:37, stop 13:23:38, no ticks line.
@@ -99,7 +100,8 @@ wall time; m37 and m38, undeclared, already ran that way).
 - `aGateDeclaredAloneRunsWithNoOtherGateBesideIt`: five stub gates at -j 4 stamp when they ran; the `alone` one shares no moment
   with the others, which overlap each other (>= 3 pairs). Red on 2c231c9c's gates-parallel.py: "gate-m0 ran beside gate-m12, which
   is declared alone: gate-m0 0.00-2.02, gate-m1 0.00-2.02, gate-m12 0.00-1.02, gate-m13 0.01-2.03, gate-m14 1.27-2.30".
-- `everyGateThatJudgesTickTimingIsDeclaredAlone`: any gate whose code (comment lines excluded) reads the tick sampler
+- `everyGateThatJudgesTickTimingIsDeclaredAlone` (renamed `everyGateWhoseVerdictIsATimingIsDeclaredAlone` and widened to
+  `check_kept_up` in the review fixes): any gate whose code (comment lines excluded) reads the tick sampler
   (`Forbric/Tick`, `tickSamplerEvery`) and declares itself must say `alone`; it must find gate-m12. Red with `alone` taken off
   m12's line ("[gate-m12-multiplayer.sh]"). Finds m12 only.
 - Tip: 7/0. Intermediate 1e595872 (m12 still undeclared alone, the rule test not yet there): 6/0.
@@ -107,8 +109,9 @@ wall time; m37 and m38, undeclared, already ran that way).
 
 **Scheduler replay** (`scheduler-replay/replay.py`, `old.txt`, `new.txt`, `subset-j2-*.txt`): stub gates carrying the real gates'
 `# GATE-PARALLEL:` lines and VERIFY block 3's durations (scaled 1/30), through the real gates-parallel.py of each tree.
-- -j 4, all gates but m34, budget 9011 MB: at 2c231c9c m12 ran beside m0, m11, m18, m19, m21, m24 (VERIFY's neighbours); at
-  c291325c beside nothing, at the end. Wall 93.9 s vs 95.9 s scaled.
+- -j 4, all gates but m34, budget 9011 MB: at 2c231c9c m12 ran beside m0, m11, m18, m19, m21, m24 in this scaled replay; at
+  c291325c beside nothing, at the end. Wall 93.9 s vs 95.9 s scaled. VERIFY's real neighbours of m12 were m0, m18, m19, m21 and
+  m24: m11 went GREEN at +229 s and m12 started at +230 s (block 3 progress.log; corrected per review B-3).
 - -j 2, the subset of the sweep below: at 2c231c9c m12 ran beside m0; at c291325c beside nothing.
 
 **Real sweep.** -j 4 needs 40 ports (stride 10) and this lane has 20 (46660-46679 is lane ZH's), so the sweep ran at -j 2 in the
@@ -154,7 +157,82 @@ assumption, no fixture: bash, python3 and the checked-in run/), so no `ci-*.tsv`
   timer: such a run can be up to the settle (5 s default) longer. gate-m21's `server_ready ... && probe_commands` gets it too.
 - gates-all (VERIFY run 2): m12 runs alone at the end of the sweep; progress.log says so. heavy.sh's header already lists m12 among
   the `--exclusive` runs.
-- A lane editing a gate that reads the tick sampler must keep `alone` (GatesAllTest says so).
+- A lane editing a gate that reads the tick sampler or calls `check_kept_up` must keep `alone` (GatesAllTest says so); after the
+  review fixes that is m12, m15 and m16.
+
+## HARN review fixes (after reviews A and B of wave 2c)
+
+Reviews: `c5/review-harn-w2c-A.md` (adversarial) and `c5/review-harn-w2c-B.md` (completeness). Evidence for this section:
+`harn/w2c/review-fixes/` (`ab.out`, `*.xml`, `xml-summary.txt`, `lib.*` variants, `b5-method*.out`, `replay/`, `gates-j2/`,
+`suite/`). Every finding was checked against the tree and the evidence before acting on it; none was refuted.
+
+| finding | verdict | fix |
+|---|---|---|
+| A-F1 (medium) the `alone` rule missed `check_kept_up`; gate-m15 and gate-m16 call it and could run beside other gates | confirmed, and not only latent: introduction.md's gates section measured m15 red on it in two of three side-by-side `-j 5` rounds and m16 red beside the full suites; Merger wave 1 had m12 red on it beside the suite (walls.md); heavy.sh's header already called these gates load-sensitive | 72d9e45b: m15 and m16 declare `alone` (reason in their headers); the GatesAllTest rule, renamed `everyGateWhoseVerdictIsATimingIsDeclaredAlone`, finds a gate by a non-comment `check_kept_up` call as well as by the tick sampler and must find m12 by both; gates-parallel.py and gates-all.sh say so. Option (a) of the review, since (b) would have argued against measured reds |
+| A-F2 / B-4 (low) developer docs do not mention `alone` | confirmed | 3f307726: one passage each in forbric-kernel/README.md, README.zh-CN.md, run/compat/PROTOCOL.md. introduction.md and its zh-CN twin describe main (CLAUDE.md): they still say only that a gate without the line runs alone, which stays true; they get `alone` when this reaches main |
+| A-F3 (low) upper bound of 10 s in `aBootThatEndsJustBeforeTheTimerStillGetsItsSettle` | confirmed: the line is due at about 5 s (Done first seen at the 2 s step, settle 3); a settle counted twice ends at about 8 s and passed | 61592546: `< 7500` ms |
+| A-F4 (nit) leading zeros | confirmed: on bash 3.2.57 `stop_when_ready <log> 1 08` prints "08: value too great for base" and the shell exits 1; "1 01" is read as octal and writes "stop" | b71424f2: the guard refuses a leading zero on stderr, as it refuses a fraction ("0" stays allowed); new case `aTimerOrSettleWithALeadingZeroIsRefusedOutLoud` |
+| A-F5 (nit) lib.sh header contradicts itself | confirmed | b71424f2: "With a boot done <settle> or more seconds before the timer ends ..." |
+| B-1 (medium, D34) the rewritten first case no longer catches a helper that waits too long | confirmed: with timer 3, settle 1 and a 3-6 s window, a helper that always adds the settle after the timer wrote at 4.1 s and passed | 61592546: timer 3, settle 3, Done in the log from the start, window 3 s to under 5 s |
+| B-2 (low, record) m3-hogs green runs misread | confirmed: old runs 1 and 3 had Done at 13:23:09 and 13:24:01, inside the 22 s timer, 4 s and 2 s before its end; the old settle path always waited the full 5 s | corrected in Item 1's table above |
+| B-3 (low, record) m11 named among VERIFY's neighbours | confirmed: VERIFY block 3 progress.log has m11 GREEN at +229 s and m12 START at +230 s; m11 sat beside m12 only in the scaled replay | corrected in Item 2's replay paragraph above |
+| B-5 (info) the slow-boot case sometimes misses a settle one second short | confirmed as described (pre-existing, widened slightly by 3b9e69a2's python start-up) and fixed although optional | 61592546: Done is stamped by the one python that appends it, just before the write; the line by a python already reading the helper's stdout, just after it arrives |
+
+**Controls** (`ab.sh`, `ab.out`, `*.xml`, `xml-summary.txt`; each a one-line lib.sh change or one header line, through Gradle with
+the pinned props, heavy slot 1, 16:10-16:13). Tip: LibStopWhenReadyContractTest 12/0, GatesAllTest 7/0.
+
+| control | red | green |
+|---|---|---|
+| c1 lib.sh always adds the settle after the timer (`rest=$settle`) | `aBootDoneASettleBefore...` only ("6043 ms") | the other 11 |
+| c2 lib.sh counts the settle twice | `aBootDoneASettleBefore...` (6055 ms) and `aBootThatEndsJustBefore...` ("and not much later either (8078 ms)") | the other 10 |
+| c3 lib.sh settle one second short | `aBootThatEndsJustBefore...` (2.513 s) and `aBootSlowerThanTheTimer...` (1.036 s) | the other 10 |
+| c4 lib.sh of b87bfe63 (no leading-zero guard) | `aTimerOrSettleWithALeadingZeroIsRefusedOutLoud` only: "stop", then "08: value too great for base" | the other 11 |
+| c5 gate-m15 without `alone` | `everyGateWhoseVerdictIsATimingIsDeclaredAlone` only: "[gate-m15-forge-network.sh]" | the other 6 |
+
+B-5 method check outside Gradle (`b5.sh`, `b5-method.out`, `b5-method-tip.out`): the slow-boot case's shell, 12 runs per stamping
+method against the c3 lib.sh: b87bfe63's stamping red 10 of 12 (the two greens measured 2.026 and 2.045 s), the new stamping red 12
+of 12 (1.021-1.054 s). Against the tip lib.sh both methods are green 6 of 6 (new 2.014-2.042 s). What is left of the window is the
+helper's own per-poll overhead (a grep, a wc and the sleep's wake-up), milliseconds per step.
+
+**Scheduler replay** (`replay/replay3.py`, a copy of wave 2c's replay that reports m12, m15 and m16; real `# GATE-PARALLEL:` lines,
+VERIFY block 3 durations scaled 1/30, -j 4, all gates but m34). b87bfe63: m12 beside nothing; m15 beside m0, m19, m24b, m24c, m25;
+m16 beside m0, m24c, m25, m28. Tip 3f307726: m12, m15 and m16 each beside nothing, one after another at the end; progress.log names
+all three as declared alone. Wall 95.8 s vs 98.1 s scaled.
+
+**Real sweep, -j 2 subset** (`gates-j2/run.sh`, `gates-all.log`, `gates-all-results/`, `counts.txt`; tip 3f307726, clean tree,
+lane block 46640-46659, Fabric canary built first, `client.sh heavy.sh --exclusive bash run/compat/gates-all.sh -j 2 --skip <the
+other 55>`, 16:13-16:24). Subset: m0 (the unit suite, the neighbour VERIFY saw beside m12), m3 (lib.sh's helper), m14 (m15's
+neighbour in the b87bfe63 replay) and the three alone gates. progress.log: "declared 'alone' (a timing verdict), so each of these
+runs with no other gate: gate-m12-multiplayer.sh gate-m15-forge-network.sh gate-m16-forge-handshake.sh"; m0 and m3, then m0 and
+m14, ran two wide; m12 started at +550 s when m0 ended, then m15 at +609 s, then m16 at +644 s, each with nothing beside it.
+
+| gate | PASS/FAIL/SKIP | VERIFY run 1 block 2 | timing verdict |
+|---|---|---|---|
+| m0 | 13/1/1 RED (D58: "unit tests — 3 of 5878 skipped", the LiquidBounce three) | 13/1/1 | |
+| m3 | 13/0/0 | 12/1/0 | |
+| m12 | 44/0/0 | 44/0/0 | "2 of 240 <= 7"; kept up, 0 overload warnings |
+| m14 | 34/0/0 | 34/0/0 | |
+| m15 | 22/0/0 | 22/0/0 | kept up, 0 overload warnings |
+| m16 | 39/0/0 | 39/0/0 | kept up, 0 overload warnings |
+
+**Suite at 3f307726** (`suite/suite.sh`, `suite.log`, `xml/`, `summary.txt`; the required command through heavy slot 1,
+16:24-16:32): **5878 tests, 0 skipped, 5 failed**, name for name the five of `failures-w2b.txt` (LiquidBounce x3,
+SharedFinalSourceActualTest x2, D58): 0 new, 0 gone. +1 test against wave 2c = `aTimerOrSettleWithALeadingZeroIsRefusedOutLoud`;
+the rule test's rename has no TSV row (it was new in wave 2c), and the new case has no skip path, so no `ci-*.tsv` row (D47).
+python test_gate_ports + test_lib_guards 24 OK (`py-gate-ports-guards.log`); `/bin/bash -n` of lib.sh and every gate clean.
+After the runs: ports 46640-46659 free, no `yes` and no lane java left, no `.gate-clones`, tree clean; scratch replay dirs deleted.
+
+| sha | what |
+|---|---|
+| b71424f2 | lib.sh: a leading zero in the timer or settle is refused (F4); header sentence fixed (F5); new contract case |
+| 61592546 | LibStopWhenReadyContractTest: first case timer 3 / settle 3 / under 5 s (B-1), 7.5 s bound (F3), stamps without start-ups (B-5) |
+| 72d9e45b | gate-m15 and gate-m16 declare `alone`; the GatesAllTest rule covers `check_kept_up` (F1) |
+| 3f307726 | `alone` in forbric-kernel/README.md, README.zh-CN.md, run/compat/PROTOCOL.md (F2/B-4) |
+| (this file) | record, B-2 and B-3 corrections |
+
+For the merger: files touched by the review fixes are run/lib.sh (guard + comment), run/gate-m15-forge-network.sh and
+run/gate-m16-forge-handshake.sh (header only), run/compat/gates-parallel.py and gates-all.sh (comments only), the two test classes,
+and the three docs. A sweep now runs three gates alone at its end (m12, m15, m16; each 35-60 s here).
 
 ## Open
 
@@ -164,4 +242,7 @@ assumption, no fixture: bash, python3 and the checked-in run/), so no `ci-*.tsv`
 | A real -j 4 sweep with m12 in it (needs a 40-port block; VERIFY run 2 has one) | VERIFY run 2 |
 | Other time-based checks not declared alone: await_server's 20 s "still alive after announcing its stop" (m19 went red at -j 7 once, per gates-parallel's comment); not red at -j 4 in VERIFY run 1 | watch (orchestrator) |
 | `build/sweep100-mac` link dangles in lane worktrees (main checkout has no such directory) | orchestrator |
-| Load from outside the sweep (VERIFY saw a Wine steam.exe at ~265 % CPU) still reaches m12; the scheduler cannot quiet it | owner / whoever runs VERIFY |
+| Load from outside the sweep (VERIFY saw a Wine steam.exe at ~265 % CPU) still reaches m12, m15 and m16; the scheduler cannot quiet it | owner / whoever runs VERIFY |
+| `# GATE-PARALLEL:` parsing ignores an unknown word, so a misspelt `alone` on a gate the rule does not cover would run in parallel unnoticed (review A, noted, not a wave 2c defect). Refusing unknown words needs a format for gate-m0's trailing prose "(builds and runs the unit suite)", which the parser skips silently today | orchestrator to assign (gates-parallel owner) |
+| m12's late-tick ceiling has no native baseline: "alone vs -j 4" fits "Forbric falls behind more readily than native NeoForge under CPU pressure" as well as "the ceiling measures neighbours"; telling them apart needs a native NeoForge server + client session under the same load (review A, out of scope) | orchestrator |
+| introduction.md and introduction.zh-CN.md still describe the GATE-PARALLEL line without `alone` (still true as written); add it when this reaches main (CLAUDE.md) | merger to main |
