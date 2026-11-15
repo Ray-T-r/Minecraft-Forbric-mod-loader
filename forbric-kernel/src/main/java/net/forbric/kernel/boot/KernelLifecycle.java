@@ -769,8 +769,9 @@ public final class KernelLifecycle {
 				// Fabric's registry freeze, as a server with fabric-api has it: after every main, the root still
 				// open. Only the Fabric injectors on BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter
 				// moved run here; the HEAD half now, the TAIL half once the window below is frozen. A client
-				// does both in onClientEntrypoints, after its client entrypoints, as Fabric does.
-				if (!side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
+				// does both in onClientEntrypoints, after its client entrypoints, as Fabric does. Not after a stage
+				// that threw: Fabric's startServer throws before its freeze.
+				if (!side.isClient() && !RegistrationStop.stopped()) fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
 			}
 		} finally {
 			rootRegistry(cl, false);
@@ -794,7 +795,8 @@ public final class KernelLifecycle {
 		try {
 			n = postRegisterEvents(cl, window);
 		} catch (Throwable t) {
-			throw RegistrationStop.propagate(RegistrationStop.stop(cl, t));
+			// A Fabric entrypoint stage's stop (the window's afterDispatch) leaves as it is; anything else is NeoForge's.
+			throw RegistrationStop.propagate(RegistrationStop.isStop(t) ? t : RegistrationStop.stop(cl, t));
 		}
 		// Not reached through the seam (the seam was not applied): the Fabric mains still run in this window, after NeoForge's.
 		window.runAfterDispatch();
@@ -821,8 +823,11 @@ public final class KernelLifecycle {
 			try {
 				afterDispatch.run();
 			} catch (Throwable t) {
-				Caught.warn(t, "[Forbric/Lifecycle] the Fabric main entrypoints did not finish in the registration window — "
-						+ "NeoForge's tail (attribute events, spawn placements, block entity blocks) still runs");
+				// A Fabric main or server entrypoint threw: native Fabric Loader's stage error takes the game down (D87); it
+				// leaves postRegisterEvents as it is, and dispatchRegisterEvents lets it through. It used to be a WARN, and
+				// NeoForge's tail and the rest of the boot carried on.
+				Caught.expected(t);
+				throw RegistrationStop.propagate(RegistrationStop.isStop(t) ? t : RegistrationStop.fabric(t));
 			}
 		}
 
@@ -2353,17 +2358,23 @@ public final class KernelLifecycle {
 			KernelFabricEcosystem.runMainEntrypoints();
 			KernelFabricEcosystem.runClientEntrypoints();
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] client entrypoints failed");
+			// A stage threw: native Fabric Loader's stage error leaves Minecraft.<init> for Main's handler, which writes the
+			// crash report and exits (D87). It used to be a WARN, and the client carried on.
+			Caught.expected(t);
+			throw RegistrationStop.propagate(RegistrationStop.isStop(t) ? t : RegistrationStop.fabric(t));
 		} finally {
 			// Fabric freezes here, after the main and client entrypoints: the Fabric injectors on
 			// BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter moved run around the freeze that closes
-			// this window — the HEAD half while it is still open, the TAIL half once it is frozen.
-			fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
-			if (reopened) closeClientEntrypointWindow(cl);
-			fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
-			// A CLIENT config registered from a Fabric client entrypoint missed the early pass entirely, and
-			// nothing else opens one. Reading it then throws rather than returning a default.
-			openLateConfigs(cl, Side.CLIENT, "the Fabric client entrypoints");
+			// this window — the HEAD half while it is still open, the TAIL half once it is frozen. Not after a stage
+			// that threw: Fabric's startClient throws before its freeze, and nothing of a mod runs after it.
+			if (!RegistrationStop.stopped()) {
+				fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
+				if (reopened) closeClientEntrypointWindow(cl);
+				fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
+				// A CLIENT config registered from a Fabric client entrypoint missed the early pass entirely, and
+				// nothing else opens one. Reading it then throws rather than returning a default.
+				openLateConfigs(cl, Side.CLIENT, "the Fabric client entrypoints");
+			}
 		}
 
 		// Step 3a, where a client whose mains run here declares it (driveNativeRegistration says why it waits).

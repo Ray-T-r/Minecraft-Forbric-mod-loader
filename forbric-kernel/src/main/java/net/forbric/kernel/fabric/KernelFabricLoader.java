@@ -552,13 +552,10 @@ public final class KernelFabricLoader implements FabricLoader {
 			try {
 				invoker.accept(container.getEntrypoint());
 			} catch (Throwable t) {
-				// Contract: run every entrypoint, then report. One bad mod must not silently skip the rest.
+				// Contract: run every entrypoint, then report. One bad mod must not silently skip the rest. Worded and
+				// gathered as FabricLoaderImpl.invokeEntrypoints does (the first failing mod named, later ones suppressed).
 				Caught.expected(t);
-				if (failure == null) {
-					failure = new RuntimeException("failed to invoke entrypoint '" + key + "'", t);
-				} else {
-					failure.addSuppressed(t);
-				}
+				failure = net.forbric.kernel.boot.KernelFabricEcosystem.gatherStageFailure(key, container, t, failure);
 			}
 		}
 

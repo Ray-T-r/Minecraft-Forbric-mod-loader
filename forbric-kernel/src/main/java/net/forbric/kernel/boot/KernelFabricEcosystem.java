@@ -1029,6 +1029,7 @@ public final class KernelFabricEcosystem {
 			for (int j = 0; j < due.size(); j++) places.add(new ArbitratedAwayDispatchers.Place(containers.size(), "unplaced"));
 		}
 		int count = 0;
+		RuntimeException failure = null;
 		for (int i = 0; i <= containers.size(); i++) {
 			for (int j = 0; j < due.size(); j++) {
 				if (places.get(j).before() != i) continue;
@@ -1038,13 +1039,22 @@ public final class KernelFabricEcosystem {
 				try {
 					dispatchOrphan(current, due.get(j), " " + where);
 				} catch (Throwable t) {
-					Caught.warn(t, "[Forbric/Fabric] could not dispatch the '%s' entrypoints of %s's losing build",
-							due.get(j).key(), due.get(j).library());
+					// What the losing build's own dispatch would have thrown from inside its entrypoint of this stage: natively
+					// that entrypoint fails, and with it the stage (gathered, as Fabric Loader gathers it).
+					Caught.expected(t);
+					ForbricLog.error("[Forbric/Fabric] the '%s' entrypoints of %s's losing build failed: %s", due.get(j).key(),
+							due.get(j).library(), t);
+					failure = gatherStageFailure(key, null, t, failure);
 				}
 			}
-			if (i < containers.size() && invokeOne(key, containers.get(i), action)) count++;
+			if (i < containers.size()) {
+				Throwable failed = invokeOne(key, containers.get(i), action);
+				if (failed == null) count++;
+				else failure = gatherStageFailure(key, containers.get(i), failed, failure);
+			}
 		}
 		KernelForeignShimContext.report();
+		if (failure != null) throw failure;
 		return count;
 	}
 
@@ -1092,8 +1102,11 @@ public final class KernelFabricEcosystem {
 	}
 
 	/**
-	 * Invokes one entrypoint key, isolating failures per mod: a mod whose {@code onInitialize} throws is reported
-	 * and skipped rather than aborting the remaining mods' initialization (and with them the whole server boot).
+	 * Invokes one entrypoint key as Fabric Loader's {@code FabricLoaderImpl.invokeEntrypoints} does: every entrypoint runs
+	 * even when an earlier one threw, then the stage throws {@code RuntimeException("Could not execute entrypoint stage '<key>'
+	 * due to errors, provided by '<mod>' at '<definition>'!")} with the first failure as its cause and every later one
+	 * suppressed (fabric-loader 0.18/0.19). Natively that takes the game down (D87, "stop like native"); the kernel used to
+	 * report each failure and carry on.
 	 */
 	public static <T> int invokeEntrypoints(String key, Class<T> type, java.util.function.Consumer<T> action) {
 		if (loader == null) return 0;
@@ -1103,15 +1116,44 @@ public final class KernelFabricEcosystem {
 	private static <T> int invokeEntrypoints(String key, List<EntrypointContainer<T>> containers,
 			java.util.function.Consumer<T> action) {
 		int count = 0;
-		for (EntrypointContainer<T> c : containers) if (invokeOne(key, c, action)) count++;
+		RuntimeException failure = null;
+		for (EntrypointContainer<T> c : containers) {
+			Throwable failed = invokeOne(key, c, action);
+			if (failed == null) count++;
+			else failure = gatherStageFailure(key, c, failed, failure);
+		}
 		KernelForeignShimContext.report();
+		if (failure != null) throw failure;
 		return count;
 	}
 
-	/** One entrypoint, its failure reported and kept to its mod. True when it ran to completion. */
-	private static <T> boolean invokeOne(String key, EntrypointContainer<T> c, java.util.function.Consumer<T> action) {
+	/**
+	 * Fabric Loader's {@code ExceptionUtil.gatherExceptions} for one failed entrypoint of stage {@code key}: the first failure
+	 * becomes the cause of the stage's {@code RuntimeException} (worded as {@code FabricLoaderImpl.invokeEntrypoints} words it,
+	 * naming the entrypoint's mod and definition), every later one is added to it as suppressed, once.
+	 */
+	public static RuntimeException gatherStageFailure(String key, EntrypointContainer<?> c, Throwable failed, RuntimeException previous) {
+		Throwable cause = failed;
+		while ((cause instanceof java.lang.reflect.InvocationTargetException || cause instanceof java.util.concurrent.ExecutionException
+				|| cause instanceof java.util.concurrent.CompletionException) && cause.getCause() != null) {
+			cause = cause.getCause();
+		}
+		if (previous == null) {
+			String id = c == null ? "?" : c.getProvider().getMetadata().getId();
+			String definition = c == null ? "" : c.getDefinition();
+			return new RuntimeException(String.format("Could not execute entrypoint stage '%s' due to errors, provided by '%s' at '%s'!",
+					key, id, definition), cause);
+		}
+		if (cause != previous) {
+			for (Throwable already : previous.getSuppressed()) if (cause.equals(already)) return previous;
+			previous.addSuppressed(cause);
+		}
+		return previous;
+	}
+
+	/** One entrypoint, its failure reported against its mod and handed back; null when it ran to completion. */
+	private static <T> Throwable invokeOne(String key, EntrypointContainer<T> c, java.util.function.Consumer<T> action) {
 		String id = c.getProvider().getMetadata().getId();
-		boolean ran = false;
 		try {
 			T entrypoint = c.getEntrypoint();
 			// With a NeoForge ModContainer active for THIS mod, because a Fabric mod can be holding the
@@ -1124,14 +1166,14 @@ public final class KernelFabricEcosystem {
 			// and the kernel's own boot classloader cannot see either of them.
 			KernelForeignShimContext.with(entrypoint.getClass().getClassLoader(), id,
 					() -> action.accept(entrypoint));
-			ran = true;
 			ForbricLog.info("[Forbric/Fabric] invoked %s entrypoint of %s", key, id);
 			reportSwallowedFailure(key, id, entrypoint);
+			return null;
 		} catch (Throwable t) {
 			Caught.error(t, "[Forbric/Fabric] %s entrypoint of %s failed", key, id);
 			ModCatalog.mark(id, ModCatalog.Status.FAILED, "its " + key + " entrypoint threw");
+			return t;
 		}
-		return ran;
 	}
 
 	/**

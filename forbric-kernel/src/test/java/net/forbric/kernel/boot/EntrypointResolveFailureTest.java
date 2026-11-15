@@ -56,8 +56,12 @@ class EntrypointResolveFailureTest {
 		loader.freeze();
 		ModCatalog.publish(List.of(entry("brokennet"), entry("healthy")));
 
-		assertEquals(1, invokeMain(loader), "the healthy mod still runs");
-		assertEquals(1, healthyRuns);
+		// Native Fabric Loader runs every entrypoint of the stage, then throws the stage's error naming the failing mod (D87);
+		// until D87 the kernel returned the healthy count (1) and carried on.
+		Exception stage = assertThrows(RuntimeException.class, () -> invokeMain(loader), "the stage fails, as on Fabric");
+		assertEquals("Could not execute entrypoint stage 'main' due to errors, provided by 'brokennet' at "
+				+ "'probe.CommonPacketsImpl::init'!", stage.getMessage());
+		assertEquals(1, healthyRuns, "the healthy mod still runs first");
 		assertEquals(List.of("brokennet"), ModCatalog.failures().stream().map(ModCatalog.Entry::modId).toList());
 		assertEquals("its main entrypoint threw", ModCatalog.failures().getFirst().statusDetail());
 		KernelLoadReport.writeTo(directory.resolve("load-report.txt"));

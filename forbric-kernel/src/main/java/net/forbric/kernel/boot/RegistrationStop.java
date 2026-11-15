@@ -191,6 +191,18 @@ public final class RegistrationStop {
 		return cause;
 	}
 
+	/**
+	 * Records a Fabric entrypoint stage's failure ({@code KernelFabricEcosystem}'s "Could not execute entrypoint stage …") as
+	 * this boot's stop, as it is: native Fabric Loader throws it from the stage and the game goes down on it — on a dedicated
+	 * server {@code Main} logs "Failed to start the minecraft server", on a client {@code Main}'s handler writes the crash
+	 * report — with no NeoForge mod-loading error around it (D87). The caller throws it.
+	 */
+	public static Throwable fabric(Throwable failure) {
+		ForbricLog.error("[Forbric/Fabric] %s — the boot stops here, as native Fabric Loader stops it", failure);
+		stopping = failure;
+		return failure;
+	}
+
 	/** Whether {@code t} is NeoForge's {@code ModLoadingException}, as {@code cl} defines it. */
 	static boolean isModLoadingException(ClassLoader cl, Throwable t) {
 		if (t == null) return false;
@@ -275,6 +287,8 @@ public final class RegistrationStop {
 	 * that call, so it does this for it; the caller rethrows {@code stop}. Never throws.
 	 */
 	static void asServerModLoaderDoes(ClassLoader cl, Throwable stop) {
+		// A Fabric entrypoint stage's stop (fabric) is not NeoForge's: native Fabric writes no mod-loading report for it.
+		if (!isModLoadingException(cl, stop)) return;
 		Class<?> serverModLoader = null;
 		try {
 			serverModLoader = Class.forName(ForeignType.SERVER_MOD_LOADER.binary(Ecosystem.NEOFORGE), true, cl);
