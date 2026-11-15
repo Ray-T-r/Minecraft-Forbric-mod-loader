@@ -119,13 +119,14 @@ Measured on the native-controls server image (the official installer's, APFS clo
   kernel names the mod and registry; NeoForge's error names "(forbricregisterstop) encountered an error while dispatching
   the …RegisterEvent event". Try also: "An uncaught parallel processing error has occurred".
   - tip (bf508b32's tree): GREEN, 63 PASS / 0 FAIL (`w2c/gates/m24-draft.out`, phase logs `m24-tip-logs/`).
-  - red control: the same gate on the 2c231c9c kernel (the red-unit clone): RED, 37 PASS / 24 FAIL
+  - red control: the same gate on the 2c231c9c kernel (the red-unit clone): RED, 37 PASS / 23 FAIL (22 of the 33 new
+    checks plus the harness line "server never announced a stop within 130s"; corrected from 24, see review fixes)
     (`w2c/gates/m24-red-2c231c9c.out`, logs `m24-red-logs/`): listener reached Done and created a world (killed after
     130 s, no stdin feeder in a stop phase), try rolled back, went on and died later on datapack registries, exit 0.
 
 ## Forbric runs of the canary (`w2c/forbric/`)
 
-- dedicated server, listener (`server-listener/`, tree c1c2a3ec + the uncommitted m24 edit): the same lines as native in
+- dedicated server, listener (`server-listener/`, tree fb80a318 + the uncommitted m24 edit; same kernel code as c1c2a3ec): the same lines as native in
   the same order, plus the kernel's two lines; crash-*-fml.txt "Mod loading issue for: forbricregisterstop" (same
   sections as native's); no world; exit 1. try and off: in the m24 run above.
 - client, listener (`client-listener/`, tree bf508b32): "Rolling back to VANILLA state", "Failed to wait for future
@@ -214,3 +215,134 @@ Measured on the native-controls server image (the official installer's, APFS clo
 5. (kernel, pre-existing) Forbric has no NeoForge early window, so the client's fatal error goes to NeoForge's tinyfd
    fallback; on this Mac tinyfd rejected NeoForge's text ("INVALID MESSAGE WITH QUOTES"). Native client not run (no native
    client image in the cache; preparing one was out of bounds).
+
+## K3c review fixes (2026-11-15; reviews A and B of 2c231c9c..576a20e7; evidence `~/Forbric-backups/stage4-notes/c5/k3c/w2c-review/`)
+
+Commits on `s4-c5-k3c` after 576a20e7: 6331e299 (B-4), 6b1d0213 (F1), 1e2edd48 + 078c0300 (F3, new gate-m24d), and this
+record. Nothing pushed; main untouched.
+
+| finding | verdict | what was done |
+|---|---|---|
+| A F1: the crash analysis names no mod after a registration stop | confirmed (all three Forbric reports and the native one) | fixed, 6b1d0213 |
+| A F2 / B-6: the client's fatal-error dialog shows no error | confirmed; needs a ruling | not changed (open item 5, sharpened below) |
+| A F3: no automated check of the client stop | confirmed | fixed, new gate-m24d (1e2edd48, 078c0300) |
+| A F4 / B-1: the m24 red-control count was 37/24 | confirmed: `m24-red-2c231c9c.out` has 37 PASS / 23 FAIL | corrected above and in checks.md (576a20e7's commit body keeps 24) |
+| A F5: every throw out of postRegisterEvents is reported as NeoForge's | partly refuted | no change (below) |
+| B-2: 576a20e7 also edits stage4-c5-k3.md, missing from the merger lists | confirmed | listed below and in handoff.md |
+| B-3: no D34 control for RegistrationStopGenuineCarrierTest | confirmed | control run here (red, below) |
+| B-4: RegistrationStop's fallback promise was false | confirmed | fixed, 6331e299 |
+| B-5: handoff.md had no -> RECORD and no HARN/ZH lines | confirmed | added to handoff.md |
+| B-7: tree hash, "same jar", untreed targeted3.log | confirmed | corrected above / below |
+| B-8: the ci-unstaged measurement does not name the skipped test | confirmed (low); the row is right | no change: review B reproduced the skip with an empty staged root; no ci-prepared row, like the sibling genuine-base tests (KernelServerDutiesGenuineBaseTest, KernelEventSubscribersGenuineBaseTest, also MC_LIBRARIES); no CI run confirms it |
+
+### F1 — the crash analysis reads NeoForge's mod-loading issues (6b1d0213)
+
+- Cause: `CrashAttribution.exceptionChain` reads only above the walkthrough divider. A NeoForge mod-loading crash report
+  (`CrashReportExtender.dumpModLoadingCrashReport`) has only `ModLoadingCrashException: Mod loading has failed` there; the mod
+  is in `-- Mod loading issue for: <id> --` (javap: "Mod loading issue", + " for: " + id when the issue has an affected mod).
+  A client's report (the game's Main, `CrashReport.forThrowable` of NeoForge's `ModLoadingException`) names it only in the
+  exception's issue lines, `\t- {name} ({id}) encountered an error …` (`ModLoadingException.appendIssue`, javap).
+- Fix: `suspects` also reads `modLoadingIssues(report)` — each `-- Mod loading issue[ for: <id>] --` section up to the next
+  section header; the header's id is a suspect ("NeoForge's mod-loading error names it", zh "NeoForge 的模组加载报错里点了它的名字"),
+  the section's details and trace go through the existing matchers — and, under a `Loading errors encountered:` line up to the
+  first frame or `Loading warnings encountered:`, the `(id)` of each `\t- ` issue line. Every id still has to be in the
+  catalogue. `-- Head --`, `-- System Details --` and the mod list stay unread.
+- Tests (CrashAttributionTest, +5, on the real K3c reports with hardware values and scratch paths redacted:
+  crash-2026-11-15_14.36.11-fml.txt server listener, crash-2026-11-15_14.52.06-fml.txt try, crash-2026-11-15_14.57.44-client.txt
+  client listener): the server issue section, the unattached issue through its trace (the mod's mixin handler), the client's
+  issue line, only issue sections of the walkthrough are read, an id in parentheses outside an issue line names nobody.
+- Red controls (APFS clone of the tip, one-line mutants, `w2c-review/red-unit/`): no issue sections → 2 red
+  (`neoForgesModLoadingIssueSectionNamesTheMod`, `anIssueNoModIsAttachedToIsReadThroughItsOwnTrace`); no issue lines → 1 red
+  (`aClientsModLoadingErrorNamesTheModInItsIssueLines`).
+- gate-m24: per stop phase, `crash-suspects.json` names forbricregisterstop first, and the log never says "No mod you
+  installed appears in this crash" (en or zh). Tip 67 PASS / 0 FAIL (63 + 4). Red on the tip with 576a20e7's
+  CrashAttribution: 63 PASS / 4 FAIL, exactly those four (`gates/m24-red-ca576a20e7.out`).
+- Limit (measured): on a client, a throw inside NeoForge's try (try mode) is NeoForge's "An uncaught parallel processing error
+  has occurred." The client's report carries only the cause's message (the issue's cause is not the exception's cause), so
+  nothing names the mod except free text; the analysis names nobody there (it never guesses ids from prose). The server's
+  report has the issue's trace and names it.
+
+### B-4 — the stop is NeoForge's ModLoadingException or the original failure (6331e299)
+
+- `nativeStop` handed on whatever `ModLoader.waitForTask` threw. Now only an instance of `net.neoforged.fml.ModLoadingException`
+  (as the game's loader defines it) is the stop; anything else is `Caught.warn` "NeoForge's ModLoader threw … instead of its
+  mod-loading error" and the boot stops on the original failure (unwrapped from reflection), as the javadoc says.
+- RegistrationStopTest (new, 2 tests, ASM-generated stand-ins for ModLoader and ModLoadingException): an NPE from waitForTask
+  is not the stop; a ModLoadingException is. Red on 576a20e7's nativeStop (mutant `if (built != null)`): 1 red.
+- B-3's control, rerun here on the new code: `bindModList` removed → RegistrationStopGenuineCarrierTest red (the stop is the
+  original aggregate RuntimeException now, not NeoForge's ModLoadingException); green with it (`red-unit/M4-no-bindModList.log`,
+  `red-unit/tip.log`: 32 tests, 0 failed).
+
+### F3 — gate-m24d, the client stop (1e2edd48, 078c0300)
+
+- `run/gate-m24d-registerstop-client.sh` (GATE-PARALLEL rundirs=client-registerstop mem=3000): a client with the register-stop
+  canary, the Fabric and NeoForge live canaries, explicit continue. listener and try phases: NeoForge's roll-back and "Failed
+  to wait for future Registry initialization, 1 errors found", the kernel's stop line, crash-*-client.txt with NeoForge's
+  `ModLoadingException`, the client exited 1 or sat in NeoForge's fatal-error report after its crash report and before any
+  sound engine (then stopped by the gate: TERM to the whole tree, so the JVM's shutdown hooks write the crash analysis, SIGKILL
+  after 15 s; on macOS the osascript message box is part of that tree), no "Sound engine started", no Fabric main, no freeze, no
+  saves/; the analysis names forbricregisterstop (listener) / blames neither healthy mod (try, see the limit above). Control
+  (=off): the canary ran, the Fabric main ran, the registries froze, the sound engine started, no roll-back, no crash report.
+- Tip (APFS clone equal to this tree's src and run): 32 PASS / 0 FAIL, CAUGHT none (`gates/m24d-final-tipclone.out`).
+- Red on the 2c231c9c kernel (tip scripts, 2c231c9c `src/main`): 10 PASS / 20 FAIL (`gates/m24d-final-red-2c231c9c.out`):
+  both clients booted on to the sound engine and created saves/; every stop check red except "the canary ran" (x2), "NeoForge's
+  error names the mod" and try's roll-back, which the old kernel also logged; the control green.
+- Red on the tip with 576a20e7's CrashAttribution: 31/1, exactly the listener analysis check (`gates/m24d-red-ca576a20e7.out`).
+- Two mistakes of the first draft, caught by its own red run and fixed in 078c0300: any client still running counted as
+  "held", and a crash report an earlier run left beside the log counted as this run's.
+- Each stop phase pops NeoForge's message box (osascript on macOS) on the desktop for ~10 s until the gate stops it.
+
+### F2 / B-6 — the client's dialog (not changed; ruling)
+
+- Confirmed again in every client stop here: the box reads "INVALID MESSAGE WITH QUOTES".
+- New evidence: NeoForge's `FatalErrorReporting.reportFatalError(String)` (javap) sets `java.awt.headless=false`, and if
+  `GraphicsEnvironment.isHeadless()` is false shows the text in Swing; else it replaces `"` and `'` with a backquote
+  (`bipush 34/39 → 96`) and calls tinyfd. Forbric's `MacAwtBootstrap` sets `java.awt.headless=true` in the game JVM on macOS
+  (pre-existing; keeps AWT's Cocoa loop off the GLFW thread), so the Swing path is never taken there. tinyfd then rejected the
+  text; that the backquote is what it rejects is inferred (the quotes are already gone), not read in tinyfd's source.
+  Windows/Linux not measured. No native client run (no native client image in the cache).
+- Options need a ruling: an early-window provider that shows NeoForge's issues, a kernel-side dialog (Forbric already forks
+  one for DependencyDialog) showing the issues, or letting NeoForge's Swing path run. The crash report and, after F1, the
+  crash analysis now name the mod.
+
+### F5 — partly refuted
+
+- The Fabric step cannot reach the stop: it runs in `RegisterEventsWindow.runAfterDispatch`, which catches its own Throwable
+  (`Caught.warn` "the Fabric main entrypoints did not finish in the registration window").
+- True: a throw in the kernel's own lookups before the call (`Class.forName(GameData)`, `getRegistrationOrder`) is described
+  as "NeoForge's GameData.postRegisterEvents threw …". Only a kernel defect gets there; stopping is right; no change.
+
+### B-7 — record details
+
+- The Forbric server-listener run was on fb80a318 (+ the m24 edit), corrected above.
+- "The same jar": the native runs (13:29–13:30, before the canary's commit 2e3b853f at 13:52) and the Forbric server run used
+  one jar, sha1 f688a998; the Forbric client run used a rebuild (960540f4); every gate run rebuilds it (the build is not
+  byte-reproducible). Review A's native run at 17:04 used the tip's own build (8b639b81, canary source unchanged since
+  2e3b853f): listener and try exit 1 with crash-*-fml.txt and no world, as the lane's.
+- `logs/targeted3.log` (13:52, "tip targeted 81/0") has no tree file; its count is not relied on (the suite and the gates are).
+
+### Results at 078c0300
+
+- Unit (targeted, `w2c-review/targeted1.log` before the commits; `red-unit/tip.log`): green.
+- Full suite at 1e2edd48 (pinned, plain --offline, `-Pforbric.requireFixtures=all jar cleanTest test --continue` through heavy.sh,
+  `w2c-review/suite.log`, XML `suite-xml/`): 5882 tests / 0 skipped / 5 failed, exactly the five names of failures-w2b.txt
+  (D58) — `w2c-review/failures-k3c-review.txt`. +7 against 5875: RegistrationStopTest 2, CrashAttributionTest 5. 078c0300 changes
+  only the gate script, which no test reads. No new skip, so no TSV row.
+- Gates (lane block 46900–46919): m24 67/0 (tip tree 1e2edd48), m24d 32/0 (clone of 078c0300), m24c 25/0 (078c0300; it plants a
+  crash-suspects.json, so it is the other gate the analysis reaches). Other gates do not read the crash analysis or reach the
+  changed code (they only check that no crash happened). run/compat unittest: 237 OK.
+
+### For the merger / other lanes (in addition to the list above)
+
+- Files: CrashAttribution.java, RegistrationStop.java; tests CrashAttributionTest (+3 resources under
+  `crash-attribution/`), new RegistrationStopTest; run/gate-m24-brokenmod.sh (+4 checks); new run/gate-m24d-registerstop-client.sh;
+  and 576a20e7's "Resolved later" note in stage4-c5-k3.md (lane K3's record; B-2).
+- VERIFY run 2: m24 = 67 checks; new gate m24d (client, 32 checks, client lock); suite 5882 on this base.
+- RECORD / release notes: a NeoForge mod failing in RegisterEvent now stops the game with NeoForge's error; Forbric's crash
+  analysis names the mod after any NeoForge mod-loading crash.
+
+### Open items (owner: orchestrator), updated
+
+Items 1–4 of the lane's list stand. Item 5 is F2 above (needs a ruling). New: 6. On a client, NeoForge's "uncaught parallel
+processing error" crash report carries no trace of the cause, so the analysis cannot name the mod for a throw inside the try
+(the server's report can).
