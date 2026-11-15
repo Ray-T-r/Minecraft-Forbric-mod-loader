@@ -408,7 +408,10 @@ declares itself in one line near its top:
 
 `rundirs` names what the gate owns while it runs — two gates naming the same one are never
 co-scheduled — and `mem` is what it costs. A gate WITHOUT that line runs alone, and the run
-says so in the progress log; a new gate is slow rather than silently unsound.
+says so in the progress log; a new gate is slow rather than silently unsound. A gate whose
+verdict is a timing adds the bare word `alone` (gate-m12's late-tick ceiling, and every gate
+that calls `check_kept_up`): a neighbour's CPU would read as the server falling behind, so it
+runs with no other gate, and `GatesAllTest` fails on such a gate that does not say `alone`.
 
 A gate that wants a shared fixture to itself declares `clone=<dir>:<ENV_VAR>` instead, and the
 scheduler points that variable at a private copy under `run/.gate-clones/`. Four gates want

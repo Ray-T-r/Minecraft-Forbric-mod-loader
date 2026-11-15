@@ -143,7 +143,10 @@ now names the port); `gate-m1`/`m2`/`m3` share `run/server-kernel` and `gate-m9`
 `run/client-merged-pack`; and every kernel JVM is launched without `-Xmx`, so each one inherits an ergonomic
 quarter-of-RAM ceiling. The scheduler hands every concurrent slot its own port block, never co-schedules gates
 that name the same rundir, and keeps the running set inside a memory budget. **A gate with no
-`# GATE-PARALLEL:` line runs alone** and the run says so on stderr — a new gate is slow, not silently broken.
+`# GATE-PARALLEL:` line runs alone** and the run says so on stderr — a new gate is slow, not silently broken. A
+gate whose verdict is a timing adds the bare word `alone` to its line and runs alone too: gate-m12's late-tick ceiling
+and `check_kept_up` (m12, m15, m16) count a neighbour's CPU as the server falling behind, and `GatesAllTest` fails on
+a gate that uses either without saying `alone`.
 
 Portable Windows baseline collection and the negative controls are described in
 [the compatibility protocol](run/compat/PROTOCOL.md).
