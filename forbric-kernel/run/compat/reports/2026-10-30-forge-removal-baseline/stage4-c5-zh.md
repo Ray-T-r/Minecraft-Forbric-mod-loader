@@ -39,7 +39,8 @@ vanilla arm (`VANILLA_JVM`), the installer and NFRT/link-check tools gate-m17 ru
 of gate-m58's old-kernel build. They are the reference arm or tools, not Forbric game JVMs. The kernel's own dependency-dialog
 child JVM (`DependencyDialogMain`, gate-m20) inherits the OS locale, not `-Duser.language` (DependencyDialog.fork forwards only
 `-Dforbric.dialogLanguage`, by design: a player's OS locale reaches the child). A `-Duser.language`-only sweep therefore shows
-that dialog in the host's language; adding `-Dforbric.dialogLanguage=zh` to the sweep's `FORBRIC_JVM` reaches it. Not changed.
+that dialog in the host's language; adding `-Dforbric.dialogLanguage=zh_cn` to the sweep's `FORBRIC_JVM` reaches it (`zh` does
+not: it names two tables and is ignored -- corrected in "ZH review fixes" below). Not changed.
 
 ## The check (`5a512c40`)
 
@@ -164,6 +165,84 @@ installed game and both old-install refusals print `Picked up JAVA_TOOL_OPTIONS:
 ## Open
 
 - The dependency-dialog child JVM follows the OS locale, not `-Duser.language` (above). Whether a zh sweep should also set
-  `-Dforbric.dialogLanguage=zh` is VERIFY's call (owner: orchestrator); no kernel change proposed.
+  `-Dforbric.dialogLanguage=zh_cn` (not `zh`; see "ZH review fixes") is VERIFY's call (owner: orchestrator); no kernel change
+  proposed.
 - Port blocks are 20 ports, i.e. two gates-parallel slots: `-j 4` from GATE_PORT=46660 runs into 46680+, and lane HARN's
   46640 block at `-j 4` runs into this one (owner: orchestrator / HARN).
+
+## ZH review fixes (2026-11-15; reviews `c5/review-zh-w2c-A.md`, `c5/review-zh-w2c-B.md`; evidence `c5/zh/w2c/review-fixes/`)
+
+Every finding was checked against the code and the reviewers' runs; all were confirmed, none refuted.
+
+**A1 / F2 (medium) -- fixed in `7ee8b048`.** The pinned launches (gate-m26's refusal prompt, gate-m29's boots 1 and 2) pinned
+`-Duser.language` only, but the finding `detail` they assert comes from `MetadataFailures.recordRefusal` ->
+`DialogLang.ofSystem()`, which reads `-Dforbric.dialogLanguage` before the locale. Since `53e5d1d9` hands these launches the
+caller's `FORBRIC_JVM`, a sweep carrying that switch rewrote the text: both reviewers measured it red at `b952f258` under
+`FORBRIC_JVM='-Duser.language=zh -Duser.country=CN -Dforbric.dialogLanguage=zh_cn'` (gate-m29 37/1 "en: the machine report",
+gate-m26 48/1 "the client report"; `review-zh-w2c-A/m2{6,9}-dialoglang-zh_cn/`, `review-zh-w2c-B/m29-dialoglang-zh_cn.log`).
+The three launches now pin both switches: en/en, en/en, zh/zh_cn. Under the same `FORBRIC_JVM` (the sweep below) gate-m26 is
+49/0 and gate-m29 38/0; boot 1's and m26's detail is English, boot 2's Chinese (`gates-zh-dl/pinned-reports/`).
+
+**A2 / F1 (medium) -- fixed (records here and in the notes).** `-Dforbric.dialogLanguage=zh` does nothing: `byTag("zh")` matches
+both `zh_cn` and `zh_tw` by prefix, returns null, and `ofSystem()` falls back to the locale (reviewer A's probe
+`review-zh-w2c-A/dialoglang-probe/out.txt`: `dialogLanguage=zh user.language=en -> en`; reviewer B's gate-m29 run with it stayed
+38/0 with English detail). The recipe is `-Dforbric.dialogLanguage=zh_cn`, and it needs `7ee8b048` or gate-m26/m29 go red. The
+check now refuses a dialogLanguage pin that names no table exactly (below). The kernel side -- a bare `zh` silently ignored,
+while `byTag`'s comment says "zh handled above" -- is not changed here (owner: orchestrator).
+
+**A3 / F3 (low) -- fixed in `7ee8b048`.** `test_gate_locale.py` now
+- requires the caller's value FIRST, not only present: the shell value must start with `${FORBRIC_JVM` / `$FORBRIC_JVM` (also
+  in `--env "FORBRIC_JVM=..."` and `JAVA_TOOL_OPTIONS`); Python must start with the caller's read (left of `+`, first of a
+  `' '.join([...])` or `filter(None, [...])`, first field of an f-string, through `.strip()`). This found
+  `native-controls.py`'s three Forbric-arm launches putting `java_args` (heap, headless, the control's root and token) before
+  the caller's value; they now follow it (`(env.get('FORBRIC_JVM', '') + ' ' + ' '.join(java_args)).strip()`).
+- keys `PINS` per launch: each logical line that pins a switch is one row of `name=value` pairs, in file order, so a pin added
+  to another launch of an already-listed gate is a mismatch, not covered by the gate's name;
+- requires each pinning launch to pin both `-Duser.language` and `-Dforbric.dialogLanguage`, the latter by an exact table tag
+  read from `DialogLang.java`.
+
+Red/green (`review-fixes/red-control/`): on the unfixed gates (`b952f258`'s gate files with the new check) 3 of 10 tests fail --
+native-controls' 3 orderings, the per-launch pins differ from `PINS`, 3 launches pin one switch. On a copy of the fixed tree,
+each control is red on exactly its rule and the tree is green: a pin added to m26's main launch (PINS mismatch -- reviewer B's
+F3 control, 8/8 OK before); m26's pin written before the caller (`244: not first: ...`); m26 pinning `user.language` only;
+m29 pinning `dialogLanguage=zh` ("DialogLang has no table zh"); gate-m1 given `-Dforbric.dialogLanguage=en` (reviewer B's F2
+control, 8/8 OK before: now "does not pin user.language"); native-controls restored ("not first"). Tip: 10/10;
+`run/compat` `unittest discover` 247 OK (245 + 2 new tests).
+
+**A4 (low) -- fixed in the evidence tool.** `analyse.py` dropped the sampler's `gate=?` rows. `review-fixes/analyse.py` lists them
+as an `(unattributed)` row and no longer counts JUnit JVMs or the JVMs tests fork as game JVMs. Re-run on the wave 2c sampler
+(`review-fixes/rerun-w2c-coverage/`): 4 unattributed, 3 of them `DependencyDialogMain` children forked by JUnit tests (junit temp
+dirs) and one game JVM, gate-m17's old launch (pid 80788), which `build/gate-m17-old-refused*.log` shows picked up
+`JAVA_TOOL_OPTIONS: -Duser.language=zh`. The sampler polls every 2 s, so the coverage statements here and above are of the JVMs
+it sampled; a JVM that lived less than a poll can be missing.
+
+**A5 (info) -- noted, not a defect.** VERIFY's en sweep ran `-j 4`, ZH's `-j 2`; "59 of 60 counts equal" says nothing about
+`-j 4` load. gate-m3's difference is the load-timing race VERIFY attributed (lane HARN's).
+
+**F4 (low) -- corrected.** "38 shell assignments" (b952f258's message, checks.md, the lane report) is 46 shell `FORBRIC_JVM=`
+assignments in 38 gate scripts (m12, m15, m16, m20, m58, m9 two each, m26 three; `git diff 2c231c9c 53e5d1d9`). This record
+and 53e5d1d9's message already said "38 gate scripts". The commit message is left as is; checks.md says so.
+
+**F5 (low) -- corrected.** "No java of the lane left" checked only JVMs with `s4c5-zh` in their arguments. Two Gradle daemons
+(pids 54516, 72348, started 13:40 and 13:50 during the wave 2c sweep by lib.sh `kernel_jar`'s daemon-mode `gradlew`) were
+were alive at 15:10 and 72348 still at 16:11 (54516 had exited); they hold files of several lanes' worktrees; they are shared, not killed, and exit on Gradle's idle timeout
+(owner: orchestrator / HARN). This round's end state: no JVM this lane started is running, 46660-46679 free.
+
+**F6 (very low) -- fixed in `7ee8b048`.** The docstring said "16 of 59"; it says "16 of 60" like the rest.
+
+### Re-runs at `7ee8b048`
+
+- Full suite (pinned harness, as above): **5873 tests / 0 skipped / 5 failed, the 5 failures-w2b names, 0 new, 0 gone**
+  (`review-fixes/suite/`). No Java test changed, so no TSV row (D47).
+- gates-all with `FORBRIC_JVM="-Duser.language=zh -Duser.country=CN -Dforbric.dialogLanguage=zh_cn"` (the recipe for VERIFY
+  run 2; `review-fixes/gates-all-zh-dl.sh`, same setup as above, `GATE_PORT=46660`, `-j 2`, m34 skipped; the sampler now also
+  records each JVM's last `-Dforbric.dialogLanguage`): **59 GREEN, gate-m0 RED only for D58** (3 of 5873 skipped; its tool
+  tests 66 ran OK), m34 SKIP, wall 53.2 min. Per-gate counts equal the wave 2c zh run's for all 60 gates (gates whose reach
+  changed: m26, m29 by the pins; m59, whose `native-controls.py swap --engine forbric` is one of the three reordered
+  launches -- all green, same counts; m21 and m57 only name native-controls in a comment or a path) and VERIFY's en run's for
+  59 (m3 as above). Coverage (`review-fixes/gates-zh-dl/coverage-by-gate.txt`): every sampled Forbric game JVM got
+  zh/zh_cn except the pinned m26 prompt and m29 boot 1 (en/en); gate-m17's installed game got both through
+  `JAVA_TOOL_OPTIONS` (its logs print them; the sampler's `JAVA_TOOL_OPTIONS` pattern missed the second); m20's
+  dependency-dialog child got `-Dforbric.dialogLanguage=zh_cn` forwarded and m26's prompt child `en`. The dialog's text is not
+  logged, so that it rendered Chinese is not measured beyond the forwarded switch and reviewer A's resolution probe. So a
+  sweep-wide `-Dforbric.dialogLanguage=zh_cn` turns no gate red at `7ee8b048`.
