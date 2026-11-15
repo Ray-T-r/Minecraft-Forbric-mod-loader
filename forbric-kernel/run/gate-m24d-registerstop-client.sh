@@ -51,11 +51,14 @@ stage() {
 
 # run_client <log> <mode> — boots the client with -Dforbric.registerstop=<mode> under explicit continue (the policy does
 # not decide a registration stop). Waits up to 240 s for a crash report or for the sound engine. After a crash report it
-# gives the client 10 s to leave on its own; a client still running then is stopped by the gate ("held" in $log.exit).
+# gives the client 10 s to leave on its own. A client still running then is stopped by the gate: "held" in $log.exit when
+# it wrote its crash report and never reached the sound engine (it is sitting in NeoForge's fatal-error report), "killed"
+# otherwise (it went on).
 run_client() {
-  local log="$1" mode="$2" pid i code report="" crashed=""
+  local log="$1" mode="$2" pid i code report="" crashed="" sound=""
   : > "$log"
-  rm -f "$log.exit" "$log.held"
+  # Every artifact of an earlier run goes first: a stale crash report or analysis beside the log would pass for this one.
+  rm -f "$log.exit" "$log.game" "$log.crash-client.txt" "$log.suspects.json"
   FORBRIC_COMPAT_POLICY=continue FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.registerstop=$mode" RUNDIR="$CLI" \
     "$KERNEL/run/launch-kernel-client.sh" > "$log" 2>&1 < /dev/null &
   pid=$!
@@ -68,7 +71,7 @@ run_client() {
     fi
     [ -n "$crashed" ] && [ $((i - crashed)) -ge 10 ] && break
     if grep -qa "Sound engine started" "$CLI/logs/latest.log" 2>/dev/null; then
-      echo "[kernel] client reached the sound engine after ~${i}s"; sleep 3; break
+      sound=$i; echo "[kernel] client reached the sound engine after ~${i}s"; sleep 3; break
     fi
     sleep 1
   done
@@ -77,7 +80,11 @@ run_client() {
     echo "[kernel] client still running; its children: $(pgrep -P "$pid" 2>/dev/null | xargs -I{} ps -o command= -p {} 2>/dev/null | cut -c1-160 | tr '\n' ' ')"
     stop_tree "$pid" 15
     wait "$pid" 2>/dev/null
-    code=held
+    if [ -n "$crashed" ] && [ -z "$sound" ] && ! grep -qa "Sound engine started" "$CLI/logs/latest.log" 2>/dev/null; then
+      code=held
+    else
+      code=killed
+    fi
   else
     wait "$pid"; code=$?
   fi
@@ -95,8 +102,8 @@ client_stop() { # client_stop <log> <mode>
   code=$(cat "$log.exit" 2>/dev/null)
   case "$code" in
     1)    echo "[kernel] PASS $mode: the client exited with status 1, as NeoForge's fatal-error report does" ;;
-    held) echo "[kernel] PASS $mode: the client was held in NeoForge's fatal-error report until the gate stopped it" ;;
-    *)    echo "[kernel] FAIL $mode: the client neither exited with status 1 nor waited in NeoForge's fatal-error report (exit: ${code:-none})"; FAIL=1 ;;
+    held) echo "[kernel] PASS $mode: the client sat in NeoForge's fatal-error report after its crash report until the gate stopped it" ;;
+    *)    echo "[kernel] FAIL $mode: the client neither exited with status 1 nor sat in NeoForge's fatal-error report (exit: ${code:-none})"; FAIL=1 ;;
   esac
   check "$mode: NeoForge rolled every registry back to vanilla"  "Rolling back to VANILLA state"   "$log"
   check "$mode: NeoForge's ModLoader ended its registry phase"   "Failed to wait for future Registry initialization, 1 errors found" "$log"
