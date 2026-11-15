@@ -86,6 +86,7 @@ import net.forbric.kernel.transform.InjectorExecution;
 @ExecutesInjector(FabricFreezePointInjector.class)
 class FabricFreezePointWindowTest {
 	private static final String LIFECYCLE = "net/forbric/kernel/boot/KernelLifecycle";
+	private static final String STOP = "net/forbric/kernel/boot/RegistrationStop";
 	private static final String SIDE = Type.getInternalName(Side.class);
 	private static final String HEAD_HOOK = FabricFreezePointInjector.HEAD_HOOK;
 	private static final String TAIL_HOOK = FabricFreezePointInjector.TAIL_HOOK;
@@ -205,6 +206,12 @@ class FabricFreezePointWindowTest {
 				"every path from the RegisterEvent dispatch to the end of registerNeoForgeContent reaches the TAIL half");
 		assertTrue(after.visited().containsAll(calls(window, "fabricFreezePoint")),
 				"a copy of a finally was never walked, so never checked");
+
+		// Once NeoForge's registration failed and the boot stops (RegistrationStop, D82), neither the window's close nor
+		// Fabric's TAIL half runs: natively NeoForge's freezeData never runs after its roll-back, and nothing of a mod does.
+		Walk stopping = walk(window, onlyCall(window, "dispatchRegisterEvents"), Set.of(CLOSE_WINDOW, TAIL), false, true, true);
+		assertEquals(Set.of(List.of(RETURN), List.of(THROW)), stopping.exits(),
+				"after a registration stop, no way out of registerNeoForgeContent closes the window or reaches the TAIL half");
 	}
 
 	/**
@@ -481,6 +488,15 @@ class FabricFreezePointWindowTest {
 	 */
 	private static Walk walk(MethodNode method, AbstractInsnNode from, Set<String> tracked, Boolean isClient,
 			boolean exceptions) {
+		return walk(method, from, tracked, isClient, exceptions, false);
+	}
+
+	/**
+	 * {@link #walk(MethodNode, AbstractInsnNode, Set, Boolean, boolean)} with a branch straight on
+	 * {@code RegistrationStop.stopped()} going the way {@code stopped} says: false for every boot that did not stop.
+	 */
+	private static Walk walk(MethodNode method, AbstractInsnNode from, Set<String> tracked, Boolean isClient,
+			boolean exceptions, boolean stopped) {
 		InsnList insns = method.instructions;
 		Set<List<String>> exits = new LinkedHashSet<>();
 		Set<AbstractInsnNode> visited = new HashSet<>();
@@ -522,6 +538,7 @@ class FabricFreezePointWindowTest {
 				if (!caught) exits.add(plus(steps, THROW));
 			} else if (insn instanceof JumpInsnNode jump) {
 				Boolean taken = guard(jump, isClient);
+				if (taken == null) taken = stopGuard(jump, stopped);
 				if (taken == null || taken) todo.push(new Object[] { jump.label, steps });
 				if (op != Opcodes.GOTO && (taken == null || !taken)) todo.push(new Object[] { insn.getNext(), steps });
 			} else if (insn instanceof TableSwitchInsnNode table) {
@@ -566,7 +583,17 @@ class FabricFreezePointWindowTest {
 		if (insn.getOpcode() == Opcodes.ATHROW || insn instanceof InvokeDynamicInsnNode) return true;
 		if (!(insn instanceof MethodInsnNode call)) return false;
 		if (SIDE.equals(call.owner) && "isClient".equals(call.name)) return false;
+		if (STOP.equals(call.owner) && "stopped".equals(call.name)) return false;
 		return !(LIFECYCLE.equals(call.owner) && "fabricFreezePoint".equals(call.name));
+	}
+
+	/** Whether a branch straight on {@code RegistrationStop.stopped()} is taken; null when it is not one. */
+	private static Boolean stopGuard(JumpInsnNode jump, boolean stopped) {
+		if (jump.getOpcode() != Opcodes.IFEQ && jump.getOpcode() != Opcodes.IFNE) return null;
+		if (!(previous(jump) instanceof MethodInsnNode call) || !STOP.equals(call.owner) || !"stopped".equals(call.name)) {
+			return null;
+		}
+		return jump.getOpcode() == Opcodes.IFNE ? stopped : !stopped;
 	}
 
 	/** Whether a branch straight on {@code side.isClient()} is taken; null when it is not one, or either way goes. */

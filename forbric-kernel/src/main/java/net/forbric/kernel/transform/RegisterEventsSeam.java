@@ -32,8 +32,9 @@ import org.objectweb.asm.tree.MethodNode;
  * <ul>
  *   <li>the per-registry {@code ModLoader.postEventWrapContainerInModOrder(event)} goes to
  *       {@code KernelLifecycle.onRegisterEvent}: the same delivery in mod order, priority phase by phase with the mod's
- *       container active, except that a mod whose listener throws costs that mod the registry and not every mod after it
- *       (NeoForge turns that throw into its loading-error screen, which the kernel does not have);</li>
+ *       container active, to the containers the kernel loaded (NeoForge's baseline joins {@code ModList} only after the
+ *       window); a mod whose listener throws ends the registry's dispatch with NeoForge's {@code ModLoadingException}, and
+ *       NeoForge's own catch, roll-back and the kernel's stop follow, as natively (D82);</li>
  *   <li>where the dispatch loop ends and the tail begins (the target of the {@code getSuppressed().length <= 0} test),
  *       {@code KernelLifecycle.onRegisterEventsDispatched} runs: the Fabric main entrypoints on a dedicated server, with the
  *       root open, as they ran between the kernel's own dispatch and its copy of the tail;</li>
@@ -77,16 +78,17 @@ public final class RegisterEventsSeam {
 		if (edit == null) {
 			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents is not the shape the kernel knows "
 					+ "(one ModLoader.postEventWrapContainerInModOrder call, then the getSuppressed() test before the tail) — "
-					+ "it runs exactly as NeoForge ships it: one mod's failing RegisterEvent listener rolls the registries back, "
-					+ "and the Fabric main entrypoints of a dedicated server run after its tail instead of before it");
+					+ "it runs exactly as NeoForge ships it: a failing RegisterEvent listener rolls the registries back and stops "
+					+ "the boot, as with the seam, and the Fabric main entrypoints of a dedicated server run after its tail "
+					+ "instead of before it");
 			return bytes;
 		}
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		applied = true;
 		ForbricLog.info("[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents posts RegisterEvent itself, every mixin on "
-				+ "it applied: its dispatch goes to each mod in order with a failing mod contained, the Fabric main entrypoints "
-				+ "run where its loop ends, and %d tail step(s) each report their own failure", edit.steps());
+				+ "it applied: its dispatch goes to each mod in order and a failing listener stops the boot as on NeoForge, the "
+				+ "Fabric main entrypoints run where its loop ends, and %d tail step(s) each report their own failure", edit.steps());
 		return writer.toByteArray();
 	}
 

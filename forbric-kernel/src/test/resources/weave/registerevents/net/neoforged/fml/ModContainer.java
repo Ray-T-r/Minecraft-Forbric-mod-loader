@@ -7,7 +7,8 @@ import net.neoforged.neoforge.registries.RegisterEvent;
 
 /**
  * Stand-in: a mod's container. Its "listener" registers at NORMAL and records which container NeoForge's context had
- * active; a container named "thrower" throws on the second registry, as a mod's failing listener does.
+ * active; with -Dfixture.registerevents.listenerThrows a container named "thrower" fails on the second registry, and
+ * acceptEvent rethrows that as NeoForge's does: a ModLoadingException naming the mod.
  */
 public class ModContainer {
 	private final String id;
@@ -28,7 +29,10 @@ public class ModContainer {
 		if (phase != EventPriority.NORMAL) return;
 		String what = event instanceof RegisterEvent register ? register.getRegistryKey() : event.getClass().getSimpleName();
 		ModContainer active = ModLoadingContext.get().getActiveContainer();
-		if (id.equals("thrower") && "b".equals(what)) throw new IllegalStateException("thrower's listener failed on b");
+		if (id.equals("thrower") && "b".equals(what) && Boolean.getBoolean("fixture.registerevents.listenerThrows")) {
+			throw new ModLoadingException(id + " encountered an error while dispatching " + event.getClass().getName(),
+					new IllegalStateException("thrower's listener failed on b"));
+		}
 		Trace.add(id + ":" + what + (active == this ? "" : "(not active)"));
 	}
 }

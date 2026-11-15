@@ -2,6 +2,7 @@ package fixture.registerevents;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
+import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -12,8 +13,9 @@ import net.neoforged.fml.ModList;
 
 /**
  * Boots the registration step the way the kernel's window does: NeoForge's baseline container and three NeoForge mods
- * published (one of them "thrower", whose listener fails on registry b), then the kernel's
- * {@code KernelLifecycle.dispatchRegisterEvents} with the Fabric mains stood in by one trace line. Returns the trace.
+ * published (one of them "thrower", whose listener can fail on registry b), then the kernel's
+ * {@code KernelLifecycle.dispatchRegisterEvents} with the Fabric mains stood in by one trace line. Returns the trace, after
+ * {@code posted=N} when the dispatch returned or {@code stopped=<exception>: <message>} when it threw.
  */
 public class Probe {
 	public String run() throws Exception {
@@ -38,7 +40,13 @@ public class Probe {
 		Method dispatch = lifecycle.getDeclaredMethod("dispatchRegisterEvents", ClassLoader.class, Runnable.class);
 		dispatch.setAccessible(true);
 		Runnable fabricMains = () -> Trace.add("kernel:fabric-mains");
-		int posted = (int) dispatch.invoke(null, Probe.class.getClassLoader(), fabricMains);
-		return "posted=" + posted + " " + String.join(",", Trace.LINES);
+		String outcome;
+		try {
+			outcome = "posted=" + dispatch.invoke(null, Probe.class.getClassLoader(), fabricMains);
+		} catch (InvocationTargetException stopped) {
+			Throwable stop = stopped.getCause();
+			outcome = "stopped=" + stop.getClass().getSimpleName() + ": " + stop.getMessage();
+		}
+		return outcome + " " + String.join(",", Trace.LINES);
 	}
 }

@@ -34,7 +34,7 @@ class AssertCompatTest {
 			[Forbric/Order] 2 Fabric mod(s) initialise in Fabric Loader's order, by mod id, as native Fabric orders them
 			[Render thread/INFO]: [Forbric/Fabric] invoked 2 Fabric main entrypoint(s) in the Minecraft.<init> window
 			[Forbric/DataPacks] served 2 datapacks
-			[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: its dispatch goes to each mod in order with a failing mod contained, the Fabric main entrypoints run where its loop ends, and 4 tail step(s) each report their own failure
+			[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: its dispatch goes to each mod in order and a failing listener stops the boot as on NeoForge, the Fabric main entrypoints run where its loop ends, and 4 tail step(s) each report their own failure
 			""";
 
 	private static final String SEAM_APPLIED = "postRegisterEvents carries the seam";

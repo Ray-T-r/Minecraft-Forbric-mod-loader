@@ -30,6 +30,9 @@ public final class KernelServerLaunch {
 
 	public static void main(String[] args) throws Throwable {
 		int code = CompatibilityLaunchBoundary.run(() -> KernelBoot.launch(KernelBoot.Side.SERVER, args));
+		// The game's Main logs a NeoForge mod-loading failure and returns; FML's Server.main then finds no server thread and
+		// exits with status 1, and so does this.
+		if (code == 0) code = RegistrationStop.serverExit();
 		if (code != 0) System.exit(code);
 	}
 }

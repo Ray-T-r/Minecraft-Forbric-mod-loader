@@ -108,7 +108,14 @@ public final class KernelLifecycle {
 	 * call, and a once-per-process guard for it went in Stage 4.
 	 */
 	public static void onServerModLoading(boolean dedicated) {
-		driveNativeRegistration(Side.DEDICATED_SERVER);
+		try {
+			driveNativeRegistration(Side.DEDICATED_SERVER);
+		} catch (Throwable t) {
+			// NeoForge's registration failed: what ServerModLoader.load does with its ModLoadingException before rethrowing
+			// it (the crash-*-fml.txt report), then Main's own handler ("Failed to start the minecraft server").
+			if (RegistrationStop.isStop(t)) RegistrationStop.asServerModLoaderDoes(gameLoader(), t);
+			throw RegistrationStop.propagate(t);
+		}
 	}
 
 	/**
@@ -118,6 +125,8 @@ public final class KernelLifecycle {
 	 * {@code client} entrypoints rather than {@code server} ones, driven by {@code KernelFabricLoader}'s env type.
 	 */
 	public static void onClientModLoading() {
+		// ClientModLoader.begin has no handler of its own: NeoForge's mod-loading error (RegistrationStop) leaves for Main's,
+		// which writes the crash report, shows NeoForge's fatal-error window and exits, as natively.
 		driveNativeRegistration(Side.CLIENT);
 	}
 
@@ -699,19 +708,23 @@ public final class KernelLifecycle {
 			// runs. The kernel used to post it itself and copy the method's tail, and a mod hooking the method was woven into
 			// a method nobody called: supermartijn642corelib fills its @RegistryEntryAcceptor fields from a mixin there, so
 			// packedup's menu type stayed null and its client died at startup ("Container screen registered with null menu
-			// type!"). RegisterEventsSeam meets the kernel's needs at the method's own call sites: each mod contained when its
-			// listener throws, the Fabric mains (runFabricMainsInTheWindow) where the dispatch loop ends, before NeoForge's
-			// tail, and each tail step reporting its own failure. dispatchRegisterEvents never throws, as
-			// KernelEventSubscribers.registerAll above does not: a LinkageError there must not skip the rest of the window.
+			// type!"). RegisterEventsSeam meets the kernel's needs at the method's own call sites: delivery to the containers
+			// the kernel loaded, the Fabric mains (runFabricMainsInTheWindow) where the dispatch loop ends, before NeoForge's
+			// tail, and each tail step reporting its own failure. What the method throws — a mod's failing listener, rolled
+			// back by NeoForge, or anything else — stops the boot as native NeoForge stops it (RegistrationStop, D82).
 			dispatchRegisterEvents(cl, () -> runFabricMainsInTheWindow(cl, side));
 			logRegisteredContent(cl);
 		} catch (Throwable t) {
+			// NeoForge's registration failed and the boot stops, as natively (D82): the stop leaves for the redirected
+			// ServerModLoader.load / ClientModLoader.begin call site.
+			if (RegistrationStop.isStop(t)) throw RegistrationStop.propagate(t);
 			Caught.warn(t, "[Forbric/Lifecycle] could not register ecosystem content");
 		} finally {
 			// Only when the window was actually opened: before unfreeze there is nothing to put back, and freezing
-			// a registry the kernel never opened would close one the caller still owns.
-			if (closeWindow) closeRegistrationWindow(cl);
-			if (!side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
+			// a registry the kernel never opened would close one the caller still owns. Neither after a stop: NeoForge's
+			// freezeData never runs after its roll-back, and nothing of a mod does (Fabric's TAIL half).
+			if (closeWindow && !RegistrationStop.stopped()) closeRegistrationWindow(cl);
+			if (!RegistrationStop.stopped() && !side.isClient()) fabricFreezePoint(cl, FabricFreezePointInjector.TAIL_HOOK);
 		}
 	}
 
@@ -748,55 +761,28 @@ public final class KernelLifecycle {
 
 	/**
 	 * {@code RegisterEvent} for every registry, by NeoForge's own {@code GameData.postRegisterEvents}, with
-	 * {@code afterDispatch} run once where its dispatch loop ends (or right after it, when the method never got there).
-	 * Never throws: a failure here must not skip the rest of the registration window. Returns how many registries it
-	 * posted for.
+	 * {@code afterDispatch} run once where its dispatch loop ends (or right after the method, when it never got there). Returns
+	 * how many registries it posted for.
+	 *
+	 * <p>Whatever the method throws stops the boot, as native NeoForge stops it (owner ruling D82): a mod's listener that
+	 * threw (NeoForge collected it, rolled every registry back to vanilla and threw before its tail) or anything else inside or
+	 * after its per-registry try. What leaves here is the {@code ModLoadingException} NeoForge's own {@code ModLoader} builds
+	 * for it ({@link RegistrationStop}); {@code afterDispatch} — the Fabric main entrypoints of a dedicated server — does not
+	 * run after it, as nothing of a mod runs after that roll-back natively.
 	 */
 	static int dispatchRegisterEvents(ClassLoader cl, Runnable afterDispatch) {
 		RegisterEventsWindow window = new RegisterEventsWindow(afterDispatch);
-		int n = 0;
+		int n;
 		try {
 			n = postRegisterEvents(cl, window);
 		} catch (Throwable t) {
-			// Either way every NeoForge mod is left without what it registers through RegisterEvent, so ERROR. When the throw
-			// is NeoForge's own roll-back — something inside its per-registry try threw (with the seam, never the kernel's
-			// delivery: a guest handler woven there, or the event's own construction), so it logged "Rolling back to VANILLA
-			// state", called RegistryManager.revertToVanilla() and threw before its tail — say so: native NeoForge stops at
-			// its loading-error screen here; the kernel has none and carries on.
-			Caught.error(t, "%s", registerEventFailure(t));
-		} finally {
-			// Not reached through the seam (NeoForge's method threw before its tail, or the seam was not applied): the
-			// Fabric mains still run in this window, after NeoForge's.
-			window.runAfterDispatch();
+			throw RegistrationStop.propagate(RegistrationStop.stop(cl, t));
 		}
+		// Not reached through the seam (the seam was not applied): the Fabric mains still run in this window, after NeoForge's.
+		window.runAfterDispatch();
 		ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent x%d on %d bus(es) [NeoForge baseline + %d mod(s)]",
 				n, window.containers(), Math.max(0, window.containers() - 1));
 		return n;
-	}
-
-	/** What {@link #dispatchRegisterEvents} reports when NeoForge's {@code postRegisterEvents} threw. */
-	static String registerEventFailure(Throwable t) {
-		if (!rolledBackToVanilla(t)) {
-			return "[Forbric/Lifecycle] could not fire RegisterEvent — mods that register content through DeferredRegister or "
-					+ "RegisterEvent will have none of it. The rest of the registration window below still runs";
-		}
-		StringBuilder causes = new StringBuilder();
-		for (Throwable cause : t.getSuppressed()) causes.append("\n  - ").append(cause);
-		return "[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents failed for " + t.getSuppressed().length
-				+ " registr(ies) and rolled EVERY registry back to vanilla (RegistryManager.revertToVanilla): no NeoForge mod has "
-				+ "any registered content, and its tail (attribute events, spawn placements, block entity blocks, creative-tab "
-				+ "sort, tooltip appenders) did not run. Native NeoForge stops at its loading-error screen here. Cause(s):" + causes;
-	}
-
-	/**
-	 * Whether {@code t} is the aggregate {@code GameData.postRegisterEvents} throws after its roll-back: the
-	 * {@code RuntimeException} it built itself (so its top frame is that method), carrying each registry's failure as a
-	 * suppressed exception.
-	 */
-	static boolean rolledBackToVanilla(Throwable t) {
-		StackTraceElement[] at = t.getStackTrace();
-		return t.getClass() == RuntimeException.class && t.getSuppressed().length > 0 && at.length > 0
-				&& at[0].getMethodName().equals("postRegisterEvents") && at[0].getClassName().endsWith(".GameData");
 	}
 
 	/** One registration window's call of {@code GameData.postRegisterEvents}: its after-dispatch step and its counts. */
@@ -873,8 +859,10 @@ public final class KernelLifecycle {
 	 * {@code GameData.postRegisterEvents}' {@code ModLoader.postEventWrapContainerInModOrder(event)}, rewritten by
 	 * {@code RegisterEventsSeam} to come here: the same delivery — priority phase by phase, each container in mod order with
 	 * itself the active container — to NeoForge's baseline and every NeoForge mod the kernel loaded, in {@code ModList}'s
-	 * order. A mod whose listener throws loses that registry, and every other mod still gets it: NeoForge turns the throw
-	 * into its loading-error screen, which the kernel does not have.
+	 * order. A mod whose listener throws ends the delivery there, as NeoForge's own fan-out ends it: its
+	 * {@code ModContainer.acceptEvent} rethrows the failure as a {@code ModLoadingException} naming the mod, and that leaves
+	 * here for {@code postRegisterEvents}' per-registry catch, which rolls every registry back and stops the boot (D82). It
+	 * used to cost that mod only the registry, every other mod still getting it, and the boot carried on.
 	 */
 	public static void onRegisterEvent(Object event) {
 		RegisterEventsWindow window = registerEventsWindow;
@@ -887,9 +875,8 @@ public final class KernelLifecycle {
 			key = "?";
 		}
 		String registry = key;
-		int delivered = deliverInModOrder(cl, event, true, id -> "[Forbric/Lifecycle] a NeoForge mod's RegisterEvent listener "
-				+ "failed on " + registry + " — " + id + "'s remaining content for it is skipped, every other mod and the "
-				+ "baseline still register");
+		int delivered = deliverInModOrder(cl, event, true, true, id -> "[Forbric/Lifecycle] a NeoForge mod's RegisterEvent "
+				+ "listener failed on " + registry + " — " + id + " ends that registry's dispatch, as on NeoForge");
 		if (window != null) {
 			synchronized (window) {
 				window.events++;
@@ -936,7 +923,7 @@ public final class KernelLifecycle {
 	 */
 	public static void onRegisterEventsModBusEvent(Object event) {
 		String name = event.getClass().getName();
-		deliverInModOrder(event.getClass().getClassLoader(), event, false, id -> "[Forbric/Lifecycle] " + id + " threw during "
+		deliverInModOrder(event.getClass().getClassLoader(), event, false, false, id -> "[Forbric/Lifecycle] " + id + " threw during "
 				+ name + " — its own registration from that event is lost, every other mod still gets it");
 	}
 
@@ -1714,13 +1701,15 @@ public final class KernelLifecycle {
 	}
 
 	/**
-	 * {@code ModLoader.postEventWrapContainerInModOrder} with each container contained: for every priority phase, every
-	 * container in turn — NeoForge's baseline first, then the NeoForge mods the kernel loaded in {@code ModList}'s order
-	 * (presence aliases have no listener of their own and are left out) — with that container active while it takes the
-	 * event when {@code activeContainer} is set, as NeoForge's wrap does. A container that throws is reported once and
-	 * skipped for the event's remaining phases. Returns how many containers took it.
+	 * {@code ModLoader.postEventWrapContainerInModOrder}'s delivery: for every priority phase, every container in turn —
+	 * NeoForge's baseline first, then the NeoForge mods the kernel loaded in {@code ModList}'s order (presence aliases have
+	 * no listener of their own and are left out) — with that container active while it takes the event when
+	 * {@code activeContainer} is set, as NeoForge's wrap does. With {@code stopAtFirstFailure}, as NeoForge's own fan-out,
+	 * the first container that throws ends the delivery and its failure (NeoForge's {@code ModLoadingException} naming the
+	 * mod) leaves here; otherwise a container that throws is reported once and skipped for the event's remaining phases.
+	 * Returns how many containers took it.
 	 */
-	private static int deliverInModOrder(ClassLoader cl, Object event, boolean activeContainer,
+	private static int deliverInModOrder(ClassLoader cl, Object event, boolean activeContainer, boolean stopAtFirstFailure,
 			java.util.function.Function<String, String> failure) {
 		java.util.Map<Object, String> ordered = new java.util.LinkedHashMap<>();
 		if (baselineContainer != null) ordered.put(baselineContainer, "neoforge");
@@ -1771,6 +1760,10 @@ public final class KernelLifecycle {
 					failed.add(e.getKey());
 					Throwable cause = perMod instanceof java.lang.reflect.InvocationTargetException ite && ite.getCause() != null
 							? ite.getCause() : perMod;
+					if (stopAtFirstFailure) {
+						ForbricLog.error("%s", failure.apply(e.getValue()));
+						throw RegistrationStop.propagate(cause);
+					}
 					Caught.warn(cause, failure.apply(e.getValue()));
 				}
 			}

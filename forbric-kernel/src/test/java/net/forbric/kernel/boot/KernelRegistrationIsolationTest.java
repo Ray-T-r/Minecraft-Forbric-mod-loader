@@ -43,27 +43,63 @@ class KernelRegistrationIsolationTest {
 	private static final Path CLASSES =
 			Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main").normalize();
 
+	/**
+	 * What NeoForge's {@code GameData.postRegisterEvents} throws stops the boot, as native NeoForge stops it (owner ruling D82):
+	 * the handler covering the reflective call hands the throw to {@code RegistrationStop.stop} and throws what it returns,
+	 * and does not cover the Fabric step after it, which a stop must skip; the window's outer catch lets the stop through
+	 * instead of reporting "could not register ecosystem content" and booting on.
+	 *
+	 * <p>This used to pin the opposite — the dispatch's failure stopping at dispatchRegisterEvents so the rest of the window
+	 * ran — which was the containment D82 retired: NeoForge rolls every registry back to vanilla on that throw, and the boot
+	 * carried on with every mod's content gone. RegisterEventsSeamWeaveTest drives the behaviour; this pins the shape.
+	 */
 	@Test
-	void theRegisterEventDispatchCannotTakeTheRestOfTheWindowWithIt() throws Exception {
-		// NeoForge's GameData.postRegisterEvents is called reflectively, so a LinkageError or NeoForge's own roll-back
-		// throw reaches dispatchRegisterEvents. It must stop there: the window's outer catch would skip the Fabric main
-		// entrypoints (run from the finally, if the seam never reached them), the content report and everything after.
-		// The handler that covers the call must NOT also cover the finally's Fabric step, or a failure takes it too.
+	void whatTheRegisterEventDispatchThrowsStopsTheBoot() throws Exception {
 		MethodNode dispatch = method("net/forbric/kernel/boot/KernelLifecycle", "dispatchRegisterEvents");
 		assertTrue(dispatch != null,
 				"KernelLifecycle.dispatchRegisterEvents not found in the compiled src/main classes, which exist before any "
 						+ "test runs");
 		assertTrue(caughtAndIsolatedFrom(dispatch, "postRegisterEvents", "runAfterDispatch"),
 				"postRegisterEvents must sit in a Throwable handler of its own that does not also cover the Fabric step");
+		assertTrue(handlerCallsThenThrows(dispatch, "postRegisterEvents", "stop"),
+				"the handler covering postRegisterEvents must hand the throw to RegistrationStop.stop and throw the stop");
 		MethodNode window = method("net/forbric/kernel/boot/KernelLifecycle", "registerNeoForgeContent");
 		assertTrue(window != null && indexOfCall(window, "dispatchRegisterEvents") >= 0,
 				"registerNeoForgeContent must dispatch RegisterEvent through dispatchRegisterEvents");
+		assertTrue(handlerCallsThenThrows(window, "dispatchRegisterEvents", "isStop"),
+				"registerNeoForgeContent's catch around the dispatch must let RegistrationStop's stop through");
+	}
+
+	/**
+	 * True when a Throwable handler covers {@code calleeName} and its code, up to its first {@code ATHROW}, calls a
+	 * {@code RegistrationStop} method named {@code stopCall}.
+	 */
+	private static boolean handlerCallsThenThrows(MethodNode method, String calleeName, String stopCall) {
+		int at = indexOfCall(method, calleeName);
+		if (at < 0) return false;
+		AbstractInsnNode[] body = method.instructions.toArray();
+		for (TryCatchBlockNode block : method.tryCatchBlocks) {
+			if (!"java/lang/Throwable".equals(block.type)) continue;
+			int start = method.instructions.indexOf(block.start);
+			int end = method.instructions.indexOf(block.end);
+			if (at <= start || at >= end) continue;
+			boolean called = false;
+			for (int i = method.instructions.indexOf(block.handler); i < body.length; i++) {
+				if (body[i] instanceof MethodInsnNode call && call.owner.equals("net/forbric/kernel/boot/RegistrationStop")
+						&& call.name.equals(stopCall)) called = true;
+				if (body[i].getOpcode() == org.objectweb.asm.Opcodes.ATHROW) {
+					if (called) return true;
+					break;
+				}
+			}
+		}
+		return false;
 	}
 
 	@Test
 	void theSiblingCallsThisWasModelledOnAreStillGuardedToo() {
-		// If registerAll ever loses ITS handler, the assertion above is still green while the same class of
-		// failure is back -- so the model is pinned as well as the copy.
+		// The kernel's own wiring of the mods' @EventBusSubscriber classes is not NeoForge's registration: a LinkageError
+		// there is the kernel's to report, and it must not skip the window, so it keeps a handler of its own.
 		MethodNode window = method("net/forbric/kernel/boot/KernelLifecycle", "registerNeoForgeContent");
 		assertTrue(window != null,
 				"KernelLifecycle.registerNeoForgeContent not found in the compiled src/main classes, which exist "
