@@ -165,8 +165,25 @@ public final class DialogLang {
 			if (named != null) return named;
 			DialogLang regional = ofBareLanguage(tag, Locale.getDefault());
 			if (regional != null) return regional;
+			DialogLang tagged = ofLocaleTag(tag);
+			if (tagged != null) return tagged;
 		}
 		return of(Locale.getDefault());
+	}
+
+	/**
+	 * A switch value that names a language with a region or script but no table of its own ({@code zh_hk},
+	 * {@code zh-Hant}, {@code en_gb}, {@code pt_pt}), resolved the way a locale of that tag is in {@link #of(Locale)}: so
+	 * {@code zh_hk} and {@code zh_hant} are {@code zh_tw}, {@code zh_sg} is {@code zh_cn}. {@code null} when the tag carries
+	 * no region or script, or its language has no table, which the system language then decides.
+	 */
+	static DialogLang ofLocaleTag(String tag) {
+		if (!tag.contains("_")) return null;
+		Locale locale = Locale.forLanguageTag(tag.replace('_', '-'));
+		String language = locale.getLanguage();
+		if (language.isEmpty()) return null;
+		DialogLang resolved = of(locale);
+		return resolved.tag.equals(language) || resolved.tag.startsWith(language + "_") ? resolved : null;
 	}
 
 	/**

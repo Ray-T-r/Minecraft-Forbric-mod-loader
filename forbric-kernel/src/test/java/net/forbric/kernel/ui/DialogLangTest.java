@@ -227,6 +227,42 @@ class DialogLangTest {
 		}
 	}
 
+	/**
+	 * A switch value with a region or script that names no table ({@code zh-HK}, {@code zh_hant}, {@code en_GB}) resolves
+	 * the way a locale of that tag does, instead of being ignored for the system's language. Red-checked on 1aecbbcd: every
+	 * such value answered the system's table (EN for zh-HK on an English system).
+	 */
+	@Test
+	@ResourceLock("system-properties")
+	@ResourceLock(Resources.LOCALE)
+	void aSwitchWithARegionOrScriptResolvesLikeThatLocale() {
+		String before = System.getProperty(DialogLang.SWITCH);
+		Locale locale = Locale.getDefault();
+		try {
+			Locale.setDefault(Locale.US);
+			for (String value : new String[] {"zh-HK", "zh_hk", "zh_hant", "zh-Hant-CN", "ZH_MO"}) {
+				System.setProperty(DialogLang.SWITCH, value);
+				assertSame(DialogLang.ZH_TW, DialogLang.ofSystem(), value + " on an English system");
+			}
+			for (String value : new String[] {"zh_sg", "zh-Hans", "zh-CN"}) {
+				System.setProperty(DialogLang.SWITCH, value);
+				assertSame(DialogLang.ZH_CN, DialogLang.ofSystem(), value + " on an English system");
+			}
+			Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
+			System.setProperty(DialogLang.SWITCH, "en_GB");
+			assertSame(DialogLang.EN, DialogLang.ofSystem(), "en_GB on a Chinese system is English, not the system's");
+			System.setProperty(DialogLang.SWITCH, "pt_PT");
+			assertSame(DialogLang.PT_BR, DialogLang.ofSystem(), "the one Portuguese table");
+			System.setProperty(DialogLang.SWITCH, "xx_YY");
+			assertSame(DialogLang.ZH_CN, DialogLang.ofSystem(), "a language with no table leaves the system's");
+			assertNull(DialogLang.ofLocaleTag("zh"), "a bare language is ofBareLanguage's");
+		} finally {
+			Locale.setDefault(locale);
+			if (before == null) System.clearProperty(DialogLang.SWITCH);
+			else System.setProperty(DialogLang.SWITCH, before);
+		}
+	}
+
 	@Test
 	void everyTableHasItsOwnTagAndItsOwnWords() {
 		Set<String> tags = new LinkedHashSet<>();
