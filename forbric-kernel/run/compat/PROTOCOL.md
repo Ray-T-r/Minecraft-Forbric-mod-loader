@@ -455,7 +455,7 @@ server calls the lost-port check; and a "never reached Done" exit calls it befor
 reads text, so it holds the call and that one shared exit, not every path through a gate.
 
 `FORBRIC_JVM` is how a whole sweep is pointed at something every game JVM must carry -- a locale
-(`FORBRIC_JVM="-Duser.language=zh -Duser.country=CN" run/compat/gates-all.sh` is the Chinese run), a
+(`FORBRIC_JVM="-Duser.language=zh -Duser.country=CN"`; no routine run uses one, see below), a
 debugging property, a switch a red control turns off. A gate that sets it for a launch keeps the
 caller's value first: `FORBRIC_JVM="${FORBRIC_JVM:-} -D..."` in the shell, `os.environ.get('FORBRIC_JVM',
 '') + ' -D...'` in Python, `JAVA_TOOL_OPTIONS="${FORBRIC_JVM:-} ..."` for a JVM started from a resolved
@@ -471,7 +471,7 @@ the locale) -- the second by a tag DialogLang has a table for: `zh` names two ta
 a sweep that wants the dialog in Chinese adds `-Dforbric.dialogLanguage=zh_cn`.
 
 Three things keep repeated sweeps cheap (2026-11-15; a development round had swept every gate five or six times,
-several of them on one tree, and a zh sweep is the whole sweep again):
+several of them on one tree), and nothing is run a second time in Chinese:
 
 - **Longest first.** With more than one slot, `gates-parallel.py` starts gates by their last measured duration,
   longest first: `run/compat/gate-durations.tsv` is the checked-in prior, and each run's own timings
@@ -485,10 +485,10 @@ several of them on one tree, and a zh sweep is the whole sweep again):
   ports and the scheduler's own knobs, and `java -version`. It lives in git's common directory and is shared by
   every worktree; `FORBRIC_GATE_CACHE=<dir>` moves it, `=0` or `--no-cache` turns it off, and `--release` never
   reads it. It cannot see a hand-edited fixture world: run `--no-cache` after changing one.
-- **The zh sweep is a subset.** Only the load report, merge report, crash attribution and DialogLang's dialogs follow
-  the language (lane ZH, 2026-11-15: a full zh sweep differed from en in no verdict). `--only-tag localized` runs the
-  gates marked `# GATE-TAGS: localized`; `python3 run/compat/test_gate_cache.py` fails on a gate that reads that
-  output without the tag, on a gate that runs test sources without `# GATE-CACHE: tests`, and on every way the
+- **No Chinese run** (D88). Only the load report, merge report, crash analysis and DialogLang's windows follow the
+  language (lane ZH, 2026-11-15: a full zh sweep differed from en in no verdict), and the unit suite asserts each of
+  them in zh_CN and English. `python3 run/compat/test_gate_cache.py` fails on a gate that runs test sources without
+  `# GATE-CACHE: tests`, on a fixture jar a gate stages from build/ outside the hashed roots, and on every way the
   cache key could miss a change it must see.
 
 `gates-all.sh` also builds the jar and resolves the boot classpath once and exports them as `FORBRIC_PREBUILT_JAR`,

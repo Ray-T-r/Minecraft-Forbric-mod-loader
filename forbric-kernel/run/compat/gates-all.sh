@@ -37,22 +37,17 @@ while [ "$#" -gt 0 ]; do
     --release) ARGS+=(--release); shift;;
     --only) [ "$#" -ge 2 ] || { echo '--only needs a gate name' >&2; exit 2; }
       ARGS+=(--only "$2"); shift 2;;
-    --only-tag) [ "$#" -ge 2 ] || { echo '--only-tag needs a tag' >&2; exit 2; }
-      ARGS+=(--only-tag "$2"); shift 2;;
     --no-cache) CACHE=0; shift;;
     --help)
       cat <<'USAGE'
 gates-all.sh [-j N|auto] [--mem-budget MB] [--skip gate-m12-multiplayer.sh] ... [--only gate-m9-client.sh] ...
-             [--only-tag localized] [--no-cache] [--release] [--list]
+             [--no-cache] [--release] [--list]
 
   -j N           run up to N gates at once (default: auto — one slot per ~2 GB of budget, capped by cores).
                  -j 1 reproduces the old strictly-sequential run.
   --mem-budget   MB the running gates may claim between them (default: ~55% of physical RAM).
   --skip         do not run this gate; it is reported SKIP.
   --only         run only this gate (repeatable); every other gate is SKIP (not selected).
-  --only-tag     run only the gates whose `# GATE-TAGS:` line has this tag. `--only-tag localized` is the zh
-                 sweep: the gates that read output that changes with the language (load report, merge report,
-                 crash attribution, dialogs). Every other gate's log is English in any locale.
   --no-cache     run every gate even when the same inputs already went GREEN (see the verdict cache below).
   --list         print the gate order and exit.
   --progress     also stream the running commentary to stderr.

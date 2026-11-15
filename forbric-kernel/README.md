@@ -148,7 +148,7 @@ gate whose verdict is a timing adds the bare word `alone` to its line and runs a
 and `check_kept_up` (m12, m16) count a neighbour's CPU as the server falling behind, and `GatesAllTest` fails on
 a gate that uses either without saying `alone`.
 
-Four things keep a sweep short (`gates-all.sh --help` has the switches, `run/compat/gate_cache.py` the reasoning):
+Four things keep verification short (`gates-all.sh --help` has the switches, `run/compat/gate_cache.py` the reasoning):
 
 - **Longest first.** With more than one slot the gates start in the order of their last measured duration,
   longest first (`run/compat/gate-durations.tsv` is the prior). In numerical order `gate-m58`, the longest gate,
@@ -160,9 +160,9 @@ Four things keep a sweep short (`gates-all.sh --help` has the switches, `run/com
   script, every jar under `run/` and the staged/game directories (by entry CRC, not timestamp), the inherited
   `FORBRIC_*`/`MC_*`/`JAVA_*` environment and the JVM. The cache is shared by all worktrees; `--release` never reads
   it; `--no-cache` turns it off, which you need after hand-editing a fixture world.
-- **The zh sweep is the localized subset.** Only the load report, merge report, crash attribution and dialogs
-  follow the language; every log line a gate asserts on is English in any locale. `--only-tag localized` runs the
-  gates that read that output (`# GATE-TAGS: localized`; `test_gate_cache.py` fails on a gate that reads it untagged).
+- **No Chinese run.** Only the load report, merge report, crash analysis and dialogs follow the language, and every
+  log line a gate asserts on is English in any locale. The unit suite forces zh_CN and English on each component that
+  reads the locale and asserts both texts, so neither the suite nor a sweep is run again in Chinese.
 
 Portable Windows baseline collection and the negative controls are described in
 [the compatibility protocol](run/compat/PROTOCOL.md).

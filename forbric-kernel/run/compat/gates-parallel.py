@@ -48,9 +48,8 @@ THE VERDICT CACHE (gate_cache.py). With --cache-dir, a gate whose inputs are byt
 is not run again: its RESULT says GREEN with `cached:` and the time of that run, and its log is the cached run's
 log, so a count of its [kernel] PASS lines still reads the real thing. --release never reads the cache.
 
-SELECTION. --only <gate> and --only-tag <tag> (a gate's `# GATE-TAGS:` line) run a subset; the rest are SKIP with
-the reason, which a --release run treats as any other skip. `--only-tag localized` is the zh sweep: the gates that
-read the load report, the merge report, a crash attribution or a dialog -- the only output that changes language.
+SELECTION. --only <gate> (repeatable) runs a subset; the rest are SKIP with the reason, which a --release run treats as
+any other skip.
 
 --release IS AN ACCEPTANCE, NOT A SWEEP. An ordinary sweep reports an explicit --skip as SKIP and a declared
 EXPECTED_RED as itself, and exits 0 when nothing else is red -- the right answer while developing. For a release
@@ -79,7 +78,6 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import gate_cache  # noqa: E402
 
 DURATIONS_PRIOR = Path(__file__).resolve().parent / "gate-durations.tsv"
-TAGS = re.compile(r"^#\s*GATE-TAGS:\s*(.*)$", re.M)
 
 # Port blocks are handed out one per CONCURRENT SLOT, not one per gate: slot i gets PORT_BASE + i*PORT_STRIDE.
 # A GATE_PORT already in the environment becomes the base, so `GATE_PORT=25599 gates-all.sh` still puts 25599 in
@@ -111,8 +109,6 @@ class Gate:
         self.mem = 0
         self.declared = False
         self.alone = False
-        t = TAGS.search(self.source)
-        self.tags: set[str] = set(t.group(1).split("(")[0].split()) if t else set()   # "(why)" is prose
         self._parse()
 
     def _parse(self) -> None:
@@ -256,7 +252,6 @@ def main() -> int:
     ap.add_argument("--progress", action="store_true",
                     help="mirror <results>/progress.log to stderr as the run goes")
     ap.add_argument("--only", action="append", default=[], help="run only this gate (repeatable)")
-    ap.add_argument("--only-tag", action="append", default=[], help="run only gates with this GATE-TAGS tag")
     ap.add_argument("--cache-dir", default=None,
                     help="verdict cache and duration history; without it nothing is cached")
     ap.add_argument("--release", action="store_true",
@@ -282,17 +277,12 @@ def main() -> int:
         if s not in known:
             print(f"Unknown --only gate: {s}", file=sys.stderr)
             return 2
-    all_tags = set().union(*(g.tags for g in gates))
-    for t in args.only_tag:
-        if t not in all_tags:
-            print(f"No gate has the tag {t!r} (tags: {' '.join(sorted(all_tags)) or 'none'})", file=sys.stderr)
-            return 2
     # Why each gate that will not run is not running, for its RESULT line.
     skip_reason = {s: "explicit --skip" for s in args.skip}
-    if args.only or args.only_tag:
-        wanted = " ".join([*(f"--only {n}" for n in args.only), *(f"--only-tag {t}" for t in args.only_tag)])
+    if args.only:
+        wanted = " ".join(f"--only {n}" for n in args.only)
         for g in gates:
-            if g.name not in args.only and not (g.tags & set(args.only_tag)) and g.name not in skip_reason:
+            if g.name not in args.only and g.name not in skip_reason:
                 skip_reason[g.name] = f"not selected by {wanted}"
 
     port_base = int(os.environ.get("GATE_PORT") or PORT_BASE)

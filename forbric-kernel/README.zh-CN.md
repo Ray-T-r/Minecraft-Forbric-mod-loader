@@ -86,12 +86,12 @@ RuntimeInteropPatcher}` + `run/{build-merged-base,assemble-*-runtime}.sh` 产出
 
 `rundirs` 写明它运行期间独占哪些目录（写了同一个名字的两个闸门从不一起运行），`mem` 是它占用的内存。`clone=<dir>:<VAR>` 则是申请共享夹具的一份私有副本：需要 `run/client-merged-pack` 的四个闸门各拿一份，在 APFS 上克隆那个 434 MB 的安装目录只要 0.17s，而且不占磁盘。之所以要有这一行，而不是直接用 `xargs -P`，是因为有三种冲突。第一，每个启动服务端的闸门都会把端口写进 `server.properties`，端口争抢的落败方会打印 `FAILED TO BIND TO PORT`，写一份崩溃报告，然后照样打印 `Stopping server`，于是干净关闭的断言通过，闸门改在 “Done” 那一条上变红，看起来像内核没能启动，而不是端口被占（`lib.sh` 的 `port_was_free` 现在会直接说出是哪个端口）。第二，`gate-m1`/`m2`/`m3` 共用 `run/server-kernel`，`gate-m9`/`m17`/`m22`/`m23`/`m27` 共用 `run/client-merged-pack`。第三，每个内核 JVM 启动时都不带 `-Xmx`，所以各自继承 JVM ergonomics 给出的“物理内存四分之一”上限。调度器给每个并发槽位分配独立的端口段，从不把写了同一个 rundir 的闸门排在一起，并把正在运行的集合控制在内存预算之内。**没有 `# GATE-PARALLEL:` 行的闸门会单独运行**，运行时也会在 stderr 上说明这一点。新闸门只会变慢，不会悄无声息地坏掉。判据本身是计时的闸门在这一行里再加一个不带值的 `alone`，同样单独运行：gate-m12 的迟到 tick 上限和 `check_kept_up`（m12、m16）会把旁边闸门占用的 CPU 算成服务端跟不上；用了其中任何一项却没写 `alone` 的闸门，`GatesAllTest` 会报红。
 
-有四件事让一次全量扫描变短（开关见 `gates-all.sh --help`，理由见 `run/compat/gate_cache.py`）：
+有四件事让验证变短（开关见 `gates-all.sh --help`，理由见 `run/compat/gate_cache.py`）：
 
 - **最长的先跑。** 槽位多于一个时，闸门按上次测得的耗时从长到短启动（先验值在 `run/compat/gate-durations.tsv`）。按编号顺序时，最长的 `gate-m58` 最后才启动，然后独自跑了十二分钟。
 - **一次扫描只构建一次。** `gates-all.sh` 只构建一次 jar、只解析一次启动类路径，交给每一次启动（`FORBRIC_PREBUILT_*`）；只要 jar 没变，启动器就跳过自己的两次 Gradle。
 - **判定缓存。** 输入与某次 GREEN 运行完全相同的闸门不再重跑，直接报 `GREEN (…; cached: …)` 并附上那次运行的日志。输入包括：仓库里所有非说明文字的文件、闸门自己的脚本、`run/` 与暂存/游戏目录下的每个 jar（按条目 CRC，不看时间戳）、继承的 `FORBRIC_*`/`MC_*`/`JAVA_*` 环境变量和 JVM。所有工作树共用这份缓存；`--release` 从不读它；`--no-cache` 关掉它——手改过夹具里的存档之后必须用。
-- **中文扫描只跑本地化子集。** 会随语言变化的只有加载报告、合并报告、崩溃归因和对话框；闸门断言的每一行日志在任何语言下都是英文。`--only-tag localized` 只跑读这些输出的闸门（`# GATE-TAGS: localized`；读了却没打标签的闸门会让 `test_gate_cache.py` 报红）。
+- **不再跑中文。** 会随语言变化的只有加载报告、合并报告、崩溃归因和对话框；闸门断言的每一行日志在任何语言下都是英文。普通单元测试会对每个读系统语言的组件分别强制 zh_CN 和英文并断言两种文字，所以单元测试和闸门扫描都不再用中文另跑一遍。
 
 可移植的 Windows 基线采集和负控制见[兼容性协议](run/compat/PROTOCOL.md)。
 

@@ -45,7 +45,6 @@
 # mixin configs registered are NeoForge's alone", "and not the refused canary's under another name" and "no crash
 # report". The control boot's six stay green: 16/22 in all.
 # GATE-PARALLEL: rundirs=server-forgecaps mem=1500
-# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

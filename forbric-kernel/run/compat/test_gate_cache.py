@@ -1,9 +1,9 @@
 """The verdict cache, the sweep's selection and its ordering (gate_cache.py, gates-parallel.py).
 
 The cache's whole risk is a stale GREEN, so most of these are "this change MUST re-run the gate" checks, each paired
-with the change that must NOT (otherwise the cache never hits and saves nothing). The last two classes hold the real
-gates to the declarations the sweep relies on: every gate that reads output which follows the language is in the zh
-subset, and every gate that runs test sources keys on them.
+with the change that must NOT (otherwise the cache never hits and saves nothing). The last class holds the real
+gates to the declarations the sweep relies on: every gate that runs test sources keys on them, and every fixture jar a
+gate stages from build/ is in a root the key hashes.
 """
 import importlib.util
 import os
@@ -173,7 +173,6 @@ class SweepTest(unittest.TestCase):
         self.ran = self.t.root / 'ran.txt'
         for n in (1, 2, 3):
             self.t.gate(f'gate-m{n}.sh', f'# GATE-PARALLEL: rundirs=server-{n} mem=10\n'
-                                         f'{"# GATE-TAGS: localized   (why)" if n == 2 else ""}\n'
                                          f'echo gate-m{n} >> "{self.ran}"\necho "[kernel] PASS m{n}"\n'
                                          f'exit ${{STUB_RC_M{n}:-0}}\n')
 
@@ -241,19 +240,13 @@ class SweepTest(unittest.TestCase):
         self.assertEqual(['gate-m1', 'gate-m2', 'gate-m3'], ran)
         self.assertNotIn('cached', r.stdout)
 
-    def test_only_tag_runs_the_tagged_gates_and_says_why_the_rest_did_not(self):
-        r, ran, _ = self.sweep('--only-tag', 'localized')
-        self.assertEqual(['gate-m2'], ran)
-        self.assertIn('RESULT gate-m1.sh SKIP (not selected by --only-tag localized)', r.stdout)
-        self.assertEqual(0, r.returncode)
-        r, _, _ = self.sweep('--only-tag', 'localized', '--release')
-        self.assertEqual(1, r.returncode, 'a release run that did not run every gate is not a passing run')
-        r, _, _ = self.sweep('--only-tag', 'nosuchtag')
-        self.assertEqual(2, r.returncode)
-
-    def test_only_runs_the_named_gate(self):
+    def test_only_runs_the_named_gate_and_says_why_the_rest_did_not(self):
         r, ran, _ = self.sweep('--only', 'gate-m3.sh', '--only', 'gate-m1.sh')
         self.assertEqual(['gate-m1', 'gate-m3'], ran)
+        self.assertIn('RESULT gate-m2.sh SKIP (not selected by --only gate-m3.sh --only gate-m1.sh)', r.stdout)
+        self.assertEqual(0, r.returncode)
+        r, _, _ = self.sweep('--only', 'gate-m1.sh', '--release')
+        self.assertEqual(1, r.returncode, 'a release run that did not run every gate is not a passing run')
         r, _, _ = self.sweep('--only', 'gate-m9.sh')
         self.assertEqual(2, r.returncode)
 
@@ -275,9 +268,6 @@ class SweepTest(unittest.TestCase):
                          'summary.txt stays in numerical order')
 
 
-# The output that follows the language (KernelLoadReport, MergeReport, CrashAttribution, DialogLang): a gate whose
-# code reads one of these is a gate the zh sweep (`gates-all --only-tag localized`) must run.
-LOCALIZED = re.compile(r'load-report|merge-report|crash-reports/|dialogLanguage|Forbric/Deps|DialogLang')
 RUNS_TESTS = re.compile(r'gradlew\b.*\b(cleanTest|test|transferTest|compileTransferTestJava)\b|unittest|src/test')
 COMMENT = re.compile(r'^[ \t]*#.*$', re.M)
 
@@ -286,13 +276,6 @@ class DeclarationTest(unittest.TestCase):
     def setUp(self):
         self.gates = scheduler.discover(RUN)
         self.assertGreater(len(self.gates), 40, 'the walk no longer sees the checked-in gates')
-
-    def test_every_gate_that_reads_localized_output_is_in_the_zh_sweep_and_only_those(self):
-        reads = {g.name for g in self.gates if LOCALIZED.search(COMMENT.sub('', g.source))}
-        tagged = {g.name for g in self.gates if 'localized' in g.tags}
-        self.assertEqual(sorted(reads - tagged), [],
-                         'these read a report or dialog that follows the language: add `# GATE-TAGS: localized`')
-        self.assertEqual(sorted(tagged - reads), [], 'tagged localized but reads no localized output')
 
     def test_every_gate_that_runs_test_sources_keys_on_them(self):
         runs = {g.name for g in self.gates if RUNS_TESTS.search(COMMENT.sub('', g.source))}

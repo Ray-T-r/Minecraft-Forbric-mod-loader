@@ -106,14 +106,23 @@ change makes a test skip there, or stop skipping, update that file in the same c
 
 A full round used to sweep every gate five or six times (each lane, its reviewers' replays, the merger, VERIFY in
 English, VERIFY in Chinese), several of them on the same tree, plus the unit suite in a single JVM each time. Most
-of that re-derived verdicts that were already known. The tools now skip that part; use them by tier:
+of that re-derived verdicts that were already known. The tools now skip that part, and nothing runs in Chinese any
+more (below); use them by tier:
 
 | Tier | Run | Why that is enough |
 | --- | --- | --- |
 | While changing code | the unit tests of the area, then `gates-all.sh --only <gate> ...` for the gates that exercise it | a red here is cheap to act on; the full sweep comes later anyway |
-| Before merging a lane | full unit suite, then `gates-all.sh -j 4` | the verdict cache re-runs only the gates whose inputs changed since the last GREEN on this machine, in any worktree |
-| After a merge / VERIFY | full unit suite in English and Chinese, `gates-all.sh -j 4`, then `gates-all.sh -j 4 --only-tag localized` with the zh `FORBRIC_JVM` | a sweep of a tip another tree already swept is answered from the cache; the zh sweep runs only the gates whose output changes with the language |
+| Before merging a lane | `gates-all.sh -j 4`, or the full unit suite alone when the lane sweeps no gate | gate-m0 runs the full unit suite inside the sweep (with the one opt-in fixture, and red on any skip), so a separate suite before it runs the same tests twice; the verdict cache re-runs only the gates whose inputs changed since the last GREEN on this machine, in any worktree |
+| After a merge / VERIFY | `gates-all.sh -j 4` | a sweep of a tip another tree already swept is answered from the cache |
 | Release acceptance | `gates-all.sh --release` (never cached, no skip allowed), plus the soak | an acceptance is a fresh measurement by definition |
+
+**No Chinese run.** Only four things change with the language -- the load report, the merge report, the crash
+analysis and DialogLang's windows (the dependency dialog, the compatibility confirmation, the crash-suspects offer, a
+refused mod's finding) -- and every log line a gate asserts on is English in any locale (lane ZH, 2026-11-15: a full
+zh sweep differed from the English one in no verdict). The normal unit suite forces zh_CN and English on each
+component that reads the locale and asserts both texts (KernelLoadReportTest, MergeReportTest, CrashAttributionTest,
+DisabledModsTest, MinecraftForgeRefusalTest, DialogLangTest, DependencyDialogTest), so there is no zh suite and no zh
+sweep. `FORBRIC_JVM` still reaches every gate's game JVMs (`test_gate_locale.py`), for any flag a run needs.
 
 A reviewer who wants to reproduce a lane's sweep rather than read it passes `--no-cache`, and so does anyone who
 changed a fixture *world* by hand (the cache keys on jars and sources, not on saves). A cached line says so:

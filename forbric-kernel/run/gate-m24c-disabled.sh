@@ -13,7 +13,6 @@
 # the offer is read before arbitration and that a server only logs it. The control has neither file and must load
 # the Fabric canary.
 # GATE-PARALLEL: rundirs=server-disabled mem=1500
-# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 

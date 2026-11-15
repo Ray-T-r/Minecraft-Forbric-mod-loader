@@ -20,8 +20,8 @@ GREEN, not a needless re-run:
     not timestamps. The canary builders re-zip their jars on every run, so a byte hash would never hit; the CRC of
     every entry is the content without the clock.
   * the environment a gate inherits (FORBRIC_*, MC_*, M<n>_*, JAVA_*, LANG/LC_*), minus the port knobs and the
-    scheduler's own knobs, which change per slot and per run and do not change what a gate proves. A zh sweep
-    therefore never reuses an en verdict: FORBRIC_JVM differs.
+    scheduler's own knobs, which change per slot and per run and do not change what a gate proves. A sweep handed
+    another FORBRIC_JVM (a locale, a switch) therefore never reuses a verdict measured without it.
   * `java -version` of the JVM the launchers will find, and the platform.
 
 TIMING GATES. A gate declared `alone` (its verdict is a timing: check_kept_up, gate-m12's late ticks) is cached like any

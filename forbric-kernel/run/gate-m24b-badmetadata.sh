@@ -14,7 +14,6 @@
 #                             Native Fabric loads it, so Forbric must too, as Fabric, with only a note.
 # Strict policy must stop the same pack before Done. A final clean control must start under strict.
 # GATE-PARALLEL: rundirs=server-badmetadata mem=1500
-# GATE-TAGS: localized   (reads the load report, a crash report or a dialog: output that follows the language; gates-all --only-tag localized is the zh sweep)
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
