@@ -471,7 +471,7 @@ the locale) -- the second by a tag DialogLang has a table for: `zh` names two ta
 a sweep that wants the dialog in Chinese adds `-Dforbric.dialogLanguage=zh_cn`.
 
 Three things keep repeated sweeps cheap (2026-11-15; a development round had swept every gate five or six times,
-several of them on one tree), and nothing is run a second time in Chinese:
+several of them on one tree), and a fourth keeps a sweep from being run twice: nothing is run a second time in Chinese.
 
 - **Longest first.** With more than one slot, `gates-parallel.py` starts gates by their last measured duration,
   longest first: `run/compat/gate-durations.tsv` is the checked-in prior, and each run's own timings
@@ -479,10 +479,17 @@ several of them on one tree), and nothing is run a second time in Chinese:
 - **The verdict cache** (`run/compat/gate_cache.py`). A gate whose inputs are identical to a run that went GREEN
   is reported `GREEN (exit=0; cached: same inputs went GREEN at <time>)`, and its log in the results directory is
   that run's log. The key is every non-prose file git sees (each gate keys on its own script and the gate scripts
-  it names, not the others'; test sources only for a gate that says `# GATE-CACHE: tests`), every jar under `run/`
-  outside the gates' own declared rundirs and under the staged and game directories (by entry name, CRC-32 and size,
-  so a re-zipped canary still hits), the inherited `FORBRIC_*`/`MC_*`/`M<n>_*`/`JAVA_*`/`LANG` environment minus
-  ports and the scheduler's own knobs, and `java -version`. It lives in git's common directory and is shared by
+  it names, not the others'; a gate that says `# GATE-CACHE: tests` also on the test sources, every gate script and
+  the prose outside `reports/`, which its tests read), every jar under `run/` outside the gates' own declared rundirs
+  and outside `run/canary/` (the canary builders' output; their sources, and the ones they compile from the staged
+  root, are keyed instead) and under the staged and game directories (by entry name, CRC-32 and size, so a re-zipped
+  jar still hits), the inherited `FORBRIC_*`/`MC_*`/`M<n>_*`/`JAVA_*`/`LANG` environment and the launchers'
+  unprefixed knobs (`BASE`, `NEO_RT`, `NATIVE_REF`, `VANILLA_JAR`, `VANILLA_JVM`, with the jars they name) minus
+  ports and the scheduler's own knobs, and `java -version` of the `java` the launchers start.
+  `python3 run/compat/test_gate_cache.py` fails on a gate that runs test sources without `# GATE-CACHE: tests`, on a
+  fixture jar a gate stages from build/ outside the hashed roots, on a canary a gate stages without building it, on
+  an environment variable a run/ script reads that the key does not, and on every way the key could miss a change it
+  must see; gate-m0 runs it, with test_control_arm.py. It lives in git's common directory and is shared by
   every worktree; `FORBRIC_GATE_CACHE=<dir>` moves it, `=0` or `--no-cache` turns it off, and `--release` never
   reads it. It cannot see a hand-edited fixture world: run `--no-cache` after changing one.
 - **Control arms are kept, not re-booted.** A run inside a gate whose inputs hold nothing of this tree -- gate-m31's
@@ -490,11 +497,10 @@ several of them on one tree), and nothing is run a second time in Chinese:
   input (beside the verdicts, so every worktree shares it), stored only after it passed its own checks, and booted
   again under `FORBRIC_GATE_FRESH=1` (`--release`, `--no-cache`) or `FORBRIC_GATE_CACHE=0`.
   `python3 run/compat/test_control_arm.py` holds the key, the fresh switches and the whole-or-nothing store.
-- **No Chinese run** (D88). Only the load report, merge report, crash analysis and DialogLang's windows follow the
-  language (lane ZH, 2026-11-15: a full zh sweep differed from en in no verdict), and the unit suite asserts each of
-  them in zh_CN and English. `python3 run/compat/test_gate_cache.py` fails on a gate that runs test sources without
-  `# GATE-CACHE: tests`, on a fixture jar a gate stages from build/ outside the hashed roots, and on every way the
-  cache key could miss a change it must see.
+- **No Chinese run** (D88). Only the load report, merge report, crash analysis, the disabled-mods file, DialogLang's
+  windows, findings and in-game compatibility screen, and the installer's two sentences follow the language (lane ZH,
+  2026-11-15: a full zh sweep differed from en in no verdict), and the unit suite asserts each of them in zh_CN and
+  English with the system locale deciding.
 
 `gates-all.sh` also builds the jar and resolves the boot classpath once and exports them as `FORBRIC_PREBUILT_JAR`,
 `FORBRIC_PREBUILT_DEPS` and `FORBRIC_PREBUILT_STAMP`; the launchers and `lib.sh` skip their own two Gradle runs

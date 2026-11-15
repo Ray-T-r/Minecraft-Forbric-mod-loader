@@ -266,16 +266,21 @@ step "6. the evidence, soak and link-gate tools' own tests"
 # These tools decide what a release is. Their tests used to run only by hand, so a regression in the recorder
 # or the link gate would have been found by the release it waved through. test_gate_locale holds every gate to
 # handing its game JVMs the caller's FORBRIC_JVM: without it a sweep run in another language tests the host's.
+# test_gate_cache and test_control_arm hold the verdict cache and lib.sh's control arms to what they must see: every
+# gate that runs tests keys on them, every fixture a gate stages is hashed, every environment knob a script reads is
+# in the key. They ran only under toolTest and CI before, so a sweep could reuse a stale GREEN they would have caught
+# (review OPT wave 2d, both lenses).
 TOOLLOG="$BUILD/gate-m0-tooling.log"
-if (cd "$KERNEL/run/compat" && python3 -m unittest -v test_evidence test_soak test_world_parity test_gate_locale) >"$TOOLLOG" 2>&1; then
+if (cd "$KERNEL/run/compat" && python3 -m unittest -v test_evidence test_soak test_world_parity test_gate_locale \
+      test_gate_cache test_control_arm) >"$TOOLLOG" 2>&1; then
   ran=$(grep -aoE '^Ran [0-9]+ tests?' "$TOOLLOG" | grep -oE '[0-9]+' | tail -1)
   if [ "${ran:-0}" -gt 0 ] && grep -aqE '^OK$' "$TOOLLOG"; then
-    echo "[kernel] PASS evidence and soak tool tests ($ran ran, none skipped)"
+    echo "[kernel] PASS evidence, soak, locale and cache tool tests ($ran ran, none skipped)"
   else
-    echo "[kernel] FAIL evidence and soak tool tests — ${ran:-0} ran, or some were skipped; see $TOOLLOG"; FAIL=1
+    echo "[kernel] FAIL evidence, soak, locale and cache tool tests — ${ran:-0} ran, or some were skipped; see $TOOLLOG"; FAIL=1
   fi
 else
-  echo "[kernel] FAIL evidence and soak tool tests — see $TOOLLOG"; FAIL=1
+  echo "[kernel] FAIL evidence, soak, locale and cache tool tests — see $TOOLLOG"; FAIL=1
 fi
 LINKTESTLOG="$BUILD/gate-m0-link-selftest.log"
 if bash "$KERNEL/../forbric-loader/run/test-link-check.sh" >"$LINKTESTLOG" 2>&1; then

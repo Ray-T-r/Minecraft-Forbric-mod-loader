@@ -62,8 +62,11 @@ The scheduler owns the ports: each concurrent slot gets its own block from 25700
 M28_PORT / M32_PORT are exported per gate from it. A GATE_PORT set in the environment moves where the blocks start
 instead, so two sweeps at once (two working trees) need two different GATE_PORTs.
 
-THE VERDICT CACHE. A gate whose inputs -- every non-prose file in the repository, its own script, every jar under
-run/ and the staged/game directories, the inherited FORBRIC_*/MC_*/JAVA_* environment, the JVM -- are identical
+THE VERDICT CACHE. A gate whose inputs -- every non-prose file in the repository, its own script (a gate that runs
+the tests: every gate script and the prose outside run/compat/reports/ too), every jar under run/ except the canaries
+the builders write in run/canary/ (their sources are in the repository and the staged root, and are keyed), every
+jar under the staged/game directories, the inherited FORBRIC_*/MC_*/JAVA_* environment and the launchers' BASE,
+NEO_RT, NATIVE_REF, VANILLA_JAR, VANILLA_JVM (with the jars they name), the JVM -- are identical
 to a run that went GREEN is not run again; its RESULT line says `cached:` and when, and its log is that run's log.
 The cache lives in git's common directory, so every worktree of this repository shares it (FORBRIC_GATE_CACHE=<dir>
 moves it, FORBRIC_GATE_CACHE=0 or --no-cache turns it off). --release never reads it. A hand-edited world in a

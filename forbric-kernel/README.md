@@ -157,8 +157,11 @@ Four things keep verification short (`gates-all.sh --help` has the switches, `ru
   launch (`FORBRIC_PREBUILT_*`); the launchers skip their own two Gradle runs while the jar is unchanged.
 - **A verdict cache.** A gate whose inputs are identical to a run that went GREEN is reported `GREEN (…; cached: …)`
   with that run's log instead of being run again. The inputs are every non-prose file in the repository, the gate's own
-  script, every jar under `run/` and the staged/game directories (by entry CRC, not timestamp), the inherited
-  `FORBRIC_*`/`MC_*`/`JAVA_*` environment and the JVM. The cache is shared by all worktrees; `--release` never reads
+  script (for a gate that runs the unit tests, every gate script and the prose outside `run/compat/reports/` too,
+  because the tests read them), every jar under the staged/game directories and under `run/` except `run/canary/`
+  (the canary builders' output, whose sources are keyed instead), by entry CRC, not timestamp, the inherited
+  `FORBRIC_*`/`MC_*`/`JAVA_*` environment, the launchers' `BASE`/`NEO_RT`/`NATIVE_REF`/`VANILLA_*` knobs and the
+  JVM. The cache is shared by all worktrees; `--release` never reads
   it; `--no-cache` turns it off, which you need after hand-editing a fixture world.
 - **No Chinese run.** Only the load report, merge report, crash analysis and dialogs follow the language, and every
   log line a gate asserts on is English in any locale. The unit suite forces zh_CN and English on each component that

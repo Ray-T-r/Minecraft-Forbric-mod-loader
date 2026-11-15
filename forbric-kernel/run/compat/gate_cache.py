@@ -13,15 +13,24 @@ GREEN, not a needless re-run:
     by content, EXCEPT prose that no gate executes: *.md, LICENSE/NOTICE, and run/compat/reports/. Other gates'
     gate-m*.sh scripts are left out of the common part and each gate adds its OWN script, plus any gate script it
     names (gate-m24b runs pieces of gate-m24, say). Editing gate-m12 re-runs gate-m12, not the 60 others.
-  * unit-test sources (src/test, src/transferTest, test_*.py) only for a gate that declares `# GATE-CACHE: tests`
-    (gate-m0 runs the unit suite); a test-only commit does not re-run boots that never load a test class.
-  * every *.jar under the run directory and the staged/game directories the launchers read (FORBRIC_OLD's run/,
-    MC_DIR, FORBRIC_FORGE_SWAP, FORBRIC_NEO_BUILDS), by the zip's central directory -- entry names, CRC-32s and sizes,
-    not timestamps. The canary builders re-zip their jars on every run, so a byte hash would never hit; the CRC of
-    every entry is the content without the clock.
-  * the environment a gate inherits (FORBRIC_*, MC_*, M<n>_*, JAVA_*, LANG/LC_*), minus the port knobs and the
-    scheduler's own knobs, which change per slot and per run and do not change what a gate proves. A sweep handed
-    another FORBRIC_JVM (a locale, a switch) therefore never reuses a verdict measured without it.
+  * for a gate that declares `# GATE-CACHE: tests` (gate-m0 runs the unit suite, gate-m39 the transfer suite): the
+    unit-test sources (src/test, src/transferTest, test_*.py), EVERY gate script and the prose outside
+    run/compat/reports/. Its tests read all of those -- GatesAllTest and test_gate_locale every gate, the contract tests
+    one gate each, CompatProtocolTest PROTOCOL.md -- so its verdict depends on them, and editing gate-m13 must re-run
+    gate-m0 as well as gate-m13 (review OPT wave 2d, lens A, B2). The records under reports/ stay out: no test such a
+    gate runs reads them (test_gate_cache.py holds that), and a record commit must not re-run the suite. A test-only
+    commit does not re-run boots that never load a test class.
+  * every *.jar under the run directory -- except run/canary/, which only the canary builders write, from sources this
+    key already holds -- and under the staged/game directories the launchers read (FORBRIC_OLD's run/, MC_DIR,
+    FORBRIC_FORGE_SWAP, FORBRIC_NEO_BUILDS, the build/ fixture sets), by the zip's central directory -- entry names,
+    CRC-32s and sizes, not timestamps, so a re-zipped jar with the same classes still hits -- and the canary sources
+    in the staged root (STAGED_CANARY_SOURCES), by content.
+  * the environment a gate inherits (FORBRIC_*, MC_*, M<n>_*, JAVA_*, LANG/LC_*, and the launchers' unprefixed knobs in
+    _ENV_INPUTS: BASE, NEO_RT, NATIVE_REF, VANILLA_JAR, VANILLA_JVM, ...), minus the port knobs and the scheduler's own
+    knobs, which change per slot and per run and do not change what a gate proves; a knob that names a jar (BASE,
+    NEO_RT, NATIVE_REF, VANILLA_JAR) adds that jar's content. A sweep handed another FORBRIC_JVM (a locale, a switch)
+    or another base therefore never reuses a verdict measured without it. test_gate_cache.py holds every variable a
+    run/ script reads from its environment to this list.
   * `java -version` of the JVM the launchers will find, and the platform.
 
 TIMING GATES. A gate declared `alone` (its verdict is a timing: check_kept_up, gate-m12's late ticks) is cached like any
@@ -52,16 +61,33 @@ import time
 import zipfile
 from pathlib import Path
 
-CACHE_VERSION = "4"   # 2: nested jars digested by their entries; 3: the launchers' java, build/ fixture roots;
-                      # 4: run/canary out, staged canary sources in
+CACHE_VERSION = "5"   # 2: nested jars digested by their entries; 3: the launchers' java, build/ fixture roots;
+                      # 4: run/canary out, staged canary sources in; 5: a tests gate keys every gate and the prose,
+                      # the launchers' unprefixed knobs keyed
 
 # Prose no gate executes. A path matching this is left out of every key.
 _PROSE = re.compile(r"(\.md$|(^|/)(LICENSE|NOTICE)$|^forbric-kernel/run/compat/reports/)")
+# The records: prose no test a `tests` gate runs reads either (test_gate_cache.py holds that), so even that gate leaves them out.
+_RECORDS = re.compile(r"^forbric-kernel/run/compat/reports/")
 _GATE_SCRIPT = re.compile(r"^forbric-kernel/run/(gate-m[^/]+\.sh)$")
 _TEST_SOURCE = re.compile(r"(^forbric-kernel/src/(test|transferTest)/|(^|/)test_[^/]+\.py$)")
 _NAMED_GATE = re.compile(r"gate-m[0-9]+[\w-]*\.sh")
 
 _ENV_KEEP = re.compile(r"^(FORBRIC_|MC_|M[0-9]+[A-Z]?_|JAVA_|LANG$|LC_|NATIVES_)")
+# What a launcher, lib.sh, old-kernel.sh, a gate or a canary builder reads from its environment without one of the
+# prefixes above (each as `${X:-default}` and never set by the script itself). BASE/NEO_RT/NATIVE_REF swap the game
+# base, the carrier and the vanilla reference (launch-kernel-*.sh, build-*.sh, gate-m26/m34/m39); MERGED/FORGE_RT are
+# the retired Forge-era names the launchers stop on; VANILLA_JAR/VANILLA_JVM are gate-m31's vanilla arm; STOP_READY_*
+# and OLD_BOOT_LIMIT are lib.sh's and old-kernel.sh's time limits. A GREEN measured on another base is no answer for
+# this one (review OPT wave 2d, lens A, M1).
+_ENV_INPUTS = frozenset({"BASE", "NEO_RT", "NATIVE_REF", "MERGED", "FORGE_RT", "VANILLA_JAR", "VANILLA_JVM",
+                         "STOP_READY_CAP", "STOP_READY_STALL", "OLD_BOOT_LIMIT"})
+# Of those, the ones that name a jar: its content joins the key too, wherever it lives.
+_ENV_JARS = ("BASE", "NEO_RT", "NATIVE_REF", "VANILLA_JAR")
+# Read from the environment but not an input: where a gate listens (GATE_PORT, dropped below with the other ports) and
+# writes (RUNDIR: every gate sets its own before it launches), and HOME (the directories it locates -- the game
+# directory, the forge-swap fixture -- are keyed by path and content in external_roots).
+_ENV_NOT_INPUT = frozenset({"GATE_PORT", "RUNDIR", "HOME"})
 # Per-slot and per-run scheduler knobs: they move where a gate listens and where it writes its log, not what it proves.
 # FORBRIC_PREBUILT_* is the sweep's own build of this same source (its stamp is an mtime, new on every build).
 _ENV_DROP = re.compile(r"(_PORT$|^GATE_PORT$|^FORBRIC_GATE_|^FORBRIC_CAUGHT_FILE$|^FORBRIC_PREBUILT_)")
@@ -93,12 +119,13 @@ class SourceDigest:
 
     def __init__(self, repo: Path):
         self.repo = repo
-        common, tests = hashlib.sha256(), hashlib.sha256()
+        common, tests, prose = hashlib.sha256(), hashlib.sha256(), hashlib.sha256()
         self.gate_scripts: dict[str, str] = {}
         self.files: dict[str, str] = {}   # every keyed file's digest, for saying what changed
         for rel in repo_files(repo):
-            if _PROSE.search(rel):
+            if _RECORDS.search(rel):
                 continue
+            is_prose = bool(_PROSE.search(rel))
             path = repo / rel
             try:
                 if path.is_symlink():
@@ -112,7 +139,9 @@ class SourceDigest:
             digest = _sha(rel.encode(), data)
             self.files[rel] = digest
             m = _GATE_SCRIPT.match(rel)
-            if m:
+            if is_prose:
+                prose.update(digest.encode())   # only a `tests` gate's key reads it
+            elif m:
                 self.gate_scripts[m.group(1)] = digest
             elif _TEST_SOURCE.search(rel):
                 tests.update(digest.encode())
@@ -120,6 +149,12 @@ class SourceDigest:
                 common.update(digest.encode())
         self.common = common.hexdigest()
         self.tests = tests.hexdigest()
+        self.prose = prose.hexdigest()
+
+    def suite_surface(self) -> str:
+        """What a `tests` gate's tests read beyond the common part: the test sources, every gate script and the prose."""
+        return _sha(self.tests.encode(), self.prose.encode(),
+                    *(f"{n}={d}".encode() for n, d in sorted(self.gate_scripts.items())))
 
 
 def _zip_digest(z: zipfile.ZipFile, depth: int = 0) -> str:
@@ -284,7 +319,7 @@ def env_lines(env: dict, repo: Path) -> list[str]:
     VERIFY each run from a different worktree, and FORBRIC_OLD=<their tree>/forbric-loader is the same input."""
     here = str(repo)
     return sorted(f"{k}={v.replace(here, '<repo>')}" for k, v in env.items()
-                  if _ENV_KEEP.search(k) and not _ENV_DROP.search(k))
+                  if (_ENV_KEEP.search(k) or k in _ENV_INPUTS) and not _ENV_DROP.search(k))
 
 
 def env_digest(env: dict, repo: Path) -> str:
@@ -315,6 +350,12 @@ class Cache:
             parts.append(str(root).replace(str(repo), "<repo>").encode())
             parts.append(jars.tree(root, {".gate-clones", "saves", "logs", "crash-reports"}, record=jar_rows).encode())
         env_rows = env_lines(env, repo)
+        for name in _ENV_JARS:   # a knob that names a jar: the jar's content, not just its path
+            target = Path(env.get(name) or "")
+            if env.get(name) and target.is_file():
+                digest = jars.jar(target)
+                parts.append(f"{name}:{digest}".encode())
+                jar_rows[f"${name}={str(target).replace(str(repo), '<repo>')}"] = digest
         java = _java_version(env)
         parts += [_sha("\n".join(env_rows).encode()).encode(), java.encode(), platform.platform().encode()]
         jars.save()
@@ -352,7 +393,7 @@ class Cache:
         for named in sorted(set(_NAMED_GATE.findall(source)) - {gate_name}):
             parts.append(f"{named}={self.sources.gate_scripts.get(named, '-')}".encode())
         if "tests" in gate_cache_flags(source):
-            parts.append(self.sources.tests.encode())
+            parts.append(self.sources.suite_surface().encode())
         return _sha(*parts)[:32]
 
     def _entry(self, gate_name: str, key: str) -> Path:

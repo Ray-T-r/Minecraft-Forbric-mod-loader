@@ -9,6 +9,7 @@ import importlib.util
 import os
 import re
 import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -23,6 +24,9 @@ _spec.loader.exec_module(scheduler)
 import gate_cache  # noqa: E402  (gates-parallel put COMPAT on sys.path)
 
 ENV = {'HOME': '/nonexistent', 'MC_DIR': '/nonexistent', 'PATH': os.environ.get('PATH', '')}
+# gate-m0 runs these tests inside a sweep, whose own knobs (FORBRIC_GATE_FRESH under --release, the cache dir) must not
+# reach the stub sweeps below.
+INHERITED = {k: v for k, v in os.environ.items() if not k.startswith('FORBRIC_GATE_')}
 
 
 def jar(path, entries, stamp=(2020, 1, 1, 0, 0, 0)):
@@ -93,6 +97,41 @@ class KeyTest(unittest.TestCase):
         before = self.t.key()
         self.t.gate('gate-m2.sh', '# GATE-PARALLEL: rundirs=server-b mem=100\nexit 3\n')
         self.assertNotEqual(before, self.t.key())
+
+    def test_a_gate_that_runs_the_tests_keys_every_gate_script_and_the_prose_but_not_the_records(self):
+        # gate-m0's suite reads every gate script (GatesAllTest, test_gate_locale, one contract test per gate) and
+        # PROTOCOL.md (CompatProtocolTest): editing gate-m1 or a README must re-run it. The records under reports/ are
+        # read by none of its tests, and a record commit must not re-run the suite (review OPT wave 2d, lens A, B2).
+        m2 = self.t.key('gate-m2.sh')
+        self.t.gate('gate-m1.sh', '# GATE-PARALLEL: rundirs=server-a mem=100\nexit 0 # a check renamed\n')
+        self.assertNotEqual(m2, self.t.key('gate-m2.sh'), "gate-m2 runs tests that read gate-m1's script")
+        m2 = self.t.key('gate-m2.sh')
+        m1 = self.t.key('gate-m1.sh')
+        (self.t.root / 'forbric-kernel' / 'README.md').write_text('other prose\n')
+        self.assertNotEqual(m2, self.t.key('gate-m2.sh'), 'a test may read the prose (CompatProtocolTest reads PROTOCOL.md)')
+        self.assertEqual(m1, self.t.key('gate-m1.sh'), 'a boot gate does not read it')
+        m2 = self.t.key('gate-m2.sh')
+        record = self.t.root / 'forbric-kernel' / 'run' / 'compat' / 'reports' / 'r' / 'stage.md'
+        record.parent.mkdir(parents=True)
+        record.write_text('a record\n')
+        self.assertEqual(m2, self.t.key('gate-m2.sh'), 'a record commit must not re-run the suite')
+        self.assertEqual(m1, self.t.key('gate-m1.sh'))
+
+    def test_the_launchers_unprefixed_knobs_and_the_jars_they_name_count(self):
+        # launch-kernel-*.sh take the game base, the carrier and the vanilla reference from BASE, NEO_RT and NATIVE_REF;
+        # gate-m31's vanilla arm from VANILLA_JAR / VANILLA_JVM. A GREEN measured on another base is no answer for this one.
+        outside = tempfile.TemporaryDirectory()   # another stage's base, outside this repository
+        self.addCleanup(outside.cleanup)
+        base = Path(outside.name) / 'other-base.jar'
+        jar(base, {'net/minecraft/A.class': b'one'})
+        for name in ('BASE', 'NEO_RT', 'NATIVE_REF', 'VANILLA_JAR'):
+            self.assertNotEqual(self.base, self.t.key(env={**ENV, name: str(base)}), name)
+        on_base = self.t.key(env={**ENV, 'BASE': str(base)})
+        jar(base, {'net/minecraft/A.class': b'two'})
+        self.assertNotEqual(on_base, self.t.key(env={**ENV, 'BASE': str(base)}), 'the jar BASE names is the input, not its path')
+        self.assertNotEqual(self.base, self.t.key(env={**ENV, 'NATIVE_REF': 'none'}), 'NATIVE_REF=none boots without one')
+        self.assertNotEqual(self.base, self.t.key(env={**ENV, 'VANILLA_JVM': '-Xmx1g'}))
+        self.assertEqual(self.base, self.t.key(env={**ENV, 'RUNDIR': '/somewhere/else'}), 'where a gate writes is not an input')
 
     def test_test_sources_only_matter_to_a_gate_that_declares_them(self):
         m2 = self.t.key('gate-m2.sh')
@@ -208,9 +247,9 @@ class SweepTest(unittest.TestCase):
     def sweep(self, *args, env=None, jobs='1'):
         out = self.t.root / 'out'
         self.ran.write_text('')
-        r = subprocess.run(['python3', str(COMPAT / 'gates-parallel.py'), '--run-dir', str(self.t.run),
+        r = subprocess.run([sys.executable, str(COMPAT / 'gates-parallel.py'), '--run-dir', str(self.t.run),
                             '--out-dir', str(out), '--jobs', jobs, '--cache-dir', str(self.t.root / 'cache'),
-                            *args], capture_output=True, text=True, env={**os.environ, **ENV, **(env or {})})
+                            *args], capture_output=True, text=True, env={**INHERITED, **ENV, **(env or {})})
         return r, self.ran.read_text().split(), out
 
     def test_a_green_gate_is_not_run_again_on_the_same_inputs(self):
@@ -334,6 +373,54 @@ class DeclarationTest(unittest.TestCase):
                 if not any(name.removesuffix('.jar') in builders.get(b, '') for b in runs):
                     missing.append(f'{g.name}: {name}')
         self.assertEqual(sorted(missing), [])
+
+    def test_every_variable_a_run_script_takes_from_its_environment_is_keyed_or_named_as_no_input(self):
+        # The key keeps the environment by prefix plus gate_cache._ENV_INPUTS. A script that reads an unprefixed knob
+        # (`${BASE:-default}`, never set by the script itself) and is in neither list would reuse a GREEN measured with
+        # another value of it (review OPT wave 2d, lens A, M1: BASE, NEO_RT, NATIVE_REF, VANILLA_JAR, VANILLA_JVM).
+        scripts = sorted([*RUN.glob('launch-*.sh'), RUN / 'lib.sh', RUN / 'old-kernel.sh', *RUN.glob('gate-m*.sh'),
+                          *RUN.glob('build-*.sh')])
+        default_read = re.compile(r'\$\{([A-Z_][A-Z0-9_]*):?[-=+?]')
+
+        def sets(code, v):
+            # an assignment of v other than its own default (V="${V:-...}"), a loop/read target, or a local
+            for m in re.finditer(r'(?:^|[\s;&|(!])(?:export\s+|local\s+(?:-\w+\s+)*|readonly\s+|declare\s+(?:-\w+\s+)*)?'
+                                 + v + r'\+?=(\S*)', code, re.M):
+                if not re.match(r'"?\$\{' + v + r':?[-=]', m.group(1)):
+                    return True
+            return bool(re.search(r'\b(?:for|read(?:\s+-\w+)*)\s+(?:\w+\s+)*' + v + r'\b', code)
+                        or re.search(r'\blocal\s+(?:-\w+\s+)*(?:\w+\s+)*' + v + r'\b', code))
+        sourced = ''.join(COMMENT.sub('', (RUN / n).read_text()) for n in ('lib.sh', 'old-kernel.sh'))
+        unkeyed = set()
+        for path in scripts:
+            code = COMMENT.sub('', path.read_text(errors='replace'))
+            for v in set(default_read.findall(code)):
+                if gate_cache._ENV_KEEP.search(v) or v in gate_cache._ENV_INPUTS or v in gate_cache._ENV_NOT_INPUT:
+                    continue
+                if sets(code, v) or (path.name.startswith('gate-') and sets(sourced, v)):
+                    continue
+                unkeyed.add(f'{path.name}: {v}')
+        self.assertEqual(sorted(unkeyed), [], 'add it to gate_cache._ENV_INPUTS, or to _ENV_NOT_INPUT with the reason')
+
+    def test_no_test_a_tests_gate_runs_reads_the_records(self):
+        # The records under run/compat/reports/ stay out of even a `tests` gate's key, so none of the tests it runs may
+        # read one: the kernel's unit and transfer sources, and the test_*.py modules the gate names.
+        sources = [*sorted((RUN.parent / 'src' / 'test').rglob('*.java')),
+                   *sorted((RUN.parent / 'src' / 'transferTest').rglob('*.java'))]
+        reads = re.compile(r'(?<![\w-])reports/|["\']reports["\']')
+        prose = re.compile(r'^\s*(#|//|\*|/\*)')   # comments say where things are; they read nothing
+        found = []
+        for g in self.gates:
+            if 'tests' not in gate_cache.gate_cache_flags(g.source):
+                continue
+            modules = set(re.findall(r'\b(test_[a-z0-9_]+)\b', COMMENT.sub('', g.source)))
+            for f in [*sources, *(COMPAT / f'{m}.py' for m in sorted(modules) if (COMPAT / f'{m}.py').is_file())]:
+                if f.name == 'test_gate_cache.py':
+                    continue   # this file: its records are a throwaway tree's
+                for line in f.read_text(errors='replace').splitlines():
+                    if not prose.match(line) and reads.search(line.replace('build/reports', '').replace('crash-reports', '')):
+                        found.append(f'{g.name}: {f.name}: {line.strip()[:80]}')
+        self.assertEqual(sorted(set(found)), [], 'a test that reads a record: drop _RECORDS from gate_cache.py')
 
     def test_the_duration_prior_names_only_real_gates(self):
         prior = scheduler.load_durations(None)
