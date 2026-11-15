@@ -31,7 +31,7 @@ else the host was doing as much as of the server. VERIFY run 1 of C5 had it red 
 next to gate-m0's unit suite and four server boots, green alone 5 of 5, and red alone in one of two runs under ten
 `yes` CPU hogs: the ceiling was measuring the scheduler's neighbours. Raising the ceiling would blind it to a server that really
 falls behind, so the gate keeps it and the scheduler gives it a quiet machine instead. What it cannot quiet is load
-from outside this sweep. The same holds for lib.sh's check_kept_up (vanilla's "Can't keep up!" while a player is on),
+from outside this sweep. The same holds for lib.sh's check_kept_up (vanilla's "Can't keep up!" from the client's dial on),
 which gate-m12 and gate-m16 call: side-by-side -j 5 batches had it red in two rounds of three on gate-m15 (whose checks
 gate-m16 now makes) and on m16 beside the full test suites, so those gates say `alone` too. GatesAllTest finds the gates that use either check and
 fails on one that does not say `alone`.
@@ -99,7 +99,9 @@ PORT_STRIDE = 10
 # run whose two occupants nobody can reproduce.
 PORT_VARS = ("GATE_PORT", "M12_PORT", "M13_PORT", "M14_PORT", "M16_PORT", "M28_PORT", "M32_PORT")
 
-DECL = re.compile(r"^#\s*GATE-PARALLEL:\s*(.*)$", re.M)
+# [ \t], not \s: with re.M a \s* runs over the end of an empty line, and the NEXT line was read as the declaration
+# (HARN2 review A-4: "# GATE-PARALLEL:" over "touch x" was the unknown word 'touch').
+DECL = re.compile(r"^#[ \t]*GATE-PARALLEL:[ \t]*(.*)$", re.M)
 # A comment on the declaration line: a `#` at its start or after whitespace, to the end of the line.
 COMMENT = re.compile(r"(?:^|\s)#")
 DECL_WORDS = ("rundirs", "clone", "mem", "alone")
@@ -129,6 +131,11 @@ class Gate:
         if len(found) > 1:
             raise SystemExit(f"{name}: {len(found)} '# GATE-PARALLEL:' lines; one gate has one declaration")
         body = COMMENT.split(found[0].group(1), maxsplit=1)[0]
+        if not body.split():
+            # HARN2 review A-4: an empty line, or one with only prose, was taken as a declaration of nothing -- no rundirs,
+            # 0 MB -- and the gate ran beside any other with nothing said. A gate that claims nothing says so: mem=0.
+            raise SystemExit(f"{name}: its GATE-PARALLEL line names nothing (it takes rundirs=<dir>[,<dir>...] "
+                             f"clone=<dir>:<ENV_VAR> mem=<MB> alone; prose goes after ' # ')")
         seen: set[str] = set()
         for field in body.split():
             key, eq, value = field.partition("=")
@@ -342,6 +349,9 @@ def main() -> int:
     alone = [g.name for g in gates if g.declared and g.alone and g.name not in skip_reason]
 
     out_dir.mkdir(parents=True, exist_ok=True)
+    # A summary is written only when the sweep finishes, so one left by an earlier sweep in the same directory would sit
+    # beside this one's progress.log as if it were its verdict (HARN2 review B-7; an interrupted sweep writes none).
+    (out_dir / "summary.txt").unlink(missing_ok=True)
     progress_file = (out_dir / "progress.log").open("w", encoding="utf-8", buffering=1)
 
     def say(line: str) -> None:

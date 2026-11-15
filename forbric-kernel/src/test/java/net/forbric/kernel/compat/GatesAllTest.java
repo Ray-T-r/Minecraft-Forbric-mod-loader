@@ -172,7 +172,7 @@ class GatesAllTest {
 	 * not a use.
 	 */
 	@Test void everyGateWhoseVerdictIsATimingIsDeclaredAlone() throws Exception {
-		var declaration = java.util.regex.Pattern.compile("(?m)^#\\s*GATE-PARALLEL:\\s*(.*)$");
+		var declaration = java.util.regex.Pattern.compile("(?m)^#[ \\t]*GATE-PARALLEL:[ \\t]*(.*)$");
 		var keptUp = java.util.regex.Pattern.compile("(?m)^\\s*check_kept_up\\s");
 		List<String> sampler = new java.util.ArrayList<>();
 		List<String> overload = new java.util.ArrayList<>();
@@ -210,7 +210,9 @@ class GatesAllTest {
 		String[][] wrong = {{"rundirs=a mem=10 alon", "unknown word 'alon'"}, {"rundir=a mem=10", "unknown word 'rundir=a'"},
 				{"rundirs=a mem=lots", "mem= wants a whole number"}, {"rundirs=a mem=10 alone=yes", "alone takes no value"},
 				{"rundirs=a rundirs=b mem=10", "rundirs given twice"}, {"rundirs=a mem=10 (prose without a hash)", "unknown word '(prose'"},
-				{"rundirs=a mem=10\n# GATE-PARALLEL: rundirs=b mem=10", "2 '# GATE-PARALLEL:' lines"}};
+				{"rundirs=a mem=10\n# GATE-PARALLEL: rundirs=b mem=10", "2 '# GATE-PARALLEL:' lines"},
+				// HARN2 review A-4: a line naming nothing was a declaration of nothing, run beside any other gate.
+				{"", "names nothing"}, {"# only prose here", "names nothing"}};
 		for (int i = 0; i < wrong.length; i++) {
 			Path gates = Files.createDirectory(temporary.resolve("wrong-gates-" + i));
 			Path ran = temporary.resolve("wrong-ran-" + i);
@@ -249,6 +251,10 @@ class GatesAllTest {
 		write(gates, "gate-m1.sh", "# GATE-PARALLEL: rundirs=a mem=10\n. \"" + lib + "\"\n"
 				+ "sh -c 'echo $$ > \"$1\"; while :; do sleep 0.1; done' sh \"" + pidFile + "\" &\nwait\n");
 		Path results = temporary.resolve("term-results");
+		// An earlier sweep's verdict in the same directory: an interrupted sweep must not leave it beside its own
+		// progress.log as if it were this one's (HARN2 review B-7; on 63e561cc it stayed).
+		Files.createDirectories(results);
+		Files.writeString(results.resolve("summary.txt"), "RESULT gate-m1.sh GREEN (exit=0)\n");
 		ProcessBuilder builder = new ProcessBuilder(List.of("bash", Path.of("run/compat/gates-all.sh").toAbsolutePath().toString(),
 				"-j", "2")).redirectErrorStream(true).redirectOutput(temporary.resolve("term-sweep.log").toFile());
 		builder.environment().put("FORBRIC_GATE_DIR", gates.toString());
@@ -269,6 +275,7 @@ class GatesAllTest {
 			assertTrue(gone, "the gate's process outlived the sweep's TERM: " + progress);
 			assertEquals(143, sweep.exitValue(), progress);
 			assertTrue(progress.contains("SIGTERM: stopping gate-m1.sh"), progress);
+			assertFalse(Files.exists(results.resolve("summary.txt")), "an earlier sweep's summary.txt outlived an interrupted one");
 			assertTrue(Files.readString(results.resolve("gate-m1.sh.log")).contains(" process(es) running at its exit; stopping them: "),
 					Files.readString(results.resolve("gate-m1.sh.log")));
 		} finally {

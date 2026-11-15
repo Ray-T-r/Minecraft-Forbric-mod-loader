@@ -12,8 +12,8 @@
 # gate written by someone who never read this is slow, not silently broken. A gate whose verdict is a timing adds
 # `alone` to its line (gate-m12's tick-lateness ceiling; every gate that calls check_kept_up): it then runs with no
 # other gate beside it, because a neighbour's CPU shows up in that measurement as the server falling behind.
-# Those four words (rundirs=, clone=, mem=, alone) are the whole vocabulary: any other word stops the sweep before a
-# gate runs, and prose goes after ` # ` on the same line.
+# Those four words (rundirs=, clone=, mem=, alone) are the whole vocabulary: any other word, or a line with none, stops
+# the sweep before a gate runs, and prose goes after ` # ` on the same line.
 #
 # `-j 1` is the old behaviour exactly: same order, same summary.txt, same exit code.
 set -euo pipefail
