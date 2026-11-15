@@ -29,7 +29,6 @@ import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
-import java.util.concurrent.atomic.AtomicReferenceArray;
 import java.util.function.Function;
 
 import net.forbric.kernel.util.Caught;
@@ -104,68 +103,72 @@ public final class NeoParallelDispatch {
 	/**
 	 * Runs {@code body} for every item and returns once all have finished.
 	 *
+	 * <p>Items may share an id (two {@code @Mod} classes of one mod): they run one after another in the given order, and a
+	 * mod waiting for that id waits for the last of them.
+	 *
 	 * @param executor where the bodies run; {@code null} runs them here, in order
-	 * @param items    the mods, in the order the phase walks them (dependency order); ids are unique
+	 * @param items    the mods, in the order the phase walks them (dependency order)
 	 * @param after    {@code after.get(x)}: the ids that must not start before {@code x} has finished
 	 *                 ({@link ModConstructionOrder#edges}); {@code null} runs the items one after another
 	 * @return what each item's body threw, or {@code null} when it completed, indexed like {@code items}
 	 */
 	public static <T> List<Throwable> run(Executor executor, List<T> items, Function<T, String> idOf,
 			Map<String, Set<String>> after, Body<T> body) {
-		AtomicReferenceArray<Throwable> failures = new AtomicReferenceArray<>(items.size());
-		if (executor == null) {
-			for (int i = 0; i < items.size(); i++) {
-				try {
-					body.run(items.get(i));
-				} catch (Throwable t) {
-					failures.set(i, t);
-				}
-			}
-			return list(failures);
-		}
-
+		// No pool: the same schedule on this thread. A task handed to a direct executor runs as it is scheduled, and
+		// everything it can wait for was scheduled, so has run, before it.
+		Executor where = executor != null ? executor : Runnable::run;
 		List<String> ids = new ArrayList<>(items.size());
 		for (T item : items) ids.add(idOf.apply(item));
 		Map<String, Set<String>> waits = after == null ? null : waitsFor(ids, after);
 
-		Map<String, CompletableFuture<Void>> started = new HashMap<>();
+		Map<String, CompletableFuture<Void>> latest = new HashMap<>();
 		List<CompletableFuture<Void>> all = new ArrayList<>(items.size());
 		CompletableFuture<Void> previous = CompletableFuture.completedFuture(null);
 		for (int i = 0; i < items.size(); i++) {
 			T item = items.get(i);
-			int index = i;
+			String id = ids.get(i);
 			List<CompletableFuture<Void>> before = new ArrayList<>();
 			if (waits == null) {
 				before.add(previous);
 			} else {
 				// Only mods already scheduled, i.e. listed earlier: an edge to a later one is a cycle's, and waiting
 				// for it would never end.
-				for (String id : waits.getOrDefault(ids.get(i), Set.of())) {
-					CompletableFuture<Void> dependency = started.get(id);
-					if (dependency != null) before.add(dependency);
+				for (String dependency : waits.getOrDefault(id, Set.of())) {
+					CompletableFuture<Void> done = latest.get(dependency);
+					if (done != null) before.add(done);
 				}
+				CompletableFuture<Void> sameMod = latest.get(id);
+				if (sameMod != null) before.add(sameMod);
 			}
+			// A failed dependency does not stop this one (handle, not then): what a failure means is the caller's.
+			// The body's own throw completes this task exceptionally; it is read back below, per item.
 			CompletableFuture<Void> task = CompletableFuture.allOf(before.toArray(new CompletableFuture[0]))
-					.handleAsync((ignored, never) -> {
+					.handleAsync((ignored, dependencyFailed) -> {
 						try {
 							body.run(item);
-						} catch (Throwable t) {
-							failures.set(index, t);
+						} catch (RuntimeException | Error unchecked) {
+							throw unchecked;
+						} catch (Throwable checked) {
+							throw new CompletionException(checked);
 						}
 						return null;
-					}, executor);
-			started.putIfAbsent(ids.get(i), task);
+					}, where);
+			latest.put(id, task);
 			all.add(task);
 			previous = task;
 		}
-		try {
-			CompletableFuture.allOf(all.toArray(new CompletableFuture[0])).join();
-		} catch (CompletionException infrastructure) {
-			// Not a mod's failure — every body's throw is caught above. The pool refused the work.
-			Throwable cause = infrastructure.getCause() != null ? infrastructure.getCause() : infrastructure;
-			throw cause instanceof RuntimeException runtime ? runtime : infrastructure;
+		CompletableFuture.allOf(all.toArray(new CompletableFuture[0])).handle((ignored, someFailed) -> null).join();
+
+		List<Throwable> failures = new ArrayList<>(items.size());
+		for (CompletableFuture<Void> task : all) {
+			Throwable failed = task.handle((ignored, thrown) -> thrown).join();
+			Throwable cause = failed instanceof CompletionException wrapped && wrapped.getCause() != null
+					? wrapped.getCause() : failed;
+			// Not a mod's failure: the pool refused the work.
+			if (cause instanceof java.util.concurrent.RejectedExecutionException refused) throw refused;
+			failures.add(cause);
 		}
-		return list(failures);
+		return failures;
 	}
 
 	/**
@@ -206,11 +209,5 @@ public final class NeoParallelDispatch {
 			waits.put(id, found);
 		}
 		return waits;
-	}
-
-	private static List<Throwable> list(AtomicReferenceArray<Throwable> failures) {
-		List<Throwable> out = new ArrayList<>(failures.length());
-		for (int i = 0; i < failures.length(); i++) out.add(failures.get(i));
-		return out;
 	}
 }

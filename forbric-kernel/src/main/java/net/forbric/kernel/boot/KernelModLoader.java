@@ -58,8 +58,6 @@ public final class KernelModLoader {
 	/** A constructed mod and the NeoForge {@code IEventBus} the caller fires {@code RegisterEvent} at. */
 	public record ConstructedMod(String modId, String className, Ecosystem family, Object bus) {}
 
-	/** What a {@code @Mod} constructor threw on its worker, handed back to the construction loop. */
-	private record ConstructionFailure(Throwable cause) {}
 
 	/**
 	 * A NeoForge mod's identity: ONE bus and ONE {@code ModContainer} per mod id, shared by every {@code @Mod} class
@@ -251,9 +249,8 @@ public final class KernelModLoader {
 		// NeoForge mod ids at least one of whose @Mod constructors threw, with the classes that threw. Kept apart
 		// from otherSide because one id can be in both: see settleNeo.
 		Map<String, List<String>> failedNeo = new LinkedHashMap<>();
-		// The classes to construct here, grouped by mod: one container per mod, so one task per mod constructing its
-		// classes in order, as FMLModContainer.constructMod does.
-		Map<String, List<Integer>> byMod = new LinkedHashMap<>();
+		// The classes to construct here, in the claimed order.
+		List<Integer> here = new ArrayList<>();
 		for (int i = 0; i < claimed.size(); i++) {
 			ModAnnotationScanner.ModClassInfo info = claimed.get(i);
 			// Every claimed @Mod is NeoForge's: the scanner records no MinecraftForge @Mod (Forbric no longer loads them).
@@ -267,35 +264,28 @@ public final class KernelModLoader {
 						info.dists, side.distName());
 				continue;
 			}
-			byMod.computeIfAbsent(safeId(info), id -> new ArrayList<>()).add(i);
+			here.add(i);
 		}
-		// Each mod on NeoForge's own modloading-worker pool, as soon as the mods it waits for are constructed, the way
-		// ModLoader.constructMods runs them (NeoParallelDispatch). It ran on the caller's thread, one mod after another:
-		// main on a server, the render thread on a client.
-		java.util.concurrent.atomic.AtomicReferenceArray<Object> outcome =
+		// Each on NeoForge's own modloading-worker pool, as soon as the mods it waits for are constructed, the way
+		// ModLoader.constructMods runs them (NeoParallelDispatch); one mod's classes one after another, as
+		// FMLModContainer.constructMod constructs them. It ran on the caller's thread, one mod after another: main on a
+		// server, the render thread on a client.
+		java.util.concurrent.atomic.AtomicReferenceArray<ConstructedMod> constructed =
 				new java.util.concurrent.atomic.AtomicReferenceArray<>(claimed.size());
 		final List<ModAnnotationScanner.ModClassInfo> toConstruct = claimed;
-		NeoParallelDispatch.run(NeoParallelDispatch.parallelExecutor(cl), new ArrayList<>(byMod.entrySet()),
-				Map.Entry::getKey, dependencyAfter, mod -> {
-					for (int i : mod.getValue()) {
-						ModAnnotationScanner.ModClassInfo info = toConstruct.get(i);
-						try {
-							outcome.set(i, constructNeoFamilyMod(cl, info, neo.get(mod.getKey()), side));
-						} catch (Throwable t) {
-							outcome.set(i, new ConstructionFailure(t));
-						}
-					}
-				});
+		List<Throwable> threw = NeoParallelDispatch.run(NeoParallelDispatch.parallelExecutor(cl), here,
+				i -> safeId(toConstruct.get(i)), dependencyAfter,
+				i -> constructed.set(i, constructNeoFamilyMod(cl, toConstruct.get(i), neo.get(safeId(toConstruct.get(i))), side)));
 		// What each class came to, handled here, on the caller's thread and in the order they were claimed, exactly as
 		// when the caller constructed them itself.
-		for (int i = 0; i < claimed.size(); i++) {
-			Object result = outcome.get(i);
-			if (result instanceof ConstructedMod mod) {
-				built.add(mod);
-			} else if (result instanceof ConstructionFailure failure) {
+		for (int k = 0; k < here.size(); k++) {
+			int i = here.get(k);
+			if (threw.get(k) == null) {
+				built.add(constructed.get(i));
+			} else {
 				ModAnnotationScanner.ModClassInfo info = claimed.get(i);
-				recordNeoOutcome(info, true, failure.cause(), otherSide, failedNeo);
-				Caught.warn(failure.cause(), "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
+				recordNeoOutcome(info, true, threw.get(k), otherSide, failedNeo);
+				Caught.warn(threw.get(k), "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
 			}
 		}
 		// A mod whose constructor threw must come back OUT. A NeoForge mod whose constructor threw used to stay in

@@ -151,6 +151,35 @@ class NeoParallelDispatchTest {
 				"what a failure means is the caller's business: the dispatch runs the dependent as before");
 	}
 
+	/** A checked throw comes back as itself too, not wrapped. */
+	@Test
+	void aCheckedThrowComesBackUnwrapped() {
+		java.io.IOException boom = new java.io.IOException("a mod's own failure");
+		List<Throwable> failures = NeoParallelDispatch.run(pool, List.of("a"), ID, Map.of(), id -> {
+			throw boom;
+		});
+		assertSame(boom, failures.get(0));
+	}
+
+	/**
+	 * Two {@code @Mod} classes of one mod run one after another in the given order, and a mod waiting for that mod waits
+	 * for both, as one FMLModContainer constructs its classes in one task.
+	 */
+	@Test
+	void theClassesOfOneModRunInOrderAndADependentWaitsForAllOfThem() {
+		record Item(String id, String name) {}
+		List<String> finished = Collections.synchronizedList(new ArrayList<>());
+		Map<String, List<String>> doneBefore = new ConcurrentHashMap<>();
+		NeoParallelDispatch.run(pool, List.of(new Item("lib", "lib#1"), new Item("lib", "lib#2"), new Item("dep", "dep")),
+				Item::id, after("lib", "dep"), item -> {
+					doneBefore.put(item.name(), List.copyOf(finished));
+					if (item.name().equals("lib#1")) Thread.sleep(150);
+					finished.add(item.name());
+				});
+		assertEquals(List.of("lib#1"), doneBefore.get("lib#2"), "the second class after the first");
+		assertEquals(List.of("lib#1", "lib#2"), doneBefore.get("dep"), "the dependent after both");
+	}
+
 	@Test
 	void withNoOrderTheModsRunOneAfterAnotherInTheGivenOrder() {
 		List<String> order = Collections.synchronizedList(new ArrayList<>());
