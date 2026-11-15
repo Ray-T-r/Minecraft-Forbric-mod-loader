@@ -58,7 +58,6 @@ public final class KernelModLoader {
 	/** A constructed mod and the NeoForge {@code IEventBus} the caller fires {@code RegisterEvent} at. */
 	public record ConstructedMod(String modId, String className, Ecosystem family, Object bus) {}
 
-
 	/**
 	 * A NeoForge mod's identity: ONE bus and ONE {@code ModContainer} per mod id, shared by every {@code @Mod} class
 	 * that declares that id. Genuine NeoForge works the same way — a mod has one container and one bus, not one per
