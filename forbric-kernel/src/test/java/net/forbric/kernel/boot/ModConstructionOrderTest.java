@@ -20,6 +20,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.function.Function;
 
 import org.junit.jupiter.api.AfterEach;
@@ -87,6 +89,28 @@ class ModConstructionOrderTest {
 
 	private static UnifiedDependency ordered(String id, UnifiedDependency.Ordering ordering) {
 		return new UnifiedDependency(id, "*", false, ordering, UnifiedDependency.SideScope.BOTH);
+	}
+
+	/**
+	 * The edges the NeoForge phases wait by ({@link NeoParallelDispatch}) are the ones {@link ModConstructionOrder#of}
+	 * orders by: a requirement and an AFTER put the other mod first, a BEFORE puts this one first, an optional
+	 * dependency with no ordering draws nothing; with ordering off there are none.
+	 */
+	@Test
+	void theEdgesAreTheOnesTheOrderIsBuiltFrom() {
+		List<DiscoveredMod> mods = List.of(
+				mod("app", requires("lib"), ordered("late", UnifiedDependency.Ordering.BEFORE), optional("extra")),
+				mod("lib"),
+				mod("late"),
+				mod("extra", ordered("lib", UnifiedDependency.Ordering.AFTER)));
+
+		assertEquals(Map.of("app", Set.of("late"), "lib", Set.of("app", "extra"), "late", Set.of(), "extra", Set.of()),
+				ModConstructionOrder.edges(mods));
+		assertEquals(List.of("lib", "app", "extra", "late"), ModConstructionOrder.of(mods));
+
+		System.setProperty(ModConstructionOrder.SWITCH, "name");
+		assertEquals(Map.of("app", Set.of(), "lib", Set.of(), "late", Set.of(), "extra", Set.of()),
+				ModConstructionOrder.edges(mods), "-Dforbric.modOrder=name: no edges");
 	}
 
 	@Test

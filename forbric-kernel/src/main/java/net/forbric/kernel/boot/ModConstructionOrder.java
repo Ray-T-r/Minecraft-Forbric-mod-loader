@@ -92,51 +92,14 @@ public final class ModConstructionOrder {
 	 * that owns them. The returned list holds real ids only; an alias is a name for a node, not a node.
 	 */
 	public static List<String> of(Collection<DiscoveredMod> mods) {
-		Map<String, DiscoveredMod> byName = new LinkedHashMap<>();
 		List<String> ids = new ArrayList<>();
-
-		// Every real id first, then the aliases into what is left: a mod's own id outranks another mod's alias for it
-		// whatever the input order, as an alias never claims an id (see KernelFabricLoader.register). Reading them in one
-		// pass let an alias taken earlier hide the real mod, which then never became a node and sorted last.
-		for (DiscoveredMod mod : mods) {
-			if (mod == null || mod.getId() == null || mod.getId().isBlank()) continue;
-			if (byName.putIfAbsent(mod.getId(), mod) == null) ids.add(mod.getId());
-		}
-		for (DiscoveredMod mod : mods) {
-			if (mod == null || mod.getId() == null || mod.getId().isBlank()) continue;
-			for (String alias : mod.getAliases()) {
-				if (alias != null && !alias.isBlank()) byName.putIfAbsent(alias, mod);
-			}
-		}
-
+		Map<String, Set<String>> after = edges(mods, ids);
 		if (!enabled()) return ids;
 
-		// after.get(x) = the mods that must come after x.
-		Map<String, Set<String>> after = new LinkedHashMap<>();
 		Map<String, Integer> incoming = new LinkedHashMap<>();
-		for (String id : ids) {
-			after.put(id, new LinkedHashSet<>());
-			incoming.put(id, 0);
-		}
-
-		for (String id : ids) {
-			for (UnifiedDependency dep : byName.get(id).getDependencies()) {
-				DiscoveredMod target = dep == null ? null : byName.get(dep.getModId());
-				// The same library under the other ecosystem's id spelling — cloth_config next to cloth-config.
-				// Without this the edge is simply absent and the dependent may construct first, which is the
-				// ordering bug the dependency dialog's NOT INSTALLED line was the visible half of.
-				if (target == null && dep != null) {
-					target = net.forbric.api.ModIds.underAnotherSpelling(dep.getModId(), byName);
-				}
-				// Not installed: nothing to order against. The dependency audit is what reports a missing one.
-				if (target == null || target.getId().equals(id)) continue;
-
-				if (dep.getOrdering() == UnifiedDependency.Ordering.BEFORE) {
-					link(after, incoming, id, target.getId());
-				} else if (dep.getOrdering() == UnifiedDependency.Ordering.AFTER || dep.isMandatory()) {
-					link(after, incoming, target.getId(), id);
-				}
-			}
+		for (String id : ids) incoming.put(id, 0);
+		for (Set<String> next : after.values()) {
+			for (String id : next) incoming.merge(id, 1, Integer::sum);
 		}
 
 		List<String> ordered = new ArrayList<>(ids.size());
@@ -172,6 +135,63 @@ public final class ModConstructionOrder {
 	}
 
 	/**
+	 * The edges {@link #of} orders by: {@code edges(mods).get(x)} holds the ids that must come after {@code x}, by the
+	 * rules this class documents. Every installed mod has an entry (an empty set when nothing waits for it); with
+	 * dependency ordering off ({@code -D}{@value #SWITCH}{@code =name}) there are none.
+	 *
+	 * <p>Public for the NeoForge phases ({@link NeoParallelDispatch}), which, like native NeoForge, run each mod as soon
+	 * as every mod it waits for has finished rather than one after another.
+	 */
+	public static Map<String, Set<String>> edges(Collection<DiscoveredMod> mods) {
+		return edges(mods, new ArrayList<>());
+	}
+
+	/** {@link #edges(Collection)}, also filling {@code ids} with every real id in the order the mods came in. */
+	private static Map<String, Set<String>> edges(Collection<DiscoveredMod> mods, List<String> ids) {
+		Map<String, DiscoveredMod> byName = new LinkedHashMap<>();
+
+		// Every real id first, then the aliases into what is left: a mod's own id outranks another mod's alias for it
+		// whatever the input order, as an alias never claims an id (see KernelFabricLoader.register). Reading them in one
+		// pass let an alias taken earlier hide the real mod, which then never became a node and sorted last.
+		for (DiscoveredMod mod : mods) {
+			if (mod == null || mod.getId() == null || mod.getId().isBlank()) continue;
+			if (byName.putIfAbsent(mod.getId(), mod) == null) ids.add(mod.getId());
+		}
+		for (DiscoveredMod mod : mods) {
+			if (mod == null || mod.getId() == null || mod.getId().isBlank()) continue;
+			for (String alias : mod.getAliases()) {
+				if (alias != null && !alias.isBlank()) byName.putIfAbsent(alias, mod);
+			}
+		}
+
+		// after.get(x) = the mods that must come after x.
+		Map<String, Set<String>> after = new LinkedHashMap<>();
+		for (String id : ids) after.put(id, new LinkedHashSet<>());
+		if (!enabled()) return after;
+
+		for (String id : ids) {
+			for (UnifiedDependency dep : byName.get(id).getDependencies()) {
+				DiscoveredMod target = dep == null ? null : byName.get(dep.getModId());
+				// The same library under the other ecosystem's id spelling — cloth_config next to cloth-config.
+				// Without this the edge is simply absent and the dependent may construct first, which is the
+				// ordering bug the dependency dialog's NOT INSTALLED line was the visible half of.
+				if (target == null && dep != null) {
+					target = net.forbric.api.ModIds.underAnotherSpelling(dep.getModId(), byName);
+				}
+				// Not installed: nothing to order against. The dependency audit is what reports a missing one.
+				if (target == null || target.getId().equals(id)) continue;
+
+				if (dep.getOrdering() == UnifiedDependency.Ordering.BEFORE) {
+					after.get(id).add(target.getId());
+				} else if (dep.getOrdering() == UnifiedDependency.Ordering.AFTER || dep.isMandatory()) {
+					after.get(target.getId()).add(id);
+				}
+			}
+		}
+		return after;
+	}
+
+	/**
 	 * Sorts {@code items} into {@code order}, keeping anything not named in it where it was.
 	 *
 	 * <p>Something with no id, or an id discovery never saw, must not vanish and must not be shuffled to one end:
@@ -199,10 +219,5 @@ public final class ModConstructionOrder {
 		// Unknown ids sort last, together, in their original order: there is nothing to say about where they
 		// belong, and putting them first would let one run before a library it may well need.
 		return at == null ? Integer.MAX_VALUE : at;
-	}
-
-	private static void link(Map<String, Set<String>> after, Map<String, Integer> incoming, String first,
-			String then) {
-		if (after.get(first).add(then)) incoming.merge(then, 1, Integer::sum);
 	}
 }
