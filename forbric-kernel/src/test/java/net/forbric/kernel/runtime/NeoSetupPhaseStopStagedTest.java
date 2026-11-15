@@ -99,6 +99,14 @@ class NeoSetupPhaseStopStagedTest {
 				"the task name native NeoForge's dispatchParallelEvent gives the deferred queue");
 		assertTrue(calls.containsAll(List.of("thrower:deferred", "healthy:deferred")), "every deferred task ran: " + calls);
 		assertTrue(stopped(), "the boot stops on it");
+		// What the crash analysis reads beside a client's crash report, which carries only the cause's message here: NeoForge's
+		// own record of the issue, its cause rendered with its frames.
+		Method errors = Class.forName("net.forbric.kernel.boot.CrashAttribution", true, cl).getDeclaredMethod("neoForgeLoadingErrors",
+				ClassLoader.class);
+		errors.setAccessible(true);
+		String record = (String) errors.invoke(null, cl);
+		assertTrue(record.contains("thrower's deferred task fails on purpose"), record);
+		assertTrue(record.contains("NeoSetupPhaseStopStagedTest"), "with the frames of the code that threw: " + record);
 	}
 
 	@Test

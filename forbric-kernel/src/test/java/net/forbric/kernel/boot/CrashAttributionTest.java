@@ -296,6 +296,33 @@ class CrashAttributionTest {
 		assertEquals(CrashAttribution.NEOFORGE_ISSUE, suspects.get(0).reason());
 	}
 
+	/**
+	 * A client stopped by a throw no mod's listener made (here a guest's mixin inside NeoForge's per-registry try): NeoForge's
+	 * issue is "An uncaught parallel processing error has occurred." with the cause's message only, and the client's crash
+	 * report ({@code CrashReport.forThrowable} of the {@code ModLoadingException}, which has no cause) has no trace of it, so
+	 * the report alone names nobody (K3c open item 6). NeoForge keeps the cause in its own loading issues, which is what its
+	 * fatal-error window shows; read with them — rendered as NeoForge renders a cause, here the server's own rendering of
+	 * the same throw — the mod's mixin handler names it.
+	 */
+	@Test
+	void aClientsUncaughtLoadingErrorIsReadThroughNeoForgesOwnRecordOfIt() throws Exception {
+		publishRegisterStopRun();
+		String listener = report(NEO_ISSUE_CLIENT);
+		String issue = listener.substring(listener.indexOf("\t- Forbric Register Stop Canary"), listener.indexOf("\n\n\tat "));
+		String client = listener.replace(issue, "\t- An uncaught parallel processing error has occurred.\n\t  java.lang.IllegalStateException: "
+				+ "forbricregisterstop's GameData.postRegisterEvents mixin fails on purpose after minecraft:item's dispatch");
+		String server = report(NEO_ISSUE_UNATTACHED);
+		String cause = server.substring(server.indexOf("\nStacktrace:", server.indexOf("-- Mod loading issue --")) + "\nStacktrace:".length(),
+				server.indexOf("\n\n\n-- System Details --"));
+
+		assertEquals(List.of(), CrashAttribution.suspects(client), "the premise: the client's report alone names nobody");
+		List<CrashAttribution.Suspect> suspects = CrashAttribution.suspects(client, "\njava.lang.IllegalStateException: "
+				+ "forbricregisterstop's GameData.postRegisterEvents mixin fails on purpose after minecraft:item's dispatch" + cause);
+		assertEquals(List.of("forbricregisterstop"), suspects.stream().map(CrashAttribution.Suspect::modId).toList(),
+				suspects.toString());
+		assertEquals("its mixin was running", suspects.get(0).reason());
+	}
+
 	@Test
 	void ofTheWalkthroughOnlyNeoForgesIssueSectionsAreRead() throws Exception {
 		String whole = report(NEO_ISSUE_SERVER);

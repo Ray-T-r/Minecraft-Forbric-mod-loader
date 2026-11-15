@@ -217,7 +217,8 @@ public final class CrashAttribution {
 		try {
 			Path report = crashReportFromThisRun(dir.resolve("crash-reports"), startedAt);
 			if (report == null) return;
-			List<Suspect> suspects = suspects(Files.readString(report, StandardCharsets.UTF_8));
+			List<Suspect> suspects = suspects(Files.readString(report, StandardCharsets.UTF_8),
+					neoForgeLoadingErrors(KernelLifecycle.gameLoader()));
 			String rendered = render(chinese(), report.getFileName().toString(), suspects);
 
 			Path out = dir.resolve(".forbric-kernel").resolve(FILE);
@@ -322,7 +323,20 @@ public final class CrashAttribution {
 	 * issue sections ({@link #modLoadingIssues}): NeoForge writes the failure there and not above the divider.
 	 */
 	static List<Suspect> suspects(String crashReport) {
-		String trace = exceptionChain(crashReport) + modLoadingIssues(crashReport);
+		return suspects(crashReport, "");
+	}
+
+	/**
+	 * The same, also reading {@code loadingErrors}: NeoForge's own record of why mod loading failed
+	 * ({@link #neoForgeLoadingErrors}), which a client's crash report does not carry. Natively NeoForge keeps each issue's
+	 * cause in {@code ModLoader}'s loading issues and shows them in its fatal-error window; the client's crash report is
+	 * {@code CrashReport.forThrowable} of the {@code ModLoadingException}, which has no cause of its own, so a throw that no
+	 * mod's listener made ({@code fml.modloadingissue.uncaughterror}, a guest's mixin inside {@code GameData}'s try) left
+	 * only its message there and nothing to name a mod by (K3c open item 6). The server's {@code crash-*-fml.txt} already has
+	 * the trace in its issue sections.
+	 */
+	static List<Suspect> suspects(String crashReport, String loadingErrors) {
+		String trace = exceptionChain(crashReport) + modLoadingIssues(crashReport) + loadingErrors;
 		Map<String, Suspect> byId = new LinkedHashMap<>();
 
 		int depth = 0;
@@ -427,6 +441,47 @@ public final class CrashAttribution {
 			}
 		}
 		return "";
+	}
+
+	/**
+	 * Each ERROR issue NeoForge's {@code ModLoader} recorded in this process ({@code ModLoader.getLoadingErrors()}) that has a
+	 * cause, rendered as NeoForge renders a cause in its own mod-loading crash report
+	 * ({@code CrashReportExtender.generateEnhancedStackTrace}, frames with their jars), each after a newline; empty when mod
+	 * loading did not fail, or NeoForge is not there. Never throws: it runs in the shutdown hook.
+	 */
+	static String neoForgeLoadingErrors(ClassLoader cl) {
+		if (cl == null) return "";
+		try {
+			Class<?> loader = Class.forName("net.neoforged.fml.ModLoader", false, cl);
+			java.lang.reflect.Method extender = null;
+			try {
+				extender = Class.forName("net.neoforged.neoforge.logging.CrashReportExtender", true, cl)
+						.getMethod("generateEnhancedStackTrace", Throwable.class);
+			} catch (ReflectiveOperationException | LinkageError plain) {
+				Caught.expected(plain);
+			}
+			StringBuilder out = new StringBuilder();
+			for (Object issue : (List<?>) loader.getMethod("getLoadingErrors").invoke(null)) {
+				Throwable cause = (Throwable) issue.getClass().getMethod("cause").invoke(issue);
+				if (cause == null) continue;
+				String rendered;
+				if (extender != null) {
+					rendered = (String) extender.invoke(null, cause);
+				} else {
+					java.io.StringWriter text = new java.io.StringWriter();
+					cause.printStackTrace(new java.io.PrintWriter(text));
+					rendered = text.toString();
+				}
+				out.append('\n').append(rendered.replace("\r\n", "\n"));
+			}
+			return out.toString();
+		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			return "";
+		} catch (ReflectiveOperationException | LinkageError | RuntimeException unreadable) {
+			Caught.warn(unreadable, "[Forbric/Crash] could not read NeoForge's mod-loading errors; the crash report alone is read");
+			return "";
+		}
 	}
 
 	/**
