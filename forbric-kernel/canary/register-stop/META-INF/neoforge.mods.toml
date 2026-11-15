@@ -6,8 +6,12 @@ modId="forbricregisterstop"
 version="1.0.0"
 displayName="Forbric Register Stop Canary"
 description='''
-Fails inside NeoForge's registration on purpose: its RegisterEvent listener throws (-Dforbric.registerstop=listener, the
-default), or its mixin on GameData.postRegisterEvents throws right after a registry's dispatch (=try), or neither (=off).
+Fails on purpose at one point of NeoForge's mod loading, picked by -Dforbric.registerstop: its RegisterEvent listener
+(listener, the default), its mixin on GameData.postRegisterEvents (try), its constructor (construct), its
+FMLConstructModEvent (constructevent) or @EventBusSubscriber class (ebs), NewRegistryEvent (newregistry), an attribute
+event in postRegisterEvents' tail (tail), common setup (common) or a task deferred from it (deferred), sided setup
+(sided), RegisterCapabilitiesEvent (regevents), IMC (imc), load complete (complete), payload registration (network);
+or nothing (off).
 '''
 [[mixins]]
 config="forbricregisterstop.mixins.json"
