@@ -31,7 +31,10 @@ else the host was doing as much as of the server. VERIFY run 1 of C5 had it red 
 next to gate-m0's unit suite and four server boots, green alone 5 of 5, and red alone in one of two runs under ten
 `yes` CPU hogs: the ceiling was measuring the scheduler's neighbours. Raising the ceiling would blind it to a server that really
 falls behind, so the gate keeps it and the scheduler gives it a quiet machine instead. What it cannot quiet is load
-from outside this sweep.
+from outside this sweep. The same holds for lib.sh's check_kept_up (vanilla's "Can't keep up!" while a player is on),
+which gate-m12, gate-m15 and gate-m16 call: side-by-side -j 5 batches had m15 red on it in two rounds of three and m16
+red beside the full test suites, so those gates say `alone` too. GatesAllTest finds the gates that use either check and
+fails on one that does not say `alone`.
 
 -j 1 is exactly the old sequential behaviour: same order, same summary.txt, same exit code.
 

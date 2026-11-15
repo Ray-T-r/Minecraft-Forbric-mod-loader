@@ -162,30 +162,39 @@ class GatesAllTest {
 	}
 
 	/**
-	 * Which gates must say {@code alone} is read from what they judge, not kept as a list: a gate that reads the server
-	 * tick sampler (its {@code [Forbric/Tick]} lines, turned up by {@code -Dforbric.tickSamplerEvery}) gives a verdict on
-	 * how late ticks ran, which a neighbouring gate's CPU moves. Comment lines are prose, not a use.
+	 * Which gates must say {@code alone} is read from what they judge, not kept as a list. Two verdicts are timings that a
+	 * neighbouring gate's CPU moves: the server tick sampler (its {@code [Forbric/Tick]} lines, turned up by
+	 * {@code -Dforbric.tickSamplerEvery}), whose late-tick count gate-m12 holds to a ceiling, and lib.sh's
+	 * {@code check_kept_up}, vanilla's "Can't keep up!" while a player is on (red on gate-m12 beside the unit suite in
+	 * Merger wave 1, on gate-m15 in two of three side-by-side -j 5 rounds and on gate-m16 beside the full suites, as
+	 * introduction.md's gates section measured; HARN review F1 found the rule had missed it). Comment lines are prose,
+	 * not a use.
 	 */
-	@Test void everyGateThatJudgesTickTimingIsDeclaredAlone() throws Exception {
+	@Test void everyGateWhoseVerdictIsATimingIsDeclaredAlone() throws Exception {
 		var declaration = java.util.regex.Pattern.compile("(?m)^#\\s*GATE-PARALLEL:\\s*(.*)$");
-		List<String> timing = new java.util.ArrayList<>();
+		var keptUp = java.util.regex.Pattern.compile("(?m)^\\s*check_kept_up\\s");
+		List<String> sampler = new java.util.ArrayList<>();
+		List<String> overload = new java.util.ArrayList<>();
 		List<String> sharing = new java.util.ArrayList<>();
 		try (var paths = Files.list(Path.of("run"))) {
 			for (Path gate : paths.filter(p -> p.getFileName().toString().matches("gate-m.*\\.sh")).sorted().toList()) {
 				String text = Files.readString(gate);
 				String code = text.replaceAll("(?m)^\\s*#.*$", "");
-				if (!code.contains("Forbric/Tick") && !code.contains("tickSamplerEvery")) continue;
-				timing.add(gate.getFileName().toString());
+				String name = gate.getFileName().toString();
+				boolean readsSampler = code.contains("Forbric/Tick") || code.contains("tickSamplerEvery");
+				boolean judgesOverload = keptUp.matcher(code).find();
+				if (readsSampler) sampler.add(name);
+				if (judgesOverload) overload.add(name);
+				if (!readsSampler && !judgesOverload) continue;
 				var line = declaration.matcher(text);
 				// An undeclared gate already runs alone; a declared one has to ask for it.
-				if (line.find() && !List.of(line.group(1).trim().split("\\s+")).contains("alone")) {
-					sharing.add(gate.getFileName().toString());
-				}
+				if (line.find() && !List.of(line.group(1).trim().split("\\s+")).contains("alone")) sharing.add(name);
 			}
 		}
-		assertTrue(timing.contains("gate-m12-multiplayer.sh"), "the rule no longer finds gate-m12's tick check: " + timing);
-		assertEquals(List.of(), sharing, "these gates judge tick timing but may run beside other gates: add `alone` to"
-				+ " their # GATE-PARALLEL: line");
+		assertTrue(sampler.contains("gate-m12-multiplayer.sh"), "the rule no longer finds gate-m12's tick check: " + sampler);
+		assertTrue(overload.contains("gate-m12-multiplayer.sh"), "the rule no longer finds a check_kept_up call: " + overload);
+		assertEquals(List.of(), sharing, "these gates judge a timing but may run beside other gates: add `alone` to their"
+				+ " # GATE-PARALLEL: line");
 	}
 
 	private static String describe(Map<String, double[]> ran) {

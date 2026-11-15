@@ -35,7 +35,11 @@
 # encode/decode absence, the join and the clean leave. The file keeps its name until Stage 6 (D4).
 #
 # Port 25603, not the default — a developer or another agent session may have a server on 25565.
-# GATE-PARALLEL: rundirs=fnet-server,fnet-client mem=3500
+# `alone`: check_kept_up (vanilla's "Can't keep up!" while the player is on) is a timing verdict, and a neighbouring
+# gate's CPU shows up in it as the server falling behind: side-by-side -j 5 batches had gate-m15 red on it on both
+# trees in two rounds of three and gate-m16 red with the full test suites beside it (introduction.md, gates). So
+# gates-all runs it with no other gate (stage4-c5-harn.md, HARN review fixes).
+# GATE-PARALLEL: rundirs=fnet-server,fnet-client mem=3500 alone
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
