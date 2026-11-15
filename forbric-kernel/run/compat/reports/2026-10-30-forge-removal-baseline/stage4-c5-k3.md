@@ -522,3 +522,8 @@ this record (B-5, B-6); none refuted.
    (review A, `scanlist.py`).
 4. (orchestrator, optional) A native Fabric client arm (fabric-api + mcw-stairs) and a native NeoForge client arm were not
    run. B-1's native-Fabric statement rests on the javap read above.
+
+## Resolved later
+
+B-8/A-4 (the open item above): owner ruling D82 "stop like native", implemented by lane K3c (stage4-c5-k3c.md): a
+throwing RegisterEvent listener or any throw inside NeoForge's per-registry try now stops the boot as native NeoForge does.
