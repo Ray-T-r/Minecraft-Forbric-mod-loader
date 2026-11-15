@@ -5,6 +5,8 @@ import java.nio.file.Path;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 import org.junit.jupiter.api.io.TempDir;
 import org.objectweb.asm.*;
 import org.objectweb.asm.tree.*;
@@ -46,6 +48,44 @@ class ConfigApiAbiInjectorExecutionTest {
         ClassWriter writer=new ClassWriter(0);writer.visit(Opcodes.V17,Opcodes.ACC_PUBLIC,"unknown/config/Spec",null,"java/lang/Object",new String[]{"net/neoforged/fml/config/IConfigSpec"});writer.visitEnd();
         byte[] bytes=writer.toByteArray();ClassNode api=new ClassNode();api.methods.add(new MethodNode(Opcodes.ACC_PUBLIC|Opcodes.ACC_ABSTRACT,"validateSpec","(Lnet/neoforged/fml/config/ModConfig;)V",null,null));
         assertSame(bytes,new ConfigApiAbiInjector(name->name.equals("net/neoforged/fml/config/IConfigSpec")?api:null).transform("unknown.config.Spec",bytes,null));
+    }
+    /**
+     * C-8: a class that builds ConfigurationScreen with the carrier's own (ModContainer, Screen) constructor -- native
+     * NeoForge code, such as the kernel's own bridge or Balm's NeoForge classes -- is not a by-id construction, and must
+     * neither be rewritten nor be reported as one "no safe constructor rewrite was proved" for. A by-id construction whose
+     * arguments do cross a branch still is reported, once.
+     */
+    @Test @ResourceLock(Resources.SYSTEM_OUT) @ResourceLock(Resources.SYSTEM_ERR)
+    void theCarriersOwnConstructorIsNotCountedAsAByIdConstruction(@TempDir Path work) throws Throwable {
+        String screen="net/neoforged/neoforge/client/gui/ConfigurationScreen", base="Lnet/minecraft/client/gui/screens/Screen;";
+        Map<String,String> sources=Map.of(
+            "net.minecraft.client.gui.screens.Screen","package net.minecraft.client.gui.screens;public class Screen {}",
+            "net.neoforged.fml.ModContainer","package net.neoforged.fml;public class ModContainer {}",
+            screen.replace('/','.'),"package net.neoforged.neoforge.client.gui;public class ConfigurationScreen extends net.minecraft.client.gui.screens.Screen {public ConfigurationScreen(net.neoforged.fml.ModContainer mod,net.minecraft.client.gui.screens.Screen parent){}public ConfigurationScreen(String id,net.minecraft.client.gui.screens.Screen parent){}}",
+            "unknown.config.NativeConsumer","package unknown.config;public class NativeConsumer {public static Object open(net.neoforged.fml.ModContainer mod,net.minecraft.client.gui.screens.Screen parent){return new net.neoforged.neoforge.client.gui.ConfigurationScreen(mod,parent);}}",
+            "unknown.config.BranchyConsumer","package unknown.config;public class BranchyConsumer {public static Object open(boolean a,net.minecraft.client.gui.screens.Screen parent){return new net.neoforged.neoforge.client.gui.ConfigurationScreen(a?\"x\":\"y\",parent);}}"
+        );
+        Map<String,byte[]> classes=InjectorExecution.compile(work,sources);
+        ClassNode nativeScreen=new ClassNode();nativeScreen.methods.add(new MethodNode(Opcodes.ACC_PUBLIC,"<init>","(Lnet/neoforged/fml/ModContainer;"+base+")V",null,null));
+        var injector=new ConfigApiAbiInjector(name->name.equals(screen)?nativeScreen:null);
+        byte[] nativeBytes=classes.get("unknown/config/NativeConsumer");
+        byte[][] out=new byte[1][];
+        String said=capture(()->out[0]=injector.transform("unknown.config.NativeConsumer",nativeBytes,null));
+        assertSame(nativeBytes,out[0],"native construction is left as it is");
+        assertFalse(said.contains("constructs ConfigurationScreen from a mod id directly"),"false WARN for the carrier's own constructor: "+said);
+        byte[] branchy=classes.get("unknown/config/BranchyConsumer");
+        said=capture(()->out[0]=injector.transform("unknown.config.BranchyConsumer",branchy,null));
+        assertSame(branchy,out[0],"a by-id construction across a branch is not rewritten");
+        assertTrue(said.contains("unknown.config.BranchyConsumer constructs ConfigurationScreen from a mod id directly in 1 place(s)"),
+            "a by-id construction across a branch is still reported: "+said);
+    }
+    private static String capture(Runnable body) {
+        java.io.PrintStream out=System.out, err=System.err;
+        java.io.ByteArrayOutputStream buffer=new java.io.ByteArrayOutputStream();
+        java.io.PrintStream sink=new java.io.PrintStream(buffer,true,java.nio.charset.StandardCharsets.UTF_8);
+        System.setOut(sink);System.setErr(sink);
+        try{body.run();}finally{System.setOut(out);System.setErr(err);}
+        return buffer.toString(java.nio.charset.StandardCharsets.UTF_8);
     }
     @Test void unknownConsumersDirectAndLambdaScreenConstructionBothExecute(@TempDir Path work) throws Throwable {
         String screen="net/neoforged/neoforge/client/gui/ConfigurationScreen", base="Lnet/minecraft/client/gui/screens/Screen;";

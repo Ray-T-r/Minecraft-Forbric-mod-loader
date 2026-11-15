@@ -194,17 +194,29 @@ public final class ConfigApiAbiInjector implements ClassTransformer {
 					AbstractInsnNode duplicate = allocation.getNext();
 					while (duplicate != null && duplicate.getOpcode() < 0) duplicate = duplicate.getNext();
 					if (duplicate == null || duplicate.getOpcode() != Opcodes.DUP) continue;
+					// The constructor THIS allocation reaches: the first ConfigurationScreen.<init> at its own nesting depth (an
+					// allocation nested in its arguments has its own). Only the by-id one is the config API's: an allocation
+					// of the carrier's own (ModContainer, Screen) constructor is native NeoForge code and nothing to do with
+					// this rewrite. The rewrite is proved only for a straight-line region; a by-id allocation whose region
+					// crosses a frame, label, jump or switch, or holds another such allocation, is counted and left alone.
 					MethodInsnNode constructor = null;
+					boolean crossed = false;
+					int depth = 0;
 					for (var argument = duplicate.getNext(); argument != null; argument = argument.getNext()) {
 						if (argument instanceof FrameNode || argument instanceof JumpInsnNode || argument instanceof org.objectweb.asm.tree.LookupSwitchInsnNode
-								|| argument instanceof org.objectweb.asm.tree.TableSwitchInsnNode || argument instanceof LabelNode
-								|| argument instanceof org.objectweb.asm.tree.TypeInsnNode nested && nested.getOpcode() == Opcodes.NEW && nested.desc.equals(CONFIG_SCREEN)) break;
-						if (argument instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL && call.owner.equals(CONFIG_SCREEN)) {
-							if (call.name.equals("<init>") && call.desc.equals(SCREEN_CTOR_BY_ID)) constructor = call;
+								|| argument instanceof org.objectweb.asm.tree.TableSwitchInsnNode || argument instanceof LabelNode) crossed = true;
+						if (argument instanceof org.objectweb.asm.tree.TypeInsnNode nested && nested.getOpcode() == Opcodes.NEW
+								&& nested.desc.equals(CONFIG_SCREEN)) {
+							crossed = true;
+							depth++;
+						} else if (argument instanceof MethodInsnNode call && call.getOpcode() == Opcodes.INVOKESPECIAL
+								&& call.owner.equals(CONFIG_SCREEN) && call.name.equals("<init>") && depth-- == 0) {
+							constructor = call;
 							break;
 						}
 					}
-					if (constructor == null) { direct++; continue; }
+					if (constructor == null || !constructor.desc.equals(SCREEN_CTOR_BY_ID)) continue;
+					if (crossed) { direct++; continue; }
 					method.instructions.remove(allocation); method.instructions.remove(duplicate);
 					constructor.setOpcode(Opcodes.INVOKESTATIC); constructor.owner = BRIDGE; constructor.name = SCREEN_FACTORY; constructor.desc = SCREEN_FACTORY_DESC;
 					method.instructions.insert(constructor, new org.objectweb.asm.tree.TypeInsnNode(Opcodes.CHECKCAST, CONFIG_SCREEN)); rerouted++;
