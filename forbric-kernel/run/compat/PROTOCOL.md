@@ -485,6 +485,11 @@ several of them on one tree), and nothing is run a second time in Chinese:
   ports and the scheduler's own knobs, and `java -version`. It lives in git's common directory and is shared by
   every worktree; `FORBRIC_GATE_CACHE=<dir>` moves it, `=0` or `--no-cache` turns it off, and `--release` never
   reads it. It cannot see a hand-edited fixture world: run `--no-cache` after changing one.
+- **Control arms are kept, not re-booted.** A run inside a gate whose inputs hold nothing of this tree -- gate-m31's
+  pure-vanilla server -- is kept by lib.sh's `control_arm_dir` / `control_arm_store` under a key file listing every
+  input (beside the verdicts, so every worktree shares it), stored only after it passed its own checks, and booted
+  again under `FORBRIC_GATE_FRESH=1` (`--release`, `--no-cache`) or `FORBRIC_GATE_CACHE=0`.
+  `python3 run/compat/test_control_arm.py` holds the key, the fresh switches and the whole-or-nothing store.
 - **No Chinese run** (D88). Only the load report, merge report, crash analysis and DialogLang's windows follow the
   language (lane ZH, 2026-11-15: a full zh sweep differed from en in no verdict), and the unit suite asserts each of
   them in zh_CN and English. `python3 run/compat/test_gate_cache.py` fails on a gate that runs test sources without
