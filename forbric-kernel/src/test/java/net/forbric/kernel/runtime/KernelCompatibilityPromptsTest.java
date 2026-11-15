@@ -267,6 +267,45 @@ class KernelCompatibilityPromptsTest {
 		}
 	}
 
+	/**
+	 * The screen takes its words from {@code DialogLang.ofSystem()}: with no {@code -Dforbric.dialogLanguage}, the
+	 * system language decides its title, its message and both buttons. Chinese routine runs are gone (D88b), so this is
+	 * where the in-game screen's Chinese is held -- literally, not through the table it is read from, so a zh table
+	 * that says English, or a lookup that ignores the locale, turns it red.
+	 */
+	@Test void theScreenSpeaksTheSystemLanguage() throws Exception {
+		String before = System.getProperty(net.forbric.kernel.ui.DialogLang.SWITCH);
+		java.util.Locale locale = java.util.Locale.getDefault();
+		try {
+			System.clearProperty(net.forbric.kernel.ui.DialogLang.SWITCH);
+			java.util.Locale.setDefault(java.util.Locale.SIMPLIFIED_CHINESE);
+			List<String> zh = shownInAWorld();
+			reset();
+			java.util.Locale.setDefault(java.util.Locale.ENGLISH);
+			List<String> en = shownInAWorld();
+			assertEquals(List.of("部分 mod 的必要功能无法运行", "继续游戏", "返回标题界面"), zh.subList(0, 3));
+			assertTrue(zh.get(3).startsWith("Forbric 已确认以下必要功能在当前实例中无法运行：")
+					&& zh.get(3).contains("Inventory") && zh.get(3).endsWith("详细原因见 Mods 界面和兼容性报告。"), zh.get(3));
+			assertEquals(List.of("Required mod features are unavailable", "Continue playing", "Return to title"), en.subList(0, 3));
+			assertTrue(en.get(3).startsWith("Forbric confirmed that these required features cannot work in this instance:")
+					&& en.get(3).endsWith("Details are available on the Mods screen and in the compatibility report."), en.get(3));
+		} finally {
+			java.util.Locale.setDefault(locale);
+			if (before == null) System.clearProperty(net.forbric.kernel.ui.DialogLang.SWITCH);
+			else System.setProperty(net.forbric.kernel.ui.DialogLang.SWITCH, before);
+		}
+	}
+
+	/** Title, yes, no and message of the screen a confirmed loss puts up in a world. */
+	private List<String> shownInAWorld() throws Exception {
+		try (Fixture fixture = fixture()) {
+			fixture.enterWorld();
+			loseFeature(); fixture.tick();
+			assertEquals("KernelCompatibilityScreen", fixture.screen().getClass().getSimpleName());
+			return List.of(fixture.title(), fixture.buttons().get(0), fixture.buttons().get(1), fixture.message());
+		}
+	}
+
 	private Fixture fixture() throws Exception {
 		Map<String, String> sources = Map.ofEntries(
 				Map.entry("net/minecraft/client/Minecraft.java", """
@@ -308,8 +347,8 @@ class KernelCompatibilityPromptsTest {
 					public class ConfirmScreen extends Screen {
 					 protected net.minecraft.client.gui.components.Button noButton;
 					 private final BooleanConsumer answer;
-					 public final Component message, yes, no;
-					 public ConfirmScreen(BooleanConsumer a, Component title, Component message, Component yes, Component no) { answer=a; this.message=message; this.yes=yes; this.no=no; }
+					 public final Component title, message, yes, no;
+					 public ConfirmScreen(BooleanConsumer a, Component title, Component message, Component yes, Component no) { answer=a; this.title=title; this.message=message; this.yes=yes; this.no=no; }
 					 public void respond(boolean yes) { answer.accept(yes); }
 					}
 					"""),
@@ -349,6 +388,9 @@ class KernelCompatibilityPromptsTest {
 		}
 		String message() throws Exception {
 			return text("message");
+		}
+		String title() throws Exception {
+			return text("title");
 		}
 		/** The two buttons' labels, yes then no. */
 		List<String> buttons() throws Exception {

@@ -103,8 +103,31 @@ public final class InstallerWindowInputTest {
 		}
 		checks += 5;
 
+		// ---- with no switch, the system language decides (D88b: no Chinese runs, so the locale path is held here) ----
+		// A player never passes -Dforbric.dialogLanguage: what they see is chosen by their system locale.
+		java.util.Locale locale = java.util.Locale.getDefault();
+		try {
+			System.clearProperty("forbric.dialogLanguage");
+			Path mods = work.resolve("mods");
+			java.util.Locale.setDefault(java.util.Locale.SIMPLIFIED_CHINESE);
+			require(InstallerText.title().equals("Forbric —— 在同一个游戏里运行 Fabric 和 NeoForge mod"),
+					"zh_CN system locale, title: " + InstallerText.title());
+			require(InstallerText.modsFolder(mods, "26.2-forbric").startsWith("Fabric 和 NeoForge 的 mod 都放进 " + mods),
+					"zh_CN system locale, mods-folder line: " + InstallerText.modsFolder(mods, "26.2-forbric"));
+			java.util.Locale.setDefault(java.util.Locale.ENGLISH);
+			require(InstallerText.title().equals("Forbric — Fabric and NeoForge mods in one game"),
+					"English system locale, title: " + InstallerText.title());
+			require(InstallerText.modsFolder(mods, "26.2-forbric").startsWith("Fabric and NeoForge mods go in " + mods),
+					"English system locale, mods-folder line: " + InstallerText.modsFolder(mods, "26.2-forbric"));
+		} finally {
+			java.util.Locale.setDefault(locale);
+			if (previous == null) System.clearProperty("forbric.dialogLanguage");
+			else System.setProperty("forbric.dialogLanguage", previous);
+		}
+		checks += 4;
+
 		System.out.println("PASS installer window input: " + checks + " checks (quoted, blank and invalid paths;"
-				+ " every failure reaches the window's log; the which-mods sentences in English and Chinese)");
+				+ " every failure reaches the window's log; the which-mods sentences in English and Chinese, by the switch and by the system locale)");
 	}
 
 	/** Install as the button does, returning the window's log; nothing may escape. */
