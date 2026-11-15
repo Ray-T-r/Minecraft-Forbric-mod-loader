@@ -160,10 +160,27 @@ public final class DialogLang {
 	public static DialogLang ofSystem() {
 		String forced = System.getProperty(SWITCH);
 		if (forced != null && !forced.isBlank()) {
-			DialogLang named = byTag(forced.trim().toLowerCase(Locale.ROOT).replace('-', '_'));
+			String tag = forced.trim().toLowerCase(Locale.ROOT).replace('-', '_');
+			DialogLang named = byTag(tag);
 			if (named != null) return named;
+			DialogLang regional = ofBareLanguage(tag, Locale.getDefault());
+			if (regional != null) return regional;
 		}
 		return of(Locale.getDefault());
+	}
+
+	/**
+	 * A bare language the switch names that files more than one table ({@code zh}: {@code zh_cn} and {@code zh_tw}),
+	 * resolved the way a locale of that language is: with the system's region (and script, when the system speaks that
+	 * language), so {@code zh} on a Taiwanese or Hong Kong system is {@code zh_tw} and anywhere else {@code zh_cn}.
+	 * {@code null} for anything else, which the system language then decides.
+	 */
+	static DialogLang ofBareLanguage(String tag, Locale system) {
+		if (tag.isEmpty() || tag.contains("_")) return null;
+		Locale bare = system != null && tag.equals(system.getLanguage()) ? system
+				: Locale.of(tag, system == null ? "" : system.getCountry());
+		DialogLang resolved = of(bare);
+		return resolved.tag.startsWith(tag + "_") ? resolved : null;
 	}
 
 	/**
@@ -198,7 +215,8 @@ public final class DialogLang {
 		for (DialogLang lang : all()) {
 			if (lang.tag.equals(tag)) return lang;
 		}
-		// "pt" for pt_br, "zh" handled above. A bare language that prefixes exactly one table resolves to it.
+		// "pt" for pt_br. A bare language that prefixes exactly one table resolves to it; one that prefixes more ("zh")
+		// is resolved by region in ofBareLanguage (from the switch) or of(Locale) (from the system).
 		DialogLang only = null;
 		for (DialogLang lang : all()) {
 			if (lang.tag.startsWith(tag + "_")) {

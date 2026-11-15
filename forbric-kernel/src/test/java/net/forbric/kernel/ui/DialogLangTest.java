@@ -20,6 +20,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -30,6 +31,8 @@ import java.util.Locale;
 import java.util.Set;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.ResourceLock;
+import org.junit.jupiter.api.parallel.Resources;
 
 /**
  * The ten tables, checked against each other.
@@ -184,6 +187,41 @@ class DialogLangTest {
 			// able to stop a player's launch.
 			assertNotNull(DialogLang.ofSystem());
 		} finally {
+			if (before == null) System.clearProperty(DialogLang.SWITCH);
+			else System.setProperty(DialogLang.SWITCH, before);
+		}
+	}
+
+	/**
+	 * {@code -Dforbric.dialogLanguage=zh} names two tables. It used to be ignored (the system language decided), so the
+	 * switch gates and a player use could not ask for Chinese without a region. It resolves as a {@code zh} locale does:
+	 * the system's region picks Traditional for TW/HK/MO (or a Hant system), Simplified anywhere else.
+	 * Red-checked on 421c53cc: the first lookup answered EN.
+	 */
+	@Test
+	@ResourceLock("system-properties")
+	@ResourceLock(Resources.LOCALE)
+	void aBareChineseSwitchTakesTheSystemsRegionLikeALocaleDoes() {
+		String before = System.getProperty(DialogLang.SWITCH);
+		Locale locale = Locale.getDefault();
+		try {
+			System.setProperty(DialogLang.SWITCH, "zh");
+			Locale.setDefault(Locale.US);
+			assertSame(DialogLang.ZH_CN, DialogLang.ofSystem(), "zh on an English system with no Chinese region");
+			Locale.setDefault(Locale.TRADITIONAL_CHINESE);
+			assertSame(DialogLang.ZH_TW, DialogLang.ofSystem(), "zh on a Taiwanese system");
+			Locale.setDefault(Locale.of("en", "HK"));
+			assertSame(DialogLang.ZH_TW, DialogLang.ofSystem(), "zh plus the system's region HK");
+			Locale.setDefault(Locale.forLanguageTag("zh-Hant"));
+			assertSame(DialogLang.ZH_TW, DialogLang.ofSystem(), "a Traditional-script system with no region");
+			Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
+			System.setProperty(DialogLang.SWITCH, "ZH");
+			assertSame(DialogLang.ZH_CN, DialogLang.ofSystem(), "case does not decide");
+			assertSame(DialogLang.ZH_TW, DialogLang.ofBareLanguage("zh", Locale.of("ja", "MO")));
+			assertNull(DialogLang.ofBareLanguage("klingon", Locale.US), "a language with no table is not resolved here");
+			assertNull(DialogLang.ofBareLanguage("ja", Locale.US), "one table: byTag already has it");
+		} finally {
+			Locale.setDefault(locale);
 			if (before == null) System.clearProperty(DialogLang.SWITCH);
 			else System.setProperty(DialogLang.SWITCH, before);
 		}

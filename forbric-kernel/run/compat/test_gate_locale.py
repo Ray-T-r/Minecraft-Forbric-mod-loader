@@ -26,7 +26,7 @@ So these are rules, read from the gates as text through gates-parallel.py's own 
     of any gate, is a new row. The kernel reads two language switches -- the JVM's locale (-Duser.language: the load
     report) and -Dforbric.dialogLanguage (DialogLang: the dependency dialog and a refused mod's finding, ahead of the
     locale) -- so a pin pins both, the second to a table DialogLang has by its exact tag ("zh" names two tables and
-    is ignored; "zh_cn" is Simplified Chinese).
+    resolves by the host's region, which a pin must not leave open; "zh_cn" is Simplified Chinese).
 
 Text cannot follow every path to a launcher (an environment built from scratch and handed to subprocess, a value read
 into a variable first); the rules hold the assignments, which is where all 43 losses were.
@@ -272,7 +272,8 @@ def dialog_tags(path=DIALOG_LANG):
 
 def pin_findings(run_dir=None, tags=None):
     """'<gate>: <pins>: <what>' for each pinning launch that leaves one of the two switches to the caller, or names a
-    dialog language DialogLang has no table for (it is then ignored, and the caller's or the host's language wins)."""
+    dialog language DialogLang has no table for (it is then ignored and the caller's or the host's language wins, or,
+    for a bare language with two tables such as "zh", the host's region picks the table)."""
     tags = dialog_tags() if tags is None else tags
     found = []
     for gate, launches in pins(run_dir).items():
