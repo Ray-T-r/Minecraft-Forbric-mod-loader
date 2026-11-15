@@ -14,6 +14,7 @@ import net.neoforged.fml.event.lifecycle.InterModEnqueueEvent;
 import net.neoforged.neoforge.capabilities.RegisterCapabilitiesEvent;
 import net.neoforged.neoforge.event.entity.EntityAttributeModificationEvent;
 import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
+import net.neoforged.neoforge.registries.DataPackRegistryEvent;
 import net.neoforged.neoforge.registries.NewRegistryEvent;
 import net.neoforged.neoforge.registries.RegisterEvent;
 
@@ -30,6 +31,7 @@ import net.neoforged.neoforge.registries.RegisterEvent;
  * <li>{@code constructevent}: its FMLConstructModEvent listener throws ("Mod Construction").</li>
  * <li>{@code ebs}: its {@code @EventBusSubscriber} class fails to initialise ("Mod Construction").</li>
  * <li>{@code newregistry}: its NewRegistryEvent listener throws ("Registry initialization").</li>
+ * <li>{@code datapackreg}: its DataPackRegistryEvent.NewRegistry listener throws ("Registry initialization").</li>
  * <li>{@code tail}: its EntityAttributeModificationEvent listener throws, in postRegisterEvents' tail ("Registry
  * initialization").</li>
  * <li>{@code common}: its FMLCommonSetupEvent listener throws ("Common setup").</li>
@@ -55,6 +57,7 @@ public final class ForbricRegisterStop {
 		bus.addListener(RegisterEvent.class, ForbricRegisterStop::onRegister);
 		bus.addListener(FMLConstructModEvent.class, event -> fail("constructevent", "its FMLConstructModEvent listener"));
 		bus.addListener(NewRegistryEvent.class, event -> fail("newregistry", "its NewRegistryEvent listener"));
+		bus.addListener(DataPackRegistryEvent.NewRegistry.class, event -> fail("datapackreg", "its DataPackRegistryEvent.NewRegistry listener"));
 		bus.addListener(EntityAttributeModificationEvent.class, event -> fail("tail", "its EntityAttributeModificationEvent listener"));
 		bus.addListener(FMLCommonSetupEvent.class, event -> {
 			fail("common", "its FMLCommonSetupEvent listener");

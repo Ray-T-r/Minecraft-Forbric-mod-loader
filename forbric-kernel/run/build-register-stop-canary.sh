@@ -3,7 +3,7 @@
 # owner ruling D82 for the registration, D87 for every other phase):
 #   run/canary/forbricregisterstop.jar — a NeoForge mod compiled against NeoForge's patched game and its runtime, with a
 #   mixin on GameData.postRegisterEvents. -Dforbric.registerstop picks the failure: listener (default), try, construct,
-#   constructevent, ebs, newregistry, tail, common, deferred, sided, regevents, imc, complete, network, off (see
+#   constructevent, ebs, newregistry, datapackreg, tail, common, deferred, sided, regevents, imc, complete, network, off (see
 #   canary/register-stop/src/forbric/registerstop/ForbricRegisterStop.java).
 # Only javac/jar; no kernel Gradle. The same jar runs unchanged on native NeoForge 26.2.0.93 (the comparison runs).
 set -euo pipefail
