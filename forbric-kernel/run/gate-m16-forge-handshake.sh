@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 # M16 gate — the login/configuration handshake over a socket, and a mod's per-world SERVER config reaching the client.
 #
-# WHY THIS EXISTS. m15 proved a mod's PLAY-phase packets cross the wire. Everything that happens BEFORE that -- each end
-# telling the other what it runs, and the server pushing its per-world SERVER configs to the client -- is a separate
-# pipeline. It was written for MinecraftForge's handshake, three of whose links lost the byte-merge to NeoForge's; that
-# family left in Stages 3 and 4 (below), and the gate is now about NeoForge's own configuration-phase sync.
+# WHY THIS EXISTS. The login and configuration phases -- each end telling the other what it runs, and the server pushing
+# its per-world SERVER configs to the client -- are their own pipeline, before any PLAY-phase packet. This gate also
+# makes every check gate-m15 made on its play-phase join (FallingTree on both ends, a superset of m15's mods), which is
+# why m15 was removed (lane OPT, 2026-11-16). It was written for MinecraftForge's handshake, three of whose links lost
+# the byte-merge to NeoForge's; that family left in Stages 3 and 4 (below), and the gate is now about NeoForge's own
+# configuration-phase sync.
 #
 # WHAT THIS PROVES. The gate writes a NON-DEFAULT value into the server's world config before the server boots. The
 # client ships the same mod with the same default. If the client ends up reading the server's value, the
@@ -63,8 +65,8 @@
 #
 # Port 25604, not the default — a developer or another agent session may have a server on 25565.
 # `alone`: check_kept_up (vanilla's "Can't keep up!" while the player is on) is a timing verdict, and a neighbouring
-# gate's CPU shows up in it as the server falling behind: side-by-side -j 5 batches had gate-m15 red on it on both
-# trees in two rounds of three and gate-m16 red with the full test suites beside it (introduction.md, gates). So
+# gate's CPU shows up in it as the server falling behind: side-by-side -j 5 batches had the former gate-m15 red on it on
+# both trees in two rounds of three and gate-m16 red with the full test suites beside it (introduction.md, gates). So
 # gates-all runs it with no other gate (stage4-c5-harn.md, HARN review fixes).
 # GATE-PARALLEL: rundirs=fhs-server,fhs-client mem=3500 alone
 set -uo pipefail

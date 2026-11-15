@@ -166,7 +166,7 @@ class GatesAllTest {
 	 * neighbouring gate's CPU moves: the server tick sampler (its {@code [Forbric/Tick]} lines, turned up by
 	 * {@code -Dforbric.tickSamplerEvery}), whose late-tick count gate-m12 holds to a ceiling, and lib.sh's
 	 * {@code check_kept_up}, vanilla's "Can't keep up!" while a player is on (red on gate-m12 beside the unit suite in
-	 * Merger wave 1, on gate-m15 in two of three side-by-side -j 5 rounds and on gate-m16 beside the full suites, as
+	 * Merger wave 1, on the former gate-m15 in two of three side-by-side -j 5 rounds and on gate-m16 beside the full suites, as
 	 * introduction.md's gates section measured; HARN review F1 found the rule had missed it). Comment lines are prose,
 	 * not a use.
 	 */

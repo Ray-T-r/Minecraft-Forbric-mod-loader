@@ -32,8 +32,8 @@ next to gate-m0's unit suite and four server boots, green alone 5 of 5, and red 
 `yes` CPU hogs: the ceiling was measuring the scheduler's neighbours. Raising the ceiling would blind it to a server that really
 falls behind, so the gate keeps it and the scheduler gives it a quiet machine instead. What it cannot quiet is load
 from outside this sweep. The same holds for lib.sh's check_kept_up (vanilla's "Can't keep up!" while a player is on),
-which gate-m12, gate-m15 and gate-m16 call: side-by-side -j 5 batches had m15 red on it in two rounds of three and m16
-red beside the full test suites, so those gates say `alone` too. GatesAllTest finds the gates that use either check and
+which gate-m12 and gate-m16 call: side-by-side -j 5 batches had it red in two rounds of three on gate-m15 (whose checks
+gate-m16 now makes) and on m16 beside the full test suites, so those gates say `alone` too. GatesAllTest finds the gates that use either check and
 fails on one that does not say `alone`.
 
 -j 1 is exactly the old sequential behaviour: same order, same summary.txt, same exit code.
@@ -96,7 +96,7 @@ PORT_STRIDE = 10
 # where that literal meets an exported one is two servers on one port -- the race this module exists to prevent.
 # test_gate_ports.py holds every gate to this tuple, so a gate that adds an M<n>_PORT fails there instead of in a
 # run whose two occupants nobody can reproduce.
-PORT_VARS = ("GATE_PORT", "M12_PORT", "M13_PORT", "M14_PORT", "M15_PORT", "M16_PORT", "M28_PORT", "M32_PORT")
+PORT_VARS = ("GATE_PORT", "M12_PORT", "M13_PORT", "M14_PORT", "M16_PORT", "M28_PORT", "M32_PORT")
 
 DECL = re.compile(r"^#\s*GATE-PARALLEL:\s*(.*)$", re.M)
 

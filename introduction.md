@@ -2269,8 +2269,8 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   performance assertion, `check_kept_up` (vanilla's "Can't keep up!" while a player is on), measures the machine the
   same way: a loaded server logs it once, 2.0–3.6 s behind, one to six seconds after the player joins. With m12–m16 run
   as the same pair of side-by-side batches (median load averages 23–39), m12 went red on it on both trees in all three
-  rounds and m15 on each tree in two of three, and in a `-j 5` batch with the full test suites beside it m12 and m16
-  did. A red
+  rounds and m15 (since removed: m16 makes each of its checks) on each tree in two of three, and in a `-j 5` batch with
+  the full test suites beside it m12 and m16 did. A red
   gate from a loaded parallel run says nothing about the kernel until the boot times in its logs have been read. The
   clock can also bite by date: the game's log4j configuration rolls `logs/latest.log` at midnight, eleven gates read
   that file, and m9 went red once because its session crossed midnight and the reload line it looks for went to the
@@ -2285,7 +2285,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m8, m10 | multiloader `pack.mcmeta` sections do not delete or break a pack |
 | m9, m27 | client into a world and out cleanly with the 97-jar pack; a fresh non-black frame |
 | m11 | a config-driven mod stack on a dedicated server |
-| m12–m16 | client↔server over a real socket; a Paper anti-cheat; a pure Fabric server; MinecraftForge channels and handshake |
+| m12–m14, m16 | client↔server over a real socket; a Paper anti-cheat; a pure Fabric server; NeoForge's login/configuration handshake and per-world SERVER config sync |
 | m17 | the installer's profile, launched the way a launcher does |
 | m18, m19, m20 | cross-ecosystem presence; a nested library initialised once; unmet dependency reaches the player |
 | m21, m26, m28, m29 | MinecraftForge setup, client registration events, configs + live file watcher, capabilities |
