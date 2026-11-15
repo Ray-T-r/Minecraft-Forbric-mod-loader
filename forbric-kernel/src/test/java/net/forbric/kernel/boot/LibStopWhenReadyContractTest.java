@@ -42,8 +42,11 @@ class LibStopWhenReadyContractTest {
 		Path log = log(BOOTING);
 		Path doneAt = temporary.resolve("done-at");
 		// Done lands three seconds in, two after a one-second timer: the old feeder had already written "stop" by then.
-		Result r = run("( sleep 3; printf '%s' '" + DONE.replace("'", "'\\''") + "' >> \"" + log + "\"; "
-				+ "python3 -c 'import time; print(time.time())' > \"" + doneAt + "\" ) &\n"
+		// Done's moment is taken BEFORE the line is written, so it can only be early. Taken after, it was the append plus
+		// a python start-up, and when that start-up was slower than the one stamping the stop (a loaded machine) the
+		// test measured 1.999 s for a settle lib.sh had given in full (C5 G-C wave 2b, one red in a suite run).
+		Result r = run("( sleep 3; python3 -c 'import time; print(time.time())' > \"" + doneAt + "\"; "
+				+ "printf '%s' '" + DONE.replace("'", "'\\''") + "' >> \"" + log + "\" ) &\n"
 				+ "stop_when_ready \"" + log + "\" 1 2\n"
 				+ "python3 -c 'import time; print(time.time())' > \"" + temporary.resolve("stop-at") + "\"\nwait");
 		assertEquals("stop\n", r.out());
