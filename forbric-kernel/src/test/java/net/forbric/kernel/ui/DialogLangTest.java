@@ -227,4 +227,25 @@ class DialogLangTest {
 		}
 		return found;
 	}
+
+	/**
+	 * With no switch, the table is the system language's: what a player on a Chinese system gets without any flag.
+	 * Red-checked: with {@code ofSystem} reading {@code Locale.ROOT} instead of the default locale, both lookups answered EN.
+	 */
+	@Test
+	void withNoSwitchTheSystemLanguageDecides() {
+		String before = System.getProperty(DialogLang.SWITCH);
+		Locale locale = Locale.getDefault();
+		try {
+			System.clearProperty(DialogLang.SWITCH);
+			Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
+			assertSame(DialogLang.ZH_CN, DialogLang.ofSystem());
+			Locale.setDefault(Locale.ENGLISH);
+			assertSame(DialogLang.EN, DialogLang.ofSystem());
+		} finally {
+			Locale.setDefault(locale);
+			if (before == null) System.clearProperty(DialogLang.SWITCH);
+			else System.setProperty(DialogLang.SWITCH, before);
+		}
+	}
 }

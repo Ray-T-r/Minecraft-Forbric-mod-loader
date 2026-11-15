@@ -294,4 +294,27 @@ class DisabledModsTest {
 		}
 		return jar;
 	}
+
+	/**
+	 * A new forbric-disabled.txt explains itself in the system language; the names under it are the same either way.
+	 * Red-checked: with {@code DisabledMods.header()} asking {@code Locale.ROOT} instead of the default locale, and with
+	 * its Chinese lines replaced by the English ones, the zh assertion failed.
+	 */
+	@Test
+	void aNewFileExplainsItselfInTheSystemLanguage(@org.junit.jupiter.api.io.TempDir Path dir) throws Exception {
+		Path zhDir = Files.createDirectories(dir.resolve("zh"));
+		Path enDir = Files.createDirectories(dir.resolve("en"));
+		Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
+		DisabledMods.append(zhDir, List.of("a.jar"), "2026-11-16: first");
+		Locale.setDefault(Locale.ENGLISH);
+		DisabledMods.append(enDir, List.of("a.jar"), "2026-11-16: first");
+
+		String zh = Files.readString(zhDir.resolve(DisabledMods.FILE));
+		String en = Files.readString(enDir.resolve(DisabledMods.FILE));
+		assertTrue(zh.startsWith("# 这里列出的 jar 文件留在 mods 文件夹里，但 Forbric 不会加载它们。\n"), zh);
+		assertTrue(zh.contains("# 一行写一个文件名。想重新启用哪个，就把它那一行删掉。\n"), zh);
+		assertTrue(en.startsWith("# The jars listed here stay in your mods folder, but Forbric does not load them.\n"), en);
+		assertEquals(DisabledMods.parse(zh.lines().toList()), DisabledMods.parse(en.lines().toList()));
+		assertEquals(List.of("a.jar"), DisabledMods.parse(zh.lines().toList()));
+	}
 }

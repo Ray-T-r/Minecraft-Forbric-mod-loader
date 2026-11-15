@@ -142,6 +142,7 @@ class MinecraftForgeRefusalTest {
 		assertTrue(zh.contains("没有加载：Forbric 已不再支持 MinecraftForge"), zh);
 		assertTrue(zh.contains("请下载 Only Forge 的 NeoForge 或 Fabric 版本，放进 mods 文件夹替换 onlyforge-1.0-forge.jar。"), zh);
 		assertTrue(zh.contains("Forbric 现在只加载 Fabric 和 NeoForge mod。"), zh);
+		assertFalse(zh.contains("Forbric no longer supports MinecraftForge"), "no English refusal wording in the Chinese report: " + zh);
 
 		// And the writer finds the refusal by itself, from the Lost rows.
 		Path file = temporary.resolve("load-report.txt");
@@ -333,5 +334,35 @@ class MinecraftForgeRefusalTest {
 		init.visitEnd();
 		out.visitEnd();
 		return out.toByteArray();
+	}
+
+	/**
+	 * With no {@code -Dforbric.dialogLanguage}, the finding's detail follows the system language: a player on a Chinese
+	 * system reads it in Chinese, an English one in English. gate-m29 used to boot a whole server under zh_CN for this;
+	 * the boot's other checks were the English boot's on the same jars (D88b). Red-checked: with
+	 * {@code DialogLang.ofSystem} answering {@code EN} regardless of the locale, and with the zh_cn table's
+	 * {@code unsupported.forge.detail} replaced by the English text, the first assertion failed.
+	 */
+	@Test void theFindingFollowsTheSystemLanguageWhenNoLanguageIsNamed() throws Exception {
+		Locale before = Locale.getDefault();
+		String zh, en;
+		try {
+			System.clearProperty(DialogLang.SWITCH);
+			Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
+			new ForbricModDiscoverer().discoverJar(forgeOnly);
+			MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, List.of(), mods, jar -> false);
+			zh = CompatibilityFindings.confirmedRequired().get(0).detail();
+
+			reset();
+			Locale.setDefault(Locale.ENGLISH);
+			new ForbricModDiscoverer().discoverJar(forgeOnly);
+			MetadataFailures.recordFindings(MultiLoaderArbiter::ownerOf, List.of(), mods, jar -> false);
+			en = CompatibilityFindings.confirmedRequired().get(0).detail();
+		} finally {
+			Locale.setDefault(before);
+		}
+		assertEquals("Only Forge（onlyforge-1.0-forge.jar）是 MinecraftForge mod。Forbric 已不再支持 MinecraftForge，所以它不会被加载。"
+				+ "请改用 Only Forge 的 NeoForge 或 Fabric 版本。", zh);
+		assertTrue(en.startsWith("Only Forge (onlyforge-1.0-forge.jar) is a MinecraftForge mod. Forbric no longer supports"), en);
 	}
 }

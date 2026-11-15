@@ -818,4 +818,32 @@ class DependencyDialogTest {
 			else System.setProperty(DialogLang.SWITCH, before);
 		}
 	}
+
+	/**
+	 * The child's three windows take their table from {@link DependencyDialogMain#language()}, which follows the system
+	 * language when no switch is set: the words a player on a Chinese system reads in the unmet-dependency window.
+	 * Red-checked: with {@code language()} returning {@code DialogLang.EN}, and with the zh_cn table's {@code title.deps}
+	 * replaced by the English text, the zh assertions failed.
+	 */
+	@Test
+	void theChildSpeaksTheSystemLanguage() {
+		String before = System.getProperty(DialogLang.SWITCH);
+		java.util.Locale locale = java.util.Locale.getDefault();
+		DialogLang zh, en;
+		try {
+			System.clearProperty(DialogLang.SWITCH);
+			java.util.Locale.setDefault(java.util.Locale.SIMPLIFIED_CHINESE);
+			zh = DependencyDialogMain.language();
+			java.util.Locale.setDefault(java.util.Locale.ENGLISH);
+			en = DependencyDialogMain.language();
+		} finally {
+			java.util.Locale.setDefault(locale);
+			if (before == null) System.clearProperty(DialogLang.SWITCH);
+			else System.setProperty(DialogLang.SWITCH, before);
+		}
+		assertEquals("Forbric —— 有 mod 缺少它需要的前置", DependencyDialogMain.title(zh, List.of(absent()), List.of()));
+		assertTrue(DependencyDialogMain.blocks(zh, List.of(absent()), List.of()).get(0).startsWith("有 1 个 mod 缺少它需要的前置："),
+				DependencyDialogMain.blocks(zh, List.of(absent()), List.of()).toString());
+		assertEquals("Forbric — a mod is missing something it requires", DependencyDialogMain.title(en, List.of(absent()), List.of()));
+	}
 }

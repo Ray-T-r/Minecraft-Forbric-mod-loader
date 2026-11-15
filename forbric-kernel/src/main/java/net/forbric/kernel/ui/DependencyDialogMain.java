@@ -197,7 +197,7 @@ public final class DependencyDialogMain {
 		}
 		if (rows.isEmpty() && mixins.isEmpty()) System.exit(CONTINUE);
 
-		DialogLang lang = DialogLang.ofSystem();
+		DialogLang lang = language();
 		try {
 			UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName());
 		} catch (Throwable ignored) {
@@ -223,6 +223,14 @@ public final class DependencyDialogMain {
 		System.exit(answer);
 	}
 
+	/**
+	 * The table each of the child's windows speaks: the switch when the parent forwarded one, otherwise the system
+	 * language ({@link DialogLang#ofSystem}). One place, so the three entry points cannot drift apart and a test can ask it.
+	 */
+	static DialogLang language() {
+		return DialogLang.ofSystem();
+	}
+
 	private static void confirmationMain(Path report) {
 		// Until the player answers, nobody has: an unreadable report or a window that cannot be shown approves nothing
 		// and refuses nothing.
@@ -230,7 +238,7 @@ public final class DependencyDialogMain {
 		try {
 			DependencyReport.Confirmation confirmation = DependencyReport.readConfirmation(report);
 			if (confirmation.required().isEmpty()) { System.exit(UNSHOWN); return; }
-			DialogLang lang = DialogLang.ofSystem();
+			DialogLang lang = language();
 			try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 			catch (Exception ignored) {
 				Caught.warn(ignored, "[Forbric/Deps] could not set the system look and feel; the dialog uses the"
@@ -261,7 +269,7 @@ public final class DependencyDialogMain {
 		try {
 			DependencyReport.Isolation isolation = DependencyReport.readIsolation(report);
 			if (isolation.without().isEmpty()) { System.exit(CONTINUE); return; }
-			DialogLang lang = DialogLang.ofSystem();
+			DialogLang lang = language();
 			try { UIManager.setLookAndFeel(UIManager.getSystemLookAndFeelClassName()); }
 			catch (Exception ignored) {
 				Caught.warn(ignored, "[Forbric/Deps] could not set the system look and feel; the dialog uses the"

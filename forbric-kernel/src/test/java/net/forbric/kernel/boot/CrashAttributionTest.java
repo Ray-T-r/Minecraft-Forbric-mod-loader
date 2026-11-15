@@ -559,4 +559,40 @@ class CrashAttributionTest {
 			else System.setProperty(CrashAttribution.SWITCH, before);
 		}
 	}
+
+	/**
+	 * The whole path picks its language from the system: the same crash, written once on a Chinese system and once on an
+	 * English one. The two renderings themselves are pinned above with the language named; this pins who names it.
+	 * Red-checked: with {@code CrashAttribution.chinese()} answering false, and with the Chinese rendering's guess line
+	 * changed to English, the zh assertions failed.
+	 */
+	@Test
+	void theWholePathWritesInTheSystemLanguage() throws Exception {
+		ModCatalog.publish(List.of(mod("supermartijn642corelib", "SuperMartijn642's Core Lib",
+				"supermartijn642corelib-1.1.24a-forge-mc26.2.jar")));
+		java.util.Locale before = java.util.Locale.getDefault();
+		String zh, en;
+		try {
+			java.util.Locale.setDefault(java.util.Locale.SIMPLIFIED_CHINESE);
+			zh = analyseIn(tmp.resolve("zh"));
+			java.util.Locale.setDefault(java.util.Locale.ENGLISH);
+			en = analyseIn(tmp.resolve("en"));
+		} finally {
+			java.util.Locale.setDefault(before);
+		}
+		assertTrue(zh.contains("SuperMartijn642's Core Lib") && zh.contains("只是个猜测") && zh.contains("mods 文件夹"), zh);
+		assertFalse(zh.contains("This is a guess"), zh);
+		assertTrue(en.contains("SuperMartijn642's Core Lib") && en.contains("This is a guess") && en.contains("mods folder"), en);
+		assertFalse(en.contains("只是个猜测"), en);
+	}
+
+	/** Stages the core-lib crash report in {@code rundir}, runs the shutdown hook's body, returns what it wrote. */
+	private static String analyseIn(Path rundir) throws Exception {
+		Path dir = Files.createDirectories(rundir.resolve("crash-reports"));
+		Path staged = Files.writeString(dir.resolve(CORE_LIB), report(CORE_LIB));
+		Files.setLastModifiedTime(staged, java.nio.file.attribute.FileTime.fromMillis(System.currentTimeMillis()));
+		CrashAttribution.setRunDir(rundir, 0);
+		CrashAttribution.run();
+		return Files.readString(rundir.resolve(".forbric-kernel").resolve("crash-analysis.txt"), StandardCharsets.UTF_8);
+	}
 }
