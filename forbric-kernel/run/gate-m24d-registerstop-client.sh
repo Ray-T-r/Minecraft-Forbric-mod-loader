@@ -19,14 +19,26 @@
 #     Fabric broken canary).
 # Each stop phase waits for the crash report, then for the client to leave or to sit in NeoForge's fatal-error report,
 # which waits for a click nobody gives: the gate then stops the client (TERM, so its shutdown hooks run and Forbric's crash
-# analysis is written) and kills what is left of its tree (on macOS the message box is an osascript child). Forbric's
+# analysis is written) and kills what is left of its tree. Forbric's
 # crash analysis must name the failing mod in every phase — for try, from NeoForge's own record of the issue's cause, as
 # the client's report carries only its message (K3c open item 6, fixed by lane STOP). The control boots the same three jars
 # with =off and must get as far as "Sound engine started", froze the registries and ran the Fabric main.
 #
+# NeoForge's own error screen (D87b, lane DLG): natively FatalErrorReporting draws the report on FML's early window ("Error
+# loading mods", the mod and the cause, Open Mods Folder / Log File / Crash Report, Quit Game). Forbric never opens that
+# window, so the kernel opens it for the report (NeoFatalErrorWindow): before that, NeoForge took its message-box fallback,
+# which on macOS read "INVALID MESSAGE WITH QUOTES" (tinyfd; the game JVM is AWT-headless) and whose Swing form never shows
+# under -XstartOnFirstThread (measured on native NeoForge with earlyWindowControl=false). The registry-phase stops (listener,
+# try) assert the report drew on NeoForge's early window (the kernel's line, the window's renderer up, no osascript message
+# box among the client's children, on macOS with Quartz the client's own window under NeoForge's title on screen, no
+# config/fml.toml written).
+#
 # RED control (D34): the kernel at 2c231c9c (before K3c) contained the registration throw, and the kernel at 421c53cc
 # (before STOP) contained construct, common and fabric and named nobody for try. The kernel at 40a71d1a (lane STOP before
 # its review) stopped datapackreg after the Fabric main in "Initializing game", and its fabric line printed "%s".
+# The early-window checks are red on the kernel at 421c53cc (FORBRIC_BOOT_JAR at its jar): NeoForge's osascript box, no
+# kernel line, no renderer (35/8, lane DLG). The fml.toml check is red on a kernel whose window setup keeps FML's in-memory
+# config in place (41/2).
 # GATE-PARALLEL: rundirs=client-registerstop mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -65,6 +77,18 @@ stage() { # stage [fabric] — the register-stop canary and the two live canarie
   echo "[kernel] staged: $(ls -1 "$CLI/mods" | tr '\n' ' ')"
 }
 
+# client_windows <pid> — the titles of the on-screen windows <pid> owns, one per line; nothing without macOS's Quartz.
+client_windows() {
+  python3 - "$1" <<'WINDOWS' 2>/dev/null || true
+import sys
+import Quartz
+pid = int(sys.argv[1])
+for w in Quartz.CGWindowListCopyWindowInfo(Quartz.kCGWindowListOptionOnScreenOnly, Quartz.kCGNullWindowID):
+    if w.get('kCGWindowOwnerPID') == pid and w.get('kCGWindowName'):
+        print(w['kCGWindowName'])
+WINDOWS
+}
+
 # run_client <log> <mode> — boots the client with -Dforbric.registerstop=<mode> under explicit continue (the policy does
 # not decide a registration stop). Waits up to 240 s for a crash report or for the sound engine. After a crash report it
 # gives the client 10 s to leave on its own. A client still running then is stopped by the gate: "held" in $log.exit when
@@ -74,7 +98,7 @@ run_client() {
   local log="$1" mode="$2" pid i code report="" crashed="" sound=""
   : > "$log"
   # Every artifact of an earlier run goes first: a stale crash report or analysis beside the log would pass for this one.
-  rm -f "$log.exit" "$log.game" "$log.crash-client.txt" "$log.suspects.json"
+  rm -f "$log.exit" "$log.game" "$log.crash-client.txt" "$log.suspects.json" "$log.children" "$log.windows"
   FORBRIC_COMPAT_POLICY=continue FORBRIC_JVM="${FORBRIC_JVM:-} -Dforbric.registerstop=$mode" RUNDIR="$CLI" \
     "$KERNEL/run/launch-kernel-client.sh" > "$log" 2>&1 < /dev/null &
   pid=$!
@@ -93,7 +117,11 @@ run_client() {
   done
   if kill -0 "$pid" 2>/dev/null; then
     # Informational: what the client is waiting in (NeoForge's message box is a child process on macOS).
-    echo "[kernel] client still running; its children: $(pgrep -P "$pid" 2>/dev/null | xargs -I{} ps -o command= -p {} 2>/dev/null | cut -c1-160 | tr '\n' ' ')"
+    # What the client is showing: NeoForge's message box is a child process on macOS (osascript); NeoForge's early window
+    # is the client's own window. The launcher execs the JVM, so $pid is the game.
+    pgrep -P "$pid" 2>/dev/null | xargs -I{} ps -o command= -p {} 2>/dev/null | cut -c1-160 > "$log.children"
+    echo "[kernel] client still running; its children: $(tr '\n' ' ' < "$log.children")"
+    client_windows "$pid" > "$log.windows"
     stop_tree "$pid" 15
     wait "$pid" 2>/dev/null
     if [ -n "$crashed" ] && [ -z "$sound" ] && ! grep -qa "Sound engine started" "$CLI/logs/latest.log" 2>/dev/null; then
@@ -158,10 +186,40 @@ client_neo_stop() { # client_neo_stop <log> <mode> <NeoForge init task> [saves: 
   check "$mode: the crash report carries NeoForge's mod-loading error" "net\.neoforged\.fml\.ModLoadingException: Loading errors encountered" "$log.crash-client.txt"
 }
 
+early_window_report() { # early_window_report <log> <mode> — the report drew NeoForge's own error screen on its early window
+  local log="$1" mode="$2"
+  # NeoForge's own error screen, as natively (D87b): drawn on FML's early window, which the kernel opens for the report.
+  check "$mode: the kernel opened NeoForge's early window for its fatal-error report" \
+    "\[Forbric/FatalError\] opened NeoForge's early window \('fmlearlywindow'\)" "$log"
+  check "$mode: NeoForge's early window rendered (its renderer reported GL)" "\[fml-loadingscreen/INFO\].*GL info: " "$log"
+  if [ "$(cat "$log.exit" 2>/dev/null)" = held ]; then
+    if grep -aq osascript "$log.children" 2>/dev/null; then
+      echo "[kernel] FAIL $mode: NeoForge's message-box fallback is up (osascript), not its error screen"; FAIL=1
+    else
+      echo "[kernel] PASS $mode: no message-box fallback among the client's children"
+    fi
+    if python3 -c 'import Quartz' 2>/dev/null; then
+      if grep -aqx "Minecraft: NeoForge Loading..." "$log.windows" 2>/dev/null; then
+        echo "[kernel] PASS $mode: the client's own window, under NeoForge's early-window title, is on screen"
+      else
+        echo "[kernel] FAIL $mode: no on-screen client window titled 'Minecraft: NeoForge Loading...' (saw: $(tr '\n' '|' < "$log.windows" 2>/dev/null))"; FAIL=1
+      fi
+    fi
+  fi
+  # The window's own setup writes its size into FML's config, which would save the kernel's in-memory one
+  # (earlyWindowControl=false) to config/fml.toml, where a native NeoForge launch of this folder would read it.
+  if [ -e "$CLI/config/fml.toml" ]; then
+    echo "[kernel] FAIL $mode: config/fml.toml was written (the kernel's in-memory FML config leaked to disk)"; FAIL=1
+  else
+    echo "[kernel] PASS $mode: no config/fml.toml was written"
+  fi
+}
+
 client_stop() { # client_stop <log> <mode> — a stop in NeoForge's registry phase (begin path)
   local log="$1" mode="$2"
   client_neo_stop "$log" "$mode" "Registry initialization"
   check "$mode: NeoForge rolled every registry back to vanilla"  "Rolling back to VANILLA state"   "$log"
+  early_window_report "$log" "$mode"
   check_absent "$mode: Minecraft was never started (no sound engine)"  "Sound engine started"                "$log"
   check_absent "$mode: no Fabric main ran after the roll-back"          "\[ForbricFabricLive\] onInitialize" "$log"
   check_absent "$mode: the registries were not frozen after the roll-back" "froze the registries NeoForge-first" "$log"
@@ -245,6 +303,7 @@ check "control: the Fabric main ran"            "\[ForbricFabricLive\] onInitial
 check "control: the registries were frozen"     "froze the registries NeoForge-first"    "$CONTROL"
 check "control: Minecraft started (sound engine)" "Sound engine started"                 "$CONTROL"
 check_absent "control: no roll-back"            "Rolling back to VANILLA state"          "$CONTROL"
+check_absent "control: no fatal-error window was opened" "\[Forbric/FatalError\] opened" "$CONTROL"
 if ls "$CLI"/crash-reports/crash-*.txt >/dev/null 2>&1; then
   echo "[kernel] FAIL control: a crash report was written"; FAIL=1
 else

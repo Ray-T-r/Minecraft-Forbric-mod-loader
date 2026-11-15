@@ -131,6 +131,15 @@ public final class KernelLifecycle {
 	}
 
 	/**
+	 * Invoked first thing in NeoForge's {@code ClientModLoader.reportFatalError} (FatalErrorWindowInjector), the client's
+	 * report of an error that stops it: gives that report NeoForge's early window to draw its error screen on, as natively
+	 * (see {@link NeoFatalErrorWindow}). Never throws; NeoForge's own report follows.
+	 */
+	public static void onClientFatalError() {
+		NeoFatalErrorWindow.open(gameLoader());
+	}
+
+	/**
 	 * Invoked first thing in the client's {@code Main.logEarlyException}, vanilla's handler for the three steps
 	 * {@code Main.main} opens with. Vanilla prints the throwable to stderr and exits (status 249, 252, 251) without it
 	 * leaving {@code main}, so this is the one chance to put the error that ended the game into {@code latest.log}.

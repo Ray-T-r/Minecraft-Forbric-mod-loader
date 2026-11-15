@@ -68,6 +68,15 @@ public enum ForeignType {
 	FML_PATHS("net.neoforged.fml.loading.FMLPaths"),
 	GAME_DATA("net.neoforged.neoforge.registries.GameData"),
 	/**
+	 * FML's holder of the early window: {@code displayFatalErrorAndExit} draws a client's fatal error on its provider, and
+	 * the kernel gives it one when NeoForge's report asks (there is none otherwise, the kernel never opens that window).
+	 */
+	IMMEDIATE_WINDOW_HANDLER("net.neoforged.fml.loading.ImmediateWindowHandler"),
+	/** The SPI an early window implements; FML's own is {@code fmlearlywindow}. */
+	IMMEDIATE_WINDOW_PROVIDER("net.neoforged.neoforgespi.earlywindow.ImmediateWindowProvider"),
+	/** FML's view of the game's arguments, which it hands an early-window provider. */
+	PROGRAM_ARGS("net.neoforged.fml.loading.ProgramArgs"),
+	/**
 	 * NeoForge's own built-in translations — the table its screens read before any resource pack exists. Its loader is
 	 * called from the client mod loader the kernel replaces, so the kernel calls it.
 	 */

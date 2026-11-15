@@ -621,6 +621,9 @@ public final class KernelBoot {
 		// assets. (Registered unconditionally — the transformer only matches the two ClientModLoader classes, which a
 		// dedicated server never loads.)
 		chain.register(TransformPhase.COREMOD, new ClientPackHookInjector());
+		// Client only (the class a dedicated server never loads): NeoForge's report of an error that stops the client gets
+		// the early window it shows that error on natively, instead of its message-box fallback.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FatalErrorWindowInjector());
 
 		// NeoForge's packet splitter is a second encoder in the same pipeline as PacketEncoder, and Fabric binds
 		// its packet context only around the latter. A Fabric codec that reads it from inside the splitter — as
@@ -1163,6 +1166,7 @@ public final class KernelBoot {
 		ForbricLog.info("[Forbric/Boot] game base %s entry loaded through kernel loader; lifecycle redirected to "
 				+ "the kernel — handing to vanilla boot", side.name().toLowerCase());
 
+		if (side.api().isClient()) NeoFatalErrorWindow.noteGameArguments(gameArgs.toArray(new String[0]));
 		Method main = mainClass.getMethod("main", String[].class);
 		main.invoke(null, (Object) gameArgs.toArray(new String[0]));
 	}
