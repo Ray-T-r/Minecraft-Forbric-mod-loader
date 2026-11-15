@@ -89,6 +89,12 @@ final class RegistrationEventSteps {
 			return failures.isEmpty() && wholeFailure == null;
 		}
 
+		/** What ended the run: the whole call's failure, or the failing step's; null when it was clean. */
+		Throwable failure() {
+			if (wholeFailure != null) return wholeFailure;
+			return failures.isEmpty() ? null : failures.values().iterator().next();
+		}
+
 		/**
 		 * Whether the capability step ran to completion, which is what the transfer bridge waits for: it is
 		 * installed "after native capability registration". Called whole, only a clean call says so.
@@ -195,6 +201,9 @@ final class RegistrationEventSteps {
 				} catch (Throwable t) {
 					Caught.expected(t);
 					failures.put(step, unwrap(t));
+					// Natively the first step that throws ends init, and the "Registration events" task stops the boot on
+					// it (D87): no later step runs.
+					break;
 				}
 			}
 			outcome = new Outcome(true, steps, failures, null, dataMapTypes(cl));
@@ -291,7 +300,7 @@ final class RegistrationEventSteps {
 	private static void report(Outcome outcome) {
 		for (Map.Entry<Step, Throwable> failed : outcome.failures().entrySet()) {
 			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's registration step " + failed.getKey().display()
-					+ " failed — the other steps still ran", failed.getValue());
+					+ " failed — that ends NeoForge's registration events, as on NeoForge", failed.getValue());
 		}
 		if (!outcome.isolated() && outcome.wholeFailure() != null) {
 			ForbricLog.warn("[Forbric/Lifecycle] NeoForge's registration events failed — capabilities and data "

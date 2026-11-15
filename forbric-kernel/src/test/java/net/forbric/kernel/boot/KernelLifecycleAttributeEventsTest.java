@@ -106,14 +106,20 @@ class KernelLifecycleAttributeEventsTest {
 		assertEquals(List.of("first", "second", "late"), InjectorExecution.getStatic(loader.loadClass(HOOKS), "seen"));
 	}
 
-	/** A DefaultAttributes that cannot initialise is reported under the attribute tag lib.sh's safety net reads. */
-	@ExpectCaught({"DefaultAttributes could not initialise", "modifyAttributes() THREW"})
-	@Test void anInitialiserThatFailsIsReportedAndTheEventsStillRun(@TempDir Path work) throws Throwable {
+	/**
+	 * A DefaultAttributes that cannot initialise is reported under the attribute tag lib.sh's safety net reads, and the
+	 * attribute events' own failure — the walk asks the class that failed — leaves, so it ends NeoForge's registry phase and
+	 * the boot stops on it as natively (D87). Until D87 that failure was contained too (the Caught WARN "modifyAttributes()
+	 * THREW", "anInitialiserThatFailsIsReportedAndTheEventsStillRun") and the boot went on with no attributes.
+	 */
+	@ExpectCaught("DefaultAttributes could not initialise")
+	@Test void anInitialiserThatFailsIsReportedAndTheEventsFailureLeaves(@TempDir Path work) throws Throwable {
 		Map<String, String> broken = new java.util.HashMap<>(STAND_INS);
 		broken.put(ATTRIBUTES, STAND_INS.get(ATTRIBUTES).replace("new EntityType<>(\"late\");",
 				"boom();\n\t\t\t\tstatic EntityType<Object> boom() { throw new IllegalStateException(\"guest initialiser broke\"); }"));
 		ClassLoader loader = InjectorExecution.load(InjectorExecution.compile(work, broken));
-		KernelLifecycle.postAttributeEvents(loader);
+		assertThrows(NoClassDefFoundError.class, () -> KernelLifecycle.postAttributeEvents(loader),
+				"the event's own failure leaves postRegisterEvents' tail");
 		assertEquals(List.of(), InjectorExecution.getStatic(loader.loadClass(HOOKS), "seen"),
 				"the walk asked the class that failed to initialise, so the event did not finish either");
 	}

@@ -21,6 +21,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.ByteArrayInputStream;
@@ -123,18 +124,21 @@ class RegistrationEventStepsTest {
 	// --- the run ------------------------------------------------------------------------------------------------
 
 	/**
-	 * The sweep pack's failure, reduced: the data-map step throws. The steps around it still run, the capability
-	 * step's success is what the transfer bridge sees, and the data-map loss is a finding rather than a WARN.
+	 * The sweep pack's failure, reduced: the data-map step throws. As on NeoForge it ends the run — the steps after it do
+	 * not run, and the failure is what the "Registration events" task stops the boot on (D87); the capability step's success
+	 * is still what the run says, and the data-map loss is still a finding. Until D87 the steps after it still ran
+	 * ("aFailingDataMapStepNoLongerTakesTheOthersWithIt", cauldron, capabilities, poi) and the boot carried on.
 	 */
 	@Test
-	void aFailingDataMapStepNoLongerTakesTheOthersWithIt() {
+	void aFailingDataMapStepEndsTheRunAsOnNeoForge() {
 		RegistrationEventSteps.Outcome outcome = RegistrationEventSteps.fire(carrier(false, false));
 
 		assertNotNull(outcome);
 		assertTrue(outcome.isolated());
-		assertEquals(List.of("cauldron", "capabilities", "poi"), Recorder.HITS,
-				"everything but the failing step ran, in NeoForge's order");
+		assertEquals(List.of("cauldron", "capabilities"), Recorder.HITS,
+				"every step up to the failing one ran, in NeoForge's order, and none after it");
 		assertInstanceOf(IllegalStateException.class, outcome.failures().get(RegistrationEventSteps.DATA_MAPS));
+		assertSame(outcome.failures().get(RegistrationEventSteps.DATA_MAPS), outcome.failure(), "what the boot stops on");
 		assertTrue(outcome.capabilitiesRegistered(), "the transfer bridge waits on capabilities, not on data maps");
 		assertEquals(0, outcome.dataMapTypes());
 
@@ -158,12 +162,14 @@ class RegistrationEventStepsTest {
 		assertNotNull(finding("neoforge-data-maps"), "zero types after the call is still a loss");
 	}
 
+	/** A failing capability step ends the run too; until D87 the steps after it ran ({@code cauldron, poi}). */
 	@Test
-	void aFailedCapabilityStepHoldsBackOnlyTheTransferBridge() {
+	void aFailedCapabilityStepEndsTheRunAsOnNeoForge() {
 		RegistrationEventSteps.Outcome outcome = RegistrationEventSteps.fire(carrier(true, false));
 
 		assertFalse(outcome.capabilitiesRegistered());
-		assertEquals(List.of("cauldron", "poi"), Recorder.HITS);
+		assertEquals(List.of("cauldron"), Recorder.HITS);
+		assertNotNull(outcome.failure(), "what the boot stops on");
 		CompatibilityFinding capabilities = finding("neoforge-registration:CapabilityHooks.init");
 		assertNotNull(capabilities, CompatibilityFindings.all().toString());
 		assertTrue(capabilities.confirmedRequired());

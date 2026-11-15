@@ -115,6 +115,39 @@ class NeoSetupPhaseStopStagedTest {
 		assertTrue(!stopped(), "nothing stopped");
 	}
 
+	/**
+	 * The registry phase's first event: natively {@code RegistryManager.postNewRegistryEvent} hands it to every container
+	 * ({@code ModLoader.postEventWrapContainerInModOrder}), and the first listener that throws ends the "Registry
+	 * initialization" task with {@code acceptEvent}'s {@code ModLoadingException} naming the mod. Until D87 the kernel skipped
+	 * that mod's custom registries and went on.
+	 */
+	@Test
+	void aNewRegistryEventListenerThatThrowsEndsTheRegistryPhase() throws Exception {
+		Map<String, Object> mods = new LinkedHashMap<>();
+		mods.put("thrower", mod("thrower", "net.neoforged.neoforge.registries.NewRegistryEvent", event -> {
+			calls.add("thrower");
+			throw new IllegalStateException("thrower's NewRegistryEvent listener fails on purpose");
+		}));
+		mods.put("later", mod("later", "net.neoforged.neoforge.registries.NewRegistryEvent", event -> calls.add("later")));
+		Class<?> loader = Class.forName("net.forbric.kernel.boot.KernelModLoader", true, cl);
+		java.lang.reflect.Field published = loader.getDeclaredField("publishedNeo");
+		published.setAccessible(true);
+		published.set(null, mods);
+		List<Object> buses = new ArrayList<>();
+		for (Object identity : mods.values()) buses.add(identity.getClass().getMethod("bus").invoke(identity));
+
+		Method post = Class.forName("net.forbric.kernel.runtime.KernelNeoRegistries", true, cl).getMethod("postNewRegistryEvent", List.class);
+		InvocationTargetException thrown = assertThrows(InvocationTargetException.class, () -> post.invoke(null, buses),
+				"a failing NewRegistryEvent listener must end the registry phase, not cost its mod only its registries");
+		Throwable failure = thrown.getCause();
+
+		assertSame(modLoadingException(), failure.getClass(), "acceptEvent's ModLoadingException: " + failure);
+		List<?> issues = issues(failure);
+		assertEquals("fml.modloadingissue.errorduringevent", key(issues.get(0)));
+		assertEquals("thrower", affectedMod(issues.get(0)), "it names the mod");
+		assertEquals(List.of("thrower"), calls, "the first throw ends the delivery, as NeoForge's fan-out does");
+	}
+
 	/** A NeoForge mod: a mod bus with one listener for {@code eventClass}, and the kernel's container on that bus. */
 	private Object mod(String id, String eventClass, Consumer<Object> listener) throws Exception {
 		Class<?> busBuilder = Class.forName("net.neoforged.bus.api.BusBuilder", true, cl);

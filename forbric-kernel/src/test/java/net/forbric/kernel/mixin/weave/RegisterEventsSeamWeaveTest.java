@@ -140,14 +140,22 @@ class RegisterEventsSeamWeaveTest {
 		assertTrue(guestThrows.printed(STOPS), guestThrows.describe());
 	}
 
-	@Test void aTailStepThatThrowsCostsOnlyItself() {
+	/**
+	 * A step of NeoForge's tail that throws (here the spawn-placement event) leaves {@code postRegisterEvents} — the tail is
+	 * outside its per-registry try, so there is no roll-back — and natively ends the "Registry initialization" task: the boot
+	 * stops on it (D87), and no later tail step runs. Until D87 the kernel contained it ("aTailStepThatThrowsCostsOnlyItself":
+	 * the step's WARN, then sortTabs and registerModdedCategories ran and the boot went on).
+	 */
+	@Test void aTailStepThatThrowsStopsTheBootAsNeoForgeDoes() {
 		String trace = trace(spawnThrows);
-		assertTrue(trace.startsWith("posted=3 " + REGISTRY + ","), spawnThrows.describe());
-		assertTrue(spawnThrows.printed("[Forbric/Lifecycle] net.minecraft.world.entity.SpawnPlacements.fireSpawnPlacementEvent() "
-				+ "THREW"), spawnThrows.describe());
+		assertTrue(trace.startsWith("stopped="), spawnThrows.describe());
 		List<String> tail = Arrays.stream(trace.split(",")).filter(s -> s.startsWith("tail:")).toList();
-		assertEquals(List.of("tail:modifyAttributes", "tail:sortTabs", "tail:registerModdedCategories"), tail,
-				spawnThrows.describe());
+		assertEquals(List.of("tail:modifyAttributes"), tail, "no tail step after the one that threw — " + spawnThrows.describe());
+		assertEquals(0, occurrences(trace, "revertToVanilla"), "the tail is outside the roll-back's try — " + spawnThrows.describe());
+		assertTrue(trace.endsWith(",waitForTask:Registry initialization"), spawnThrows.describe());
+		assertTrue(spawnThrows.printed("[Forbric/Lifecycle] NeoForge's GameData.postRegisterEvents threw "), spawnThrows.describe());
+		assertTrue(spawnThrows.printed(STOPS), spawnThrows.describe());
+		assertTrue(!spawnThrows.printed("fired RegisterEvent x"), spawnThrows.describe());
 	}
 
 	private static WeaveHarness.Result run(Path fixture, String label, String spawnThrowsProperty, String guestThrowsProperty,

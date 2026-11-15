@@ -308,23 +308,27 @@ public final class KernelLifecycle {
 		// RegisterClientPayloadHandlersEvent (the CLIENT HANDLERS) and validates every to-client payload has one —
 		// else the join negotiation rejects with "Incompatible client! (No Handler for …)". Both events reach
 		// NeoForge's own handlers only because step 2c2 wired its runtime-jar @EventBusSubscribers.
-		invokeNetworkSetup(cl, ForeignType.NETWORK_REGISTRY.binary(Ecosystem.NEOFORGE));
+		invokeNetworkSetup(cl, ForeignType.NETWORK_REGISTRY.binary(Ecosystem.NEOFORGE), RegistrationStop.NETWORK);
 		// The client half is client-only, as in genuine NeoForge (ClientModLoader runs it; ServerModLoader does not).
 		// It used to run on the dedicated server too, and passed — vacuously, because no NeoForge payload type was
 		// registered there for it to demand a handler for. The moment the server registered them (baseline in
 		// ModList) it failed with "Some clientbound payloads are missing client-side handlers", correctly: the
 		// handlers live in a Dist.CLIENT @EventBusSubscriber that step 2c2 rightly skips on a server.
 		if (side.isClient()) invokeNetworkSetup(cl,
-				"net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry");
+				"net.neoforged.neoforge.client.network.registration.ClientNetworkRegistry", RegistrationStop.CLIENT_NETWORK);
 	}
 
 	/** Runs a NeoForge {@code *NetworkRegistry.setup()} — it posts its Register*PayloadHandlersEvent via ModLoader. */
-	private static void invokeNetworkSetup(ClassLoader cl, String registryClass) {
+	private static void invokeNetworkSetup(ClassLoader cl, String registryClass, String task) {
 		try {
 			Class<?> registry = Class.forName(registryClass, false, cl);
 			registry.getMethod("setup").invoke(null);
 			ForbricLog.info("[Forbric/Lifecycle] %s.setup() — payload handlers registered%s",
 					registryClass.substring(registryClass.lastIndexOf('.') + 1), describePayloadRegistrations(registry));
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			// A mod's payload-handler listener (NeoForge's ModLoadingException naming it) or NeoForge's own check of what was
+			// registered threw: natively that is the "Network registry lock" task failing, and the boot stops on it (D87).
+			throw RegistrationStop.propagate(RegistrationStop.stop(cl, task, thrown.getCause() != null ? thrown.getCause() : thrown));
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] " + registryClass + ".setup() failed — NeoForge payloads incomplete "
 					+ "(join may fail 'No Handler for …')");
@@ -933,12 +937,13 @@ public final class KernelLifecycle {
 	/**
 	 * {@code GameData.postRegisterEvents}' {@code ModLoader.postEvent(event)} (BlockEntityTypeAddBlocksEvent), delivered as
 	 * NeoForge's {@code postEvent} does — priority phase by phase, each container in {@code ModList}'s order, none of them
-	 * active — with a container that throws contained.
+	 * active. A container that throws ends the delivery and its {@code ModLoadingException} leaves {@code postRegisterEvents},
+	 * which stops the boot as native NeoForge does (D87; it used to cost only that mod its part of the event).
 	 */
 	public static void onRegisterEventsModBusEvent(Object event) {
 		String name = event.getClass().getName();
-		deliverInModOrder(event.getClass().getClassLoader(), event, false, false, id -> "[Forbric/Lifecycle] " + id + " threw during "
-				+ name + " — its own registration from that event is lost, every other mod still gets it");
+		deliverInModOrder(event.getClass().getClassLoader(), event, false, true, id -> "[Forbric/Lifecycle] " + id + " threw during "
+				+ name + " — that ends NeoForge's registry phase, as on NeoForge");
 	}
 
 	/**
@@ -1637,6 +1642,10 @@ public final class KernelLifecycle {
 			return;
 		}
 		if (outcome == null) return;
+		// A step that threw ends NeoForge's "Registration events" task, and natively the boot stops on it (D87).
+		if (outcome.failure() != null) {
+			throw RegistrationStop.propagate(RegistrationStop.stop(cl, RegistrationStop.REGISTRATION_EVENTS, outcome.failure()));
+		}
 		// Outside the call, and waiting only on the step it needs. It used to follow init in the same try, so on the
 		// sweep pack's client a data-map listener's failure also cost the cross-ecosystem transfer bridge, which has
 		// nothing to do with data maps; it is installed "after native capability registration", and that is the one
@@ -1811,10 +1820,16 @@ public final class KernelLifecycle {
 				try {
 					if (phase == null) acceptEvent.invoke(e.getValue(), event);
 					else phased.invoke(e.getValue(), phase, event);
+				} catch (java.lang.reflect.InvocationTargetException perMod) {
+					// ModLoader.postEvent has no catch: the first container that throws (NeoForge's ModLoadingException
+					// naming the mod) ends the delivery, and natively the boot stops on it (D87).
+					failed.add(e.getKey());
+					ForbricLog.error("[Forbric/Lifecycle] %s threw during %s — that ends the delivery, as on NeoForge",
+							e.getKey(), eventClassName);
+					throw RegistrationStop.propagate(perMod.getCause() != null ? perMod.getCause() : perMod);
 				} catch (Throwable perMod) {
 					failed.add(e.getKey());
-					Caught.warn(perMod, "[Forbric/Lifecycle] " + e.getKey() + " threw during " + eventClassName
-							+ " — its own registration from that event is lost, every other mod still gets it");
+					Caught.warn(perMod, "[Forbric/Lifecycle] could not hand %s to %s", eventClassName, e.getKey());
 				}
 			}
 		}
@@ -1953,6 +1968,10 @@ public final class KernelLifecycle {
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
 			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no NewRegistryEvent type — skipping");
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			// A mod's NewRegistryEvent or ModifyRegistriesEvent listener, or the fill, threw: natively that ends the
+			// "Registry initialization" task and the boot stops on it (D87).
+			throw RegistrationStop.propagate(RegistrationStop.stop(cl, thrown.getCause() != null ? thrown.getCause() : thrown));
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not post NeoForge NewRegistryEvent");
 		}
@@ -2147,11 +2166,14 @@ public final class KernelLifecycle {
 		if (modify == null) return;
 		try {
 			modify.invoke(null);
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			// A mod's entity-attribute listener threw (NeoForge's ModLoadingException naming it): it leaves
+			// GameData.postRegisterEvents, and the boot stops as native NeoForge stops it (D87).
+			throw RegistrationStop.propagate(thrown.getCause() != null ? thrown.getCause() : thrown);
 		} catch (Throwable t) {
 			// Its own catch, so its own Caught site: see invokeStaticOn.
-			Caught.warn(t, "[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW — the "
-					+ "entity-attribute events abort at the first failing mod, and every mod after it in the list gets no "
-					+ "attributes");
+			Caught.warn(t, "[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() could not be "
+					+ "called — the entity-attribute events were not posted");
 		}
 	}
 
@@ -2168,10 +2190,13 @@ public final class KernelLifecycle {
 		if (hook == null) return;
 		try {
 			hook.invoke(null);
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			// The step threw (a mod's spawn-placement or tooltip-appender listener, say): natively that leaves
+			// GameData.postRegisterEvents and the boot stops on it (D87). It used to be contained here.
+			throw RegistrationStop.propagate(thrown.getCause() != null ? thrown.getCause() : thrown);
 		} catch (Throwable t) {
-			Caught.warn(t, "[Forbric/Lifecycle] " + className + "." + method + "() THREW — it exists and did not "
-					+ "finish, so whatever it drives is half-done (a spawn-placement event aborts at the first failing mod, "
-					+ "and every mod after it in the list is skipped)");
+			Caught.warn(t, "[Forbric/Lifecycle] " + className + "." + method + "() could not be called — whatever it drives "
+					+ "was not done");
 		}
 	}
 
