@@ -454,6 +454,18 @@ the environment is one the scheduler exports; no gate writes a literal port; a g
 server calls the lost-port check; and a "never reached Done" exit calls it before it leaves. It
 reads text, so it holds the call and that one shared exit, not every path through a gate.
 
+`FORBRIC_JVM` is how a whole sweep is pointed at something every game JVM must carry -- a locale
+(`FORBRIC_JVM="-Duser.language=zh -Duser.country=CN" run/compat/gates-all.sh` is the Chinese run), a
+debugging property, a switch a red control turns off. A gate that sets it for a launch keeps the
+caller's value first: `FORBRIC_JVM="${FORBRIC_JVM:-} -D..."` in the shell, `os.environ.get('FORBRIC_JVM',
+'') + ' -D...'` in Python, `JAVA_TOOL_OPTIONS="${FORBRIC_JVM:-} ..."` for a JVM started from a resolved
+command line (gate-m17). First, so what the gate sets on purpose still wins (the JVM keeps the last `-D`
+of a name). Until 2026-11 most gates wrote their own value over it and a sweep "in Chinese" reached the
+game JVMs of 16 of 60 gates. `python3 run/compat/test_gate_locale.py` (also run by gate-m0 step 6) holds
+every gate, its Python heredocs and the `run/compat/*.py` drivers it names to that, and lists the gates
+that pin a language on purpose with the reason: gate-m26's refusal-prompt boot (English) and gate-m29's
+English and Chinese refusal boots.
+
 A gate's rundir must not be a fixture other worktrees share. A worktree links `client-merged-pack`,
 `client-kernel`, `client-neo-pack`, `carry-on`, `modmenu` and `neoforge-builds` to the main
 checkout's, and a gate that wiped or wrote one of them through a fixed or default rundir changed a

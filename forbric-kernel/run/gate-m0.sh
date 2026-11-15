@@ -260,9 +260,10 @@ PY
 
 step "6. the evidence, soak and link-gate tools' own tests"
 # These tools decide what a release is. Their tests used to run only by hand, so a regression in the recorder
-# or the link gate would have been found by the release it waved through.
+# or the link gate would have been found by the release it waved through. test_gate_locale holds every gate to
+# handing its game JVMs the caller's FORBRIC_JVM: without it a sweep run in another language tests the host's.
 TOOLLOG="$BUILD/gate-m0-tooling.log"
-if (cd "$KERNEL/run/compat" && python3 -m unittest -v test_evidence test_soak test_world_parity) >"$TOOLLOG" 2>&1; then
+if (cd "$KERNEL/run/compat" && python3 -m unittest -v test_evidence test_soak test_world_parity test_gate_locale) >"$TOOLLOG" 2>&1; then
   ran=$(grep -aoE '^Ran [0-9]+ tests?' "$TOOLLOG" | grep -oE '[0-9]+' | tail -1)
   if [ "${ran:-0}" -gt 0 ] && grep -aqE '^OK$' "$TOOLLOG"; then
     echo "[kernel] PASS evidence and soak tool tests ($ran ran, none skipped)"
