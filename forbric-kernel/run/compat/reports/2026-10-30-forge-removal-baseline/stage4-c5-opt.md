@@ -58,8 +58,10 @@ LibCaughtContractTest's per-UUID tag, lib.sh's `$BUILD/caught/<gate>.<pid>.tsv`)
 content-addressed and written only by gate-m0's one capture JVM. No fixed port in a test (GatesAllTest's 25599 is a stub
 gate's expectation, nothing binds it). Three forked runs gave the same failure set; no order or shared-state flake seen.
 
-Memory: every java process of the forked suite together peaked at 3.4 GB resident (four workers 2.9-3.1 GB); one fork peaked
-at 2.7 GB (`suite-a/javamem.txt`). heavy.sh's two-slot model still fits: a sweep takes both slots (`--exclusive`), so a
+Memory: every java process of the forked suite together peaked at 3.4 GB resident in the two forked runs whose whole-java
+total was sampled (3426 and 3435 MB; `suite-a/javamem.txt` starts after the first forked run had ended, which has worker
+RSS only, 2908 MB) with the four workers at 2.9-3.1 GB in all three; one fork peaked at 2.7 GB (sampled after its first
+minutes; workers alone 2.1 GB over the whole run). heavy.sh's two-slot model still fits: a sweep takes both slots (`--exclusive`), so a
 standalone suite never runs beside one; two lanes' forked suites side by side are ~7 GB of 16 GB on 8 workers for 10 cores.
 Inside a sweep, gate-m0's suite runs beside other gates on the memory it declares, which was 2000 MB for 3.4 GB actual:
 94cb22cb declares 3500. The cold sweep's own peak is in item 3.
@@ -118,7 +120,9 @@ test_gate_cache's ordering test. The cold sweep's progress log (item 3) shows m1
 ### (e) gate-m15
 
 Measured on b2be55fe: each of m15's 22 checks is in gate-m16 with the same name, kind, pattern and log; one differs only in
-the post-Done file it reads (its own gate's). m16 stages m15's one mod (FallingTree) plus the NeoForge canary on both ends.
+the post-Done file it reads (its own gate's). **That was not the whole of m15** (review lens A, B1, fixed in 6922f9bc): its
+client also ran `-Dforbric.clientSmokeModsScreen=80`, which m16's did not, so the screens it opened on a multiplayer
+connection had no gate after the removal; see "OPT review fixes". m16 stages m15's one mod (FallingTree) plus the NeoForge canary on both ends.
 Removed in a7684e94: `M15_PORT` (no gate reads it), gate-m16's header, both introductions' gates table; measurements that
 name m15 now say it was removed. Historical records under reports/ are left as written.
 
@@ -128,7 +132,9 @@ run/README.md's tiers, PROTOCOL.md and both kernel READMEs no longer ask for a z
 `# GATE-TAGS:` / `--only-tag` had one user, the zh subset, so it is gone (nine tag lines, the scheduler's parsing, two tests);
 `--only` stays. test_gate_locale (FORBRIC_JVM reaches every game JVM) stays. No script existed only for zh sweeps.
 
-Chinese text in the normal suite (each new test red on both controls, green on the tip; `zh-controls/summary.txt`):
+Chinese text in the normal suite (green on the tip; each new test red on the controls in its row -- two for four of them, one
+for DialogLangTest, nine in all; `zh-controls/summary.txt`; the two rows added by the review fixes, with their controls, are
+in "OPT review fixes"):
 
 | component | reads | test (zh_CN and English, locale restored) | red controls |
 |---|---|---|---|
@@ -139,14 +145,18 @@ Chinese text in the normal suite (each new test red on both controls, green on t
 | DisabledMods | Locale.getDefault | DisabledModsTest.aNewFileExplainsItselfInTheSystemLanguage (new) | Locale.ROOT; zh header in English |
 | MetadataFailures | DialogLang.ofSystem | MinecraftForgeRefusalTest.theFindingFollowsTheSystemLanguageWhenNoLanguageIsNamed (new); the switch test and the load-report render, now also no English wording (existing) | ofSystem reads Locale.ROOT; zh detail in English |
 | DependencyDialogMain | DialogLang.ofSystem, three windows, now one `language()` | DependencyDialogTest.theChildSpeaksTheSystemLanguage (new) | language() returns EN; zh title.deps in English |
-| KernelCompatibilityScreen (src/runtime) | DialogLang.ofSystem | none of its own (a game-side ConfirmScreen); its lookup is DialogLang.ofSystem, covered above | open item |
+| KernelCompatibilityScreen (src/runtime) | DialogLang.ofSystem | KernelCompatibilityPromptsTest.theScreenSpeaksTheSystemLanguage (review fixes, ead41483) | ofSystem reads Locale.ROOT; zh compat.title in English |
+| InstallerText (installer) | Locale.getDefault | InstallerWindowInputTest, the system-locale block (review fixes, ead41483); its switch block was already there | chinese() ignores the locale; (zh title in English: red on the switch block first) |
 
-None of the new Java tests reads a fixture (synthetic jars, committed resources), so no skip-baseline row changes (D47);
-test_gate_cache.py and test_control_arm.py run under toolTest with no game inputs.
+None of the five new Java tests of f85b74e4 reads a fixture (synthetic jars, committed resources), so they owe no
+skip-baseline row (D47). That was decided by reading the classes, not by running the ci-unstaged profile; the review
+fixes' new game-side test was measured in that profile and has its row (7f8e2447). test_gate_cache.py and
+test_control_arm.py run under toolTest with no game inputs, and since the review fixes in gate-m0 step 6.
 
 ## 4. Tests that cannot find anything (D89)
 
-Method. Every shell check of every gate (`check`, `check_absent`, `check_exactly`, `check_kept_up`, `assert_eq`; 1161 text call sites at the start, 1159 now)
+Method. Every shell check of every gate (`check`, `check_absent`, `check_exactly`, `check_kept_up`, `assert_eq`; 1187 text call sites at b2be55fe, 1165 after opt/verify removed m15 (630fa662), 1159 at 6ebc73e1, when this audit's
+tables were written; the counts in its tables were taken at 1161, after the m29 zh boot went)
 was extracted and indexed by kind + pattern (+ count) across all gates (`audit/checks.py`, `audit/xref.py`, `audit/per.py`); a gate is a
 SUBSUMED candidate only if every one of its checks is made elsewhere on the same or a superset of mods. Every absence check of
 a kernel message (pattern containing `Forbric`) was grepped for a producer in the kernel, installer, forbric-loader and canary
@@ -168,7 +178,7 @@ Done:
 
 Every gate (prior serial seconds from gate-durations.tsv; "unique" = check patterns made by no other gate):
 
-| Gate | prior s | cold s (2026-11-16) | shell checks | unique | verdict | reason / evidence |
+| Gate | prior s | cold s (8b8adbd1 sweep, 2026-11-16) | shell checks | unique | verdict | reason / evidence |
 | --- | ---: | ---: | ---: | ---: | --- | --- |
 | gate-m34-soak | 7200 | - | 0 | 0 | out of scope (D84) | the soak, once at the final tip |
 | gate-m0 | 926 | 405 | 4 | 4 | KEEP | builds; the unit suite and the transfer suite (red on any skip); the scan, the oracle and its control; the tool tests. 405 s now (four forks), was 926 s. The separate suite before a sweep was the duplicate, not this |
@@ -283,7 +293,7 @@ All at the code tip 312d152d unless said otherwise (`final/`).
 | measurement | before | after |
 |---|---|---|
 | full unit suite, standalone (`-Pforbric.requireFixtures=all jar cleanTest test --continue`) | 486 s in one JVM (630fa662) | **247 s** (5892 tests, 0 skipped, the 5 D58 failures; `final/suite-time.txt`) |
-| gate-m0 inside a sweep (the suite + transfer suite + capture boot + oracle) | 926 s (prior) | 405 s cold, 284 s alone in the warm sweep |
+| gate-m0 inside a sweep (the suite + transfer suite + capture boot + oracle) | 926 s (prior) | 388 s cold (405 s in the 8b8adbd1 sweep), 284 s alone in the warm sweep |
 | cold gates-all -j 4 (`--skip gate-m34-soak.sh`, GATE_PORT 46800, heavy --exclusive, client lock) | **46.4 min** (merger w2c) | **32.9 min** (1977 s; 3.0x over the 98.4 min of gate time) |
 | immediate second gates-all, nothing changed | (a full re-run) | **4.8 min** (287 s): 59 of 60 gates from the cache, "inputs changed since the last run -- none" |
 
@@ -307,9 +317,12 @@ alone (~67 s of single-gate wall); every launch skips its two Gradle runs (build
 at 0 s instead of near the end. gate-m58 itself took 1067 s in the first cold sweep, more than its 861 s prior (host load),
 and it now sets the floor of the sweep with m0 beside it.
 
-Totals per verification round (one lane sweep + merger + VERIFY on the same tip, the D87 shape): before, 3 suites (~14 min
-each in one JVM) + 3 sweeps (~46 min) + 1 zh suite + 1 zh sweep ~ 3.6 h; now, no separate suite (gate-m0 runs it), one cold
-sweep (~33 min) and two repeat sweeps of the same tip (~5 min each while D58 keeps m0 red), no zh run ~ 43 min.
+Totals per verification round (one lane sweep + merger + VERIFY on the same tip, the D87 shape), from the numbers measured
+here (corrected in the review fixes): before, 3 suites (8.1 min each in one JVM) + 3 sweeps (46.4 min) + 1 zh suite + 1 zh
+sweep ~ 3.6 h; now, the one standalone suite a lane still runs (4.1 min), one cold sweep (32.9 min) and two repeat sweeps
+of the same tip (4.8 min each while D58 keeps m0 red) ~ 47 min, no zh run. Since the review fixes a commit that touches a
+gate script or prose outside reports/ re-runs gate-m0 and gate-m39 in the repeat sweeps too (~7 min); a record commit
+under reports/ does not.
 
 ## Open items
 
@@ -325,10 +338,42 @@ sweep (~33 min) and two repeat sweeps of the same tip (~5 min each while D58 kee
 5. Forked suite: classes that build the twinned base or read the packs through a per-JVM memo build it once per fork
    (summed class time 393-405 s vs 310 s). An on-disk cache keyed by the base's sha would cut that CPU; the wall time is set
    by MixinFitLivenessCensusStagedTest (95 s forked).
-6. KernelCompatibilityScreen (src/runtime) reads DialogLang.ofSystem and has no zh test of its own; its lookup is the one
-   DialogLangTest now pins.
+6. (closed in the review fixes) KernelCompatibilityScreen and InstallerText have their system-locale tests.
 7. build/sweep100-mac still dangles in lane worktrees (source absent in the main checkout); nothing here reads it.
 8. regress-gate.py's skip of its own Gradle run on the prebuilt stamp was not counted separately; gate-m60 was GREEN (5/0)
    in all four sweeps.
 9. The control-arm cache and the verdict cache share git's common directory: m31's kept arm (2026-11-16T01:23:30) is now
    reused by every worktree with the same inputs, which is the intent; `--no-cache`/`--release` boot it afresh.
+
+## OPT review fixes (2026-11-16)
+
+Reviews: `c5/review-opt-w2d-A.md` (lens A, adversarial) and `c5/review-opt-w2d-B.md` (lens B, completeness). Every finding
+was checked against the code before it was acted on; none was refuted. Evidence: `c5/opt/w2d/review-fix/`.
+
+| finding | verdict | fix | shown |
+|---|---|---|---|
+| A-B1: m15 was not a subset of m16 -- its client ran `-Dforbric.clientSmokeModsScreen=80`; no gate opened those screens on a multiplayer connection after it went | confirmed (m15's script at b2be55fe line 107; m16's client line had no switch) | 6922f9bc: m16's client takes the switch; 10 new checks: multiplayer session (window title), both mods buttons open the unified list and did not fail, the Mods screen opened, rendered frames and did not throw, the pack screen listed its rows and opened | tip 49/0 GREEN, check_kept_up held (`m16-tip.log`); the review's mutation (KernelModListScreen.extractRenderState throws without a single-player server, `m16-mutation.diff`) 44/5 RED incl. "the Mods screen drew no frames" and "no client crash (present x4)" (`m16-mut.log`); the review measured m16 without the switch 39/0 GREEN on the same mutation |
+| A-B2: gate-m0's key missed the gate scripts and the prose its tests read | confirmed | 60a2cd9f: a `# GATE-CACHE: tests` gate keys the test sources, every gate script and the prose outside run/compat/reports/ (CACHE_VERSION 5); records stay out, and a test holds that no test such a gate runs reads one (test_fabric_ab does read one; m0 does not run it) | real tree's files (`m0key-real.txt`): renaming a gate-m13 check changes m0's and m13's keys, not m1's; editing PROTOCOL.md changes m0's only; a record changes none. Controls (`py-controls.txt`): key on test sources only, records keyed as prose (after 1cc05609 -- the first version of the test was blind: its tree ignored run/compat/), m0 naming test_fabric_ab -- each RED |
+| A-M1: BASE, NEO_RT, NATIVE_REF, VANILLA_JAR, VANILLA_JVM not in the key | confirmed; the scan also found MERGED, FORGE_RT, STOP_READY_CAP, STOP_READY_STALL, OLD_BOOT_LIMIT | 60a2cd9f: `_ENV_INPUTS` keyed, the jar each of BASE/NEO_RT/NATIVE_REF/VANILLA_JAR names keyed by content; `_ENV_NOT_INPUT` = GATE_PORT, RUNDIR, HOME with the reason; a structural test holds every `${X:-…}` a run/ script takes from its environment to one of them | controls RED: inputs not kept, jar content not keyed, BASE off the list (the structural test) |
+| A-m1 / B-B2: test_gate_cache and test_control_arm in no routine run; `python3` by name | confirmed | 60a2cd9f: gate-m0 step 6 runs both; the stub sweeps drop inherited FORBRIC_GATE_* (inside a --release sweep FORBRIC_GATE_FRESH=1 would otherwise reach them: control RED) and start sys.executable | the six modules of step 6, 101 tests, OK (also with FORBRIC_GATE_FRESH=1 set). The CI OS matrix (ubuntu/windows) was **not** run: nothing is pushed from a lane; open item |
+| A-m2 / B-B1: no zh test for KernelCompatibilityScreen and InstallerText | confirmed | ead41483: KernelCompatibilityPromptsTest.theScreenSpeaksTheSystemLanguage (literal zh and en title, message, buttons; no switch); InstallerWindowInputTest's system-locale block; 7f8e2447: the screen test's ci-unstaged row, measured in that shape (all 15 of its class skip on [fixture:game-side]; `unstaged-rows.txt`) | `java-controls.txt`: lookup reads Locale.ROOT RED, zh title in English RED (both at the new assertion); `installer-controls.txt`: chinese() ignoring the locale RED at the new block |
+| B-B3: m29's replacement assertion (MinecraftForgeRefusalTest:145) never red | confirmed | control run, no code change | zh `report.unsupported.what` with the English beside the Chinese: RED at MinecraftForgeRefusalTest.java:145, the positive assertion before it still green (`jctl-report-english-beside-chinese.log`) |
+| B-B4: "every new test red on two controls" | confirmed (DialogLangTest had one) | wording in §2 here; the commit message f85b74e4 stays as written | -- |
+| B-B5: numbers | confirmed, all four | §3/§4 relabelled and restated (check-site counts by tree; cold column = 8b8adbd1 sweep, m0 388 s at 312d152d; the round estimate from 486 s/247 s; memory "two of three"); gate-m0.sh's mem comment likewise | -- |
+| B-B6: stale cache docs | confirmed | 60a2cd9f: gate_cache.py docstring, gates-all --help, PROTOCOL.md (and its "Three things" with four bullets, the misplaced test_gate_cache sentence), both kernel READMEs | -- |
+| B-B7: evidence and hand-off gaps | confirmed | review B's re-run of the eleven w2d Python controls copied to `review-fix/w2d-python-controls-rerun-by-review-B.txt`; every open item has an owner in handoff.md; D47 wording in §2. The scratch copies ctl/, ctl2/, armctl/, m15/ were left in place (no folder deleted) | -- |
+
+Runs at the end (code tip 7f8e2447 for the suite; gate-m0 at 2a63ed0f, which adds only its own comment; this record after):
+- full suite `-Pforbric.requireFixtures=all jar cleanTest test --continue`: 5893 tests, 0 skipped, 5 failed, the five
+  D58 rows of failures-w2c.txt, 0 new (5892 + theScreenSpeaksTheSystemLanguage), 243 s (`suite-summary.txt`).
+- gate-m16 at 6922f9bc: 49/0 GREEN (above).
+- gate-m0 at 2a63ed0f: 13 PASS, 1 FAIL, 1 SKIP, the same as w2c: the FAIL is D58 alone ("3 of 5893 skipped", D87a), the SKIP
+  the C6 link check; step 6 now "evidence, soak, locale and cache tool tests (101 ran, none skipped)"; 308 s (`m0.log`,
+  `m0-tooling.log`). No other gate's script or inputs changed (docs and the cache are read by gates-all, not by a gate).
+
+Open after the review fixes (each with an owner in handoff.md):
+1. The CI OS matrix (ubuntu, windows) for test_gate_cache/test_control_arm: measured on macOS only; test_control_arm runs
+   lib.sh under PATH=/usr/bin:/bin and `cp -c`. Whoever pushes the ci/ branch at C5 close (orchestrator, D47).
+2. Items 1-5 and 7-9 of "Open items" above stand; item 6 is closed.
+3. The w2d scratch copies ctl/, ctl2/, armctl/, m15/ in the session scratchpad were not deleted (no folder is deleted in
+   this run); they hold no evidence the record relies on.
