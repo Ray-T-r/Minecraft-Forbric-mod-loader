@@ -90,6 +90,8 @@ public final class KernelEventSubscribers {
 			return;
 		}
 
+		// Where each subscriber class is loaded and registered: NeoForge's modloading-worker pool (wireNeoSubscriber).
+		java.util.concurrent.Executor workers = NeoParallelDispatch.parallelExecutor(cl);
 		int neoMethods = 0;
 		int skippedSide = 0;
 		int skippedOwner = 0;
@@ -135,7 +137,7 @@ public final class KernelEventSubscribers {
 				try {
 					Object modBus = neoModBus(modId);
 					if (modBus == null) skippedOwner++;
-					neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neo);
+					neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neoModContainer(modId), workers, neo);
 				} catch (Throwable t) {
 					Throwable real = Reflect.unwrap(t);
 					Caught.warn(real, "[Forbric/EBS] could not register %s%s", sub.className(), causeChain(real));
@@ -206,6 +208,13 @@ public final class KernelEventSubscribers {
 		if (modId == null) return null;
 		KernelModLoader.NeoIdentity id = KernelModLoader.publishedNeoMods().get(modId);
 		return id == null ? null : id.bus();
+	}
+
+	/** The container of the NeoForge mod {@code modId}, or null when it was never published. */
+	private static Object neoModContainer(String modId) {
+		if (modId == null) return null;
+		KernelModLoader.NeoIdentity id = KernelModLoader.publishedNeoMods().get(modId);
+		return id == null ? null : id.container();
 	}
 
 	/**
@@ -295,13 +304,15 @@ public final class KernelEventSubscribers {
 	 * <p>Separate from {@link #registerAll} only in WHICH jars and WHICH bus: the per-method routing itself is
 	 * shared, in {@link #wireNeoSubscriber}.
 	 */
-	public static void registerNeoForgeInternal(ClassLoader cl, List<Path> jars, Object modBus, Side side) {
+	public static void registerNeoForgeInternal(ClassLoader cl, List<Path> jars, Object modBus, Object container,
+			Side side) {
 		NeoBusApi api = NeoBusApi.resolve(cl);
 		if (api == null) {
 			ForbricLog.debug("[Forbric/EBS] NeoForge bus API absent — skipping internal @EventBusSubscriber scan");
 			return;
 		}
 
+		java.util.concurrent.Executor workers = NeoParallelDispatch.parallelExecutor(cl);
 		int wired = 0;
 		int skippedSide = 0;
 		for (Path jar : jars) {
@@ -317,7 +328,7 @@ public final class KernelEventSubscribers {
 					continue;
 				}
 				try {
-					wired += wireNeoSubscriber(cl, sub.className(), modBus, api);
+					wired += wireNeoSubscriber(cl, sub.className(), modBus, container, workers, api);
 				} catch (Throwable t) {
 					Caught.warn(t, "[Forbric/EBS] could not wire NeoForge-internal %s; its listeners will not run",
 							sub.className());
@@ -336,10 +347,38 @@ public final class KernelEventSubscribers {
 	 * bus carries an {@code IModBusEvent} marker and rejects game events, and vice versa — and it is also what keeps
 	 * a one-listener class working, since {@code IEventBus.register} takes the {@code Method} itself.
 	 *
-	 * @param modBus the owning mod's bus, or null when it has none; mod-bus listeners are then skipped
+	 * <p>On NeoForge's {@code modloading-worker} pool ({@code workers}) with the owning mod's container active there, where
+	 * {@code FMLModContainer.constructMod} injects a mod's subscribers natively: the class is loaded and initialised, and
+	 * its listeners registered, on that thread. A subscriber's static initialiser saw {@code main} (the render thread on a
+	 * client) and {@code "minecraft"} in {@code ModLoadingContext}; natively it sees a {@code modloading-worker} and its
+	 * own mod. The caller waits, and what this throws reaches it as before.
+	 *
+	 * @param modBus    the owning mod's bus, or null when it has none; mod-bus listeners are then skipped
+	 * @param container the owning mod's container, active while its class loads; null when it has none
+	 * @param workers   NeoForge's modloading-worker pool, or null to do it on this thread
 	 * @return how many listener methods were wired
 	 */
-	private static int wireNeoSubscriber(ClassLoader cl, String className, Object modBus, NeoBusApi api)
+	private static int wireNeoSubscriber(ClassLoader cl, String className, Object modBus, Object container,
+			java.util.concurrent.Executor workers, NeoBusApi api) throws Exception {
+		int[] wired = {0};
+		try {
+			NeoParallelDispatch.runOne(workers, className, className, name -> {
+				if (container != null) KernelModLoader.setNeoActiveContainer(cl, container);
+				try {
+					wired[0] = wireNeoSubscriberHere(cl, name, modBus, api);
+				} finally {
+					if (container != null) KernelModLoader.setNeoActiveContainer(cl, null);
+				}
+			});
+		} catch (Exception | Error direct) {
+			throw direct;
+		} catch (Throwable other) {
+			throw new IllegalStateException(other);
+		}
+		return wired[0];
+	}
+
+	private static int wireNeoSubscriberHere(ClassLoader cl, String className, Object modBus, NeoBusApi api)
 			throws Exception {
 		Class<?> owner = Class.forName(className, true, cl);
 		int wired = 0;

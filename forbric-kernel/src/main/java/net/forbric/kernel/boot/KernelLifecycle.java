@@ -198,7 +198,7 @@ public final class KernelLifecycle {
 		// FML scans its jar like any other; the kernel scanned only mod jars, so ~10 internal subscribers (network,
 		// attachments, configuration tasks, model data, …) never fired. Must precede step 2d — the network setup posts
 		// its Register*PayloadHandlersEvent to exactly these subscribers.
-		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, side);
+		KernelEventSubscribers.registerNeoForgeInternal(cl, runtimeJars, baselineBus, baselineContainer, side);
 		// Step 3 USED TO BE HERE: registering mods' @EventBusSubscriber classes. It has moved INSIDE
 		// registerNeoForgeContent, next to the constructors — see the comment at the new call site. Wiring them
 		// here meant every registration-phase event had already been posted to nobody.

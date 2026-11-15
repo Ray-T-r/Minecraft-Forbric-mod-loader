@@ -20,6 +20,7 @@ import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
 import java.util.List;
 
+import net.forbric.kernel.boot.KernelModLoader;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
 import net.neoforged.bus.api.IEventBus;
@@ -66,13 +67,21 @@ public final class KernelNeoRegistries {
 		NewRegistryEvent event = ctor.newInstance();
 
 		int delivered = 0;
+		ClassLoader cl = KernelNeoRegistries.class.getClassLoader();
 		for (Object bus : buses) {
+			// The bus's mod active while it takes the event: RegistryManager.postNewRegistryEvent posts it through
+			// ModLoader.postEventWrapContainerInModOrder, so natively a listener's ModLoadingContext names its own mod.
+			// Here it said "minecraft".
+			Object container = containerOf(bus);
+			if (container != null) KernelModLoader.setNeoActiveContainer(cl, container);
 			try {
 				((IEventBus) bus).post(event);
 				delivered++;
 			} catch (Throwable perBus) {
 				Caught.warn(perBus, "[Forbric/Lifecycle] a NeoForge mod's NewRegistryEvent listener failed — that "
 						+ "mod's custom registries are skipped, the rest still register");
+			} finally {
+				if (container != null) KernelModLoader.setNeoActiveContainer(cl, null);
 			}
 		}
 
@@ -100,5 +109,13 @@ public final class KernelNeoRegistries {
 			ForbricLog.info("[Forbric/Lifecycle] posted ModifyRegistriesEvent after registry creation, before content registration");
 		}
 		return delivered;
+	}
+
+	/** The container of the published NeoForge mod whose bus {@code bus} is, or null. */
+	private static Object containerOf(Object bus) {
+		for (KernelModLoader.NeoIdentity identity : KernelModLoader.publishedNeoMods().values()) {
+			if (identity.bus() == bus) return identity.container();
+		}
+		return null;
 	}
 }

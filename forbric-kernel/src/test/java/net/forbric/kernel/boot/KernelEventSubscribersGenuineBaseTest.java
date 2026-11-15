@@ -74,9 +74,13 @@ class KernelEventSubscribersGenuineBaseTest {
 		for (Path mod : mods) owned.add(mod.toUri().toURL());
 		owned.add(game.toUri().toURL());
 		owned.add(neo.toUri().toURL());
-		// Mixin and ASM come with the kernel in a launch (NeoForge's bus generates its listeners with ASM).
+		// Mixin and ASM come with the kernel in a launch (NeoForge's bus generates its listeners with ASM), and so does
+		// night-config, which NeoForge's FMLConfig needs for ModWorkManager's modloading-worker pool the subscribers are
+		// wired on.
 		List<URL> libraries = new ArrayList<>(List.of(org.spongepowered.asm.mixin.Mixins.class.getProtectionDomain().getCodeSource().getLocation(),
-				org.objectweb.asm.Type.class.getProtectionDomain().getCodeSource().getLocation()));
+				org.objectweb.asm.Type.class.getProtectionDomain().getCodeSource().getLocation(),
+				com.electronwill.nightconfig.core.UnmodifiableConfig.class.getProtectionDomain().getCodeSource().getLocation(),
+				com.electronwill.nightconfig.toml.TomlFormat.class.getProtectionDomain().getCodeSource().getLocation()));
 		Path root = TestFixtures.minecraftDir().resolve("libraries");
 		Path version = root.resolveSibling("versions/26.2/26.2.json");
 		TestFixtures.require(Fixture.MC_LIBRARIES, Files.isRegularFile(version), "no local Minecraft 26.2 version JSON");
@@ -91,8 +95,29 @@ class KernelEventSubscribersGenuineBaseTest {
 
 	/** A NeoForge mod's {@code @EventBusSubscriber} with one {@code @SubscribeEvent} on a game-bus event. */
 	private Path neoForgeMod() throws Exception {
+		return neoForgeMod(SUBSCRIBER, null);
+	}
+
+	/**
+	 * {@link #neoForgeMod()} as class {@code subscriber}; with {@code threadKey}, its static initialiser writes the name
+	 * of the thread it runs on into that system property.
+	 */
+	private Path neoForgeMod(String subscriber, String threadKey) throws Exception {
 		ClassWriter cw = new ClassWriter(0);
-		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, SUBSCRIBER, null, "java/lang/Object", null);
+		cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, subscriber, null, "java/lang/Object", null);
+		if (threadKey != null) {
+			MethodVisitor clinit = cw.visitMethod(Opcodes.ACC_STATIC, "<clinit>", "()V", null, null);
+			clinit.visitCode();
+			clinit.visitLdcInsn(threadKey);
+			clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/Thread", "currentThread", "()Ljava/lang/Thread;", false);
+			clinit.visitMethodInsn(Opcodes.INVOKEVIRTUAL, "java/lang/Thread", "getName", "()Ljava/lang/String;", false);
+			clinit.visitMethodInsn(Opcodes.INVOKESTATIC, "java/lang/System", "setProperty",
+					"(Ljava/lang/String;Ljava/lang/String;)Ljava/lang/String;", false);
+			clinit.visitInsn(Opcodes.POP);
+			clinit.visitInsn(Opcodes.RETURN);
+			clinit.visitMaxs(2, 0);
+			clinit.visitEnd();
+		}
 		cw.visitAnnotation("Lnet/neoforged/fml/common/EventBusSubscriber;", true).visit("modid", "genuineprobe");
 		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "onStarted", "(L" + STARTED + ";)V", null, null);
 		mv.visitAnnotation("Lnet/neoforged/bus/api/SubscribeEvent;", true).visitEnd();
@@ -101,13 +126,33 @@ class KernelEventSubscribersGenuineBaseTest {
 		mv.visitMaxs(0, 1);
 		mv.visitEnd();
 		cw.visitEnd();
-		Path jar = temporary.resolve("genuineprobe.jar");
+		Path jar = temporary.resolve(subscriber.replace('/', '_') + ".jar");
 		try (OutputStream out = Files.newOutputStream(jar); ZipOutputStream zip = new ZipOutputStream(out)) {
-			zip.putNextEntry(new ZipEntry(SUBSCRIBER + ".class"));
+			zip.putNextEntry(new ZipEntry(subscriber + ".class"));
 			zip.write(cw.toByteArray());
 			zip.closeEntry();
 		}
 		return jar;
+	}
+
+	/**
+	 * A mod's {@code @EventBusSubscriber} class is loaded and initialised on NeoForge's {@code modloading-worker} pool, where
+	 * {@code FMLModContainer.constructMod} injects it natively (Stage 4 C5 lane THR); it was loaded on the caller's thread.
+	 */
+	@Test
+	void theSubscriberClassIsInitialisedOnAModloadingWorker() throws Exception {
+		String key = "forbric.ebstest.clinit.thread";
+		System.clearProperty(key);
+		Path mod = neoForgeMod("probe/WorkerEvents", key);
+		try (ForbricClassLoader cl = genuine(List.of(mod))) {
+			KernelEventSubscribers.registerAll(cl, List.of(mod), Side.DEDICATED_SERVER);
+			String thread = System.getProperty(key);
+			assertTrue(thread != null, "the subscriber class was initialised");
+			assertTrue(!thread.equals(Thread.currentThread().getName()) && thread.startsWith("modloading-worker"),
+					"on NeoForge's modloading-worker pool, as natively, not on the caller's thread: " + thread);
+		} finally {
+			System.clearProperty(key);
+		}
 	}
 
 	/** gate-m4-canary's own pattern for the line, read out of the gate so the two cannot drift. */
