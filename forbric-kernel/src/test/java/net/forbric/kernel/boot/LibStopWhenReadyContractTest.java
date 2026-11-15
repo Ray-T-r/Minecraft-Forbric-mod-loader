@@ -19,9 +19,10 @@ import org.junit.jupiter.api.io.TempDir;
  * as it is then; the thread starts before the levels load, so a line read during the boot runs on the first tick with
  * no level and throws ("An unexpected error occurred while trying to execute that command" — vanilla 26.2 does the
  * same). Seventeen gates fed "stop" after a fixed sleep, so a boot slower than the sleep left the server running until
- * the gate's hammer, and the gate went red as "never announced a stop". What has to hold: with the boot inside the
- * timer the line goes out when the timer ends, exactly as before; with a slower boot it goes out only after "Done (",
- * with settle seconds of ticking; and a server that stops or fails without reaching Done gets no line at all.
+ * the gate's hammer, and the gate went red as "never announced a stop". What has to hold: the line never goes out
+ * before settle seconds of ticking after "Done (", whenever Done came (before the timer ran out or after); with a
+ * boot done a settle or more before the timer it goes out when the timer ends, exactly as before; and a server that
+ * stops or fails without reaching Done gets no line at all.
  */
 class LibStopWhenReadyContractTest {
 	private static final Path LIB = Path.of("run/lib.sh");
@@ -30,12 +31,41 @@ class LibStopWhenReadyContractTest {
 
 	@TempDir Path temporary;
 
-	@Test void aBootInsideTheTimerGetsTheLineWhenTheTimerEnds() throws Exception {
+	@Test void aBootDoneASettleBeforeTheTimerEndsGetsTheLineWhenTheTimerEnds() throws Exception {
+		// Done is in the log from the start, three seconds before the timer and so two more than the one-second settle:
+		// the server has had its ticks, and the line goes out at the timer's own moment, as it always did.
 		Path log = log(BOOTING + DONE);
-		Result r = run("stop_when_ready \"" + log + "\" 1 6");
+		Result r = run("stop_when_ready \"" + log + "\" 3 1");
 		assertEquals("stop\n", r.out(), "the line, and only the line");
-		assertTrue(r.millis() >= 1000 && r.millis() < 5000,
-				"no settle when Done was already there — the old timer's moment (" + r.millis() + " ms)");
+		assertTrue(r.millis() >= 3000 && r.millis() < 6000,
+				"nothing added to a timer that already held the settle (" + r.millis() + " ms)");
+	}
+
+	@Test void aBootThatEndsJustBeforeTheTimerStillGetsItsSettle() throws Exception {
+		// gate-m3, VERIFY run 1 of C5: Done at 15:16:25 against a 22 s timer, "Stopping the server" at 15:16:26, and the
+		// canary's line for its 20th ServerTickEvent never printed. The old helper slept the timer, found Done already
+		// there and wrote "stop" at once: a Done in the timer's last second got no settle at all. Here Done lands half a
+		// second before a two-second timer, and the line must still wait three seconds after it.
+		Path log = log(BOOTING);
+		Path doneAt = temporary.resolve("done-at");
+		Result r = run("( sleep 1.5; python3 -c 'import time; print(time.time())' > \"" + doneAt + "\"; "
+				+ "printf '%s' '" + DONE.replace("'", "'\\''") + "' >> \"" + log + "\" ) &\n"
+				+ "stop_when_ready \"" + log + "\" 2 3\n"
+				+ "python3 -c 'import time; print(time.time())' > \"" + temporary.resolve("stop-at") + "\"\nwait");
+		assertEquals("stop\n", r.out());
+		double done = Double.parseDouble(Files.readString(doneAt).trim());
+		double stop = Double.parseDouble(Files.readString(temporary.resolve("stop-at")).trim());
+		assertTrue(stop - done >= 3.0, "the line came " + (stop - done) + " s after a Done that beat the timer, not after"
+				+ " the 3 s settle");
+		assertTrue(r.millis() < 10000, "and not much later either (" + r.millis() + " ms)");
+	}
+
+	@Test void aTimerOrSettleThatIsNotWholeSecondsIsRefusedOutLoud() throws Exception {
+		// The timer counts one-second sleeps; a fraction would make `[ 0 -lt 1.5 ]` an error that skips the timer.
+		Path log = log(BOOTING + DONE);
+		Result r = run("stop_when_ready \"" + log + "\" 1.5; echo \"rc=$?\"");
+		assertTrue(r.out().contains("whole seconds") && r.out().endsWith("rc=0\n") && !r.out().contains("stop\n"),
+				"no line, and a reason on stderr: " + r.out());
 	}
 
 	@Test void aBootSlowerThanTheTimerGetsTheLineOnlyAfterDoneAndTheSettle() throws Exception {

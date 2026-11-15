@@ -427,11 +427,26 @@ record_server_pid() { echo "$2" > "$(_pidfile "$1")"; }
 # outlasted the timer (measured: gate-m3 with a 28 s boot against its 22 s timer). With a boot inside the timer this
 # writes the line at the same moment the timer did; only a slower boot moves it, to <settle> (default 5) seconds after
 # "Done (", so what the gate wanted to see run after the boot still gets some ticks.
+#
+# THE SETTLE COUNTS FROM DONE, WHENEVER DONE CAME. Until C5 the timer was a bare sleep, and a Done already in the log
+# when it ran out was taken as "the boot was inside the timer", with no settle at all. A boot that ended in the timer's
+# last second therefore got the line in the same second as its Done: gate-m3 went red under load (VERIFY run 1, Done
+# 15:16:25, "Stopping the server" 15:16:26, the canary's 20-tick ServerTickEvent line never printed), latent since the
+# helper was written. So the timer watches the log too and notes the second Done is first seen; the line goes out at
+# the later of the timer's end and that second plus <settle>. A boot that ended at least <settle> seconds before the
+# timer still gets the line when the timer ends, as before. Seconds are counted by the one-second sleeps themselves,
+# so every count runs late, never early: the timer is never shorter than <seconds> and the settle never shorter than
+# <settle>. A Done that is already in the log when this is called has no known moment and is taken as seen at 0.
 server_ready() {
   local log="$1" seconds="$2" settle="${3:-5}" cap="${STOP_READY_CAP:-150}" stall="${STOP_READY_STALL:-60}"
-  local waited=0 still=0 size last=-1
-  sleep "$seconds"
-  until grep -aq 'Done (' "$log" 2>/dev/null; do
+  local elapsed=0 seen=-1 waited=0 still=0 size last=-1 rest
+  case "$seconds:$settle" in *[!0-9:]*|:*|*:) echo "server_ready: <seconds> and <settle> are whole seconds, got '$seconds' '$settle'" >&2; return 1;; esac
+  while [ "$elapsed" -lt "$seconds" ]; do
+    if [ "$seen" -lt 0 ] && grep -aq 'Done (' "$log" 2>/dev/null; then seen=$elapsed; fi
+    sleep 1; elapsed=$((elapsed + 1))
+  done
+  while [ "$seen" -lt 0 ]; do
+    if grep -aq 'Done (' "$log" 2>/dev/null; then seen=$elapsed; break; fi
     # Gone or going: a line written now would only meet a closed pipe (and a pipeline under pipefail would report it).
     # The game's own stop and crash lines, every "launch stopped" the kernel prints when it refuses a launch, the
     # launcher's refusal, and a JVM that died before the game started.
@@ -441,9 +456,10 @@ server_ready() {
     size=$(wc -c < "$log" 2>/dev/null || echo 0)
     if [ "$size" = "$last" ]; then still=$((still + 1)); else still=0; last=$size; fi
     [ "$still" -ge "$stall" ] && return 1
-    sleep 1; waited=$((waited + 1))
+    sleep 1; waited=$((waited + 1)); elapsed=$((elapsed + 1))
   done
-  [ "$waited" -eq 0 ] || sleep "$settle"
+  rest=$((seen + settle - elapsed))
+  [ "$rest" -le 0 ] || sleep "$rest"
   return 0
 }
 stop_when_ready() {
