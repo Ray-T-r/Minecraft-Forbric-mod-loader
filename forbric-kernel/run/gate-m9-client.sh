@@ -311,7 +311,7 @@ fi
 check "registration events ran"       "ran NeoForge.s registration events.* [1-9][0-9]* data map type" "$LOG"
 check "IMC enqueued and processed"    "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod" "$LOG" 2
 check "load complete posted"          "posted FML load complete to [1-9][0-9]* NeoForge mod"  "$LOG"
-check_absent "no mod failed a phase"  "failed during (construct|IMC enqueue|IMC process)" "$LOG"
+check_absent "no mod failed a phase"  "Failed to wait for future " "$LOG"
 
 # (The EventMux bridge inventory that stood here -- NeoForge events relayed to MinecraftForge listeners on the client
 # mod bus, the game buses, Minecraft.<init> and registration -- went with the multiplexer in Stage 4: no MinecraftForge

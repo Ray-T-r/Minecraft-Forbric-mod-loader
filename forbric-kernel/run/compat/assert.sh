@@ -37,7 +37,7 @@ ck  "datapacks served"                  "Forbric/DataPacks\] served [1-9][0-9]* 
 # and no "not the shape" warning, which is the seam standing down and NeoForge's method running as shipped.
 ck  "postRegisterEvents carries the seam" "GameData.postRegisterEvents posts RegisterEvent itself, every mixin on it applied: .* [0-9]+ tail step"
 echo "== must be absent =="
-abs "no mod failed a phase"             "failed during (construct|IMC enqueue|IMC process)"
+abs "no mod failed a phase"             "Failed to wait for future "
 abs "no unbound data component"         "Trying to access unbound value"
 abs "no RegisterEvent listener failed"  "RegisterEvent listener failed"
 abs "postRegisterEvents is the seam's shape" "GameData.postRegisterEvents is not the shape the kernel knows"

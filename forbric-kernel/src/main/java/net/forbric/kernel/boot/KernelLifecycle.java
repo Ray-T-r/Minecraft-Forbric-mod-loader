@@ -1573,8 +1573,9 @@ public final class KernelLifecycle {
 	 * steps above (registries, network, config, internal subscribers), and posting these at the baseline too would
 	 * re-run work the kernel has taken over. Extend only with a measured reason.
 	 *
-	 * <p>Best-effort per phase and per mod — a mod that throws in its own setup must not abort the boot, exactly as
-	 * genuine FML collects such failures rather than dying at the first one.
+	 * <p>Every mod gets each phase even when another threw, as genuine FML collects such failures rather than dying at the
+	 * first one; then a phase in which any mod threw, or whose deferred work threw, stops the boot as native NeoForge stops
+	 * it ({@code KernelNeoSetup}, {@link RegistrationStop}).
 	 */
 	private static void fireModSetupLifecycle(ClassLoader cl, Side side) {
 		java.util.Map<String, KernelModLoader.NeoIdentity> mods = KernelModLoader.publishedNeoMods();
@@ -1905,6 +1906,10 @@ public final class KernelLifecycle {
 		} catch (ClassNotFoundException | NoClassDefFoundError absent) {
 			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] %s absent — skipping %s", event, label);
+		} catch (java.lang.reflect.InvocationTargetException thrown) {
+			// A mod failed the phase or its deferred work: the boot stops, as native NeoForge stops it (RegistrationStop).
+			if (RegistrationStop.isStop(thrown.getCause())) throw RegistrationStop.propagate(thrown.getCause());
+			Caught.warn(thrown.getCause() != null ? thrown.getCause() : thrown, "[Forbric/Lifecycle] could not post FML " + label);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not post FML " + label);
 		}
@@ -2352,17 +2357,39 @@ public final class KernelLifecycle {
 	 */
 	public static void onNeoClientSetup() {
 		ClassLoader cl = gameLoader;
-		// Step 3a's last chance: client setup posts RegisterDataMapTypesEvent, which reads the declared list, so the
-		// declaration must have happened by now even if the Fabric hook above never landed. Normally a no-op.
-		registerDataPackRegistries(cl);
-		fireClientSetupLifecycle(cl);
-		// Common setup now runs in there, and registering a config is one of the things mods do from it. On the
-		// server the pass right after the setup lifecycle catches those; the client had no equivalent once the
-		// phases moved here, so a config registered from client-side common setup was registered and never
-		// loaded — and reading it throws rather than returning a default.
-		openLateConfigs(cl, Side.CLIENT, "the client setup lifecycle");
-		// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
-		setupNeoForgeNetwork(cl, Side.CLIENT);
+		try {
+			// Step 3a's last chance: client setup posts RegisterDataMapTypesEvent, which reads the declared list, so the
+			// declaration must have happened by now even if the Fabric hook above never landed. Normally a no-op.
+			registerDataPackRegistries(cl);
+			fireClientSetupLifecycle(cl);
+			// Common setup now runs in there, and registering a config is one of the things mods do from it. On the
+			// server the pass right after the setup lifecycle catches those; the client had no equivalent once the
+			// phases moved here, so a config registered from client-side common setup was registered and never
+			// loaded — and reading it throws rather than returning a default.
+			openLateConfigs(cl, Side.CLIENT, "the client setup lifecycle");
+			// And only then close the payload registration phase — see step 3c for why it cannot precede setup.
+			setupNeoForgeNetwork(cl, Side.CLIENT);
+		} catch (Throwable t) {
+			// A phase stopped the boot (RegistrationStop): what ClientModLoader.finish's own handler does with NeoForge's
+			// ModLoadingException — the crash report and NeoForge's fatal-error window — not Main's "Initializing game".
+			if (!RegistrationStop.isStop(t) || !RegistrationStop.isModLoadingException(cl, t)) throw RegistrationStop.propagate(t);
+			asClientModLoaderFinishDoes(cl, t);
+		}
+	}
+
+	/**
+	 * Hands a stop to {@code KernelNeoClientStop}, the game side's copy of {@code ClientModLoader.finish}'s handler. When it
+	 * cannot be reached the stop leaves for {@code Main}'s handler, which still writes a crash report and exits.
+	 */
+	private static void asClientModLoaderFinishDoes(ClassLoader cl, Throwable stop) {
+		try {
+			Class.forName("net.forbric.kernel.runtime.KernelNeoClientStop", true, cl)
+					.getMethod("asClientModLoaderFinishDoes", Throwable.class).invoke(null, stop);
+		} catch (ReflectiveOperationException | LinkageError unreachable) {
+			Caught.warn(unreachable, "[Forbric/Lifecycle] could not hand the stop to ClientModLoader.finish's handler — the game's "
+					+ "Main reports it instead");
+			throw RegistrationStop.propagate(stop);
+		}
 	}
 
 	/** Hooks of {@link #fabricFreezePoint} already called; each runs once per process. */

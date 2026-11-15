@@ -25,12 +25,13 @@ import net.forbric.kernel.boot.KernelModLoader;
 import net.forbric.kernel.boot.NeoDeferredWork;
 import net.forbric.kernel.boot.NeoParallelDispatch;
 import net.forbric.kernel.boot.DeferredWorkFailures;
+import net.forbric.kernel.boot.RegistrationStop;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
-import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.DeferredWorkQueue;
 import net.neoforged.fml.ModContainer;
+import net.neoforged.fml.ModList;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLConstructModEvent;
@@ -47,27 +48,38 @@ import net.neoforged.fml.event.lifecycle.InterModProcessEvent;
  *
  * <p>This takes the phase as a {@link ForeignType} rather than a class-name string, so the
  * constructor for each of the six is named in code and checked.
+ *
+ * <p>A phase that fails stops the boot, as native NeoForge 26.2.0.93 stops it (D82 "stop like native", extended to every
+ * phase by D87): {@code ModLoader.dispatchParallelEvent} hands the event to every mod ({@code ModContainer.acceptEvent},
+ * which turns a listener's throw into a {@code ModLoadingException} naming the mod), waits for all of them, and a phase in
+ * which any mod threw ends in {@code waitForFuture}'s {@code ModLoadingException} before its deferred work runs; deferred
+ * work that throws ends in the same way under "&lt;phase&gt;: Deferred Queue" (javap of ModLoader, ModContainer,
+ * DeferredWorkQueue). Until then a mod that threw here was marked DEGRADED and the boot carried on without that part of it.
  */
 public final class KernelNeoSetup {
 	private KernelNeoSetup() {
 	}
 
 	/**
-	 * Posts {@code event} at every mod, then drains the queue they filed into.
+	 * Posts {@code event} at every mod, then drains the queue they filed into. A mod that throws does not stop the others
+	 * from getting the event; once all have, the boot stops on what the failing ones threw ({@link RegistrationStop}),
+	 * and the phase's deferred work does not run. Deferred work that throws stops the boot the same way.
 	 *
 	 * @param mods modid → that mod's bus and container
 	 * @return how many mods the event reached
 	 */
 	public static int firePhase(Map<String, KernelModLoader.NeoIdentity> mods, ForeignType event, String label)
 			throws Throwable {
-		DeferredWorkQueue queue = new DeferredWorkQueue(label);
+		ClassLoader cl = KernelNeoSetup.class.getClassLoader();
+		String task = nativeTask(event);
+		DeferredWorkQueue queue = new DeferredWorkQueue(task);
 		int fired = 0;
+		List<Throwable> failures = new ArrayList<>();
 
 		// Each mod on NeoForge's own modloading-worker pool, as soon as the mods it waits for have taken the phase, the
 		// way ModLoader.dispatchParallelEvent posts it (NeoParallelDispatch). It ran on the caller's thread, one mod
 		// after another — on a client the render thread, where a listener's Minecraft.execute ran inline instead of
 		// queueing. DeferredWorkQueue takes enqueueWork from several workers at once, as natively.
-		ClassLoader cl = KernelNeoSetup.class.getClassLoader();
 		List<Map.Entry<String, KernelModLoader.NeoIdentity>> entries = new ArrayList<>(mods.entrySet());
 		List<Throwable> failed = NeoParallelDispatch.run(NeoParallelDispatch.parallelExecutor(cl), entries,
 				Map.Entry::getKey, KernelModLoader.dependencyAfter(), e -> {
@@ -80,59 +92,75 @@ public final class KernelNeoSetup {
 					// registerDefault and died on 'default' already exists — three failures, one missing line.
 					KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
 					try {
-						post(event, (IEventBus) e.getValue().bus(), (ModContainer) e.getValue().container(), queue);
+						post(event, (ModContainer) e.getValue().container(), queue);
 					} finally {
 						KernelModLoader.setNeoActiveContainer(cl, null);
 					}
 				});
-		// What each mod's listeners came to, handled here in the order the mods are walked.
+		// What each mod's listeners came to, handled here, on the caller's thread and in the order the mods are walked.
 		for (int i = 0; i < entries.size(); i++) {
 			Throwable perMod = failed.get(i);
 			if (perMod == null) {
 				fired++;
 				continue;
 			}
-			String modId = entries.get(i).getKey();
-			Caught.warn(perMod, "[Forbric/Lifecycle] %s failed during %s", modId, label);
-			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "it threw during " + label);
+			// NeoForge's ModLoadingException naming the mod (acceptEvent logged "Caught exception during event …"): handed
+			// to the stop below once every mod has had the event, as ModLoader.waitForFuture does.
+			Caught.expected(perMod);
+			failures.add(perMod);
+			ModCatalog.mark(entries.get(i).getKey(), ModCatalog.Status.FAILED, "it threw during " + label);
 		}
+		if (!failures.isEmpty()) throw RegistrationStop.propagate(RegistrationStop.stopAll(cl, task, failures));
 
 		// Off the caller's thread, because that is where NeoForge runs it and mods can tell the difference — see
 		// NeoDeferredWork for the resource-manager window this was landing in.
 		//
-		// GUARDED: DeferredWorkQueue.runTasks does NOT abort at
-		// the first failure — it collects each one as a suppressed cause (and NeoForge's own captureException has
-		// already logged "Mod '<id>' encountered an error in a deferred task") and throws at the END. Letting that
-		// escape cost the phase REPORT: bucket_of_frog's task threw NoClassDefFoundError for a class upstream
-		// NeoForge had deleted, and "posted FML common setup to 23 NeoForge mod(s)" never printed at all. Every
-		// other mod's setup had in fact completed; nothing said so, and gate-m9's assertion on that line went red
-		// for a reason that had nothing to do with the 23.
+		// DeferredWorkQueue.runTasks does NOT abort at the first failure — it runs every task, collects each failure as a
+		// suppressed cause (and NeoForge's own captureException has already logged "Mod '<id>' encountered an error in a
+		// deferred task") and throws at the END: natively that is the "<phase>: Deferred Queue" init task failing, and
+		// the boot stops on it.
 		try {
-			NeoDeferredWork.runBlocking(
-					NeoDeferredWork.syncExecutor(KernelNeoSetup.class.getClassLoader()), queue::runTasks);
+			NeoDeferredWork.runBlocking(NeoDeferredWork.syncExecutor(cl), queue::runTasks);
 		} catch (Throwable drained) {
-			Throwable[] failures = Reflect.unwrap(drained).getSuppressed();
-			List<String> owners = DeferredWorkFailures.owners(queue);
-			for (String id : owners) {
-				ModCatalog.mark(id, ModCatalog.Status.DEGRADED, "one of its deferred setup tasks threw during " + label);
+			for (String id : DeferredWorkFailures.owners(queue)) {
+				ModCatalog.mark(id, ModCatalog.Status.FAILED, "one of its deferred setup tasks threw during " + label);
 			}
-			Caught.warn(drained, "[Forbric/Lifecycle] %d deferred task(s) failed during %s — %s; the other mods' %s "
-					+ "completed", failures.length == 0 ? 1 : failures.length, label,
-					owners.isEmpty() ? "owner unknown" : String.join(", ", owners), label);
+			throw RegistrationStop.propagate(RegistrationStop.stop(cl, RegistrationStop.deferredQueue(task), Reflect.unwrap(drained)));
 		}
 		return fired;
 	}
 
-	/** Builds and posts the one event {@code kind} names on {@code bus}. */
-	private static void post(ForeignType kind, IEventBus bus, ModContainer container, DeferredWorkQueue queue) {
+	/**
+	 * The init task native NeoForge runs {@code kind} as: {@code ModLoader.constructMods}' "Mod Construction", and
+	 * {@code CommonModLoader.load}'s "Common setup", "Sided setup", "Enqueue IMC", "Process IMC" and
+	 * "Complete loading of %d mods" (javap of 26.2.0.93).
+	 */
+	static String nativeTask(ForeignType kind) {
+		return switch (kind) {
+			case FML_CONSTRUCT_MOD_EVENT -> RegistrationStop.CONSTRUCTION;
+			case FML_COMMON_SETUP_EVENT -> "Common setup";
+			case FML_CLIENT_SETUP_EVENT, FML_DEDICATED_SERVER_SETUP_EVENT -> "Sided setup";
+			case INTER_MOD_ENQUEUE_EVENT -> "Enqueue IMC";
+			case INTER_MOD_PROCESS_EVENT -> "Process IMC";
+			case FML_LOAD_COMPLETE_EVENT -> "Complete loading of %d mods".formatted(ModList.get() == null ? 0 : ModList.get().size());
+			default -> throw new IllegalArgumentException(kind + " is not a NeoForge setup phase");
+		};
+	}
+
+	/**
+	 * Builds the one event {@code kind} names and hands it to {@code container} as {@code ModLoader.dispatchParallelEvent}
+	 * does: through {@code ModContainer.acceptEvent}, which posts it on the mod's bus and turns a listener's throw into
+	 * NeoForge's {@code ModLoadingException} naming the mod.
+	 */
+	private static void post(ForeignType kind, ModContainer container, DeferredWorkQueue queue) {
 		switch (kind) {
-			case FML_CONSTRUCT_MOD_EVENT -> bus.post(new FMLConstructModEvent(container, queue));
-			case FML_COMMON_SETUP_EVENT -> bus.post(new FMLCommonSetupEvent(container, queue));
-			case FML_CLIENT_SETUP_EVENT -> bus.post(new FMLClientSetupEvent(container, queue));
-			case FML_DEDICATED_SERVER_SETUP_EVENT -> bus.post(new FMLDedicatedServerSetupEvent(container, queue));
-			case INTER_MOD_ENQUEUE_EVENT -> bus.post(new InterModEnqueueEvent(container, queue));
-			case INTER_MOD_PROCESS_EVENT -> bus.post(new InterModProcessEvent(container, queue));
-			case FML_LOAD_COMPLETE_EVENT -> bus.post(new FMLLoadCompleteEvent(container, queue));
+			case FML_CONSTRUCT_MOD_EVENT -> container.acceptEvent(new FMLConstructModEvent(container, queue));
+			case FML_COMMON_SETUP_EVENT -> container.acceptEvent(new FMLCommonSetupEvent(container, queue));
+			case FML_CLIENT_SETUP_EVENT -> container.acceptEvent(new FMLClientSetupEvent(container, queue));
+			case FML_DEDICATED_SERVER_SETUP_EVENT -> container.acceptEvent(new FMLDedicatedServerSetupEvent(container, queue));
+			case INTER_MOD_ENQUEUE_EVENT -> container.acceptEvent(new InterModEnqueueEvent(container, queue));
+			case INTER_MOD_PROCESS_EVENT -> container.acceptEvent(new InterModProcessEvent(container, queue));
+			case FML_LOAD_COMPLETE_EVENT -> container.acceptEvent(new FMLLoadCompleteEvent(container, queue));
 			default -> throw new IllegalArgumentException(kind + " is not a NeoForge setup phase");
 		}
 	}

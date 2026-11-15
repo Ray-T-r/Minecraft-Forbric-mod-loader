@@ -132,7 +132,7 @@ check "sided phase posted"           "posted FML dedicated server setup to [1-9]
 # has no proof its data maps exist (the kernel words a zero-count run so that it cannot match this line either).
 check "registration events ran"      "ran NeoForge.s registration events.* [1-9][0-9]* data map type" "$LOG"
 check "IMC enqueued and processed"   "posted FML IMC (enqueue|process) to [1-9][0-9]* NeoForge mod"  "$LOG" 2
-check_absent "no mod failed a phase" "failed during (construct|dedicated server setup|IMC)"     "$LOG"
+check_absent "no mod failed a phase" "Failed to wait for future "     "$LOG"
 # ModConfig.Type.SERVER is NOT one of the missing phases, which is worth pinning down rather than re-deriving:
 # ServerLifecycleHooks.handleServerAboutToStart loads it through the 3-arg ConfigTracker overload, and the kernel
 # never excised that call. The proof is the readme NeoForge's own server-config machinery writes into the world

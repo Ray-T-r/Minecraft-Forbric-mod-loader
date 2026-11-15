@@ -192,7 +192,7 @@ public final class RegistrationStop {
 	}
 
 	/** Whether {@code t} is NeoForge's {@code ModLoadingException}, as {@code cl} defines it. */
-	private static boolean isModLoadingException(ClassLoader cl, Throwable t) {
+	static boolean isModLoadingException(ClassLoader cl, Throwable t) {
 		if (t == null) return false;
 		try {
 			return Class.forName(MOD_LOADING_EXCEPTION, false, cl).isInstance(t);
