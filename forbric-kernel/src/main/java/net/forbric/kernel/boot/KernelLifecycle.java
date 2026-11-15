@@ -624,8 +624,18 @@ public final class KernelLifecycle {
 			Class<?> neoForgeMod = Class.forName("net.neoforged.neoforge.common.NeoForgeMod", false, cl);
 			Class<?> iEventBus = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
 			Class<?> modContainer = Class.forName(ForeignType.MOD_CONTAINER.binary(Ecosystem.NEOFORGE), false, cl);
-			neoForgeMod.getConstructor(iEventBus, distClass, modContainer)
-					.newInstance(bus, dist, container);
+			// On NeoForge's modloading-worker pool with its container active there, where native NeoForge constructs it
+			// (ModLoader.constructMods: "NeoForge mod loading, version ..." is a modloading-worker line natively; it was
+			// a main line here). Before every other mod, which is one of the orders natively possible.
+			Constructor<?> baseline = neoForgeMod.getConstructor(iEventBus, distClass, modContainer);
+			NeoParallelDispatch.runOne(NeoParallelDispatch.parallelExecutor(cl), container, CarrierOwnMod.NEOFORGE_ID, own -> {
+				KernelModLoader.setNeoActiveContainer(cl, own);
+				try {
+					baseline.newInstance(bus, dist, own);
+				} finally {
+					KernelModLoader.setNeoActiveContainer(cl, null);
+				}
+			});
 			ForbricLog.info("[Forbric/Lifecycle] constructed NeoForge baseline mod on a native bus (dist=%s)",
 					side.distName());
 			Object baselineBus = bus;

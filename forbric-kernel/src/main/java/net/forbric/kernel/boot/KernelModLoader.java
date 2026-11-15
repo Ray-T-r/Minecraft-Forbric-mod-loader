@@ -58,6 +58,9 @@ public final class KernelModLoader {
 	/** A constructed mod and the NeoForge {@code IEventBus} the caller fires {@code RegisterEvent} at. */
 	public record ConstructedMod(String modId, String className, Ecosystem family, Object bus) {}
 
+	/** What a {@code @Mod} constructor threw on its worker, handed back to the construction loop. */
+	private record ConstructionFailure(Throwable cause) {}
+
 	/**
 	 * A NeoForge mod's identity: ONE bus and ONE {@code ModContainer} per mod id, shared by every {@code @Mod} class
 	 * that declares that id. Genuine NeoForge works the same way — a mod has one container and one bus, not one per
@@ -248,7 +251,11 @@ public final class KernelModLoader {
 		// NeoForge mod ids at least one of whose @Mod constructors threw, with the classes that threw. Kept apart
 		// from otherSide because one id can be in both: see settleNeo.
 		Map<String, List<String>> failedNeo = new LinkedHashMap<>();
-		for (ModAnnotationScanner.ModClassInfo info : claimed) {
+		// The classes to construct here, grouped by mod: one container per mod, so one task per mod constructing its
+		// classes in order, as FMLModContainer.constructMod does.
+		Map<String, List<Integer>> byMod = new LinkedHashMap<>();
+		for (int i = 0; i < claimed.size(); i++) {
+			ModAnnotationScanner.ModClassInfo info = claimed.get(i);
 			// Every claimed @Mod is NeoForge's: the scanner records no MinecraftForge @Mod (Forbric no longer loads them).
 			// NeoForge's @Mod declares which sides it belongs to, and the kernel constructed every class on every
 			// side regardless. Sodium's SodiumForgeMod says dist = {CLIENT}; on a dedicated server its constructor
@@ -260,12 +267,35 @@ public final class KernelModLoader {
 						info.dists, side.distName());
 				continue;
 			}
-			try {
-				ConstructedMod mod = constructNeoFamilyMod(cl, info, neo.get(safeId(info)), side);
+			byMod.computeIfAbsent(safeId(info), id -> new ArrayList<>()).add(i);
+		}
+		// Each mod on NeoForge's own modloading-worker pool, as soon as the mods it waits for are constructed, the way
+		// ModLoader.constructMods runs them (NeoParallelDispatch). It ran on the caller's thread, one mod after another:
+		// main on a server, the render thread on a client.
+		java.util.concurrent.atomic.AtomicReferenceArray<Object> outcome =
+				new java.util.concurrent.atomic.AtomicReferenceArray<>(claimed.size());
+		final List<ModAnnotationScanner.ModClassInfo> toConstruct = claimed;
+		NeoParallelDispatch.run(NeoParallelDispatch.parallelExecutor(cl), new ArrayList<>(byMod.entrySet()),
+				Map.Entry::getKey, dependencyAfter, mod -> {
+					for (int i : mod.getValue()) {
+						ModAnnotationScanner.ModClassInfo info = toConstruct.get(i);
+						try {
+							outcome.set(i, constructNeoFamilyMod(cl, info, neo.get(mod.getKey()), side));
+						} catch (Throwable t) {
+							outcome.set(i, new ConstructionFailure(t));
+						}
+					}
+				});
+		// What each class came to, handled here, on the caller's thread and in the order they were claimed, exactly as
+		// when the caller constructed them itself.
+		for (int i = 0; i < claimed.size(); i++) {
+			Object result = outcome.get(i);
+			if (result instanceof ConstructedMod mod) {
 				built.add(mod);
-			} catch (Throwable t) {
-				recordNeoOutcome(info, true, t, otherSide, failedNeo);
-				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
+			} else if (result instanceof ConstructionFailure failure) {
+				ModAnnotationScanner.ModClassInfo info = claimed.get(i);
+				recordNeoOutcome(info, true, failure.cause(), otherSide, failedNeo);
+				Caught.warn(failure.cause(), "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
 			}
 		}
 		// A mod whose constructor threw must come back OUT. A NeoForge mod whose constructor threw used to stay in
@@ -637,13 +667,27 @@ public final class KernelModLoader {
 		try {
 			List<net.forbric.api.DiscoveredMod> known = new ArrayList<>(ModPresence.forgeFamilyMods());
 			known.addAll(ModPresence.fabricMods());
+			dependencyAfter = ModConstructionOrder.enabled() ? Map.copyOf(ModConstructionOrder.edges(known)) : null;
 			return known.isEmpty() ? List.of() : ModConstructionOrder.of(known);
 		} catch (Throwable t) {
 			// An order is an improvement, never a precondition — the same rule orderByDependency keeps.
 			Caught.warn(t, "[Forbric/Order] could not order mods by dependency; using the order they were found in");
+			dependencyAfter = null;
 			return List.of();
 		}
 	}
+
+	/**
+	 * The edges of the dependency order ({@link ModConstructionOrder#edges}) the NeoForge phases wait by: a mod starts
+	 * once every mod before it here has finished ({@link NeoParallelDispatch}). {@code null} when there is no order
+	 * ({@code -Dforbric.modOrder=name}, or it could not be built): the mods then run one after another, in the order
+	 * they are walked.
+	 */
+	public static Map<String, Set<String>> dependencyAfter() {
+		return dependencyAfter;
+	}
+
+	private static volatile Map<String, Set<String>> dependencyAfter = null;
 
 	/**
 	 * Installs the kernel's NeoForge {@code ModContainer}s into the live {@code ModList}, so {@code isLoaded(id)} and
