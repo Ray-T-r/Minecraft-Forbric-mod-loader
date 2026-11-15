@@ -17,7 +17,9 @@ RUNDIR="$KERNEL/run/server-kernel"
 CANARY="$NEOLIVE"
 
 step "stage a real NeoForge @Mod + boot under the kernel"
-"$KERNEL/gradlew" --offline -q -p "$KERNEL" jar >/dev/null 2>&1
+# kernel_jar, as gate-m1 does: a bare gradlew whose output went to /dev/null booted the previous jar when the build
+# failed, and it ran Gradle again inside a sweep that had already built this jar once (FORBRIC_PREBUILT_*).
+kernel_jar
 refuse_shared_rundir "$RUNDIR"
 reap_stale_server "$RUNDIR"
 rm -rf "$RUNDIR/world" 2>/dev/null

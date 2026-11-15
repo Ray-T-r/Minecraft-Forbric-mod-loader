@@ -64,6 +64,18 @@ def pack(jar, classes, extras):
             z.write(source, name)
 
 
+def prebuilt_current(env) -> bool:
+    """True when gates-all's prebuilt jar is still the one it built (the launchers' size:mtime stamp)."""
+    jar, stamp = env.get('FORBRIC_PREBUILT_JAR'), env.get('FORBRIC_PREBUILT_STAMP')
+    if not jar or not stamp:
+        return False
+    try:
+        st = os.stat(jar)
+    except OSError:
+        return False
+    return stamp == f'{st.st_size}:{int(st.st_mtime)}'
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument('--fabric-api', type=Path, required=True, help='fabric-api-0.155.2+26.2.jar (or the staged one)')
@@ -92,8 +104,11 @@ def main():
         parser.error(f'--fabric-api and --bclib must be the Fabric API and BCLib jars (read ids: {sorted(ids)})')
     output = (args.output or kernel / 'build/verification' / ('regress-' + datetime.now().strftime('%Y%m%d-%H%M%S'))).resolve()
     output.mkdir(parents=True, exist_ok=False)
-    # The kernel jar carries Fabric Loader's API (ModInitializer); the launcher builds it too, before every boot.
-    subprocess.run([str(kernel / 'gradlew'), '--offline', '-q', '-p', str(kernel), 'jar'], check=True)
+    # The kernel jar carries Fabric Loader's API (ModInitializer); the launcher builds it too, before every boot. A sweep
+    # (gates-all.sh) has built it once already and says so in FORBRIC_PREBUILT_*: while that jar still has the size and
+    # mtime the sweep recorded, it is the jar, and a fifth Gradle run per gate-m60 proves nothing more.
+    if not prebuilt_current(os.environ):
+        subprocess.run([str(kernel / 'gradlew'), '--offline', '-q', '-p', str(kernel), 'jar'], check=True)
     boot = sorted((kernel / 'build/libs').glob('forbric-kernel-*.jar'))[0]
     libraries = []
     for lib in json.loads((mc / 'versions/26.2/26.2.json').read_text())['libraries']:
