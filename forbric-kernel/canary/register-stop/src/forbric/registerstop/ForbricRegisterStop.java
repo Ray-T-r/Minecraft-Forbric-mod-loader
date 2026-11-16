@@ -4,6 +4,7 @@ package forbric.registerstop;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.resources.ResourceKey;
 import net.neoforged.bus.api.IEventBus;
+import net.neoforged.neoforge.client.network.event.RegisterClientPayloadHandlersEvent;
 import net.neoforged.fml.common.Mod;
 import net.neoforged.fml.event.lifecycle.FMLClientSetupEvent;
 import net.neoforged.fml.event.lifecycle.FMLCommonSetupEvent;
@@ -41,6 +42,8 @@ import net.neoforged.neoforge.registries.RegisterEvent;
  * <li>{@code imc}: its InterModEnqueueEvent listener throws ("Enqueue IMC").</li>
  * <li>{@code complete}: its FMLLoadCompleteEvent listener throws ("Complete loading of N mods").</li>
  * <li>{@code network}: its RegisterPayloadHandlersEvent listener throws ("Network registry lock").</li>
+ * <li>{@code clientnetwork}: on a client, its RegisterClientPayloadHandlersEvent listener throws ("Client network registry
+ * lock", run by ClientModLoader.finish). Registered only in this mode, so a dedicated server never loads the client event.</li>
  * <li>{@code off}: nothing throws (the control).</li>
  * </ul>
  */
@@ -69,6 +72,10 @@ public final class ForbricRegisterStop {
 		bus.addListener(InterModEnqueueEvent.class, event -> fail("imc", "its InterModEnqueueEvent listener"));
 		bus.addListener(FMLLoadCompleteEvent.class, event -> fail("complete", "its FMLLoadCompleteEvent listener"));
 		bus.addListener(RegisterPayloadHandlersEvent.class, event -> fail("network", "its RegisterPayloadHandlersEvent listener"));
+		if ("clientnetwork".equals(MODE)) {
+			bus.addListener(RegisterClientPayloadHandlersEvent.class,
+					event -> fail("clientnetwork", "its RegisterClientPayloadHandlersEvent listener"));
+		}
 	}
 
 	/** Throws, saying where, when {@code mode} is this run's mode. */
