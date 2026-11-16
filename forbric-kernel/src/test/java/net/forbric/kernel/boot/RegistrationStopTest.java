@@ -1,6 +1,7 @@
 /* Copyright 2026 The Forbric Project. Licensed under the Apache License, Version 2.0. */
 package net.forbric.kernel.boot;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -52,6 +53,25 @@ class RegistrationStopTest {
 
 		assertSame(Class.forName(RegistrationStop.MOD_LOADING_EXCEPTION, false, cl), stop.getClass(), String.valueOf(stop));
 		assertTrue(RegistrationStop.isStop(stop));
+	}
+
+	/**
+	 * The kernel's line for a Fabric stage's stop names the stage and the mod without repeating Fabric Loader's own message,
+	 * which the game's Main prints once with its trace, as natively (lane STOP review B-6: the line printed "%s" literally and
+	 * the trace a second time).
+	 */
+	@Test
+	void theFabricStopLineNamesTheStageAndTheModWithoutRepeatingFabricLoadersMessage() {
+		RuntimeException stage = new RuntimeException("Could not execute entrypoint stage 'main' due to errors, provided by "
+				+ "'forbricbrokencanary' at 'forbric.broken.Main'!", new IllegalStateException("boom"));
+
+		String line = RegistrationStop.describeFabric(stage);
+
+		assertEquals("the Fabric entrypoint stage 'main' failed in mod 'forbricbrokencanary'", line);
+		assertTrue(!line.contains("Could not execute entrypoint stage"), line);
+		assertTrue(RegistrationStop.describeFabric(new IllegalStateException("x")).contains("java.lang.IllegalStateException"));
+		assertSame(stage, RegistrationStop.fabric(stage));
+		assertTrue(RegistrationStop.isStop(stage));
 	}
 
 	/**

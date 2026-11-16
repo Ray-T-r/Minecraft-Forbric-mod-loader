@@ -198,9 +198,29 @@ public final class RegistrationStop {
 	 * report — with no NeoForge mod-loading error around it (D87). The caller throws it.
 	 */
 	public static Throwable fabric(Throwable failure) {
-		ForbricLog.error("[Forbric/Fabric] %s — the boot stops here, as native Fabric Loader stops it", failure);
+		// One line, no trace: the game's Main prints Fabric Loader's error with its trace once, as natively. Handing the
+		// Throwable to the logger as an argument picks its (String, Throwable) overload, which printed "%s" literally and
+		// the trace a second time.
+		ForbricLog.error("[Forbric/Fabric] %s — the boot stops here, as native Fabric Loader stops it; its error follows from "
+				+ "the game's Main", describeFabric(failure));
 		stopping = failure;
 		return failure;
+	}
+
+	private static final java.util.regex.Pattern FABRIC_STAGE =
+			java.util.regex.Pattern.compile("Could not execute entrypoint stage '([^']*)' due to errors, provided by '([^']*)'");
+
+	/**
+	 * What the stop line says about a Fabric stage's failure: the stage and the mod, read off Fabric Loader's message
+	 * ({@code KernelFabricEcosystem.gatherStageFailure}) without repeating it, or the throw's type when it is not one.
+	 */
+	static String describeFabric(Throwable failure) {
+		String message = failure == null ? null : failure.getMessage();
+		java.util.regex.Matcher stage = message == null ? null : FABRIC_STAGE.matcher(message);
+		if (stage != null && stage.find()) {
+			return "the Fabric entrypoint stage '" + stage.group(1) + "' failed in mod '" + stage.group(2) + "'";
+		}
+		return "a Fabric entrypoint stage failed (" + (failure == null ? "null" : failure.getClass().getName()) + ")";
 	}
 
 	/** Whether {@code t} is NeoForge's {@code ModLoadingException}, as {@code cl} defines it. */
