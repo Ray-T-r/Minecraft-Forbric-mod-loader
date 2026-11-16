@@ -430,6 +430,14 @@ class KernelLoadReportTest {
 			assertFalse(text.contains("still partly present") || text.contains("还有一部分留在游戏里"), text);
 			assertFalse(text.contains("depends on the compatibility decision") || text.contains("是否继续由兼容性选择决定"), text);
 		}
+		// A stop no mod row carries (a NeoForge registration step) leaves only findings; the report still says it stopped.
+		net.forbric.api.CompatibilityFinding step = new net.forbric.api.CompatibilityFinding("neoforge-registration:x", "forbric",
+				"NeoForge built-in registration", "RegistrationEvents.init", net.forbric.api.CompatibilityFinding.Confidence.CONFIRMED,
+				true, "NeoForge's x failed", List.of("boom"));
+		String rowless = KernelLoadReport.render(false, List.of(), List.of(step), List.of(), List.of(), java.util.Set.of(), true);
+		assertTrue(rowless.contains("The game stopped at a mod's error"), rowless);
+		assertFalse(KernelLoadReport.render(false, List.of(), List.of(step), List.of(), List.of(), java.util.Set.of(), false)
+				.contains("The game stopped"), "and a boot that did not stop does not say so");
 		// And the other direction: the same rows without a stop keep the carry-on note.
 		String carriedOn = KernelLoadReport.render(false, failures, List.of(), List.of(), List.of(), java.util.Set.of(), false);
 		assertTrue(carriedOn.contains("does not stop at the first mod"), carriedOn);

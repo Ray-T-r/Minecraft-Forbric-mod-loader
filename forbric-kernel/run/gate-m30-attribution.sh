@@ -106,7 +106,7 @@ stop_report() { # stop_report <log> <what> — the stop's load report: the game 
   if [ -f "$REPORT" ]; then
     cp "$REPORT" "$log.load-report.txt"
     echo "[kernel] PASS $what: the stop left a load report ($REPORT)"
-    check "$what: it says the game stopped" "The game stopped at this mod's error|游戏在上面这个 mod 的报错处停下了" "$log.load-report.txt"
+    check "$what: it says the game stopped" "The game stopped at (this|a) mod's error|游戏在上面这个 mod 的报错处停下了|游戏在一个 mod 加载出错时停下了" "$log.load-report.txt"
     check_absent "$what: and not that Forbric carried on" \
       "does not stop at the first mod|不会因为一个 mod 出问题就停下来|depends on the compatibility decision|是否继续由兼容性选择决定" "$log.load-report.txt"
     check "$what: the row says the mod did not finish loading" "did not finish loading —|没有完成加载 —" "$log.load-report.txt"

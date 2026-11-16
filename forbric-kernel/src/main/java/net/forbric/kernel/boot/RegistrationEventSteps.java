@@ -313,8 +313,10 @@ final class RegistrationEventSteps {
 			CompatibilityFindings.record(new CompatibilityFinding("neoforge-registration:" + failed.getKey().display(),
 					"forbric", "NeoForge built-in registration", "RegistrationEvents.init",
 					CompatibilityFinding.Confidence.CONFIRMED, true,
-					"NeoForge's " + failed.getKey().display() + " failed; native NeoForge stops loading here, "
-							+ "Forbric ran the remaining registration steps without it",
+					// Since D82 (lane STOP) the run ends at this step and the boot stops on it, as natively; this said
+					// "Forbric ran the remaining registration steps without it" while it did.
+					"NeoForge's " + failed.getKey().display() + " failed; that ends NeoForge's registration events and "
+							+ "stops the game, as on NeoForge",
 					List.of(String.valueOf(failed.getValue()))));
 		}
 

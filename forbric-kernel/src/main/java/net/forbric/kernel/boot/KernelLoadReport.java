@@ -352,8 +352,17 @@ public final class KernelLoadReport {
 			sb.append('\n');
 		}
 		// The advice below is about mods that did not finish; with none, it would only send the reader to remove
-		// something that is not the problem.
+		// something that is not the problem. A boot that stopped says so whatever the rows: a stop no mod row carries (a
+		// NeoForge registration step, say) left only the findings above, which describe the state before the stop.
 		if (failures.isEmpty()) {
+			if (stopped) {
+				sb.append(zh ? "游戏在一个 mod 加载出错时停下了，就像它自己的加载器会做的那样；具体的报错在 logs/latest.log 和 crash-reports\n"
+						+ "文件夹里的崩溃报告里。上面这些记录的是停下之前的情况。\n"
+						: "The game stopped at a mod's error while it loaded, as that mod's own loader stops it; the error is in\n"
+								+ "logs/latest.log and in the crash report in the crash-reports folder. What is listed above is the\n"
+								+ "state before it stopped.\n");
+				return sb.toString();
+			}
 			if (!unattributed.isEmpty()) {
 				sb.append(zh ? "在 logs/latest.log 里搜上面的编号，那里有具体的报错；证据在 .forbric-kernel/compatibility-report.json。\n"
 						: "Search logs/latest.log for the ids above for the actual error; the evidence is in\n"

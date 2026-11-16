@@ -173,6 +173,8 @@ class RegistrationEventStepsTest {
 		CompatibilityFinding capabilities = finding("neoforge-registration:CapabilityHooks.init");
 		assertNotNull(capabilities, CompatibilityFindings.all().toString());
 		assertTrue(capabilities.confirmedRequired());
+		assertFalse(capabilities.detail().contains("ran the remaining registration steps"),
+				"the run ends here and the boot stops, so the finding must not say the rest ran: " + capabilities.detail());
 	}
 
 	/**

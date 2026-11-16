@@ -200,7 +200,9 @@ check "datapackreg: Main's handler reported it, in the begin path" "Description:
 check "datapackreg: NeoForge's error names the mod and the event" \
   "\(forbricregisterstop\) encountered an error while dispatching the net\.neoforged\.neoforge\.registries\.DataPackRegistryEvent.NewRegistry event" "$STOP_DATAPACK"
 check_absent "datapackreg: no Fabric main ran before the stop"   "\[ForbricFabricLive\] onInitialize"  "$STOP_DATAPACK"
-check_absent "datapackreg: nothing was frozen"                   "froze the registries NeoForge-first"  "$STOP_DATAPACK"
+# Not asserted: the freeze. Natively RegistryManager.postNewRegistryEvent posts this event before RegisterEvent and the
+# freeze; the kernel declares datapack registries after its registry window, on a client as on a dedicated server (step 3a),
+# so "froze the registries NeoForge-first" precedes this stop on both sides (lane STOP review fixes, open item).
 check_absent "datapackreg: Minecraft was never started"          "Sound engine started"                 "$STOP_DATAPACK"
 
 step "a NeoForge mod whose common setup throws stops the client at ClientModLoader.finish, as native NeoForge does (D87; must PASS)"

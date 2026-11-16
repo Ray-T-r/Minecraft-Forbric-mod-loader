@@ -96,7 +96,7 @@ stop_report() { # stop_report <log> <mode> — a stop's load report says the gam
   rm -f "$log.load-report.txt"
   if [ -f "$report" ]; then
     cp "$report" "$log.load-report.txt"
-    check "$mode: the load report says the game stopped" "The game stopped at this mod's error|游戏在上面这个 mod 的报错处停下了" "$log.load-report.txt"
+    check "$mode: the load report says the game stopped" "The game stopped at (this|a) mod's error|游戏在上面这个 mod 的报错处停下了|游戏在一个 mod 加载出错时停下了" "$log.load-report.txt"
     check_absent "$mode: and not that Forbric carried on" \
       "does not stop at the first mod|不会因为一个 mod 出问题就停下来|depends on the compatibility decision|是否继续由兼容性选择决定" "$log.load-report.txt"
   elif [[ "$REPORT_REQUIRED" == *" $mode "* ]]; then
