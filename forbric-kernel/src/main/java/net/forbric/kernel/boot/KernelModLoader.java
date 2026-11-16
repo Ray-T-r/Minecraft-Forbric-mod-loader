@@ -38,6 +38,7 @@ import net.forbric.kernel.metadata.forge.LanguageProviders;
 import net.forbric.kernel.metadata.forge.ModsTomlParser;
 import net.forbric.kernel.util.Caught;
 import net.forbric.kernel.util.ForbricLog;
+import net.forbric.kernel.util.Reflect;
 import net.forbric.api.ModCatalog;
 
 /**
@@ -285,9 +286,13 @@ public final class KernelModLoader {
 				ModAnnotationScanner.ModClassInfo info = claimed.get(i);
 				Throwable t = threw.get(k);
 				recordNeoOutcome(info, true, t, otherSide, failedNeo);
-				Caught.warn(t, "[Forbric/ModLoader] failed to construct @Mod %s", info.className);
 				// Natively FMLModContainer.constructMod throws fml.modloadingissue.failedtoloadmod naming the mod, and once
-				// every mod has been constructed "Mod Construction" stops the boot on it (RegistrationStop, D87).
+				// every mod has been constructed "Mod Construction" stops the boot on it (RegistrationStop, D82). Not a
+				// failure the kernel carries on from, so not a Caught failure site: the throw is handed on as the value
+				// that stop reports, and this line says where it came from.
+				Caught.expected(t);
+				ForbricLog.error("[Forbric/ModLoader] failed to construct @Mod %s: %s — \"%s\" stops the boot on it once every "
+						+ "mod has been constructed", info.className, Reflect.unwrap(t), RegistrationStop.CONSTRUCTION);
 				NeoIdentity identity = neo.get(safeId(info));
 				RegistrationStop.pending(RegistrationStop.CONSTRUCTION, safeId(info),
 						RegistrationStop.failedToLoadMod(cl, identity == null ? null : identity.container(), t));

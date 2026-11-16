@@ -48,7 +48,8 @@ class EntrypointResolveFailureTest {
 		healthyRuns = 0;
 	}
 
-	@ExpectCaught({"main entrypoint of brokennet failed", "brokennet: its 'main' entrypoint"})
+	// The entrypoint's own throw is handed to the stage's error, which stops the boot: not a Caught failure site (A-7).
+	@ExpectCaught({"brokennet: its 'main' entrypoint"})
 	@Test void aLifecycleEntrypointThatCannotLoadFailsItsModThroughTheDriver() throws Exception {
 		KernelFabricLoader loader = loader();
 		register(loader, "brokennet", "main", "probe.CommonPacketsImpl::init");

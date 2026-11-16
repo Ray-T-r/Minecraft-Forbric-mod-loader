@@ -33,7 +33,6 @@ import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
 
 import net.forbric.api.Side;
-import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -75,8 +74,8 @@ class KernelModConstructionStopTest {
 		forgetFactoryMemo();
 	}
 
+	// The constructor's throw is handed to "Mod Construction"'s stop: not a Caught failure site (lane STOP review A-7).
 	@Test
-	@ExpectCaught("failed to construct @Mod")
 	void aConstructorThatThrowsStopsTheBootOnceEveryModIsConstructed() throws Exception {
 		ClassLoader game = game();
 		KernelModLoader.constructMods(game, List.of(modsJar), Side.DEDICATED_SERVER);

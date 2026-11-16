@@ -89,7 +89,8 @@ class KernelEventSubscribersTest {
 			KernelEventSubscribers.registrationFailed("xmod", "a.b.C", new RuntimeException("boom"));
 			assertEquals(1, net.forbric.api.ModCatalog.failures().size());
 			net.forbric.api.ModCatalog.Entry xmod = net.forbric.api.ModCatalog.failures().get(0);
-			assertEquals(net.forbric.api.ModCatalog.Status.DEGRADED, xmod.status());
+			// Natively the mod's construction fails on it and the boot stops (D82): the mod did not finish loading.
+			assertEquals(net.forbric.api.ModCatalog.Status.FAILED, xmod.status());
 			assertTrue(xmod.statusDetail().contains("@EventBusSubscriber C "), xmod.statusDetail());
 
 			KernelEventSubscribers.registrationFailed(null, "a.b.D", new RuntimeException("boom"));

@@ -85,6 +85,13 @@ public class ArbitratedAwayPlacementTest {
 		}
 	}
 
+	public static final class BrokenTuning implements TuningHook {
+		@Override public void tune() {
+			JOURNAL.add("broken tuned");
+			throw new IllegalStateException("a consumer's tuning hook fails on purpose");
+		}
+	}
+
 	public static final class ZirconMain implements ModInitializer {
 		@Override public void onInitialize() {
 			JOURNAL.add("zircon main");
@@ -230,6 +237,24 @@ public class ArbitratedAwayPlacementTest {
 		assertEquals(1, AmberTuning.calls, "once, as the library did");
 		assertEquals(1, QuartzTuning.calls);
 		assertEquals(0, KernelFabricEcosystem.dispatchArbitratedAwayKeys(Phase.MAIN), "handed out once per boot");
+	}
+
+	/**
+	 * A consumer's hook that throws inside the dispatch the kernel runs for the losing build fails that build's own entrypoint
+	 * natively, and with it the stage: Fabric Loader's stage error names the library, not "?" (lane STOP review A-6). The
+	 * rest of the stage still runs, as Fabric Loader runs every entrypoint before it throws.
+	 */
+	@Test void aDispatchThatThrowsFailsTheStageInTheLibrarysName() throws Exception {
+		KernelFabricLoader fabric = loader(true,
+				mod("zircon", ZirconMain.class, null, false),
+				mod("quartz", QuartzMain.class, BrokenTuning.class, true),
+				mod("amber", AmberMain.class, null, true));
+
+		RuntimeException stage = assertThrows(RuntimeException.class, () -> runMain(fabric));
+
+		assertTrue(stage.getMessage().startsWith("Could not execute entrypoint stage 'main' due to errors, provided by 'lumen' at '"),
+				stage.getMessage());
+		assertTrue(JOURNAL.contains("broken tuned") && JOURNAL.contains("zircon main"), "every entrypoint ran: " + JOURNAL);
 	}
 
 	/** {@code -Dforbric.fabricOrder=off}: every mod after what it requires, so the library comes before quartz. */

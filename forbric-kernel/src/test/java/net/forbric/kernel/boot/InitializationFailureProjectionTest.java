@@ -25,7 +25,6 @@ import net.fabricmc.api.ModInitializer;
 import net.forbric.api.CompatibilityFindings;
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ModCatalog;
-import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.fabric.FabricModMetadataParser;
 import net.forbric.kernel.fabric.KernelFabricLoader;
 import net.forbric.kernel.fabric.KernelModContainer;
@@ -43,7 +42,7 @@ public class InitializationFailureProjectionTest {
 		constructorAttempts = entrypointAttempts = healthyRuns = 0;
 	}
 
-	@ExpectCaught("main entrypoint of bad")
+	// Each entrypoint's throw is handed to the stage's error, which stops the boot: not a Caught failure site (A-7).
 	@Test void actualEntrypointConstructionAndInvocationFailuresBecomeRequiredAtTheReportingBoundary() throws Exception {
 		var constructor = KernelFabricLoader.class.getDeclaredConstructor(EnvType.class, Path.class, Path.class, String[].class, String.class);
 		constructor.setAccessible(true);

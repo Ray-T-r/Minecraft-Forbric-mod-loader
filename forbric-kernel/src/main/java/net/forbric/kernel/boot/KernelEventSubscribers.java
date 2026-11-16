@@ -140,10 +140,13 @@ public final class KernelEventSubscribers {
 					neoMethods += wireNeoSubscriber(cl, sub.className(), modBus, neoModContainer(modId), workers, neo);
 				} catch (Throwable t) {
 					Throwable real = Reflect.unwrap(t);
-					Caught.warn(real, "[Forbric/EBS] could not register %s%s", sub.className(), causeChain(real));
-					registrationFailed(modId, sub.className(), real);
 					// Natively AutomaticEventSubscriber.inject runs inside FMLModContainer.constructMod, which turns this into
-					// fml.modloadingissue.failedtoloadmod naming the mod, and "Mod Construction" stops the boot (D87).
+					// fml.modloadingissue.failedtoloadmod naming the mod, and "Mod Construction" stops the boot (D82). Handed on
+					// as the value that stop reports, not carried on from, so not a Caught failure site.
+					Caught.expected(real);
+					ForbricLog.error("[Forbric/EBS] could not register %s%s — \"%s\" stops the boot on it", sub.className(),
+							causeChain(real), RegistrationStop.CONSTRUCTION);
+					registrationFailed(modId, sub.className(), real);
 					KernelModLoader.NeoIdentity owner = modId == null ? null : KernelModLoader.publishedNeoMods().get(modId);
 					RegistrationStop.pending(RegistrationStop.CONSTRUCTION, modId,
 							RegistrationStop.failedToLoadMod(cl, owner == null ? null : owner.container(), real));
@@ -167,13 +170,16 @@ public final class KernelEventSubscribers {
 
 	/**
 	 * A subscriber class that could not be registered: the cause chain is logged exactly as before, and when the
-	 * owning mod is known its row says which class and that its listeners will not run. A subscriber no mod owns
-	 * (a jar with no mod class beside it) marks nobody — the log line is the whole report then.
+	 * owning mod is known its row says which class. Natively that fails the mod's construction
+	 * ({@code fml.modloadingissue.failedtoloadmod}) and "Mod Construction" stops the boot (D82), so the row says the mod
+	 * did not finish loading; it said "partly did not run — its listeners will not run" while the kernel carried on
+	 * without them. A subscriber no mod owns (a jar with no mod class beside it) marks nobody — the log line is the
+	 * whole report then.
 	 */
 	static void registrationFailed(String modId, String className, Throwable real) {
 		if (modId != null && !modId.isBlank()) {
-			ModCatalog.mark(modId, ModCatalog.Status.DEGRADED, "its @EventBusSubscriber " + simpleName(className)
-					+ " could not be registered — its listeners will not run");
+			ModCatalog.mark(modId, ModCatalog.Status.FAILED, "its @EventBusSubscriber " + simpleName(className)
+					+ " could not be registered");
 		}
 	}
 

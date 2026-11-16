@@ -1044,7 +1044,9 @@ public final class KernelFabricEcosystem {
 					Caught.expected(t);
 					ForbricLog.error("[Forbric/Fabric] the '%s' entrypoints of %s's losing build failed: %s", due.get(j).key(),
 							due.get(j).library(), t);
-					failure = gatherStageFailure(key, null, t, failure);
+					// Natively it is the losing build's own entrypoint of this stage that threw, so the stage's error names
+					// that library and where its dispatch is.
+					failure = gatherStageFailure(key, due.get(j).library(), due.get(j).dispatch().site(), t, failure);
 				}
 			}
 			if (i < containers.size()) {
@@ -1133,14 +1135,21 @@ public final class KernelFabricEcosystem {
 	 * naming the entrypoint's mod and definition), every later one is added to it as suppressed, once.
 	 */
 	public static RuntimeException gatherStageFailure(String key, EntrypointContainer<?> c, Throwable failed, RuntimeException previous) {
+		return gatherStageFailure(key, c == null ? "?" : c.getProvider().getMetadata().getId(), c == null ? "" : c.getDefinition(),
+				failed, previous);
+	}
+
+	/**
+	 * The same for an entrypoint known by its mod id and definition rather than its container: a losing library build's,
+	 * whose dispatch the kernel runs in its place ({@link #invokePhase}).
+	 */
+	static RuntimeException gatherStageFailure(String key, String id, String definition, Throwable failed, RuntimeException previous) {
 		Throwable cause = failed;
 		while ((cause instanceof java.lang.reflect.InvocationTargetException || cause instanceof java.util.concurrent.ExecutionException
 				|| cause instanceof java.util.concurrent.CompletionException) && cause.getCause() != null) {
 			cause = cause.getCause();
 		}
 		if (previous == null) {
-			String id = c == null ? "?" : c.getProvider().getMetadata().getId();
-			String definition = c == null ? "" : c.getDefinition();
 			return new RuntimeException(String.format("Could not execute entrypoint stage '%s' due to errors, provided by '%s' at '%s'!",
 					key, id, definition), cause);
 		}
@@ -1170,7 +1179,11 @@ public final class KernelFabricEcosystem {
 			reportSwallowedFailure(key, id, entrypoint);
 			return null;
 		} catch (Throwable t) {
-			Caught.error(t, "[Forbric/Fabric] %s entrypoint of %s failed", key, id);
+			// Handed back to the stage, which throws Fabric Loader's stage error once every entrypoint has run, and that
+			// stops the boot (D82): not a failure the kernel carries on from, so not a Caught failure site.
+			Caught.expected(t);
+			ForbricLog.error("[Forbric/Fabric] %s entrypoint of %s failed: %s — the '%s' stage stops the boot once its "
+					+ "entrypoints have run", key, id, t, key);
 			ModCatalog.mark(id, ModCatalog.Status.FAILED, "its " + key + " entrypoint threw");
 			return t;
 		}
