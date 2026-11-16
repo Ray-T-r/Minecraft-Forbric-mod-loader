@@ -294,23 +294,36 @@ public final class ModCatalog {
 	}
 
 	/**
-	 * The detail a re-marked row carries: the new reason when the status rises; the existing reason when the new
-	 * one is outranked (a DEGRADED reason adds nothing to "did not finish loading"); both reasons, joined, when a
-	 * second distinct reason arrives at the same status; the existing text when the new one repeats it or is
-	 * empty.
+	 * The detail a re-marked row carries: when the status rises, the new reason first and then what was already wrong
+	 * with the mod; the existing reason when the new one is outranked (a DEGRADED reason arriving after "did not finish
+	 * loading" adds nothing to it); both reasons, joined, when a second distinct reason arrives at the same status; the
+	 * existing text when the new one repeats it or is empty.
+	 *
+	 * <p>A rise used to start over with the new reason. But what was already wrong is often why the mod failed: an ABI
+	 * audit's "compiled against a different NeoForge" lands first, then the deferred task that touched the missing class
+	 * fails the mod, and since D82 that failure stops the boot — so the load report a player reads after the stop said only
+	 * that a deferred task threw, and the reason it threw was gone (lane STOP review A-2).
 	 */
 	private static String joinedDetail(Entry e, Status incomingStatus, Status kept, String detail) {
 		String incoming = detail == null ? "" : detail.trim();
 		String existing = e.statusDetail();
-		if (kept != e.status() || existing.isEmpty()) return incoming;
+		if (existing.isEmpty()) return incoming;
+		if (kept != e.status()) return joinClauses(incoming, existing);
 		if (incomingStatus != e.status() || incoming.isEmpty()) return existing;
+		return joinClauses(existing, incoming);
+	}
 
+	/** {@code first}'s clauses, then {@code second}'s that are not already among them, joined with "; ". */
+	private static String joinClauses(String first, String second) {
 		// Clause by clause, not whole string by whole string. A reason is often several clauses already joined
 		// with "; " — one repair naming two things it could not do — and comparing the whole incoming text to
 		// each existing clause never matches, so the SAME two-clause reason arriving twice was printed twice on
 		// the Mods screen and in the load report. fabric-item-api's tooltip row read that way for months.
-		List<String> reasons = new ArrayList<>(List.of(existing.split("; ")));
-		for (String clause : incoming.split("; ")) {
+		List<String> reasons = new ArrayList<>();
+		for (String clause : first.split("; ")) {
+			if (!clause.isEmpty() && !reasons.contains(clause)) reasons.add(clause);
+		}
+		for (String clause : second.split("; ")) {
 			if (!clause.isEmpty() && !reasons.contains(clause)) reasons.add(clause);
 		}
 		return String.join("; ", reasons);

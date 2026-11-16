@@ -355,9 +355,11 @@ class KernelModCatalogTest {
 		assertEquals("guest mixin A did not fit; one of its deferred setup tasks threw",
 				ModCatalog.failures().get(0).statusDetail(), "the same reason twice is recorded once");
 
-		// A change of status starts over with the new reason: FAILED is the whole story then.
+		// A change of status puts the new reason first and keeps what was already wrong: that is often why it failed
+		// (an ABI mismatch, then the deferred task that touched the missing class; lane STOP review A-2).
 		ModCatalog.mark("alpha", ModCatalog.Status.FAILED, "its entrypoint threw");
-		assertEquals("its entrypoint threw", ModCatalog.failures().get(0).statusDetail());
+		assertEquals("its entrypoint threw; guest mixin A did not fit; one of its deferred setup tasks threw",
+				ModCatalog.failures().get(0).statusDetail());
 	}
 
 	@Test
