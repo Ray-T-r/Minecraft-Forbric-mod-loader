@@ -100,6 +100,21 @@ stop_boot() { # stop_boot <log> — a boot that must stop by itself: no stdin fe
   await_server "$pid" "$log" 130
 }
 
+stop_report() { # stop_report <log> <what> — the stop's load report: the game stopped, not the carry-on note (STOP review A-1)
+  local log="$1" what="$2"
+  rm -f "$log.load-report.txt"
+  if [ -f "$REPORT" ]; then
+    cp "$REPORT" "$log.load-report.txt"
+    echo "[kernel] PASS $what: the stop left a load report ($REPORT)"
+    check "$what: it says the game stopped" "The game stopped at this mod's error|游戏在上面这个 mod 的报错处停下了" "$log.load-report.txt"
+    check_absent "$what: and not that Forbric carried on" \
+      "does not stop at the first mod|不会因为一个 mod 出问题就停下来|depends on the compatibility decision|是否继续由兼容性选择决定" "$log.load-report.txt"
+    check "$what: the row says the mod did not finish loading" "did not finish loading —|没有完成加载 —" "$log.load-report.txt"
+  else
+    echo "[kernel] FAIL $what: no load report at $REPORT after the stop"; FAIL=1
+  fi
+}
+
 stopped_as_native() { # stopped_as_native <log> <what> <mod id> <NeoForge init task>
   local log="$1" what="$2" id="$3" task="$4" report
   check "$what: exited with NeoForge's launcher status 1"  "^1$"                                        "$log.exit"
@@ -172,6 +187,8 @@ check "subscriber: the canary constructed"           "\[ForbricSubscriberCanary\
 check "subscriber: the kernel said which class"      "Forbric/EBS\] could not register forbric.subscribercanary.BrokenSubscriber" "$SUBSCRIBER_LOG"
 stopped_as_native "$SUBSCRIBER_LOG" subscriber forbricsubscribercanary "Mod Construction"
 check "subscriber: NeoForge's issue names the mod"   "Mod loading issue for: forbricsubscribercanary" "$SUBSCRIBER_LOG.crash-fml.txt"
+stop_report "$SUBSCRIBER_LOG" subscriber
+check "subscriber: the report names the broken subscriber" "its @EventBusSubscriber BrokenSubscriber could not be registered" "$SUBSCRIBER_LOG.load-report.txt"
 
 step "a deferred setup task that throws stops the boot, as native NeoForge does, and the jar's ABI is still named (D87; must PASS)"
 stage "$ABI_CANARY"
@@ -180,6 +197,10 @@ check "abi: the canary constructed"                  "\[ForbricAbiCanary\] const
 check "abi: the abi audit named the jar"             "Forbric/AbiAudit\] forbricabicanary.jar was compiled against a different NeoForge.*ForbricVanishedEvent" "$ABI_LOG"
 check "abi: NeoForge named the deferred task's mod"  "Mod 'forbricabicanary' encountered an error in a deferred task" "$ABI_LOG"
 stopped_as_native "$ABI_LOG" abi forbricabicanary "Common setup: Deferred Queue"
+stop_report "$ABI_LOG" abi
+check "abi: the report names the deferred task"       "one of its deferred setup tasks threw during common setup" "$ABI_LOG.load-report.txt"
+# The reason it threw, which the deferred task's FAILED mark used to replace (lane STOP review A-2).
+check "abi: and the abi finding, kept beside it"      "compiled against a different NeoForge — net.neoforged.neoforge.event.ForbricVanishedEvent is not in this instance" "$ABI_LOG.load-report.txt"
 
 step "negative control: the same instance without the attribution canaries"
 stage

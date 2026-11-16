@@ -6,10 +6,14 @@
 #   * NeoForge's construction and registry phases run in the kernel's ClientModLoader.begin redirect, which lets NeoForge's
 #     ModLoadingException out to the client's Main: crash-*-client.txt ("Bootstrap"), then NeoForge's FatalErrorReporting
 #     (an early-window screen natively when there is one; a native message box otherwise), then exit — phases listener,
-#     try (D82) and construct (D87). Nothing of a mod runs after the roll-back, Minecraft is never constructed.
+#     try (D82), construct and datapackreg (D87). Nothing of a mod runs after the roll-back, Minecraft is never
+#     constructed. datapackreg is a mod's DataPackRegistryEvent.NewRegistry listener, which native NeoForge posts inside
+#     "Registry initialization" (RegistryManager.postNewRegistryEvent); until lane STOP's review (A-4) the kernel handed
+#     a client the event only after the Fabric mains in Minecraft.<init>, so a throw there stopped in "Initializing game".
 #   * every later NeoForge phase runs at the base's ClientModLoader.finish call inside Minecraft.<init>, whose own handler
-#     natively writes the crash report (category "Finish mod loading") and shows the same fatal-error report — phase
-#     common (D87; the kernel's KernelNeoClientStop does what that handler does).
+#     natively writes the crash report (category "Finish mod loading") and shows the same fatal-error report — phases
+#     common and clientnetwork, the "Client network registry lock" (D87; the kernel's KernelNeoClientStop does what that
+#     handler does).
 #   * a Fabric main/client entrypoint stage that throws leaves Minecraft.<init> with Fabric Loader's "Could not execute
 #     entrypoint stage" error for Main's handler ("Initializing game" crash report, exit 255) — phase fabric (D87, with the
 #     Fabric broken canary).
@@ -21,7 +25,8 @@
 # with =off and must get as far as "Sound engine started", froze the registries and ran the Fabric main.
 #
 # RED control (D34): the kernel at 2c231c9c (before K3c) contained the registration throw, and the kernel at 421c53cc
-# (before STOP) contained construct, common and fabric and named nobody for try.
+# (before STOP) contained construct, common and fabric and named nobody for try. The kernel at 40a71d1a (lane STOP before
+# its review) stopped datapackreg after the Fabric main in "Initializing game", and its fabric line printed "%s".
 # GATE-PARALLEL: rundirs=client-registerstop mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -36,6 +41,8 @@ STOP_TRY="$BUILD/gate-m24d-try.log"
 STOP_CONSTRUCT="$BUILD/gate-m24d-construct.log"
 STOP_COMMON="$BUILD/gate-m24d-common.log"
 STOP_FABRIC="$BUILD/gate-m24d-fabric.log"
+STOP_DATAPACK="$BUILD/gate-m24d-datapackreg.log"
+STOP_CLIENTNET="$BUILD/gate-m24d-clientnetwork.log"
 BROKEN="$KERNEL/run/canary/forbricbrokencanary.jar"
 CONTROL="$BUILD/gate-m24d-control.log"
 mkdir -p "$BUILD"
@@ -184,6 +191,18 @@ check "construct: NeoForge's error names the mod"      "\(forbricregisterstop\) 
 check_absent "construct: no registry event was posted" "\[ForbricRegisterStop\] reached RegisterEvent" "$STOP_CONSTRUCT"
 check_absent "construct: Minecraft was never started"   "Sound engine started"                          "$STOP_CONSTRUCT"
 
+step "a NeoForge mod whose DataPackRegistryEvent.NewRegistry listener throws stops the client in the registry phase, as native NeoForge does (D87; must PASS)"
+stage
+run_client "$STOP_DATAPACK" datapackreg
+check "datapackreg: the listener really ran and threw" "\[ForbricRegisterStop\] its DataPackRegistryEvent.NewRegistry listener is about to fail on purpose" "$STOP_DATAPACK"
+client_neo_stop "$STOP_DATAPACK" datapackreg "Registry initialization"
+check "datapackreg: Main's handler reported it, in the begin path" "Description: Bootstrap" "$STOP_DATAPACK.crash-client.txt"
+check "datapackreg: NeoForge's error names the mod and the event" \
+  "\(forbricregisterstop\) encountered an error while dispatching the net\.neoforged\.neoforge\.registries\.DataPackRegistryEvent.NewRegistry event" "$STOP_DATAPACK"
+check_absent "datapackreg: no Fabric main ran before the stop"   "\[ForbricFabricLive\] onInitialize"  "$STOP_DATAPACK"
+check_absent "datapackreg: nothing was frozen"                   "froze the registries NeoForge-first"  "$STOP_DATAPACK"
+check_absent "datapackreg: Minecraft was never started"          "Sound engine started"                 "$STOP_DATAPACK"
+
 step "a NeoForge mod whose common setup throws stops the client at ClientModLoader.finish, as native NeoForge does (D87; must PASS)"
 stage
 run_client "$STOP_COMMON" common
@@ -194,6 +213,14 @@ check "common: NeoForge's error names the mod and the event" \
   "\(forbricregisterstop\) encountered an error while dispatching the net\.neoforged\.fml\.event\.lifecycle\.FMLCommonSetupEvent event" "$STOP_COMMON.crash-client.txt"
 check_absent "common: not Main's Initializing-game handler" "Description: Initializing game" "$STOP_COMMON.crash-client.txt"
 
+step "a NeoForge mod whose client payload-handler listener throws stops the client at ClientModLoader.finish, as native NeoForge does (D87; must PASS)"
+stage
+run_client "$STOP_CLIENTNET" clientnetwork
+check "clientnetwork: the listener really ran and threw" "\[ForbricRegisterStop\] its RegisterClientPayloadHandlersEvent listener is about to fail on purpose" "$STOP_CLIENTNET"
+client_neo_stop "$STOP_CLIENTNET" clientnetwork "Client network registry lock" empty
+check "clientnetwork: the crash report is ClientModLoader.finish's" "^-- Finish mod loading --" "$STOP_CLIENTNET.crash-client.txt"
+check_absent "clientnetwork: not Main's Initializing-game handler" "Description: Initializing game" "$STOP_CLIENTNET.crash-client.txt"
+
 step "a Fabric main entrypoint that throws takes the client down, as native Fabric Loader does (D87; must PASS)"
 stage fabric
 run_client "$STOP_FABRIC" off
@@ -202,7 +229,8 @@ client_stopped "$STOP_FABRIC" fabric forbricbrokencanary "255"
 check "fabric: Fabric Loader's stage error names the mod" \
   "Could not execute entrypoint stage 'main' due to errors, provided by 'forbricbrokencanary'" "$STOP_FABRIC.crash-client.txt"
 check "fabric: the game's Main reported it"          "Description: Initializing game"            "$STOP_FABRIC.crash-client.txt"
-check "fabric: the kernel stops as native Fabric does" "the boot stops here, as native Fabric Loader stops it" "$STOP_FABRIC"
+check "fabric: the kernel stops as native Fabric does, naming the stage and the mod" \
+  "the Fabric entrypoint stage 'main' failed in mod 'forbricbrokencanary' — the boot stops here, as native Fabric Loader stops it" "$STOP_FABRIC"
 check_absent "fabric: no NeoForge mod-loading error around it" "Failed to wait for future"         "$STOP_FABRIC"
 check_absent "fabric: Minecraft never finished starting"        "Sound engine started"              "$STOP_FABRIC"
 
@@ -225,6 +253,6 @@ step "M24d result"
 if [ "$FAIL" -eq 0 ]; then
   echo "[kernel] ✅ M24D CLIENT STOP GATE GREEN — the client stops as native NeoForge / Fabric Loader does, and the control boots"
 else
-  echo "[kernel] ❌ M24D GATE RED — $BUILD/gate-m24d-{listener,try,construct,common,fabric,control}.log"
+  echo "[kernel] ❌ M24D GATE RED — $BUILD/gate-m24d-{listener,try,construct,datapackreg,common,clientnetwork,fabric,control}.log"
 fi
 exit "$FAIL"

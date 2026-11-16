@@ -15,9 +15,12 @@
 #     (listener) and a throw inside GameData.postRegisterEvents' try (try) — NeoForge's roll-back; its constructor
 #     (construct) and @EventBusSubscriber class (ebs) — "Mod Construction"; an attribute event in postRegisterEvents'
 #     tail (tail); common setup (common) and its deferred work (deferred); RegisterCapabilitiesEvent (regevents);
-#     payload registration (network). Each: NeoForge's "Failed to wait for future <task>, 1 errors found", the kernel's
-#     stop line, the crash-*-fml.txt report naming the cause, Forbric's crash analysis naming the mod, "Failed to start
-#     the minecraft server", no world, exit status 1 (FML's launcher, finding no server thread).
+#     payload registration (network); its DataPackRegistryEvent.NewRegistry listener (datapackreg). Each: NeoForge's
+#     "Failed to wait for future <task>, 1 errors found", the kernel's stop line, the crash-*-fml.txt report naming the
+#     cause, Forbric's crash analysis naming the mod, "Failed to start the minecraft server", no world, exit status 1
+#     (FML's launcher, finding no server thread).
+# Every stop that leaves a load report must say the game stopped, and never the carry-on note ("Forbric does not stop at
+# the first mod…"), which it said after every stop until lane STOP's review (A-1).
 # The phases left out (constructevent, newregistry, sided, imc, complete) take the same code paths as ones above and have
 # unit tests (NeoSetupPhaseStopStagedTest); the lane's evidence ran every mode once on Forbric and on native NeoForge.
 # The same register-stop jar with =off is in the clean control. The old continue and strict boots of the Fabric broken
@@ -85,6 +88,24 @@ boot() { # boot <log> <policy> [expect-policy-stop|expect-stop] [register-stop-m
   await_server "$pid" "$log" 130
 }
 
+# The modes whose failing mod gets a row (the kernel marks it FAILED), so a load report must be there to read.
+REPORT_REQUIRED=" construct ebs common deferred fabric "
+
+stop_report() { # stop_report <log> <mode> — a stop's load report says the game stopped, never that Forbric carried on
+  local log="$1" mode="$2" report="$RUNDIR/.forbric-kernel/load-report.txt"
+  rm -f "$log.load-report.txt"
+  if [ -f "$report" ]; then
+    cp "$report" "$log.load-report.txt"
+    check "$mode: the load report says the game stopped" "The game stopped at this mod's error|游戏在上面这个 mod 的报错处停下了" "$log.load-report.txt"
+    check_absent "$mode: and not that Forbric carried on" \
+      "does not stop at the first mod|不会因为一个 mod 出问题就停下来|depends on the compatibility decision|是否继续由兼容性选择决定" "$log.load-report.txt"
+  elif [[ "$REPORT_REQUIRED" == *" $mode "* ]]; then
+    echo "[kernel] FAIL $mode: no load report, though the failing mod has a row ($report)"; FAIL=1
+  else
+    echo "[kernel] PASS $mode: no load report was written (no mod row)"
+  fi
+}
+
 stage yes
 step "a Fabric main entrypoint that throws takes the server down, as native Fabric Loader does (D87; must PASS)"
 # Under explicit continue: the compatibility policy no longer decides an entrypoint that threw — natively the game is down.
@@ -94,7 +115,11 @@ check "fabric: the broken mod reached its entrypoint"   "ForbricBrokenCanary\] r
 check "fabric: and failed there"                         "main entrypoint of forbricbrokencanary failed" "$LOG"
 check "fabric: Fabric Loader's stage error names the mod" \
   "Could not execute entrypoint stage 'main' due to errors, provided by 'forbricbrokencanary'" "$LOG"
-check "fabric: the kernel stops the boot as native Fabric does" "the boot stops here, as native Fabric Loader stops it" "$LOG"
+check "fabric: the kernel stops the boot as native Fabric does, naming the stage and the mod" \
+  "the Fabric entrypoint stage 'main' failed in mod 'forbricbrokencanary' — the boot stops here, as native Fabric Loader stops it" "$LOG"
+# Natively the game's Main prints Fabric Loader's stage error once, with its trace; the kernel's own line does not repeat it.
+check_exactly "fabric: Fabric Loader's stage error is printed once, as natively" \
+  "Could not execute entrypoint stage 'main' due to errors" "$LOG" 1
 check "fabric: the game's Main gave up on it"            "Failed to start the minecraft server"         "$LOG"
 check "fabric: and the launcher exits 1"                 "the server did not start .*exiting with status 1" "$LOG"
 check "fabric: the NeoForge mod was constructed before it" "\[ForbricNeoLive\]"                        "$LOG"
@@ -108,6 +133,7 @@ else
 fi
 if [ -d "$RUNDIR/world" ]; then echo "[kernel] FAIL fabric: a world directory was created"; FAIL=1
 else echo "[kernel] PASS fabric: no world was created or loaded"; fi
+stop_report "$LOG" fabric
 
 neo_stop() { # neo_stop <log> <mode> <NeoForge init task> — what every NeoForge stop shows
   local log="$1" mode="$2" task="$3"
@@ -150,6 +176,7 @@ PY2
   else
     echo "[kernel] PASS $mode: no world was created or loaded"
   fi
+  stop_report "$log" "$mode"
 }
 
 registration_stop() { # registration_stop <log> <mode listener|try>
@@ -182,7 +209,8 @@ registration_stop "$STOP_TRY" try
 
 step "every other phase of NeoForge's mod loading in which a mod throws stops the boot as native NeoForge does (D87; must PASS)"
 for spec in "construct:Mod Construction" "ebs:Mod Construction" "tail:Registry initialization" "common:Common setup" \
-            "deferred:Common setup: Deferred Queue" "regevents:Registration events" "network:Network registry lock"; do
+            "deferred:Common setup: Deferred Queue" "regevents:Registration events" "network:Network registry lock" \
+            "datapackreg:Registry initialization"; do
   mode="${spec%%:*}"; task="${spec#*:}"; log="$(STOP_LOG "$mode")"
   stage no yes
   boot "$log" continue expect-stop "$mode"
@@ -197,6 +225,12 @@ for spec in "construct:Mod Construction" "ebs:Mod Construction" "tail:Registry i
     tail)
       check_absent "$mode: the tail is outside the roll-back"    "Rolling back to VANILLA state" "$log"
       check_absent "$mode: and nothing was frozen"               "froze the registries NeoForge-first" "$log" ;;
+    datapackreg)
+      # Natively RegistryManager.postNewRegistryEvent posts it before RegisterEvent and the freeze; a dedicated server here
+      # declares after the registry window (and its Fabric mains), as it always has (step 3a) — open item, not asserted.
+      check "$mode: NeoForge's issue names the mod and the event" \
+        "encountered an error while dispatching the net\.neoforged\.neoforge\.registries\.DataPackRegistryEvent.NewRegistry event" "$log.crash-fml.txt"
+      check_absent "$mode: outside the roll-back"                "Rolling back to VANILLA state" "$log" ;;
     *)
       check "$mode: NeoForge's issue names the mod"              "Mod loading issue for: forbricregisterstop|-- Mod loading issue --" "$log.crash-fml.txt"
       check "$mode: the registry phase had finished"             "froze the registries NeoForge-first" "$log" ;;
