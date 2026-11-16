@@ -40,9 +40,10 @@ import net.forbric.kernel.util.ForbricLog;
  * hands it to {@code ErrorDisplay.fatal}). Under the kernel the game's window is the game's own, not the provider's; opening
  * the provider then would put a second GLFW window, with its own render thread, beside the game's. So a report made from
  * inside the game ({@code net.minecraft.client.Minecraft} on the calling thread's stack: its constructor or anything it
- * runs) is left to NeoForge's fallback, as before this class. Under the kernel the one live caller is {@code Main.main}'s
- * handler, before {@code new Minecraft} (the carrier's other caller, {@code ClientModLoader.finish}, is neutered by the
- * kernel); the check is for any caller that reports from inside the game.
+ * runs) is left to NeoForge's fallback, as before this class. Under the kernel two callers are live: {@code Main.main}'s
+ * handler, before {@code new Minecraft} (a stop in construction or the registry phase), and {@code KernelNeoClientStop},
+ * which does what the neutered {@code ClientModLoader.finish} handler does for a stop in a later phase, inside
+ * {@code Minecraft.<init>} (lane STOP): the second is the IN_GAME case.
  *
  * <p>It never makes the report worse: when GLFW cannot start (no display), or anything here fails, the provider stays null
  * and NeoForge's fallback runs as before. The provider's initialisation writes the window size into FML's config, which

@@ -28,11 +28,17 @@
 # loading mods", the mod and the cause, Open Mods Folder / Log File / Crash Report, Quit Game). Forbric never opens that
 # window, so the kernel opens it for the report (NeoFatalErrorWindow): before that, NeoForge took its message-box fallback,
 # which on macOS read "INVALID MESSAGE WITH QUOTES" (tinyfd; the game JVM is AWT-headless) and whose Swing form never shows
-# under -XstartOnFirstThread (measured on native NeoForge with earlyWindowControl=false). The registry-phase stops (listener,
-# try) assert the report drew on NeoForge's early window (the kernel's line, the window's renderer up, no osascript message
+# under -XstartOnFirstThread (measured on native NeoForge with earlyWindowControl=false). Every stop reported from Main's
+# handler, before Minecraft is constructed (listener, try, construct, datapackreg), asserts the report drew on NeoForge's
+# early window (the kernel's line, the window's renderer up, no osascript message
 # box among the client's children, the client's main thread in NeoForge's ErrorDisplay.fatal, on macOS with Quartz the
 # client's own window under NeoForge's title on screen, no config/fml.toml written); a check that cannot run says so on a
-# SKIP line.
+# SKIP line. A stop reported from inside Minecraft.<init> (common, clientnetwork: KernelNeoClientStop at
+# ClientModLoader.finish) has the game's own window open: natively NeoForge takes that window over and draws the same
+# screen on it; the kernel opens no second window there (NeoFatalErrorWindow's IN_GAME, lane DLG review B1) and NeoForge
+# takes its message-box fallback, which these phases assert (the kernel's IN_GAME line, no early window opened). Drawing
+# the screen on the game's own window, as natively, is an open item. The fabric phase's Main handler ("Initializing game")
+# reports no NeoForge fatal error, so no FatalError line may appear there.
 #
 # RED control (D34): the kernel at 2c231c9c (before K3c) contained the registration throw, and the kernel at 421c53cc
 # (before STOP) contained construct, common and fabric and named nobody for try. The kernel at 40a71d1a (lane STOP before
@@ -41,7 +47,8 @@
 # kernel line, no renderer (35/8, lane DLG, before the main-thread check). The fml.toml check is red on a kernel whose window
 # setup keeps FML's in-memory config in place (41/2). The main-thread check (ErrorDisplay.fatal) and the rest of the
 # early-window checks are red with -Dforbric.fatalErrorWindow=off in FORBRIC_JVM (NeoForge's fallback); the control's "no
-# fatal-error window was opened" is red on a kernel that opens the window at every boot.
+# fatal-error window was opened" is red on a kernel that opens the window at every boot. The in-game checks of common and
+# clientnetwork are red on a kernel whose NeoFatalErrorWindow never answers IN_GAME (merger wave 2d).
 # GATE-PARALLEL: rundirs=client-registerstop mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
@@ -238,6 +245,13 @@ early_window_report() { # early_window_report <log> <mode> — the report drew N
   fi
 }
 
+in_game_report() { # in_game_report <log> <mode> — a report made inside Minecraft.<init> opens no second window
+  local log="$1" mode="$2"
+  check "$mode: the kernel saw the report come from inside the game and opened no second window" \
+    "\[Forbric/FatalError\] the error is reported from inside the game, which has its own window" "$log"
+  check_absent "$mode: no early window was opened beside the game's" "\[Forbric/FatalError\] opened" "$log"
+}
+
 client_stop() { # client_stop <log> <mode> — a stop in NeoForge's registry phase (begin path)
   local log="$1" mode="$2"
   client_neo_stop "$log" "$mode" "Registry initialization"
@@ -268,6 +282,7 @@ stage
 run_client "$STOP_CONSTRUCT" construct
 check "construct: the constructor really ran and threw" "\[ForbricRegisterStop\] its constructor is about to fail on purpose" "$STOP_CONSTRUCT"
 client_neo_stop "$STOP_CONSTRUCT" construct "Mod Construction"
+early_window_report "$STOP_CONSTRUCT" construct
 check "construct: NeoForge's error names the mod"      "\(forbricregisterstop\) has failed to load correctly" "$STOP_CONSTRUCT.crash-client.txt"
 check_absent "construct: no registry event was posted" "\[ForbricRegisterStop\] reached RegisterEvent" "$STOP_CONSTRUCT"
 check_absent "construct: Minecraft was never started"   "Sound engine started"                          "$STOP_CONSTRUCT"
@@ -277,6 +292,7 @@ stage
 run_client "$STOP_DATAPACK" datapackreg
 check "datapackreg: the listener really ran and threw" "\[ForbricRegisterStop\] its DataPackRegistryEvent.NewRegistry listener is about to fail on purpose" "$STOP_DATAPACK"
 client_neo_stop "$STOP_DATAPACK" datapackreg "Registry initialization"
+early_window_report "$STOP_DATAPACK" datapackreg
 check "datapackreg: Main's handler reported it, in the begin path" "Description: Bootstrap" "$STOP_DATAPACK.crash-client.txt"
 check "datapackreg: NeoForge's error names the mod and the event" \
   "\(forbricregisterstop\) encountered an error while dispatching the net\.neoforged\.neoforge\.registries\.DataPackRegistryEvent.NewRegistry event" "$STOP_DATAPACK"
@@ -291,6 +307,7 @@ stage
 run_client "$STOP_COMMON" common
 check "common: the listener really ran and threw" "\[ForbricRegisterStop\] its FMLCommonSetupEvent listener is about to fail on purpose" "$STOP_COMMON"
 client_neo_stop "$STOP_COMMON" common "Common setup" empty
+in_game_report "$STOP_COMMON" common
 check "common: the crash report is ClientModLoader.finish's" "^-- Finish mod loading --" "$STOP_COMMON.crash-client.txt"
 check "common: NeoForge's error names the mod and the event" \
   "\(forbricregisterstop\) encountered an error while dispatching the net\.neoforged\.fml\.event\.lifecycle\.FMLCommonSetupEvent event" "$STOP_COMMON.crash-client.txt"
@@ -301,6 +318,7 @@ stage
 run_client "$STOP_CLIENTNET" clientnetwork
 check "clientnetwork: the listener really ran and threw" "\[ForbricRegisterStop\] its RegisterClientPayloadHandlersEvent listener is about to fail on purpose" "$STOP_CLIENTNET"
 client_neo_stop "$STOP_CLIENTNET" clientnetwork "Client network registry lock" empty
+in_game_report "$STOP_CLIENTNET" clientnetwork
 check "clientnetwork: the crash report is ClientModLoader.finish's" "^-- Finish mod loading --" "$STOP_CLIENTNET.crash-client.txt"
 check_absent "clientnetwork: not Main's Initializing-game handler" "Description: Initializing game" "$STOP_CLIENTNET.crash-client.txt"
 
@@ -315,6 +333,7 @@ check "fabric: the game's Main reported it"          "Description: Initializing 
 check "fabric: the kernel stops as native Fabric does, naming the stage and the mod" \
   "the Fabric entrypoint stage 'main' failed in mod 'forbricbrokencanary' — the boot stops here, as native Fabric Loader stops it" "$STOP_FABRIC"
 check_absent "fabric: no NeoForge mod-loading error around it" "Failed to wait for future"         "$STOP_FABRIC"
+check_absent "fabric: no NeoForge fatal-error report (no FatalError line)" "\[Forbric/FatalError\]" "$STOP_FABRIC"
 check_absent "fabric: Minecraft never finished starting"        "Sound engine started"              "$STOP_FABRIC"
 
 step "control: the same three jars with =off boot the client on (what the stops above must not do)"
