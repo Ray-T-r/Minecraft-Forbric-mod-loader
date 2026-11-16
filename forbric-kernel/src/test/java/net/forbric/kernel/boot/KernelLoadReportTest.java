@@ -411,6 +411,30 @@ class KernelLoadReportTest {
 		assertFalse(text.contains("is not running"), text);
 	}
 
+	/**
+	 * After a boot that stopped on a mod's failure (D82, lane STOP), the report says the game stopped, in both languages, and
+	 * none of what the carry-on note says: that Forbric did not stop, that the mod is still partly present, that the
+	 * compatibility decision decides (lane STOP review A-1).
+	 */
+	@Test
+	void afterAStopTheReportSaysTheGameStoppedAndNotThatItCarriedOn() {
+		List<ModCatalog.Entry> failures = List.of(failed("alpha", "Alpha", "a.jar", "it threw during load complete"));
+		String en = KernelLoadReport.render(false, failures, List.of(), List.of(), List.of(), java.util.Set.of(), true);
+		String zh = KernelLoadReport.render(true, failures, List.of(), List.of(), List.of(), java.util.Set.of(), true);
+
+		assertTrue(en.contains("The game stopped at this mod's error") && en.contains("crash-reports"), en);
+		assertTrue(zh.contains("游戏在上面这个 mod 的报错处停下了") && zh.contains("crash-reports"), zh);
+		for (String text : List.of(en, zh)) {
+			assertTrue(text.contains("it threw during load complete"), text);
+			assertFalse(text.contains("does not stop at the first mod") || text.contains("不会因为一个 mod 出问题就停下来"), text);
+			assertFalse(text.contains("still partly present") || text.contains("还有一部分留在游戏里"), text);
+			assertFalse(text.contains("depends on the compatibility decision") || text.contains("是否继续由兼容性选择决定"), text);
+		}
+		// And the other direction: the same rows without a stop keep the carry-on note.
+		String carriedOn = KernelLoadReport.render(false, failures, List.of(), List.of(), List.of(), java.util.Set.of(), false);
+		assertTrue(carriedOn.contains("does not stop at the first mod"), carriedOn);
+	}
+
 	@Test
 	void theReportIsWrittenInTheSystemLanguage() {
 		String zh = KernelLoadReport.render(true, List.of(failed("alpha", "Alpha", "a.jar", "x")));

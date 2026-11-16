@@ -160,7 +160,7 @@ public final class KernelLoadReport {
 					unsupported.add(String.valueOf(lost.jar().getFileName()));
 				}
 			}
-			String rendered = render(chinese(), failures, unattributed, suspected, disabled, unsupported);
+			String rendered = render(chinese(), failures, unattributed, suspected, disabled, unsupported, RegistrationStop.stopped());
 			synchronized (KernelLoadReport.class) {
 				if (rendered.equals(lastRendered)) return;
 				if (lastRendered != null && !rewriteEnabled()) return;
@@ -261,6 +261,17 @@ public final class KernelLoadReport {
 	 */
 	static String render(boolean zh, List<ModCatalog.Entry> failures, List<CompatibilityFinding> unattributed,
 			List<CompatibilityFinding> suspected, List<String> disabled, java.util.Set<String> unsupported) {
+		return render(zh, failures, unattributed, suspected, disabled, unsupported, false);
+	}
+
+	/**
+	 * @param stopped whether this boot stopped on a mod's failure ({@link RegistrationStop#stopped}): since D82 a mod that
+	 *                throws while the game loads stops the game as its own loader does, whatever the compatibility policy.
+	 *                The advice and the note then say that, and not that Forbric carried on without the mod — which is what
+	 *                they said after every stop until lane STOP's review (A-1).
+	 */
+	static String render(boolean zh, List<ModCatalog.Entry> failures, List<CompatibilityFinding> unattributed,
+			List<CompatibilityFinding> suspected, List<String> disabled, java.util.Set<String> unsupported, boolean stopped) {
 		net.forbric.kernel.ui.DialogLang lang = zh ? net.forbric.kernel.ui.DialogLang.ZH_CN : net.forbric.kernel.ui.DialogLang.EN;
 		StringBuilder sb = new StringBuilder();
 		boolean headline = !failures.isEmpty() || (unattributed.isEmpty() && suspected.isEmpty() && disabled.isEmpty());
@@ -354,6 +365,32 @@ public final class KernelLoadReport {
 		if (anyRefused) sb.append(lang.get("report.unsupported.advice")).append("\n\n");
 		if (anyRefused && failures.stream().allMatch(e -> unsupported.contains(e.jar()))) return sb.toString();
 
+		if (stopped) {
+			if (zh) {
+				sb.append("怎么办\n");
+				sb.append("------\n");
+				sb.append("游戏在上面这个 mod 的报错处停下了，就像它自己的加载器（NeoForge 或 Fabric）会做的那样。\n");
+				sb.append("具体的报错在 logs/latest.log 里，也在 crash-reports 文件夹里的崩溃报告里。\n");
+				sb.append("常见原因是这个 mod 是给别的 Minecraft 版本做的，或者它需要的另一个 mod 没装。\n");
+				sb.append("把它从 mods 文件夹里拿出来，游戏的其余部分就能启动。\n\n");
+				sb.append("说明\n");
+				sb.append("----\n");
+				sb.append("mod 在游戏加载时出错，游戏就会停下，不管兼容性怎么选。这份报告记录停下之前的加载结果。\n");
+			} else {
+				sb.append("What to do\n");
+				sb.append("----------\n");
+				sb.append("The game stopped at this mod's error, as the mod's own loader (NeoForge or Fabric) stops it.\n");
+				sb.append("The error is in logs/latest.log and in the crash report in the crash-reports folder.\n");
+				sb.append("The usual reasons are that the mod was built for a different Minecraft version, or that\n");
+				sb.append("something it needs is not installed. Taking it out of the mods folder lets the rest of the\n");
+				sb.append("game start.\n\n");
+				sb.append("Note\n");
+				sb.append("----\n");
+				sb.append("A mod that fails while the game loads stops the game, whatever the compatibility setting. This\n");
+				sb.append("records what had loaded before it stopped.\n");
+			}
+			return sb.toString();
+		}
 		if (zh) {
 			sb.append("怎么办\n");
 			sb.append("------\n");
