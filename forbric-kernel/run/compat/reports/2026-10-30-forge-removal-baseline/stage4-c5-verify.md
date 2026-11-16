@@ -1,4 +1,6 @@
-# Stage 4 C5 — lane VERIFY: the stage tip measured (run 2, at 3822d1af)
+# Stage 4 C5 — lane VERIFY: the stage tip measured (run 3 at 394b8804; run 2 at 3822d1af)
+
+Run 3 (394b8804) is the section "Run 3" below; this introduction and everything after that section are run 2 as recorded.
 
 Lane VERIFY (wave 3, PLAN "Lane VERIFY"), worktree `s4c5-verify`, branch `s4-c5-verify`, reset to the stage tip
 **3822d1af** (claude/remove-forge-neoforge-fabric-83b024 after wave 2c: K3c, HARN, ZH, all fast-forward). VERIFY measures and
@@ -9,6 +11,96 @@ recount corrected a block's claim the corrected statement is the one written her
 Evidence: `~/Forbric-backups/stage4-notes/c5/verify2/` (block0, block1, block2, block3, block4, block6, block7, check/,
 check.md). Run 1's evidence: `~/Forbric-backups/stage4-notes/c5/verify/` and `c5/verify-run1-agent-results.json`.
 m34 (the 2-hour soak) is not part of this run: the owner moved it to the very end, at the final tip after C6 (D84).
+
+## Run 3 (394b8804, 2026-11-16)
+
+VERIFY run 3 measured the wave-2d tip **394b8804** (lanes OPT, THR, STOP, DLG, HARN2 merged, fast-forward only). Reduced by the
+owner's D87/D88/D89: the merger's no-cache gates-all (59 GREEN + m0 RED on D58 only) and full suite (5951/0/5 = failures-w2c's D58
+rows) at this tip are this run's sweep and suite and were not re-run; no zh runs (D88); m34 at the very end only (D84). Evidence:
+`~/Forbric-backups/stage4-notes/c5/verify3/` (A = targeted + staged-stop fixture, B = the two A/Bs, block0). Before the reset
+`git log <stage>..HEAD` was empty and the tree clean; HEAD 394b8804 for the whole run; main 511f2582 untouched.
+
+Setup: pinned `jar` through heavy.sh (kernel sha256 c36c020e), `run/build-fabric-canary.sh` rc 0; one dangling link as before
+(`forbric-kernel/build/sweep100-mac`).
+
+### Block A: targeted gates, cache off
+
+`client.sh heavy.sh --exclusive bash verify3/A/runA.sh`, 21:50-22:25; lane-env, GATE_PORT 46800, English, MC_DIR/FORBRIC_JVM/
+M59_FIXTURE/M31_UNFIXED unset, `FORBRIC_GATE_FRESH=1 FORBRIC_GATE_CACHE=0` (no cached verdict, no cached control arm); one gate at a
+time. Counts are `^[kernel] PASS/FAIL/SKIP` lines of each gate's output.
+
+| gate | runs | PASS/FAIL/SKIP | merger w2d sweep | run 2 (3822d1af) |
+|---|---|---|---|---|
+| m3 | 5 alone | 13/0/0 each (24 s) | 13/0/0 | 13/0/0 x5 |
+| m12 | 3 alone | 44/0/0 each; late 3, 2, 1 of 220 (ceiling 7), 0 overloads | 44/0/0 | 44/0 x3 without outside load, red under GTA V |
+| m16 | 1 | 49/0/0 | 49/0/0 | 39 (OPT added 10) |
+| m24 | 1 | 198/0/0 | 198/0/0 | 67 (STOP added) |
+| m24d | 1 | 116/0/0 | 116/0/0 | 32 (STOP + DLG added) |
+| m13 / m14 | 1 each | 30/0/0, 34/0/0 | same | same |
+| m58 | 1 | 208/0/0 (832 s) | 208/0/0 | 208/0/0 |
+| m59 | 1 | 30/0/0 | 30/0/0 | 30/0/0 |
+
+- CAUGHT none in every gate, as in the merger's sweep. Run 2's four CAUGHT sites (Fabric mains in m19/m20/m24, m30's subscriber
+  and deferred task) are all stops since lane STOP (D82), and a positive control shows the reporter still works: the tip jar's
+  `Caught.warn` writes its FAILURE and COUNT rows to `FORBRIC_CAUGHT_FILE` (`verify3/A/caught-control`).
+- Normalised PASS lines equal the merger's sweep in every gate except m24d's two in-game phases (below). m3: Done about 11 s after
+  start, before the 22 s timer, stop about 12 s later — the other branch of `server_ready` than run 2's block 4 saw.
+- **Variance, m24d (not a red):** the common and clientnetwork clients left with exit 1 about 1 s after their crash report; in the
+  merger's sweep both were "held". Both are the gate's accepted outcomes. NeoForge's fallback box (tinyfd/osascript) returned at once,
+  too fast for a click, and no log line says why; six more in-game stops 20 minutes later (fixture below) all held. Owner:
+  orchestrator, with the open item on m24d's desktop windows.
+- Host load (10 s samples): load1 median 4.9, max 10.8; only single samples of anything outside Forbric at 80 % CPU or more
+  (duetexpertd, corespotlightd); no game, no Wine/CrossOver.
+
+**Staged-stop fixture (lane STOP's register-stop canary and Fabric broken canary).** STOP's own scripts with VERIFY's worktree,
+scratch and port 46820, the canaries as gate-m24 built them. Servers, all 17 modes on the tip, the native arm reused from
+`c5/stop/w2d/native` (genuine NeoForge 26.2.0.93 and Fabric Loader 0.19.5 server images; the native side did not change):
+
+- Same as native in 15 of 17 modes on exit, world, Done, "Failed to start", NeoForge's failed task and its error count, crash
+  report, Fabric stage line and the crash report's issue sections. complete: "Complete loading of 4 mods" against 3 (the
+  ModList-size item, THR/STOP open); fabric: exit 1 against native 0 (STOP open item 3). Every Forbric crash-*-fml.txt has an
+  empty "Mod List:" (STOP A-3, open).
+- Same as STOP's own Forbric arm (before the THR merge) in all 17, except that fabric's stage error is printed once now and twice
+  then (STOP review fix 37ab6d03). So THR's worker dispatch did not change any stop; the fixture logs carry 1834
+  modloading-worker-0 lines.
+- Clients, the 10 modes gate-m24d does not run: equal to STOP's client summary on every column (held, Description, finish
+  section, failed task, saves/, crash suspects). The 4 begin-path modes sit in NeoForge's early-window error screen
+  (`ErrorDisplay.fatal`); the 6 finish-path modes (deferred, sided, regevents, imc, complete, network) sit in tinyfd's message box
+  on the render thread, as gate-m24d's common and clientnetwork do: natively that error is drawn on the game's own window
+  (merger open item 3, now seen for all eight in-game stops). Owner: orchestrator/owner.
+- THR's concurrency watch: no ConcurrentModificationException, RejectedExecutionException or deadlock in any block-A log.
+
+### Block B: the two A/Bs
+
+**Pure-Fabric A/B (D57).** `fabric-ab.py` per-mod --jobs 2, confirm, pack native-pass / matched-pass / all, summary, under
+`heavy.sh --exclusive`, 22:25-23:01, every step rc 0. Data `forbric-kernel/build/purefabric-2026-10-03` in the main checkout; the
+native arm is the 10-03 runs.jsonl (sha256 74af1020) with the same native launcher (f1d2bafd): 129 Forbric sessions, no native one.
+
+- per-mod: **126 MATCHED_PASS / 4 BOTH_FAIL / 0 FORBRIC_ONLY / 0 NATIVE_ONLY**, the 2026-10-11 report name for name. Bar met; no
+  c3-merged-ro rerun needed.
+- native-pass and matched-pass packs (159 jars): MATCHED_PASS, Forbric game time 1..1216, native 1..1212. Full pack (165 jars):
+  BOTH_FAIL.
+- The Forbric signatures of the 4 BOTH_FAIL and the full pack changed from 10-11's `POLICY_STOP:<mod>:initialization:entrypoint:main`
+  (exit 78) to `EXIT:1`: since STOP (D82) a throwing Fabric main stops the boot with Fabric Loader's own stage error. The instance
+  logs name the same mods — "Could not execute entrypoint stage 'main' due to errors, provided by 'andonium' / 'creepertweaks' /
+  'gmm' / 'beilin-data-portability'", and the full pack's suppressed errors are beilin-entry-control's and gmm's, 10-11's three.
+  Native exits 0 there, Forbric 1 (STOP open item 3).
+
+**Native NeoForge A/B.** `native-controls` run/compare --family neo, 3 rounds, on the .93 image (identical to the stage worktree's:
+`diff -r -q` rc 0); canary built through the tool's own compile_canaries (the tool's `build` still needs a Forge image; run 2's
+item). **MATCHED_PASS 3/3**, all 11 checks true on both arms. Log diff 47 lines (run 2: 49): NeoForge's "mod loading" line and the
+canary's constructor now run on modloading-worker as natively (THR); the ConfigApi false WARN that run 2 found is gone (DLG,
+e95558c8; Forbric 8 WARN lines, native 5). Everything else is run 2's recorded list.
+
+### Run 3 result
+
+No red. Every targeted gate green at merger's counts, the stop fixture native-equal bar the known rows, both A/Bs at their bar.
+Open, owners as written: the m24d in-game box variance; in-game stops show tinyfd's box instead of the game-window error screen;
+crash Mod List empty and ModList size; Fabric stop exit 1 vs 0. Not run here: the suite and gates-all (the merger's at this tip),
+zh (D88), m34 (D84). Cleanup: no VERIFY JVM or osascript left, ports 46800-46839 and 25651-25663 free, the only Gradle daemon
+(45088) predates the run; the A/B instances under `build/native-controls/instances` are kept by design.
+
+The sections below are run 2 (3822d1af) as recorded then.
 
 ## Run 1 (2c231c9c) and why it was superseded
 
