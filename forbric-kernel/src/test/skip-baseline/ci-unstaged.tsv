@@ -42,6 +42,7 @@ test	net.forbric.kernel.boot.KernelBundledMixinExtrasStagedTest	[2] false	[fixtu
 test	net.forbric.kernel.boot.KernelBusSupportTest	theCarrierStillOffersEveryBusBuilderCallMakeModBusMakes()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelBusSupportTest	theModBusMarkerInterfaceStillExists()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSubscriberClassIsInitialisedOnAModloadingWorker()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSubscriberClassIsInitialisedWithItsOwnModActive()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.boot.KernelEventSubscribersGenuineBaseTest	theSummaryGateM4CanaryReadsIsPrintedWithoutMinecraftForge()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.boot.KernelLifecycleEarlyConfigOrderTest	theClientsOrderIsTheCarriersOwn()	[fixture:staged] staged NeoForge carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelLoadReportTest	theServerStartedHookWritesTheReportAgain()	[fixture:game-side] runtime helper not compiled
@@ -77,6 +78,7 @@ test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	neoForgesConfigStopsPr
 test	net.forbric.kernel.boot.NeoGraphicsBootstrappersTest	theCarrierDeclaresTheSpiByThatNameAndShape()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforgespi/earlywindow/GraphicsBootstrapper.class)
 test	net.forbric.kernel.boot.NeoModLoadingThreadsStagedTest	aSetupPhaseReachesEachModOnAModloadingWorkerWithItsOwnContainerActive()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.NeoModLoadingThreadsStagedTest	eachModIsConstructedOnAModloadingWorkerWithItsOwnContainerActive()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.boot.NeoModLoadingThreadsStagedTest	newRegistryEventReachesEachBusWithItsOwnModActive()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.NeoPostRegisterTailCensusTest	everyStepAfterNeoForgesRegisterLoopIsOneTheKernelTakes()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent
 test	net.forbric.kernel.boot.NeoRegistryCreationPhaseTest	eachBusTakesNewRegistryEventWithItsOwnModActiveAsNatively()	[fixture:staged] staged runtime absent
 test	net.forbric.kernel.boot.NeoRegistryCreationPhaseTest	registryModificationFollowsCreationAsOnNativeNeoForge()	[fixture:staged] staged runtime absent
