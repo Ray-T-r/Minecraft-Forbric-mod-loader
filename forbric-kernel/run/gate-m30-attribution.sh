@@ -30,22 +30,23 @@
 # the refusal; Stage 4 deletes that boot (D32/D51: gate-m26 and gate-m29 cover the refusal, on the client and the
 # server), and the fixture with it. The three canaries above, their checks and their controls carry the gate.
 #
-# RED demonstrations (measured on the genuine base 2026-11-09 after the refusal boot went, green 28/28, stage4-c5-g-a.md;
-# each switch failed exactly the checks named — 7, 3, 2 — and none of the control's; the counts are the three-canary boot's,
-# and lane STOP re-measured the first with the mixin canary alone, stage4-c5-stop.md):
-#   M30_EXTRA_JVM=-Dforbric.loadReportRewrite=off     the report is written once at load-complete, before the subscriber
-#                                                     registers and the deferred task runs and before the world creates
-#                                                     RegionFileStorage: the summary names two mods, not three, no
-#                                                     [Forbric/Load] line follows 'Done (', and the file lacks the
-#                                                     apply failure, the two-reason row, the broken subscriber, the
-#                                                     deferred task and the third 'partly' row (the 2026-09-20 count was
-#                                                     3, on four canaries; measured again here, it is 7)
-#   M30_EXTRA_JVM=-Dforbric.mixinErrorAttribution=off no 'ApplyFailingMixin failed to apply' anywhere (Mixin's own
+# RED demonstrations. Re-measured by lane STOP's review fixes at 947f1d27 (2026-11-16, 49 checks: the mixin canary's boot,
+# the subscriber and abi stops each alone with their load reports, the control; stage4-c5-stop.md "STOP review fixes"). Each
+# switch fails exactly the checks named and none of the control's. (Until then this said the 2026-11-09 three-canary
+# counts, 7, 3, 2, had been re-measured with the mixin canary alone; they had not.)
+#   M30_EXTRA_JVM=-Dforbric.loadReportRewrite=off     7: the report is written once, at its first boundary — on the
+#                                                     main boot before the world creates RegionFileStorage, so no
+#                                                     [Forbric/Load] line follows 'Done (' and the file lacks the apply
+#                                                     failure and the two-reason row; on the abi stop before its deferred
+#                                                     task ran, so the file lacks the stop's wording, the row, the
+#                                                     deferred task, and still carries the carry-on note
+#   M30_EXTRA_JVM=-Dforbric.mixinErrorAttribution=off 3: no 'ApplyFailingMixin failed to apply' anywhere (Mixin's own
 #                                                     report still prints; nobody is marked for it): the log line, the
 #                                                     report's apply failure and the two-reason row
-#   M30_EXTRA_JVM=-Dforbric.abiAudit=off              no AbiAudit line and no 'compiled against a different NeoForge'
-#                                                     in the report — forbricabicanary is still named, by its
-#                                                     deferred task (J5), which is why the check is on the reason
+#   M30_EXTRA_JVM=-Dforbric.abiAudit=off              2: no AbiAudit line, and no 'compiled against a different NeoForge'
+#                                                     beside the deferred task in the abi stop's report — the mod is
+#                                                     still named, by its deferred task (J5), which is why the check is
+#                                                     on the reason
 # GATE-PARALLEL: rundirs=server-attribution mem=1800
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
