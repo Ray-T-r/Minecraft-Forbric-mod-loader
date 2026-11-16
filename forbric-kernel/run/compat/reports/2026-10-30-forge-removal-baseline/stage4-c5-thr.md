@@ -2,8 +2,10 @@
 
 Branch `s4-c5-thr`, cut from 421c53cc (worktree `.claude/worktrees/s4c5-thr`, ports 46940-46959 from `.stage4/lane-env.sh`).
 Notes and logs: `~/Forbric-backups/stage4-notes/c5/thr/w2d/` (paths below are relative to it). Harness: D68 (pinned build, plain
-`--offline` from `.stage4/props.txt`, no init script, no private Gradle home); every Gradle and game run through
-`.stage/heavy.sh` (gate subsets `--exclusive`, under `.stage/client.sh`). No mod jar was downloaded; no Chinese run. Reason for
+`--offline` from `.stage4/props.txt`, no init script, no private Gradle home); every Gradle run and gate subset through
+`.stage/heavy.sh` (gate subsets `--exclusive`, under `.stage/client.sh`). The native A/B (`native-ab/run.sh`) and the probe
+servers (`tools/run-server.sh`) call `python3`/`java` directly; whether they were wrapped in `heavy.sh` from outside is not in
+the evidence (corrected in "THR review fixes", B-4). No mod jar was downloaded; no Chinese run. Reason for
 the lane: D87(c) — VERIFY run 2's C-7 ("NeoForge mod loading" is a `modloading-worker` line natively, a `main` line here).
 
 ## Worktree
@@ -98,9 +100,13 @@ before the others — a possible native order), `KernelNeoSetup.firePhase` (cons
 IMC enqueue, IMC process, load complete), each `@EventBusSubscriber` class's load+init+register (on the pool, its owner's
 container active; NeoForge's internal subscribers with NeoForge's container). `NewRegistryEvent` now has each bus's mod active.
 
-After (`runs/forbric-probe-v2.log`, `runs/forbric-real-v4.log`, client `client-probe/latest.log`): every row of the table in §1 is
-the same on Forbric except `NewRegistryEvent`/`RegisterEvent`'s thread (`main`, natively `modloading-sync-worker`); the three
-constructors without an edge between them run together (4 constructors: 610 ms, `thrc` after `thra`); "NeoForge mod
+After (`runs/forbric-probe-v2.log`, `runs/forbric-real-v4.log`, client `client-probe/latest.log`): the thread and the active mod
+of every row of the table in §1 are the same on Forbric except `NewRegistryEvent`/`RegisterEvent`'s thread (`main`, natively
+`modloading-sync-worker`). The order inside construction is NOT the same (see "THR review fixes", F2/B-1, and §6): a mod's
+constructor, its subscribers' `<clinit>` and its construct event are three kernel-wide passes here, one task per mod natively.
+The three constructors without an edge between them run together (4 constructors: 620 ms with the probes alone,
+`forbric-probe-v2.log`; 610 ms with the ten real mods beside them, `forbric-real-v4.log`; native 638 / 614; `thrc` after
+`thra`); "NeoForge mod
 loading" is a `modloading-worker-0` line (also in all three native A/B rounds' Forbric logs). Client (gate-m9's launch on a clone
 of client-merged-pack + the probes): the same — constructors, subscribers, construct event, common setup, `FMLClientSetupEvent`
 (side=client x4), IMC, load complete on `modloading-worker-0` with the mod active; deferred on `modloading-sync-worker`.
@@ -113,12 +119,16 @@ dependency failed still runs. Lane STOP owns what a failure means (D82); its cod
 
 | check | green on the tip | red on |
 |---|---|---|
-| `NeoModLoadingThreadsStagedTest.eachModIsConstructedOnAModloadingWorkerWithItsOwnContainerActive` (real NeoForge carrier) | yes | 421c53cc: "thrtest_lib is not constructed on the caller's thread … was: <Test worker>" (`red-staged-421c53cc.xml`); construction with the edges dropped (`Map.of()`): "a mod is constructed only after the mod it requires" (`red-staged-noedges.log`, again after c0bf5129: `red-staged-noedges2.log`) |
+| `NeoModLoadingThreadsStagedTest.eachModIsConstructedOnAModloadingWorkerWithItsOwnContainerActive` (real NeoForge carrier) | yes | 421c53cc: "thrtest_lib is not constructed on the caller's thread … was: <Test worker>" (`red-staged-421c53cc.xml`); construction with the edges dropped (`Map.of()`): red at `NeoModLoadingThreadsStagedTest.java:101`, the `libFirst` assertion (`red-staged-noedges.log`, again after c0bf5129: `red-staged-noedges2.log`; those logs hold file:line only, not the message) |
 | `NeoModLoadingThreadsStagedTest.aSetupPhaseReachesEachModOnAModloadingWorkerWithItsOwnContainerActive` | yes | 421c53cc: "thrtest_lib's setup listener does not run on the caller's thread … <Test worker>" |
-| `KernelEventSubscribersGenuineBaseTest.theSubscriberClassIsInitialisedOnAModloadingWorker` | yes | 2efa731c's production files: "… not on the caller's thread: Test worker" (`red-commit4.log`) |
-| `NeoRegistryCreationPhaseTest.eachBusTakesNewRegistryEventWithItsOwnModActiveAsNatively` | yes | same control: "[] post at 42" (`red-commit4.log`) |
+| `KernelEventSubscribersGenuineBaseTest.theSubscriberClassIsInitialisedOnAModloadingWorker` | yes | 2efa731c's production files: red at `KernelEventSubscribersGenuineBaseTest.java:151`, the not-on-the-caller's-thread assertion (`red-commit4.log`, file:line only) |
+| `NeoRegistryCreationPhaseTest.eachBusTakesNewRegistryEventWithItsOwnModActiveAsNatively` | yes | same control: red at `NeoRegistryCreationPhaseTest.java:61`, the set-before/after-post assertion (`red-commit4.log`, file:line only). A bytecode-shape check: stays green when no container is ever made active (review F3); the run check is `newRegistryEventReachesEachBusWithItsOwnModActive` below |
 | `NeoParallelDispatchTest` (11) | yes | new class (parallel overlap by latch, dependency waits, through a non-dispatched mod, cycle, throws handed back unwrapped, same-id chain, serial without order, inline without pool) |
 | `ModConstructionOrderTest.theEdgesAreTheOnesTheOrderIsBuiltFrom` | yes | new (edges = what `of` sorts by; none with `modOrder=name`) |
+| `NeoParallelDispatchTest.aModsOwnRejectedExecutionExceptionIsHandedBackAsItsFailure` / `aPoolThatRefusesTheWorkIsThrownToTheCaller` (review F1) | yes | b40c3331's dispatcher: the mod's own REE escaped `run()` (`review-fix/controls-xml/`) |
+| `NeoModLoadingThreadsStagedTest.newRegistryEventReachesEachBusWithItsOwnModActive` (review F3) | yes | `containerOf` returning null (M1): "expected: <thrtest_lib> but was: <minecraft>" (`review-fix/controls-xml/`) |
+| `NeoModLoadingThreadsStagedTest.aSetupPhaseReaches…` dependency assertion (review F4a) | yes | `dependencyAfter()` replaced by `Map.of()` (M2): red at line 159 (`review-fix/controls-xml/`) |
+| `KernelEventSubscribersGenuineBaseTest.theSubscriberClassIsInitialisedWithItsOwnModActive` (review F4b) | yes | `registerAll` passing no container (M3): "expected: <genuineprobe> but was: <minecraft>" (`review-fix/controls-xml/`) |
 
 Existing checks the work had to keep: `KernelRegistrationIsolationTest` and `FabricFreezePointWindowTest` read
 `registerNeoForgeContent`'s bytecode (the subscriber call guarded on its own, no explicit throw before the dispatch) and went red
@@ -147,12 +157,30 @@ catches that only stored a throw (fixed in c0bf5129). No check was weakened.
 
 ## 6. Differences left, and why
 
+- **Construction is three passes, not one task per mod** (found by review THR wave 2d, F2/B-1; already so at 421c53cc).
+  Natively one mod's task is constructor -> its `@EventBusSubscriber` classes -> its `FMLConstructModEvent`, and a mod declared
+  AFTER it starts only once that whole task ended. Here every constructor runs first (in parallel, dependency-waited), then each
+  subscriber class is loaded one after another (each `runOne` on the pool, the caller waiting), then the construct event goes to
+  every mod. So a dependent is constructed before the mod it depends on has run its subscribers' `<clinit>` and its construct
+  event (`runs/native-probe.log`: thra subscriber 4789605, construct event 4789606, thrc begins 4789608; `forbric-probe-v2.log`:
+  thrc begins 5316854, thra subscriber 5317163, construct event 5317173; the client the same, `client-probe/latest.log`), and
+  subscriber `<clinit>`s are serial where natively each runs on its own mod's worker. A mod whose constructor relies on state its
+  dependency sets up in a subscriber `<clinit>` or its construct event works natively and not here. Aligning it means doing a
+  mod's subscribers and construct event inside its construction task; `KernelRegistrationIsolationTest`,
+  `FabricFreezePointWindowTest`, `KernelEventSubscribersArbitrationTest`/`KernelEventSubscribersTest` pin
+  `registerNeoForgeContent`'s and `registerAll`'s current shape, classless NeoForge mods need a task of their own, and lane STOP
+  conflicts with exactly these statements (B-5). Not done in this lane -> orchestrator / owner.
 - **The registry phase's thread.** Natively `NewRegistryEvent`, `RegisterEvent` and `freezeData` run as the init task
   "Registry initialization" on `modloading-sync-worker`; here on the caller's thread. The kernel's window
   (`registerNeoForgeContent` → `GameData.postRegisterEvents` → RegisterEventsSeam) also runs the Fabric mains, which native Fabric
   runs on the game's own thread. Moving it means splitting one call across two threads; not done. -> owner, if it matters.
 - **What `ModList` / `LoadingModList` hold during construction** (not a thread matter): natively 6 (minecraft, neoforge + the
-  4 probes) from the first constructor on; here 4, and `ModList` 5 later. -> the lane that owns ModList publication.
+  4 probes) from the first constructor on; here on the server 4, and `ModList` 5 from common setup on (`forbric-probe-v2.log`);
+  on the client (gate-m9's pack + the probes, `client-probe/thr-lines.txt`) `LoadingModList` 178 and `ModList` 78 during
+  construction, 79 from setup on. -> orchestrator, to the lane that owns ModList publication.
+- **The client was measured on Forbric only**: no native client image (`prepare` downloads); the client claim rests on the
+  decompiled `ClientModLoader` taking the same `CommonModLoader` paths. -> VERIFY (a native client run, if an image is staged)
+  or the owner (accept the decompiled-code argument).
 - **A mod whose dependency failed** still runs here; natively it is skipped and the boot stops. Unchanged on purpose (lane STOP).
 - **`fml.toml`'s `maxThreads`** is read only where `FMLConfig` was loaded (the client's seeded config); a server without
   `fml.toml` uses the default (processor count), as natively without the file.
@@ -167,3 +195,41 @@ catches that only stored a throw (fixed in c0bf5129). No check was weakened.
   whose dependency failed, as natively, `NeoParallelDispatch` would need a skip mode (the futures already carry the failure).
 - Logs: constructor/setup/subscriber lines are now `modloading-worker-0` lines and interleave between mods; a gate that greps
   their text is unaffected (all 14 counts equal), one that relied on their relative order between two mods would not be.
+
+## THR review fixes
+
+Reviews `c5/review-thr-w2d-A.md` (F1-F4) and `c5/review-thr-w2d-B.md` (B-1..B-6) of 421c53cc..b40c3331. Evidence:
+`~/Forbric-backups/stage4-notes/c5/thr/w2d/review-fix/`.
+
+| finding | outcome |
+|---|---|
+| F1 a mod's own `RejectedExecutionException` ended the whole phase | fixed 051b0c53: each task records that its body began; only a refusal before any body began is thrown to the caller, a mod's own throw of that type comes back at its index. `NeoParallelDispatchTest.aModsOwnRejectedExecutionExceptionIsHandedBackAsItsFailure` (red on b40c3331's dispatcher: the REE escaped `run()`), `aPoolThatRefusesTheWorkIsThrownToTheCaller` (a shut-down pool still reaches the caller, no body ran) |
+| F2 / B-1 "same as native except the registry thread" was not true: construction is three passes | confirmed from the lane's logs (numbers in §6); not a regression (421c53cc the same). Recorded in §3 and §6 with what aligning it touches; not changed here -> orchestrator / owner |
+| F3 the NewRegistryEvent active-mod test only read bytecode | fixed 8fa9510b: `NeoModLoadingThreadsStagedTest.newRegistryEventReachesEachBusWithItsOwnModActive` posts it through `KernelNeoRegistries` on the real carrier and reads `ModLoadingContext` in each listener, and that nothing is left active after. Red with `containerOf` returning null (M1): "thrtest_lib's NewRegistryEvent listener runs with its own mod active … expected: <thrtest_lib> but was: <minecraft>"; the bytecode test stays green under M1, as the review said, and is kept (its native premise check still holds). The staged loader has no game jar, so `fill()` fails after delivery: `@ExpectCaught("NewRegistryEvent.fill failed")` |
+| F4a setup's dependency wait unchecked | fixed 8fa9510b: the staged setup test publishes `thrtest_dep` requires `thrtest_lib` and asserts the dependent's listener starts only after the required mod's (100 ms) listener finished. Red with `dependencyAfter()` replaced by `Map.of()` (M2): "a mod takes the phase only after the mod it requires has finished taking it … expected: <true> but was: <false>" |
+| F4b subscriber `<clinit>` active mod unchecked | fixed 8fa9510b: `KernelEventSubscribersGenuineBaseTest.theSubscriberClassIsInitialisedWithItsOwnModActive` publishes a genuine `FMLModContainer` (the kernel's `KernelContainers`, owned by the loader as in a launch) for the subscriber's mod and reads the active namespace in its `<clinit>`. Red with `registerAll` passing no container (M3): "expected: <genuineprobe> but was: <minecraft>" |
+| B-2 red-control texts not in the cited logs | confirmed: `red-commit4.log` / `red-staged-noedges*.log` hold only file:line. Read against b40c3331's tests: `NeoModLoadingThreadsStagedTest.java:101` = the `libFirst` assertion, `NeoRegistryCreationPhaseTest.java:61` = the set-before/after-post assertion, `KernelEventSubscribersGenuineBaseTest.java:151` = the not-on-the-caller's-thread assertion. The new controls' XML is kept (`review-fix/controls-xml/`) |
+| B-3 owners and client ModList numbers | §6 now names VERIFY / owner for the native client and gives the client's 178 / 78 -> 79 |
+| B-4 A/B ports and heavy.sh | the A/B used `native-controls.py`'s own ports 25651-25663 (outside 46940-46959; free before and after, `native-ab/ports-*.txt`); the opening sentence corrected (no `heavy.sh` call inside `native-ab/run.sh` or `tools/run-server.sh`) |
+| B-5 STOP merge conflicts | a merge note, not a defect: `KernelModLoader`, `KernelNeoRegistries`, `KernelNeoSetup` conflict with s4-c5-stop; STOP's stops belong at the caller-thread statements §7 names, then `NeoModLoadingThreadsStagedTest`, `NeoParallelDispatchTest`, m24, m24d, m30 |
+| B-6 610 ms source; blank line; scratch files | 610 ms is `forbric-real-v4.log` (probes + 10 mods), 620 ms the probes alone (§3 corrected); blank line removed 95811f9f; the lane's loose scratch files deleted; folders left, since no folder is deleted in this run: `thrprobe/` (152K), `fml2/` (84K; `fml/` is gone) and the fix run's own tracked-files copy `unstaged-thr-rf/` (77M) in the shared scratchpad |
+
+Controls: all four mutations applied together on 8fa9510b (`review-fix/controls.diff`): exactly the four new checks red with the
+messages above, the other 17 of the five classes green (`controls.log`, `controls-xml/`); restored with `git checkout`.
+
+Also: 12aadc81 adds the two new staged tests' ci-unstaged rows (measured on the tracked-files-only copy: both skip on
+[fixture:staged] with their siblings' reasons, `review-fix/unstaged-rows.txt`, 19 tests / 6 skipped / 0 failed); §4 now cites
+red controls by file:line where the logs hold no message (B-2).
+
+Runs after the fixes:
+- Touched tests on 8fa9510b (`review-fix/tests2.log`): BUILD SUCCESSFUL; with M1+M2+M3 and the old dispatcher: 21 tests, 4 red,
+  exactly the four new checks (`controls.log`).
+- Gates whose reach changed (051b0c53 is the only production change): m7-neo, m24, m30 at 95811f9f, `gates-all.sh -j 2`
+  (`review-fix/gates/`): all GREEN (exit=0, not cached), PASS/FAIL m7-neo 28/0, m24 67/0, m30 28/0 = w2c; CAUGHT none / 1 / 2 =
+  w2c. The test-only and record commits change no gate's input.
+- Full suite at 12aadc81 (`review-fix/suite3.log`, `suite3-summary.txt`): 5913 tests, 0 skipped, 5 failed = the five D58 rows
+  of failures-w2c.txt by name; 0 new. +4 over 5909 (the four new checks).
+
+Open after the fixes: F2/B-1 (construction as three passes) -> orchestrator / owner; the registry phase's thread -> owner;
+ModList contents during construction -> orchestrator; dependents of a failed mod -> lane STOP; native client unmeasured ->
+VERIFY / owner; the STOP merge conflicts (B-5) -> merger.
