@@ -91,9 +91,11 @@ caught_report() {
   # (neoforge:swim_speed, nametag_distance) reach every living entity; one that did not finish leaves them without, and
   # the first living entity in water then crashes. A gate in whose JVMs that happened is red whatever its own checks
   # say. Three kernel lines say it happened (KernelLifecycle.postAttributeEvents): DefaultAttributes could not initialise
-  # before the events ("[Forbric/Attributes] ... could not initialise", the walk then fails too), the hook itself threw
-  # ("[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW"), or the hook is not there
-  # ("[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks has no modifyAttributes()": the events never ran).
+  # before the events ("[Forbric/Attributes] ... could not initialise", the walk then fails too), the hook could not be
+  # called ("[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() could not be called": the
+  # events were not posted), or the hook is not there ("[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks has no
+  # modifyAttributes()": the events never ran). A mod's attribute listener that throws is no longer a line here: since D82
+  # (lane STOP) it stops the boot as native NeoForge does, so the old "modifyAttributes() THREW" line has no producer.
   # Until C5 the pattern was "[Forbric/Attributes]" with "did not finish|could not initialise": it matched the settle
   # line (restored by c10779e3) but neither line of the hook, which is the one that runs the events.
   # Known gap: Caught.java writes a site's FIRST failure to the file, and modifyAttributes shares its site with the
@@ -101,7 +103,7 @@ caught_report() {
   # before modifyAttributes; if one of them threw first, its line is the one recorded and a later modifyAttributes
   # failure is not seen here (closing it needs a site of its own in the kernel).
   local fatal
-  fatal=$(awk -F'\t' '$1=="FAILURE" && (($4 ~ /\[Forbric\/Attributes\]/ && $4 ~ /could not initialise/) || $4 ~ /CommonHooks\.modifyAttributes\(\) THREW|CommonHooks has no modifyAttributes\(\)/) {print $3}' \
+  fatal=$(awk -F'\t' '$1=="FAILURE" && (($4 ~ /\[Forbric\/Attributes\]/ && $4 ~ /could not initialise/) || $4 ~ /CommonHooks\.modifyAttributes\(\) could not be called|CommonHooks has no modifyAttributes\(\)/) {print $3}' \
     "$file" 2>/dev/null | sort -u | wc -l | tr -d ' ')
   if [ "${fatal:-0}" -gt 0 ]; then
     printf '[kernel] FAIL %s entity-attribute event(s) did not finish — living entities are left without attributes\n' "$fatal"

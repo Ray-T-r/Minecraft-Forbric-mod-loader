@@ -107,8 +107,9 @@ class LibCaughtContractTest {
 	 * C5; the hook's two lines are what this case tells apart.
 	 */
 	@Test void anEntityAttributeEventThatDidNotFinishIsFatalAndNoOtherHookIs() throws Exception {
-		String threw = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2013",
-				"[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() THREW — it exists and did not finish");
+		String threw = failure("net.forbric.kernel.boot.KernelLifecycle.postAttributeEvents:2182",
+				"[Forbric/Lifecycle] net.neoforged.neoforge.common.CommonHooks.modifyAttributes() could not be called — the "
+						+ "entity-attribute events were not posted");
 		String settle = failure("net.forbric.kernel.boot.KernelLifecycle.postAttributeEvents:1965",
 				"[Forbric/Attributes] DefaultAttributes could not initialise before the entity-attribute events — they read it");
 		String missing = failure("net.forbric.kernel.boot.KernelLifecycle.invokeGameDataOn:2006",
