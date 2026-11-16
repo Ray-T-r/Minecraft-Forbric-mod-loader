@@ -55,7 +55,10 @@ class NeoRegistryCreationPhaseTest {
             if (!(instruction instanceof MethodInsnNode c)) continue;
             int at = kernelPhase.instructions.indexOf(instruction);
             if (c.name.equals("setNeoActiveContainer") && c.owner.endsWith("/KernelModLoader")) sets.add(at);
-            if (firstPost < 0 && c.name.equals("post") && c.owner.equals("net/neoforged/bus/api/IEventBus")) firstPost = at;
+            // On the bus itself, or through the kernel's own post, which hands it to the bus's container (acceptEvent) as
+            // natively since lane STOP.
+            if (firstPost < 0 && c.name.equals("post") && (c.owner.equals("net/neoforged/bus/api/IEventBus")
+                    || c.owner.equals("net/forbric/kernel/runtime/KernelNeoRegistries"))) firstPost = at;
         }
         assertTrue(firstPost >= 0, "the kernel posts NewRegistryEvent on the mods' buses");
         assertTrue(sets.size() >= 2 && sets.get(0) < firstPost && sets.get(sets.size() - 1) > firstPost,

@@ -50,7 +50,6 @@ import net.forbric.api.ForeignType;
 import net.forbric.api.ModPresence;
 import net.forbric.api.Side;
 import net.forbric.api.UnifiedDependency;
-import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.TestFixtures.Fixture;
 
@@ -170,7 +169,6 @@ class NeoModLoadingThreadsStagedTest {
 	@Test
 	// This loader has the NeoForge carrier and no game jar, so filling the event afterwards finds no Registry class: the
 	// kernel reports that and goes on, and delivery to the buses, which is what this checks, has already happened.
-	@ExpectCaught("NewRegistryEvent.fill failed")
 	void newRegistryEventReachesEachBusWithItsOwnModActive() throws Exception {
 		ClassLoader game = game();
 		KernelModLoader.constructMods(game, List.of(modsJar), Side.DEDICATED_SERVER);
@@ -196,16 +194,24 @@ class NeoModLoadingThreadsStagedTest {
 					.invoke(bus, newRegistry, listener);
 		}
 
+		// After delivery the phase fills the event, and NewRegistryEvent.fill needs the game (net.minecraft.core.Registry),
+		// which this loader does not have. Since lane STOP a fill that cannot run ends the phase, as natively, instead of
+		// being logged and skipped; so the phase ends here in exactly that way, after every bus has taken the event.
 		System.setProperty("forbric.modifyRegistriesEvent", "off");
-		Object delivered;
+		java.lang.reflect.InvocationTargetException ended;
 		try {
-			delivered = Class.forName("net.forbric.kernel.runtime.KernelNeoRegistries", true, game)
-					.getMethod("postNewRegistryEvent", List.class).invoke(null, buses);
+			java.lang.reflect.Method post = Class.forName("net.forbric.kernel.runtime.KernelNeoRegistries", true, game)
+					.getMethod("postNewRegistryEvent", List.class);
+			ended = org.junit.jupiter.api.Assertions.assertThrows(java.lang.reflect.InvocationTargetException.class,
+					() -> post.invoke(null, buses), "the fill has no game to run on here");
 		} finally {
 			System.clearProperty("forbric.modifyRegistriesEvent");
 		}
+		assertTrue(ended.getCause() instanceof NoClassDefFoundError missing
+						&& String.valueOf(missing.getMessage()).startsWith("net/minecraft/"),
+				"the phase ends at the fill, for want of the game, not in the delivery: " + ended.getCause());
 
-		assertEquals(IDS.size(), delivered, "every bus took the event");
+		assertEquals(Set.copyOf(IDS), active.keySet(), "every bus took the event");
 		for (String id : IDS) {
 			assertEquals(id, active.get(id), id + "'s NewRegistryEvent listener runs with its own mod active, as natively");
 		}
