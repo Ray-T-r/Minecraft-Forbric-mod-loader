@@ -218,11 +218,22 @@ public final class KernelLifecycle {
 		// joined, and NeoForge's data maps died with them. It moved when the client mains did (09d86de) and this
 		// step did not. It runs at the end of onClientEntrypoints instead: after every main and client entrypoint,
 		// the root frozen again, which is the state the dedicated server already declares in, cleanly.
+		//
+		// What waits is NeoForge's processing of the declarations (DataPackRegistryEvent.NewRegistry.process, which
+		// initialises DataPackRegistriesHooks and through it RegistryDataLoader) and the kernel's mirroring after it. The
+		// mods' listeners are handed the event here, in the registry phase, as native NeoForge hands it to them inside
+		// "Registry initialization" (RegistryManager.postNewRegistryEvent, before Minecraft exists): a listener only
+		// collects declarations on the event (javap of 26.2.0.93: dataPackRegistry builds a RegistryDataLoader.RegistryData
+		// record, which does not initialise RegistryDataLoader), and one that throws stops the client here, in the begin
+		// path, with no Fabric main run and nothing frozen. It used to be handed the event only after the Fabric mains in
+		// Minecraft.<init>, so its throw stopped the client there ("Initializing game", exit 255; lane STOP review A-4).
 		if (DatapackRegistryDeclaration.waitsForFabric(side, KernelFabricEcosystem.active(),
 				KernelFabricEcosystem.mainsRunInConstructor())) {
-			ForbricLog.info("[Forbric/Lifecycle] datapack-registry declaration waits for the Fabric main and client "
-					+ "entrypoints in Minecraft.<init> — its initialisers run Fabric mod code, which must not run "
-					+ "before those mains (-D%s=off to declare here)", DatapackRegistryDeclaration.DEFERRAL_SWITCH);
+			collectDataPackRegistryDeclarations(cl);
+			ForbricLog.info("[Forbric/Lifecycle] datapack-registry declarations collected; NeoForge processes them after the "
+					+ "Fabric main and client entrypoints in Minecraft.<init> — that initialises RegistryDataLoader, whose "
+					+ "initialisers run Fabric mod code, which must not run before those mains (-D%s=off to process here)",
+					DatapackRegistryDeclaration.DEFERRAL_SWITCH);
 		} else {
 			registerDataPackRegistries(cl);
 		}
@@ -1260,47 +1271,15 @@ public final class KernelLifecycle {
 	private static void registerDataPackRegistries(ClassLoader cl) {
 		if (!DATAPACK_REGISTRIES_DECLARED.compareAndSet(false, true)) return;
 		try {
-			Class<?> eventCls = Class.forName(
-					"net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry", false, cl);
-			Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
-			Class<?> baseEvent = Class.forName("net.neoforged.bus.api.Event", false, cl);
+			Object event = deliverDataPackRegistryEvent(cl);
+			if (event == null) return;
+			Class<?> eventCls = event.getClass();
 			Class<?> hooksCls = Class.forName(
 					"net.neoforged.neoforge.registries.DataPackRegistriesHooks", false, cl);
 
+			// Read after the delivery and before the processing: the listeners only collect on the event, and this read is
+			// what initialises DataPackRegistriesHooks — natively process() is the first to (addRegistryCodec).
 			int before = ((java.util.List<?>) hooksCls.getMethod("getDataPackRegistries").invoke(null)).size();
-
-			Object event = eventCls.getConstructor().newInstance();
-			Method post = busCls.getMethod("post", baseEvent);
-
-			int posted = 0;
-			if (baselineBus != null) {
-				post.invoke(baselineBus, event);
-				posted++;
-			}
-			for (java.util.Map.Entry<String, KernelModLoader.NeoIdentity> e
-					: KernelModLoader.publishedNeoMods().entrySet()) {
-				// The active container matters here too: a mod may resolve itself while building its codec.
-				KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
-				try {
-					// Through the mod's container, as RegistryManager.postNewRegistryEvent hands it on natively
-					// (ModLoader.postEventWrapContainerInModOrder): a listener's throw becomes NeoForge's error naming the mod.
-					Object container = e.getValue().container();
-					Method accept = container == null ? null : modContainerClass(cl).getMethod("acceptEvent", baseEvent);
-					if (accept != null) accept.invoke(container, event);
-					else post.invoke(e.getValue().bus(), event);
-					posted++;
-				} catch (java.lang.reflect.InvocationTargetException perMod) {
-					// Natively this ends the "Registry initialization" task and the boot stops on it (D87); the mod used to
-					// lose only its datapack registries.
-					Throwable cause = perMod.getCause() != null ? perMod.getCause() : perMod;
-					ForbricLog.error("[Forbric/Lifecycle] %s failed declaring its datapack registries", e.getKey());
-					throw RegistrationStop.propagate(RegistrationStop.stop(cl, cause));
-				} catch (Throwable perMod) {
-					Caught.warn(perMod, "[Forbric/Lifecycle] could not hand the datapack-registry declaration to %s", e.getKey());
-				} finally {
-					KernelModLoader.setNeoActiveContainer(cl, null);
-				}
-			}
 
 			Method process = eventCls.getDeclaredMethod("process");
 			process.setAccessible(true);
@@ -1313,7 +1292,7 @@ public final class KernelLifecycle {
 			java.util.List<String> added = new java.util.ArrayList<>();
 			for (int i = before; i < now.size(); i++) added.add(String.valueOf(now.get(i)));
 			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration to %d bus(es) — %d declared "
-					+ "(%s), %d total", posted, now.size() - before, added, now.size());
+					+ "(%s), %d total", dataPackRegistryBuses, now.size() - before, added, now.size());
 
 			mirrorIntoFabricDynamicRegistries(cl, now.subList(before, now.size()));
 			// Before the Fabric mirror: that one would also carry these across, but as bare (key, codec) copies.
@@ -1324,7 +1303,7 @@ public final class KernelLifecycle {
 			Caught.expected(absent);
 			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
 		} catch (Throwable t) {
-			// A mod's declaration that threw stops the boot (above); that stop leaves as it is.
+			// A mod's declaration that threw stops the boot (deliverDataPackRegistryEvent); that stop leaves as it is.
 			if (RegistrationStop.isStop(t)) throw RegistrationStop.propagate(t);
 			// A class that failed to initialise is a different failure from a declaration that failed, and a far
 			// bigger one; it gets a finding, so the player hears it before the title screen and not at "Create".
@@ -1335,6 +1314,87 @@ public final class KernelLifecycle {
 							+ "with \"Missing registry\" the moment a world loads");
 		}
 	}
+
+	/** The one {@code DataPackRegistryEvent.NewRegistry} this process hands the mods, once delivered; null before. */
+	private static volatile Object dataPackRegistryEvent;
+	/** How many buses {@link #dataPackRegistryEvent} was handed to. */
+	private static volatile int dataPackRegistryBuses;
+
+	/**
+	 * Hands {@code DataPackRegistryEvent.NewRegistry} to the baseline bus and every NeoForge mod, once per process, and
+	 * returns it with their declarations collected on it (null when NeoForge has no such event); {@link
+	 * #registerDataPackRegistries} processes it. A mod's listener that throws stops the boot here, in NeoForge's
+	 * "Registry initialization" task, as natively (D82). Touches neither {@code DataPackRegistriesHooks} nor
+	 * {@code RegistryDataLoader}, so a client may run it before the Fabric mains (step 3a).
+	 */
+	private static synchronized Object deliverDataPackRegistryEvent(ClassLoader cl) throws ReflectiveOperationException {
+		// Once per process, never retried (see registerDataPackRegistries): a second post would hand the mods the event twice.
+		if (!DATAPACK_REGISTRY_EVENT_DELIVERED.compareAndSet(false, true)) return dataPackRegistryEvent;
+		Class<?> eventCls;
+		try {
+			eventCls = Class.forName("net.neoforged.neoforge.registries.DataPackRegistryEvent$NewRegistry", false, cl);
+		} catch (ClassNotFoundException absent) {
+			Caught.expected(absent);
+			ForbricLog.debug("[Forbric/Lifecycle] no NeoForge DataPackRegistryEvent — skipping");
+			return null;
+		}
+		Class<?> busCls = Class.forName("net.neoforged.bus.api.IEventBus", false, cl);
+		Class<?> baseEvent = Class.forName("net.neoforged.bus.api.Event", false, cl);
+
+		Object event = eventCls.getConstructor().newInstance();
+		Method post = busCls.getMethod("post", baseEvent);
+
+		int posted = 0;
+		if (baselineBus != null) {
+			post.invoke(baselineBus, event);
+			posted++;
+		}
+		for (java.util.Map.Entry<String, KernelModLoader.NeoIdentity> e
+				: KernelModLoader.publishedNeoMods().entrySet()) {
+			// The active container matters here too: a mod may resolve itself while building its codec.
+			KernelModLoader.setNeoActiveContainer(cl, e.getValue().container());
+			try {
+				// Through the mod's container, as RegistryManager.postNewRegistryEvent hands it on natively
+				// (ModLoader.postEventWrapContainerInModOrder): a listener's throw becomes NeoForge's error naming the mod.
+				Object container = e.getValue().container();
+				Method accept = container == null ? null : modContainerClass(cl).getMethod("acceptEvent", baseEvent);
+				if (accept != null) accept.invoke(container, event);
+				else post.invoke(e.getValue().bus(), event);
+				posted++;
+			} catch (java.lang.reflect.InvocationTargetException perMod) {
+				// Natively this ends the "Registry initialization" task and the boot stops on it (D82); the mod used to
+				// lose only its datapack registries.
+				Throwable cause = perMod.getCause() != null ? perMod.getCause() : perMod;
+				ForbricLog.error("[Forbric/Lifecycle] %s failed declaring its datapack registries", e.getKey());
+				throw RegistrationStop.propagate(RegistrationStop.stop(cl, cause));
+			} catch (Throwable perMod) {
+				Caught.warn(perMod, "[Forbric/Lifecycle] could not hand the datapack-registry declaration to %s", e.getKey());
+			} finally {
+				KernelModLoader.setNeoActiveContainer(cl, null);
+			}
+		}
+		dataPackRegistryBuses = posted;
+		dataPackRegistryEvent = event;
+		return event;
+	}
+
+	/**
+	 * Step 3a on a client whose datapack-registry processing waits for the Fabric mains: the delivery alone. A mod's
+	 * listener that throws stops the boot (it leaves as it is); anything else is reported as the whole declaration's
+	 * failure is, and the processing later finds no event.
+	 */
+	private static void collectDataPackRegistryDeclarations(ClassLoader cl) {
+		try {
+			deliverDataPackRegistryEvent(cl);
+		} catch (Throwable t) {
+			if (RegistrationStop.isStop(t)) throw RegistrationStop.propagate(t);
+			Caught.error(t, "[Forbric/Lifecycle] could not hand the mods NeoForge's datapack-registry declaration — a mod with "
+					+ "its own worldgen registry will fail with \"Missing registry\" the moment a world loads");
+		}
+	}
+
+	private static final java.util.concurrent.atomic.AtomicBoolean DATAPACK_REGISTRY_EVENT_DELIVERED =
+			new java.util.concurrent.atomic.AtomicBoolean();
 
 	private static final java.util.concurrent.atomic.AtomicBoolean DATAPACK_REGISTRIES_DECLARED =
 			new java.util.concurrent.atomic.AtomicBoolean();

@@ -119,16 +119,22 @@ class DatapackRegistryDeclarationTest {
 		boolean declaresWhenJumping = branch.getOpcode() == Opcodes.IFEQ;
 		int waitingStart = declaresWhenJumping ? from : target;
 		int waitingEnd = declaresWhenJumping ? target : insns.length;
+		boolean collects = false;
 		for (int i = waitingStart + 1; i < waitingEnd; i++) {
 			if (insns[i] instanceof MethodInsnNode call && "registerDataPackRegistries".equals(call.name)) {
 				throw new AssertionError("the waiting path declares too, at " + i);
 			}
+			if (insns[i] instanceof MethodInsnNode call && "collectDataPackRegistryDeclarations".equals(call.name)) collects = true;
 			if (insns[i] instanceof JumpInsnNode leave && leave.getOpcode() == Opcodes.GOTO) {
 				assertTrue(drive.instructions.indexOf(leave.label) > declares,
 						"the waiting path must jump past the declaration");
 				break;
 			}
 		}
+		// What waits is only the processing: the mods' listeners are handed the event here, in the registry phase, as natively,
+		// so one that throws stops the client in the begin path and not after the Fabric mains (lane STOP review A-4; gate-m24d
+		// datapackreg runs it).
+		assertTrue(collects, "the waiting path still hands the mods the event (collectDataPackRegistryDeclarations)");
 		assertTrue(!declaresWhenJumping || declares > target, "the declaration is on the not-waiting branch");
 	}
 
