@@ -3,9 +3,10 @@
 # Regenerate: ./gradlew check -Pforbric.skipBaseline=ci-unstaged -Pforbric.writeSkipBaseline
 # or copy skips-actual-ci-unstaged.tsv from the CI artifact.
 # Measured 2026-11-17 on a clean clone of the C6 tree laid out like the kernel job's runner (no staged files, no
-# launcher libraries, no fixtures), on macOS with JDK 25. Seven rows are kept from the last CI artifact because this
-# host cannot reproduce them: four [fixture:java-25] (the kernel job runs JDK 21) and three Fabric Loader 0.19.3 rows
-# (this host's launcher has it, a runner has not). The first CI run's skips-actual-ci-unstaged.tsv replaces this file.
+# launcher libraries, no fixtures), on macOS with JDK 25. Seven rows were kept from the last CI artifact: four
+# [fixture:java-25], which skip only on the kernel job's JDK 21 (a later run of the same layout on JDK 21.0.12 skipped
+# exactly these 4 more and nothing else), and three Fabric Loader 0.19.3 rows, which this host cannot reproduce (its
+# launcher has that jar, a runner has not). The first CI run's skips-actual-ci-unstaged.tsv replaces this file.
 test	net.forbric.api.ForeignTypeCarrierTest	everyNeoForgeNameIsInTheStagedNeoForgeCarrier()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.access.RestoredAccessTransformerTest	actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/chunk/ChunkGenerator.class)
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:staged] staged pack or carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
