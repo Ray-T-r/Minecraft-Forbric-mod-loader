@@ -9,8 +9,13 @@ import java.util.jar.JarEntry;
 import java.util.jar.JarOutputStream;
 import javax.tools.ToolProvider;
 
-/** Runs the real installer subprocess gate against linked and deliberately broken game jars. */
-public final class BaseLinkGateTest {
+/**
+ * Runs the installer's link check as an install runs it (the checker jar it carries, in a child JVM, both runs) against
+ * linked and deliberately broken game jars: a member gone from either jar, a member narrowed so the other jar can no
+ * longer reach it, an empty base; and the supplied-artifacts path that checks a developer's set before anything is
+ * written.
+ */
+public final class LinkCheckToolTest {
 	public static void main(String[] args) throws Exception {
 		Path work = Path.of(args[0]);
 		Path source = Files.createDirectories(work.resolve("src/game"));
@@ -47,7 +52,7 @@ public final class BaseLinkGateTest {
 		} catch (LinkCheckTool.Failed expected) {
 			require(expected.getMessage().contains("game/Target.value"), "lost the underlying evidence");
 		}
-		// The game calling a carrier method that is gone: only the run with the carrier first resolves it.
+		// The game calling a carrier method that is gone: only the run that judges the carrier's members finds it.
 		Files.writeString(target, "package game; public class Target { public static int value = 3; }");
 		compile(classes, target);
 		jar(classes, game);
@@ -65,6 +70,23 @@ public final class BaseLinkGateTest {
 			require(verdicts.size() == 2 && verdicts.get(0).endsWith("; dangling references: 0")
 					&& verdicts.get(1).endsWith("; dangling references: 1"), "the base-first run was not the clean one: " + logs);
 		}
+		// A carrier member the game calls, still there but narrowed: the old checker passed this (it judged existence
+		// only), and the game would meet it as an IllegalAccessError. The install must stop on it like a missing one.
+		Files.writeString(hookSource, "package carrier; public class Hook { static void present() { } }");
+		compileWith(carrierClasses, null, hookSource);
+		jar(carrierClasses, carrier);
+		logs.clear();
+		try {
+			tool.linkCheck(jvm, game, carrier);
+			throw new AssertionError("installer accepted a game base calling a carrier method it cannot access");
+		} catch (LinkCheckTool.Failed expected) {
+			require(expected.getMessage().contains("[MEMBER_ACCESS] game/Caller#read()I  ->  METHOD carrier/Hook.present()V")
+					&& expected.getMessage().contains("package-private in carrier/Hook"), "lost the underlying evidence: "
+					+ expected.getMessage());
+			List<String> verdicts = logs.stream().filter(s -> s.contains("dangling references:")).toList();
+			require(verdicts.size() == 2 && verdicts.get(1).endsWith("; dangling references: 1"),
+					"an inaccessible member did not count in the verdict: " + logs);
+		}
 		try {
 			tool.linkCheck(jvm, empty, carrier);
 			throw new AssertionError("installer accepted an empty game base");
@@ -72,34 +94,21 @@ public final class BaseLinkGateTest {
 			require(expected.getMessage().contains("no classes"), "empty scan was not explained");
 		}
 		verdicts();
-		System.out.println("PASS installer gate: valid build checked in both orders, a dangling reference into either jar"
-				+ " rejected, empty scan rejected");
+		System.out.println("PASS installer link check: valid build checked in both runs, a missing or narrowed member of"
+				+ " either jar rejected, empty scan rejected");
 		suppliedArtifacts(work, classes, target, logs);
-		// The content check that runs before this link check on a supplied set; here so every runner of this gate
-		// (gradle linkGateTest, run/test-link-gate.py, CI) exercises it too.
-		SuppliedArtifactContentTest.main(new String[] { work.resolve("content").toString() });
-		// And the window's way into the same install: what a player pastes into its path fields.
-		InstallerWindowInputTest.main(new String[] { work.resolve("window").toString() });
-		// And the libraries the profile lists, by the platform rules a launcher applies.
-		MinecraftLibrariesTest.main(new String[] { work.resolve("libraries").toString() });
-		// And the vanilla reference every install now builds beside the base, which needs no game inputs to check.
-		VanillaReferenceTest.main(new String[] { work.resolve("vanilla-reference").toString() });
-		// And the base's coordinate, which an NFRT bump must move (Pins.NFRT).
-		BaseCoordinatePinTest.main(new String[0]);
-		// And the development stage's cleanup of the merged base's directories (D12).
-		DevPrepareRetiredTest.main(new String[] { work.resolve("dev-stage").toString() });
-		// And the server jar NFRT is handed: fetched only when NFRT runs, verified before NFRT is seeded with it (R4).
-		ServerJarTest.main(new String[] { work.resolve("server-jar").toString() });
 	}
 
 	/**
 	 * What the checker's last line has to say for the install to go ahead: exactly its own success, measured on
-	 * NeoForge 26.2.0.93's patched game and carrier as {@code [link-check] loaded 13394 classes (10964 from the merged
-	 * jar); dangling references: 0}. A non-zero count, a non-zero exit, a missing line, and the summary a run WITH a
-	 * baseline prints (which can say {@code new 0} while references dangle) each fail.
+	 * NeoForge 26.2.0.93's patched game and carrier as {@code [link-check] loaded 13394 classes (13394 scanned; 1243939
+	 * references judged, 894 unresolvable through an unread supertype, 363460 out of scope); dangling references: 0}. A
+	 * non-zero count, a non-zero exit, a missing line, and the summary the old checker's baseline run printed (which
+	 * could say {@code new 0} while references dangled) each fail.
 	 */
 	private static void verdicts() {
-		String clean = "[link-check] loaded 13394 classes (10964 from the merged jar); dangling references: 0";
+		String clean = "[link-check] loaded 13394 classes (13394 scanned; 1243939 references judged, 894 unresolvable"
+				+ " through an unread supertype, 363460 out of scope); dangling references: 0";
 		require(LinkCheckTool.passed(0, clean), "the genuine pair's verdict line was not accepted");
 		require(!LinkCheckTool.passed(1, clean), "a non-zero exit was accepted");
 		require(!LinkCheckTool.passed(0, clean.replace("references: 0", "references: 7")), "dangling references were accepted");

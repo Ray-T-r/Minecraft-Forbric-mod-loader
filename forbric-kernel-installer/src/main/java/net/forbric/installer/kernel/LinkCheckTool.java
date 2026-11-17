@@ -28,36 +28,42 @@ import java.util.regex.Pattern;
 
 /**
  * Link-checks the game base against the NeoForge carrier before a profile may name them: every class, field and
- * method one of them refers to in the other, or in itself, must exist in one of the two.
+ * method one of them refers to in the other, or in itself, must exist in one of the two and be accessible from the
+ * class that refers to it, final members must not be written or overridden, and every invokedynamic bootstrap and
+ * method-handle constant must resolve the same way (JVM semantics; see the kernel's
+ * {@code net.forbric.kernel.linkcheck.LinkCheck}).
  *
- * <p>The checker ({@code net.forbric.tools.MergedLinkChecker}) lives in {@code forbric-merge-tools.jar}, which rides
- * inside the installer as a resource and is unpacked next to the build. It is run as a subprocess: it needs ASM, and
- * keeping that in its own jar preserves the installer's rule that it carries Forbric's jars and nothing else; a
- * single-entry {@code -cp} is also the one classpath form with nothing to get wrong about {@code ;} versus
- * {@code :}.
+ * <p>The checker is the kernel's own, built from the kernel tree into {@code forbric-link-check.jar} (its classes and
+ * ASM's core, nothing else), which rides inside every installer build, a slim one included, as a resource and is
+ * unpacked next to the build. It is run as a subprocess: it needs ASM, and keeping that in its own jar preserves the
+ * installer's rule that it carries Forbric's jars and nothing else. It is carried rather than taken from the staged
+ * kernel jar because the check runs before the installer stages any of Forbric's jars: a supplied set is checked
+ * before anything is written, a built one before the profile is, and a slim installer has fetched nothing by then. A
+ * single-entry {@code -cp} is also the one classpath form with nothing to get wrong about {@code ;} versus {@code :}.
  *
- * <p><b>Twice, once in each order.</b> The checker scans the bodies of both jars but resolves only references whose
- * owner is a class of the jar it is given first (and skips interface calls). Run once with the base first, it would
- * check every reference into the game -- the carrier's included -- and none into the carrier: what the 2,402 base
- * classes that name {@code net/neoforged/} refer to would never be resolved. So the base goes first and then the
- * carrier does; each order must pass. Measured on NeoForge 26.2.0.93: {@code loaded 13394 classes (10964 from the merged
- * jar); dangling references: 0} and {@code (2430 from the merged jar); dangling references: 0}, under a second each.
+ * <p><b>Twice, once for each jar's members.</b> Each run scans the bodies of both jars and judges the references whose
+ * owner is a class of one of them ({@code --judge}): first the base's, then the carrier's. Together they judge every
+ * reference into either jar, in both directions; apart, each verdict line says which jar a failure is in. The base is
+ * given first in both, as the game's loader serves it first. Measured on NeoForge 26.2.0.93: 0 violations in either
+ * run, under a second each.
  *
- * <p>No baseline. The packaged one lists the merged base's accepted dangling references, all of them MinecraftForge
- * members; NeoForge's patched game and its own carrier leave none, so any dangling reference is a defect and fails
- * the install (D10).
+ * <p>No baseline: NeoForge's patched game and its own carrier leave nothing dangling, so any violation is a defect and
+ * fails the install (D10). Every kind counts in the one number the verdict line ends with.
  */
 final class LinkCheckTool {
 
-	/** Where the tools jar rides inside the installer jar. */
-	private static final String TOOLS_RESOURCE = "/forbric/tools/forbric-merge-tools.jar";
+	/** Where the checker jar rides inside the installer jar. */
+	static final String TOOLS_RESOURCE = "/forbric/tools/forbric-link-check.jar";
 
-	private static final String LINK_CHECK_MAIN = "net.forbric.tools.MergedLinkChecker";
+	/** Its file name once unpacked under {@code .forbric-build/tools}. */
+	static final String TOOLS_FILE = "forbric-link-check.jar";
+
+	private static final String LINK_CHECK_MAIN = "net.forbric.kernel.linkcheck.LinkCheck";
 
 	/**
-	 * The checker's verdict line when it runs without a baseline: {@code [link-check] loaded N classes (M from the
-	 * merged jar); dangling references: K}. Only K = 0 passes; a baseline run's summary ({@code ... (known k, new n);
-	 * ...}) does not match, so a checker that was handed a baseline cannot pass here either.
+	 * The checker's verdict line: {@code [link-check] loaded N classes (...); dangling references: K}, where K counts
+	 * every violation, missing, inaccessible, final and in method handles alike. Only K = 0 passes; a summary with
+	 * anything after the count (the old checker's baseline form, {@code ... (known k, new n); ...}) does not match.
 	 */
 	private static final Pattern CLEAN = Pattern.compile("\\[link-check\\] loaded \\d+ classes .*; dangling references: 0");
 
@@ -82,17 +88,18 @@ final class LinkCheckTool {
 	 */
 	void linkCheck(JdkLocator.Jvm jvm, Path base, Path neoRuntime) throws IOException {
 		Path tools = unpackTools();
-		check(jvm, tools, base, neoRuntime, "references into the game base");
-		check(jvm, tools, neoRuntime, base, "references into the NeoForge runtime");
+		check(jvm, tools, base, base, neoRuntime, "references into the game base");
+		check(jvm, tools, neoRuntime, base, neoRuntime, "references into the NeoForge runtime");
 	}
 
-	/** One run of the checker: references whose owner is in {@code first}, from either jar. */
-	private void check(JdkLocator.Jvm jvm, Path tools, Path first, Path second, String what) throws IOException {
+	/** One run of the checker over both jars, judging the references whose owner is a class of {@code judged}. */
+	private void check(JdkLocator.Jvm jvm, Path tools, Path judged, Path base, Path neoRuntime, String what)
+			throws IOException {
 		List<String> tail = new ArrayList<>();
 		int code = exec.exec(List.of(
 				jvm.javaBin().toString(),
 				"-cp", tools.toString(), LINK_CHECK_MAIN,
-				first.toString(), second.toString()),
+				"--judge", judged.toString(), base.toString(), neoRuntime.toString()),
 				"link-checking the game base and the NeoForge runtime: " + what, tail);
 		String summary = tail.stream()
 				.filter(l -> l.contains("dangling references:"))
@@ -122,15 +129,15 @@ final class LinkCheckTool {
 	}
 
 	/**
-	 * Copies the bundled tools jar out to disk, because a subprocess needs a path, not a resource.
+	 * Copies the bundled checker jar out to disk, because a subprocess needs a path, not a resource.
 	 *
 	 * <p><b>Unconditionally</b>, overwriting whatever is there. It used to return the existing file when one was
 	 * present, which is the same "the file exists, so it must be current" mistake {@link BuildStamp} was written
 	 * to fix, one level further down — and it defeated that fix completely: the new stamp correctly invalidated
 	 * every artifact, and the rebuild then ran the PREVIOUS installer's merge tool, left behind in
 	 * {@code .forbric-build/tools}. The base came out with the bug the new tool existed to fix, and the install log
-	 * said it had rebuilt everything, because it had. The link checker rides in the same jar, so it is the same
-	 * hazard: a stale checker passes jars the current one would refuse.
+	 * said it had rebuilt everything, because it had. A stale link checker is the same hazard: it passes jars the
+	 * current one would refuse.
 	 *
 	 * <p>Like the artifact cache, this only ever misbehaves on a machine that has installed before — the gate
 	 * wipes its directory, so a gated install always unpacked into an empty one. It is 280 KB; there is nothing
@@ -138,11 +145,11 @@ final class LinkCheckTool {
 	 */
 	private Path unpackTools() throws IOException {
 		Files.createDirectories(toolsDir);
-		Path dest = toolsDir.resolve("forbric-merge-tools.jar");
+		Path dest = toolsDir.resolve(TOOLS_FILE);
 		try (InputStream in = LinkCheckTool.class.getResourceAsStream(TOOLS_RESOURCE)) {
 			if (in == null) {
 				throw new IOException("this installer was built without " + TOOLS_RESOURCE
-						+ " — run ':forbric-loader:mergeToolsJar' and rebuild it");
+						+ " — rebuild it (its :bundleLinkCheck task builds the kernel's :linkCheckJar)");
 			}
 			Path part = dest.resolveSibling(dest.getFileName() + ".part");
 			Files.copy(in, part, StandardCopyOption.REPLACE_EXISTING);

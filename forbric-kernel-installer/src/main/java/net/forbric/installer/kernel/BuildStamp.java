@@ -51,44 +51,22 @@ final class BuildStamp {
 	}
 
 	/**
-	 * The key an artifact is stamped with: the pins, plus a digest of the tools jar that rides in this installer.
+	 * The key an artifact is stamped with: the pins, and nothing else.
 	 *
-	 * <p>The tools are not a pin and they change without one. When they built the merged base, the merge tool's
-	 * lambda-realignment pass changed no version at all and changed every merged class it fixed, and keying only on
-	 * pins would have served the old base out of the cache to exactly the people who needed the new one. They only
-	 * link-check now, so a new tools jar costs one rebuild; kept, because the jar is the one input the pins cannot
-	 * name.
+	 * <p>It used to add {@code tools=<sha1>} of the merge-tools jar the installer carried, because that jar once built
+	 * the merged base: its lambda-realignment pass changed no version and changed every merged class it fixed, so a key
+	 * of pins alone would have served the old base to exactly the people who needed the new one. Since the merged base
+	 * went, the installer's only tool is the link checker ({@link LinkCheckTool}), which reads the artifacts and shapes
+	 * none of them, so its digest is no input of theirs. Keying on it (or on the kernel jar the checker now comes from)
+	 * would rebuild the base and the runtime, minutes and a download, on every kernel update for every player, and
+	 * change nothing in what they hold.
+	 *
+	 * <p>Dropping it changes the stamp's text, so an install made by an installer that wrote the old form rebuilds its
+	 * artifacts once, as a missing stamp does; after that a cached reinstall is served from the cache again.
 	 */
 	private static String key() {
-		return Pins.stamp() + " tools=" + toolsDigest();
+		return Pins.stamp();
 	}
-
-	private static volatile String toolsDigest;
-
-	/** SHA-1 of the bundled merge-tools jar, or {@code "absent"} when this installer carries none. */
-	private static String toolsDigest() {
-		String cached = toolsDigest;
-		if (cached != null) return cached;
-		String computed = "absent";
-		try (java.io.InputStream in = BuildStamp.class.getResourceAsStream(TOOLS_RESOURCE)) {
-			if (in != null) {
-				java.security.MessageDigest md = java.security.MessageDigest.getInstance("SHA-1");
-				byte[] buf = new byte[8192];
-				for (int n; (n = in.read(buf)) > 0; ) md.update(buf, 0, n);
-				StringBuilder sb = new StringBuilder();
-				for (byte b : md.digest()) sb.append(String.format("%02x", b));
-				computed = sb.toString();
-			}
-		} catch (Exception unreadable) {
-			// An unreadable tools jar means an unstable key, which would rebuild every time. "unknown" is stable
-			// and still changes nothing that pins already cover.
-			computed = "unknown";
-		}
-		toolsDigest = computed;
-		return computed;
-	}
-
-	private static final String TOOLS_RESOURCE = "/forbric/tools/forbric-merge-tools.jar";
 
 	/** The sibling file that records what produced {@code artifact}. */
 	private static Path stampFile(Path artifact) {

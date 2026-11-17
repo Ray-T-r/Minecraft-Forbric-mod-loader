@@ -17,7 +17,7 @@ import java.util.zip.ZipOutputStream;
  *
  * <p>Each fake jar below is built from the entries the real one was found to carry (or, for the negatives, the
  * entries the file a player might grab instead carries). Class bodies are placeholder bytes holding the package
- * references the base check looks for; nothing here is loaded or link-checked, which is {@link BaseLinkGateTest}'s
+ * references the base check looks for; nothing here is loaded or link-checked, which is {@link LinkCheckToolTest}'s
  * job.
  *
  * <p>{@code --doctor} judges a supplied set with the same checks, so its report is checked here too.

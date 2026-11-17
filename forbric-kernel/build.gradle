@@ -633,13 +633,45 @@ tasks.register('toolTest', Exec) {
 	doFirst { environment 'FORBRIC_KERNEL_CLASSPATH', sourceSets.main.runtimeClasspath.asPath }
 }
 tasks.named('check') { dependsOn 'toolTest' }
-tasks.register('linkToolTest', Exec) {
-	group = 'verification'
-	description = 'Run the installer packaged-link-gate tests on synthetic jars, without game inputs or bootstrap.'
-	workingDir file('../forbric-kernel-installer')
-	commandLine(osName.contains('windows') ? ['cmd', '/d', '/c', 'gradlew.bat', 'linkGateTest'] : ['./gradlew', 'linkGateTest'])
+// The static link check (net.forbric.kernel.linkcheck.LinkCheck) as one standalone jar: its own classes and ASM's core,
+// which is all it needs (LinkCheckTest pins that). The installer carries it (its :bundleLinkCheck) and runs it on every
+// install before it has staged any of Forbric's jars, a slim installer included. The game check beside it
+// (linkcheck.game.GameLinkCheck) reads the kernel's transformers, so it stays in the kernel jar and is not in this one.
+tasks.register('linkCheckJar', Jar) {
+	group = 'build'
+	description = 'Build forbric-link-check.jar: the link checker the installer ships, with ASM shaded in.'
+	archiveFileName = 'forbric-link-check.jar'
+	destinationDirectory = layout.buildDirectory.dir('link-check')
+	from(sourceSets.main.output.classesDirs) { include 'net/forbric/kernel/linkcheck/*.class' }
+	from({ configurations.runtimeClasspath.files.findAll { it.name == "asm-${project.asm_version}.jar" }.collect { zipTree(it) } }) {
+		exclude 'META-INF/MANIFEST.MF', 'META-INF/versions/**', 'module-info.class'
+	}
+	manifest { attributes 'Main-Class': 'net.forbric.kernel.linkcheck.LinkCheck' }
+	// Reproducible: the installer's own build compares nothing, but two builds of one tree should ship one jar.
+	preserveFileTimestamps = false
+	reproducibleFileOrder = true
+	doLast {
+		def entries = new java.util.zip.ZipFile(archiveFile.get().asFile).withCloseable { zip -> Collections.list(zip.entries())*.name }
+		if (!entries.contains('net/forbric/kernel/linkcheck/LinkCheck.class') || !entries.contains('org/objectweb/asm/ClassReader.class'))
+			throw new GradleException("forbric-link-check.jar lacks the checker or ASM: ${entries.take(5)}")
+		def foreign = entries.findAll { it.endsWith('.class') && !it.startsWith('org/objectweb/asm/')
+				&& !(it ==~ /net\/forbric\/kernel\/linkcheck\/[^\/]+\.class/) }
+		if (foreign) throw new GradleException("forbric-link-check.jar carries classes that are neither the checker's nor ASM's: ${foreign.take(5)}")
+	}
 }
-tasks.named('check') { dependsOn 'linkToolTest' }
+// The installer's tests (its packaged link check on synthetic jars, and every other installer *Test main), run from the
+// kernel's `check` as linkToolTest ran the old link gate: without game inputs or bootstrap. The checker jar is built
+// here and handed over (-x buildLinkCheck): the installer's own way to it is a nested build of this project, which must
+// not run inside this one.
+tasks.register('installerTest', Exec) {
+	group = 'verification'
+	description = "Run the installer's tests: its packaged link check on synthetic jars and its other *Test mains."
+	dependsOn 'linkCheckJar'
+	workingDir file('../forbric-kernel-installer')
+	commandLine((osName.contains('windows') ? ['cmd', '/d', '/c', 'gradlew.bat'] : ['./gradlew'])
+			+ ['installerTest', '-x', 'buildLinkCheck'])
+}
+tasks.named('check') { dependsOn 'installerTest' }
 // The suites whose tests ran in THIS invocation. Results left by an earlier invocation are not evidence.
 def executedSuites = Collections.synchronizedSet(new HashSet<String>())
 // Fixture file names are Unicode ("[钠] sodium-fabric-….jar"). A JVM started under the C/POSIX locale cannot encode
@@ -680,7 +712,7 @@ tasks.withType(Test).configureEach {
 tasks.register('integrationTest') {
 	group = 'verification'
 	description = 'Run unit, transfer and tool tests strictly: missing game inputs or skipped assertions fail.'
-	dependsOn 'test', 'transferTest', 'toolTest', 'linkToolTest'
+	dependsOn 'test', 'transferTest', 'toolTest', 'installerTest'
 	doFirst {
 		if (!stagedGameComplete) throw new GradleException('integrationTest needs prepareDev first')
 	}

@@ -19,7 +19,6 @@ tasks.withType(JavaCompile).configureEach {
 // embed Mojang's and NeoForge's code, so they are never bundled — the installer builds them on the player's
 // machine (ArtifactBuilder), or takes a developer's build (--artifacts, GameArtifacts).
 def kernelDir = file('../forbric-kernel')
-def loaderDir = file('../forbric-loader')
 // Read from each module's own build file rather than spelled out here. The four literals this replaces named
 // `-0.1.0-SNAPSHOT` jars that forbric-loader stopped writing when it dropped the suffix, so every installer
 // built since bundled whatever stale jar was still lying in build/libs, and a clean clone could not build at
@@ -31,16 +30,14 @@ def moduleVersion = { File dir ->
 }
 def kernelJar  = { "forbric-kernel-${moduleVersion(kernelDir)}.jar" }
 def genResources = layout.buildDirectory.dir('generated-resources')
-// The merge-tools jar rides in EVERY build, slim included, for the one tool the installer still runs from it: the
-// link checker (LinkCheckTool), which every install runs over the base and the NeoForge runtime. It is under
-// 600 KB; fetching it over the network would add a way for the install to fail before it starts.
-def genTools = layout.buildDirectory.dir('generated-tools')
+// The kernel's link checker rides in EVERY build, slim included, as one standalone jar (its classes and ASM's core):
+// every install runs it over the base and the NeoForge runtime (LinkCheckTool) before it stages any of Forbric's jars,
+// so a slim installer could not take it from the kernel jar it has not fetched yet. It is under 200 KB.
+def genLinkCheck = layout.buildDirectory.dir('generated-link-check')
 def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
-// The reviewed link baseline the merge-tools jar carries: the same file build-merged-base.sh and gate-m0 read. The
-// installer itself no longer judges against it (LinkCheckTool requires zero dangling references on the genuine pair);
-// bundleTools still refuses a jar that carries another one, so the jar it ships is the one the tree builds.
-def linkBaseline = file("${loaderDir}/src/test/resources/merge/link-check-baseline.txt")
-def mergeToolsJar = file("${loaderDir}/build/libs/forbric-merge-tools-0.1.0.jar")
+// What the kernel's :linkCheckJar writes, and the checker's sources: a change to either must reach the installer.
+def linkCheckJar = file("${kernelDir}/build/link-check/forbric-link-check.jar")
+def linkCheckSources = file("${kernelDir}/src/main/java/net/forbric/kernel/linkcheck")
 
 tasks.register('buildForbricJars', Exec) {
 	description = "Build the kernel jar the installer bundles."
@@ -51,22 +48,33 @@ tasks.register('buildForbricJars', Exec) {
 	outputs.dir("${kernelDir}/build/libs")
 }
 
-// The merge tools, shaded with the ASM they need. Not a library of the installer's — its link checker is run as a
-// subprocess, so the jar travels as a resource and is unpacked.
-tasks.register('buildMergeTools', Exec) {
-	description = "Build the merge-tools jar whose link checker the installer ships and runs."
-	workingDir loaderDir
-	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'mergeToolsJar'] : ['./gradlew', 'mergeToolsJar'])
-	inputs.dir("${loaderDir}/src/tools")
-	inputs.file("${loaderDir}/build.gradle")
-	// The baseline rides in this jar but lives under src/test/resources, which the two inputs above do not
-	// cover: a baseline-only change left this task UP-TO-DATE and the installer shipping the previous baseline,
-	// so players' installs judged the merge against a different list than every gate in the tree (when installs
-	// still built the merged base).
-	inputs.file(linkBaseline).withPropertyName('linkBaseline')
-	// The one file this task makes. Declaring the shared build/libs let the loader-jar task's output decide whether
-	// this task was up to date.
-	outputs.file(mergeToolsJar)
+// The kernel's link checker as one jar, built from the kernel tree (net.forbric.kernel.linkcheck), shaded with ASM's
+// core. Not a library of the installer's: it is run as a subprocess, so the jar travels as a resource and is unpacked.
+tasks.register('buildLinkCheck', Exec) {
+	description = "Build the kernel's standalone link-checker jar the installer ships and runs."
+	workingDir kernelDir
+	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'linkCheckJar'] : ['./gradlew', 'linkCheckJar'])
+	inputs.dir(linkCheckSources).withPropertyName('linkCheckSources')
+	inputs.file("${kernelDir}/build.gradle")
+	inputs.file("${kernelDir}/gradle.properties").withPropertyName('asmVersion')
+	// The one file this task makes; the kernel's build/libs is shared with tasks whose outputs must not decide this one.
+	outputs.file(linkCheckJar)
+}
+
+tasks.register('bundleLinkCheck') {
+	description = "Copy the kernel's link-checker jar into the installer's resources."
+	dependsOn 'buildLinkCheck'
+	inputs.file(linkCheckJar).withPropertyName('linkCheck').withPathSensitivity(PathSensitivity.NONE)
+	outputs.dir(genLinkCheck)
+	doLast {
+		if (!linkCheckJar.isFile()) throw new GradleException("missing ${linkCheckJar} — run the kernel's :linkCheckJar")
+		def outDir = genLinkCheck.get().asFile
+		outDir.deleteDir()
+		def dest = new File(outDir, 'forbric/tools/forbric-link-check.jar')
+		dest.parentFile.mkdirs()
+		dest.bytes = linkCheckJar.bytes
+		println "bundleLinkCheck → ${linkCheckJar.length().intdiv(1024)} KB"
+	}
 }
 
 // Development preparation needs the artifact builder and the link checker, not a player payload or Fabric substrate.
@@ -74,61 +82,47 @@ tasks.register('buildMergeTools', Exec) {
 tasks.register('devToolsJar', Jar) {
 	group = 'development'
 	description = 'Build the portable development artifact preparer without the player payload.'
-	dependsOn 'compileJava', 'buildMergeTools'
+	dependsOn 'compileJava', 'bundleLinkCheck'
 	archiveFileName = 'forbric-dev-tools.jar'
 	from sourceSets.main.output.classesDirs
-	into('forbric/tools') {
-		from(mergeToolsJar) { rename '.*', 'forbric-merge-tools.jar' }
-	}
+	from genLinkCheck
 	manifest { attributes 'Main-Class': 'net.forbric.installer.kernel.DevPrepare' }
 }
 
-def linkGateClasses = tasks.register('compileLinkGateTest', JavaCompile) {
-	dependsOn 'compileJava'
-	// The supplied-artifact content check and the window's path fields ride along: the gate's main calls both, so
-	// every runner of linkGateTest (CI, the kernel's linkToolTest) exercises them too.
-	source = fileTree('src/test/java') {
-		include '**/BaseLinkGateTest.java', '**/SuppliedArtifactContentTest.java',
-				'**/InstallerWindowInputTest.java', '**/MinecraftLibrariesTest.java', '**/VanillaReferenceTest.java',
-				'**/BaseCoordinatePinTest.java', '**/DevPrepareRetiredTest.java', '**/ServerJarTest.java'
-	}
-	classpath = files(sourceSets.main.output.classesDirs)
-	destinationDirectory = layout.buildDirectory.dir('link-gate-classes')
-}
-tasks.register('linkGateTest', JavaExec) {
+// This module's tests are main() programs, not a JUnit suite: InstallerTests runs every *Test class under src/test/java
+// that has one, found by name, so a new test joins without an edit here. They need the checker as the installer carries
+// it (LinkCheckToolTest runs it as the install does), not the player payload processResources would build.
+tasks.register('installerTest', JavaExec) {
 	group = 'verification'
-	description = 'Exercise the packaged link gate with synthetic positive and negative controls.'
-	dependsOn linkGateClasses, 'devToolsJar'
-	classpath = files(linkGateClasses.flatMap { it.destinationDirectory },
-			tasks.named('devToolsJar').flatMap { it.archiveFile })
-	mainClass = 'net.forbric.installer.kernel.BaseLinkGateTest'
+	description = "Run the installer's tests: the packaged link check on synthetic jars, and every other *Test main."
+	dependsOn 'testClasses', 'bundleLinkCheck'
+	classpath = files(sourceSets.test.output.classesDirs, sourceSets.main.output.classesDirs, genLinkCheck)
+	mainClass = 'net.forbric.installer.kernel.InstallerTests'
 	doFirst {
-		def scratch = layout.buildDirectory.dir('link-gate-test').get().asFile
+		def scratch = layout.buildDirectory.dir('installer-test').get().asFile
 		scratch.deleteDir()
 		scratch.mkdirs()
-		args = [scratch.absolutePath]
+		args = [scratch.absolutePath] + sourceSets.test.output.classesDirs.files.collect { it.absolutePath }
 	}
 }
-tasks.named('check') { dependsOn 'linkGateTest' }
-// This module's tests are main() programs run by linkGateTest above, not a JUnit suite, so the stock test task
-// finds nothing to run -- which Gradle 9 makes a failure, and with it every `check` of this module.
+tasks.named('check') { dependsOn 'installerTest' }
+// The stock test task finds no JUnit tests here -- which Gradle 9 makes a failure, and with it every `check`.
 tasks.named('test') { failOnNoDiscoveredTests = false }
 
 tasks.register('bundleForbric') {
 	description = "Copy Forbric's own jars into the installer's resources, with a manifest describing them."
-	dependsOn 'buildForbricJars', 'buildMergeTools'
+	dependsOn 'buildForbricJars'
 	// Without these the task is "up to date" the moment its output directory exists, and the installer keeps
 	// shipping whichever kernel jar it bundled first — an install that silently predates the fix you just made.
-	inputs.files(
-			file("${kernelDir}/build/libs/${kernelJar()}"),
-			mergeToolsJar)
+	inputs.files(file("${kernelDir}/build/libs/${kernelJar()}"))
 			.withPropertyName('forbricJars')
 			.withPathSensitivity(PathSensitivity.NONE)
 	outputs.dir(genResources)
 	doLast {
 		// Clear the WHOLE output directory, not just forbric/libs. It once also held the merge-tools jar; when
 		// that moved to its own task the stale copy stayed behind and collided with the new one, which
-		// processResources reports as a duplicate entry rather than as the stale output it is.
+		// processResources reports as a duplicate entry rather than as the stale output it is. The link checker has
+		// its own directory (bundleLinkCheck) for the same reason.
 		def outDir = genResources.get().asFile
 		outDir.deleteDir()
 		def libsRoot = new File(outDir, 'forbric/libs')
@@ -180,40 +174,10 @@ tasks.register('bundleForbric') {
 	}
 }
 
-// The merge-tools jar is staged, never listed in the libraries manifest: it is a tool the installer runs as a
-// subprocess (the link checker), not something the installed profile puts on a classpath.
-tasks.register('bundleTools') {
-	description = "Copy the merge-tools jar into the installer's resources."
-	dependsOn 'buildMergeTools'
-	// The loader dropped the -SNAPSHOT qualifier at 0.1.0, so this is the name :mergeToolsJar writes. Asking
-	// for the old one still "worked" for as long as a jar built before that release sat in build/libs: the
-	// bundled tools would have been whatever was last built under the old name, silently, forever.
-	inputs.file(mergeToolsJar)
-			.withPropertyName('mergeTools').withPathSensitivity(PathSensitivity.NONE)
-	inputs.file(linkBaseline).withPropertyName('linkBaseline').withPathSensitivity(PathSensitivity.NONE)
-	outputs.dir(genTools)
-	doLast {
-		def src = mergeToolsJar
-		if (!src.isFile()) throw new GradleException("missing ${src} — build it first")
-		// The jar shipped must be the one the tree builds: a stale jar (its baseline is the cheapest tell) is refused
-		// here rather than shipped. The installer no longer reads the baseline itself.
-		def packed = new java.util.zip.ZipFile(src).withCloseable { zip ->
-			def entry = zip.getEntry('net/forbric/tools/link-check-baseline.txt')
-			entry == null ? null : zip.getInputStream(entry).bytes
-		}
-		if (packed == null || !Arrays.equals(packed, linkBaseline.bytes)) {
-			throw new GradleException("${src} carries ${packed == null ? 'no' : 'a different'} link baseline than"
-					+ " ${linkBaseline}; rebuild it (:forbric-loader:mergeToolsJar) before bundling")
-		}
-		def dest = new File(genTools.get().asFile, 'forbric/tools/forbric-merge-tools.jar')
-		dest.parentFile.mkdirs()
-		dest.bytes = src.bytes
-		println "bundleTools → ${src.length() / 1024} KB"
-	}
-}
-
-sourceSets.main.resources.srcDir genTools
-processResources.dependsOn 'bundleTools'
+// The link checker is staged, never listed in the libraries manifest: it is a tool the installer runs as a subprocess,
+// not something the installed profile puts on a classpath.
+sourceSets.main.resources.srcDir genLinkCheck
+processResources.dependsOn 'bundleLinkCheck'
 
 // A slim installer carries no library payload and downloads it from the release at install time. The bundled
 // build stays the default because it is the one that works with no network.
@@ -254,10 +218,11 @@ if (project.hasProperty('releasePin')) {
 //
 // What is published must be what was accepted. releaseAssets therefore takes the release acceptance's evidence
 // manifests (evidence.py run --release, comma-separated) and refuses to write any asset unless
-// `evidence.py release-check` finds them all passed, bound to one candidate, and the kernel and merge-tools jars
-// about to ship byte-identical to the accepted ones. Forbric's loader jars are not acceptance roles and are not
-// compared; the game artifacts are built on each player's machine and do not reproduce byte for byte (zip entry
-// times), so for them the installer's link check is the gate.
+// `evidence.py release-check` finds them all passed, bound to one candidate, and the kernel jar about to ship
+// byte-identical to the accepted one. The kernel's third-party libraries are published as the pinned Maven artifacts
+// they are and are not compared. The game artifacts are never published: each player's installer builds them from
+// Mojang's and NeoForge's files, so for them the installer's link check is the gate. That check is the kernel's own
+// (net.forbric.kernel.linkcheck, built into the installer by :bundleLinkCheck from the same tree), not an asset.
 //
 //   ./gradlew releaseAssets -PreleaseTag=v0.1.0 -PreleaseEvidence=build/evidence/release.json
 //   gh release create v0.1.0 build/release/assets/*
@@ -265,7 +230,7 @@ if (project.hasProperty('releasePin')) {
 //   gh release upload v0.1.0 build/libs/forbric-kernel-installer-*.jar
 tasks.register('releaseAssets') {
 	description = 'Write build/release/: the jars to attach to a GitHub release + the manifest the installer downloads.'
-	dependsOn 'bundleForbric', 'buildMergeTools'
+	dependsOn 'bundleForbric'
 	def repo = project.findProperty('releaseRepo') ?: 'https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader'
 	def outRoot = layout.buildDirectory.dir('release')
 	outputs.dir(outRoot)
@@ -285,8 +250,7 @@ tasks.register('releaseAssets') {
 		if (kernelLib == null) throw new GradleException("${staged} lists no forbric-kernel jar")
 		def check = ['python3', new File(kernelDir, 'run/compat/evidence.py').path, 'release-check']
 		(evidence as String).split(',').each { check += ['--manifest', file(it.trim()).path] }
-		check += ['--publish', "kernel=${new File(genResources.get().asFile, (kernelLib.resource as String).substring(1))}",
-				  '--publish', "merge-tools=${mergeToolsJar}"]
+		check += ['--publish', "kernel=${new File(genResources.get().asFile, (kernelLib.resource as String).substring(1))}"]
 		def checking = new ProcessBuilder(check.collect { it.toString() }).redirectErrorStream(true).start()
 		def verdict = checking.inputStream.text
 		if (checking.waitFor() != 0) {

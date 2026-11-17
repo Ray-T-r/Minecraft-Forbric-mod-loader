@@ -17,7 +17,7 @@ import java.util.zip.ZipOutputStream;
 /**
  * The vanilla-reference sidecar on synthetic jars: one row per vanilla class with its vanilla hash, vanilla bytes only for
  * the classes the base changed or lacks, no class files, the same bytes from the same inputs, and reuse only while both
- * inputs are the ones it records. It runs with no game inputs, in linkGateTest; the kernel's staged tests read the
+ * inputs are the ones it records. It runs with no game inputs, in installerTest; the kernel's staged tests read the
  * sidecar of the staged base.
  */
 public final class VanillaReferenceTest {

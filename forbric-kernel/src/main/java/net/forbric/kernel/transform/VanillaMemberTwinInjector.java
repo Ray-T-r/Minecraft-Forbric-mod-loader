@@ -434,4 +434,9 @@ public final class VanillaMemberTwinInjector implements ClassTransformer {
 	public int twinsAdded() {
 		return twins.get();
 	}
+
+	/** How many twins the injector has rows for: what {@link #twinsAdded} reaches once every row has landed. */
+	public static int rowCount() {
+		return ROWS.size();
+	}
 }
