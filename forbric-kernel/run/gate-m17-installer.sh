@@ -23,10 +23,9 @@
 # an install still does (D70): every install runs the link check from the checker jar the installer carries, unpacked over
 # whatever an earlier install left in .forbric-build/tools, and a reinstall over a full cache goes to the network for
 # nothing. D44 had C6 delete both; D70 found both premises live, and nothing else covers either (no unit test drives
-# LinkCheckTool's unpack, none denies an install the network), so they stay (D34, D89). Both follow the checker the
-# installer carries -- the merge tools' (forbric-merge-tools.jar) until C6's lane LINK, the kernel's own
-# (forbric-link-check.jar) after -- and once it is not the merge tools, an older install's merge-tools copy must be cleaned
-# away too.
+# LinkCheckTool's unpack, none denies an install the network), so they stay (D34, D89). Since C6 (LINK) the checker is
+# the kernel's own, forbric-link-check.jar: the installer must carry exactly that one and no forbric-merge-tools.jar, and an
+# older install's merge-tools copy must be cleaned away.
 #
 # Phase U (D6, D32, D44; C6): the new installer run over the install a player of the last public release has. The public
 # v0.3.1-beta2 installer jar (the owner allowed that one download, 2026-11-17) is fetched once into run/.gate-downloads/m17,
@@ -112,14 +111,11 @@ step "build the installer jar"
 # Offline and without a daemon, like every other Gradle run of a gate. kernel_jar (above) built the kernel jar the
 # installer bundles; the link checker it carries is built here by the module that owns it -- the kernel's linkCheckJar
 # since C6 (LINK), the loader's mergeToolsJar before -- and the installer's own nested builds of the two are left out
-# because they call gradlew online, and its bundle tasks fail loudly on a jar that is not there. Which one is asked of the
-# installer's build file, not assumed, so this gate runs on either side of that change.
+# because they call gradlew online, and its bundle tasks fail loudly on a jar that is not there.
 if grep -q "register('buildLinkCheck'" "$INSTALLER/build.gradle"; then
   CHECKER_DIR="$KERNEL"; CHECKER_TASK=linkCheckJar; CHECKER_NESTED=buildLinkCheck
-elif grep -q "register('buildMergeTools'" "$INSTALLER/build.gradle"; then
-  CHECKER_DIR="$KERNEL/../forbric-loader"; CHECKER_TASK=mergeToolsJar; CHECKER_NESTED=buildMergeTools
 else
-  echo "[kernel] FATAL: the installer's build file has neither buildLinkCheck nor buildMergeTools; re-point this step" >&2; exit 3
+  echo "[kernel] FATAL: the installer's build file has no buildLinkCheck task; re-point this step" >&2; exit 3
 fi
 if ! { (cd "$CHECKER_DIR" && ./gradlew --offline --no-daemon -q "$CHECKER_TASK") \
        && (cd "$INSTALLER" && ./gradlew --offline --no-daemon -q jar -x buildForbricJars -x "$CHECKER_NESTED"); } \
@@ -571,8 +567,9 @@ step "the link checker's tools jar is not served from the previous install (must
 CHECKERS="$(unzip -Z1 "$JAR" 2>/dev/null | grep -aE '^forbric/tools/[^/]+\.jar$')"
 WANT="$BUILD/gate-m17-tools-bundled.jar"
 rm -f "$WANT"
-if [ "$(printf '%s\n' "$CHECKERS" | grep -ac .)" != 1 ]; then
-  echo "[kernel] FAIL the installer carries one checker jar under forbric/tools/ (it carries: ${CHECKERS:-none})"; FAIL=$((FAIL+1))
+if [ "$CHECKERS" != forbric/tools/forbric-link-check.jar ]; then
+  echo "[kernel] FAIL the installer carries exactly one checker jar, forbric/tools/forbric-link-check.jar (it carries: $(printf '%s ' $CHECKERS | sed 's/ $//'))"
+  FAIL=$((FAIL+1))
   CHECKER=""
 else
   CHECKER="$(basename "$CHECKERS")"
@@ -586,7 +583,7 @@ elif [ ! -s "$TOOLS" ]; then
   echo "[kernel] FAIL the earlier installs left no $CHECKER in .forbric-build/tools"; FAIL=$((FAIL+1))
 else
   printf 'not a jar at all' > "$TOOLS"
-  [ "$CHECKER" = forbric-merge-tools.jar ] || printf 'an older installer left this' > "$OLD_MERGE_TOOLS"
+  printf 'an older installer left this' > "$OLD_MERGE_TOOLS"
   java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
   assert_eq "the reinstall over a spoiled $CHECKER exited cleanly" "0" "$?"
   REUSED=$(grep -acE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-4.log")
@@ -595,18 +592,12 @@ else
     "^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$" "$BUILD/gate-m17-install-4.log" 2
   assert_eq "the spoiled tool is replaced by the bundled one" \
     "$(shasum -a 1 "$WANT" | cut -d' ' -f1)" "$(shasum -a 1 "$TOOLS" | cut -d' ' -f1)"
-  if [ "$CHECKER" = forbric-merge-tools.jar ]; then
-    # The installer still runs its link checker from them, so the clean-up leaves them: nothing is removed.
-    check_exactly "and the clean-up left the tools jar this installer uses" \
-      "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-4.log" 1
-  else
-    [ ! -e "$OLD_MERGE_TOOLS" ] && echo "[kernel] PASS an older installer's merge-tools jar is cleaned away" \
-      || { echo "[kernel] FAIL an older installer's merge-tools jar survived an installer that carries none"; FAIL=$((FAIL+1)); }
-    check_exactly "and the install's log names it, and nothing else" \
-      "^\[cleanup\] removed .*/\.forbric-build/tools/forbric-merge-tools\.jar " "$BUILD/gate-m17-install-4.log" 1
-    check_exactly "one file removed in all" "^\[cleanup\] removed 1 file\(s\) an older Forbric left behind" \
-      "$BUILD/gate-m17-install-4.log" 1
-  fi
+  [ ! -e "$OLD_MERGE_TOOLS" ] && echo "[kernel] PASS an older installer's merge-tools jar is cleaned away" \
+    || { echo "[kernel] FAIL an older installer's merge-tools jar survived an installer that carries none"; FAIL=$((FAIL+1)); }
+  check_exactly "and the install's log names it, and nothing else" \
+    "^\[cleanup\] removed .*/\.forbric-build/tools/forbric-merge-tools\.jar " "$BUILD/gate-m17-install-4.log" 1
+  check_exactly "one file removed in all" "^\[cleanup\] removed 1 file\(s\) an older Forbric left behind" \
+    "$BUILD/gate-m17-install-4.log" 1
 fi
 
 step "an offline reinstall over that cache needs no network (must PASS)"
@@ -716,10 +707,9 @@ UP_CURRENT=(
   .forbric-build/out/neoforge-runtime.jar .forbric-build/out/neoforge-runtime.jar.pins
   .forbric-build/out/vanilla-reference-26.2.jar
 )
-# beta2 left its merge tools in tools/: this installer's checker replaces them when it is the merge tools, and the clean-up
-# removes them when it is not.
+# beta2 left its merge tools in tools/; this installer carries the kernel's checker instead, and the clean-up removes them.
 [ -n "$CHECKER" ] && UP_CURRENT+=(".forbric-build/tools/$CHECKER")
-[ "$CHECKER" = forbric-merge-tools.jar ] || UP_GONE+=(.forbric-build/tools/forbric-merge-tools.jar)
+UP_GONE+=(.forbric-build/tools/forbric-merge-tools.jar)
 UP_PRESENT_BEFORE=0
 for rel in "${UP_GONE[@]}" "${UP_KEPT_OLD[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_PRESENT_BEFORE=$((UP_PRESENT_BEFORE+1)); done
 assert_eq "the old layout holds every file phase U judges" "$(( ${#UP_GONE[@]} + ${#UP_KEPT_OLD[@]} ))" "$UP_PRESENT_BEFORE"
