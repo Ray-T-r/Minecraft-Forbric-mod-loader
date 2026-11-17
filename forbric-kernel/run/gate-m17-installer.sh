@@ -130,6 +130,10 @@ VERSION="$(sed -n "s/^version = '\(.*\)'$/\1/p" "$INSTALLER/build.gradle")"
 JAR="$INSTALLER/build/libs/forbric-kernel-installer-$VERSION.jar"
 [ -n "$VERSION" ] && [ -f "$JAR" ] || { echo "[kernel] FATAL: no installer jar for version '$VERSION' in $INSTALLER/build/libs" >&2; exit 2; }
 echo "[kernel] installer: $JAR ($(du -h "$JAR" | cut -f1))"
+# Every run of this installer below is asked for English: the clean-up's [cleanup] lines this gate reads follow the
+# installer JVM's language (InstallerText: Chinese for a zh locale), so on a host whose Java runs in Chinese the installer
+# prints "[cleanup] 已删除 ..." where the checks look for "[cleanup] removed ...". The Chinese lines are OldInstallCleanupTest's.
+INSTALLER_LANG=-Dforbric.dialogLanguage=en
 
 step "install into an empty directory"
 rm -rf "$DEST"
@@ -150,7 +154,7 @@ fi
 # The base version is copied rather than re-downloaded: this gate is about the installer, not about Mojang's CDN.
 mkdir -p "$DEST/versions/26.2"
 cp "$MC/versions/26.2/26.2.json" "$MC/versions/26.2/26.2.jar" "$DEST/versions/26.2/" 2>/dev/null || true
-java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$LOG" 2>&1
+java "$INSTALLER_LANG" -jar "$JAR" --dir "$DEST" --mc 26.2 > "$LOG" 2>&1
 INSTALL_RC=$?
 sed 's/^/[kernel]   /' "$LOG" | cut -c1-180
 
@@ -526,7 +530,7 @@ fi
 # These two phases run LAST on purpose: the second one rebuilds an artifact, and nothing downstream should be
 # resolved from a half-refreshed cache.
 step "a second install into the same directory reuses what is already built"
-java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
+java "$INSTALLER_LANG" -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
 # Two built artifacts since C1: the NeoForge runtime and NeoForm's patched game (six on the merged base).
 REUSED=$(grep -cE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-2.log")
 assert_eq "every artifact came from the cache" "2" "$REUSED"
@@ -545,7 +549,7 @@ if [ ! -f "$NR_STAMP" ]; then
   echo "[kernel] FAIL no stamp beside neoforge-runtime.jar — nothing records what built it"; FAIL=$((FAIL+1))
 else
   echo "mc=26.2 neoforge=PRETEND-OTHER nfrt=0 result=none" > "$NR_STAMP"
-  java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-3.log" 2>&1
+  java "$INSTALLER_LANG" -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-3.log" 2>&1
   check_absent "the stale artifact is rebuilt, not reused" "^\[neoforge-runtime\] up-to-date" \
     "$BUILD/gate-m17-install-3.log"
   check "and it says so"       "^\[neoforge-runtime\] (fetching|merging|wrote)" "$BUILD/gate-m17-install-3.log"
@@ -558,9 +562,12 @@ step "the link checker's tools jar is not served from the previous install (must
 # (ArtifactBuilder.build). LinkCheckTool overwrites its copy in .forbric-build/tools each time; it used to keep a copy that
 # was already there, and a rebuild then ran the PREVIOUS installer's tool -- a stale checker passes jars the current one
 # would refuse. So: spoil that copy, reinstall over the full cache, and the install must still pass the link check (it
-# cannot, from a file that is not a jar) and leave the bundled jar's bytes there. RED, measured (C5, 2026-11-09): an
-# installer built with the unpack keeping an existing file, run on a copy of this install with the same spoiled file, exits 1
-# ("Could not find or load main class net.forbric.tools.MergedLinkChecker").
+# cannot, from a file that is not a jar) and leave the bundled jar's bytes there. RED, measured on the kernel's checker
+# (C6, 2026-11-17): this tree's installer jar with LinkCheckTool's unpack keeping an existing file (only that class
+# replaced), run on a copy of this gate's install with forbric-link-check.jar spoiled the same way, exits 1 ("[link-check]
+# produced no summary line (exit 1)", "Could not find or load main class net.forbric.kernel.linkcheck.LinkCheck") and
+# leaves the spoiled file; the unchanged jar on another copy exits 0, both link checks "dangling references: 0", and puts
+# back the bundled bytes. (C5's measurement, 2026-11-09, was the same on the merge tools' MergedLinkChecker.)
 # (On the merged base this phase forced a merge to make the install ask for the tool; since C1 the link check asks.)
 # Since C6 the checker is the kernel's own (forbric-link-check.jar), and an older install's forbric-merge-tools.jar is one
 # more file nothing reads: it is planted here and must be cleaned away, by name in the log (OldInstallCleanup).
@@ -584,7 +591,7 @@ elif [ ! -s "$TOOLS" ]; then
 else
   printf 'not a jar at all' > "$TOOLS"
   printf 'an older installer left this' > "$OLD_MERGE_TOOLS"
-  java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
+  java "$INSTALLER_LANG" -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
   assert_eq "the reinstall over a spoiled $CHECKER exited cleanly" "0" "$?"
   REUSED=$(grep -acE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-4.log")
   assert_eq "it was served from the cache (both built artifacts up to date)" "2" "$REUSED"
@@ -613,7 +620,7 @@ step "an offline reinstall over that cache needs no network (must PASS)"
 # other fetch is caught by the dead proxy below, and the launcher-side library copy is the step above.)
 DEAD_PORT="$(python3 -c 'import socket; s=socket.socket(); s.bind(("127.0.0.1", 0)); print(s.getsockname()[1]); s.close()')"
 echo "[kernel] proxy 127.0.0.1:$DEAD_PORT (nothing listening)"
-java -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort="$DEAD_PORT" -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort="$DEAD_PORT" \
+java "$INSTALLER_LANG" -Dhttp.proxyHost=127.0.0.1 -Dhttp.proxyPort="$DEAD_PORT" -Dhttps.proxyHost=127.0.0.1 -Dhttps.proxyPort="$DEAD_PORT" \
   -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-5.log" 2>&1
 assert_eq "the offline reinstall exited cleanly" "0" "$?"
 REUSED=$(grep -acE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-5.log")
@@ -715,7 +722,7 @@ for rel in "${UP_GONE[@]}" "${UP_KEPT_OLD[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_
 assert_eq "the old layout holds every file phase U judges" "$(( ${#UP_GONE[@]} + ${#UP_KEPT_OLD[@]} ))" "$UP_PRESENT_BEFORE"
 
 step "phase U, reverse control: the same installer with its clean-up off leaves every old file (must PASS)"
-java -Dforbric.installerCleanup=off -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade-off.log" 2>&1
+java "$INSTALLER_LANG" -Dforbric.installerCleanup=off -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade-off.log" 2>&1
 assert_eq "the install over the old one exited cleanly" "0" "$?"
 check_exactly "its clean-up said it was off" "^\[cleanup\] off \(-Dforbric\.installerCleanup=off\)" "$BUILD/gate-m17-upgrade-off.log" 1
 # The old stamps name MinecraftForge and the merge tools: nothing of the old build is served as current.
@@ -748,7 +755,7 @@ echo "$UP_PROFILE_CHECKS"
 echo "$UP_PROFILE_CHECKS" | grep -q '^\[kernel\] PASS' || { echo "[kernel] FAIL the rewritten profile could not be read"; FAIL=1; }
 echo "$UP_PROFILE_CHECKS" | grep -q '^\[kernel\] FAIL' && FAIL=1
 step "phase U: the real install over the same directory cleans up (must PASS)"
-java -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade.log" 2>&1
+java "$INSTALLER_LANG" -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade.log" 2>&1
 assert_eq "the install exited cleanly" "0" "$?"
 for rel in "${UP_GONE[@]}"; do
   if [ -e "$DEST_UP/$rel" ]; then
@@ -774,9 +781,10 @@ for rel in "${UP_CURRENT[@]}"; do
     || { echo "[kernel] FAIL this install's own file is missing: $rel"; FAIL=1; }
 done
 # Only .forbric-build's own level, out/ and tools/: NFRT's caches and work tree hold names of their own (an "ats" among
-# them) that are not an older installer's.
+# them) that are not an older installer's, and dl/ is the download cache, which the clean-up never touches (critic 19) --
+# it still holds beta2's MinecraftForge downloads (about 14 MiB) and is judged below only as unchanged. The line says so.
 LEFT=$(cd "$UB" && { ls -1; ls -1 out tools 2>/dev/null; } | grep -aE '^(patched-mc-merged|forge-runtime|patched-mc-forge|merge-conflicts\.txt$|server-main\.jar$|clean\.jar$|patched-(subset|full|at)\.jar$|joined\.lzma$|ats$)' | tr '\n' ' ')
-assert_eq ".forbric-build holds no MinecraftForge or merged product" "" "$LEFT"
+assert_eq ".forbric-build's top level, out/ and tools/ hold no MinecraftForge or merged product (dl/ and NFRT's caches are not judged here)" "" "$LEFT"
 dl_files > "$BUILD/gate-m17-upgrade-dl-after.txt"
 DL_CHANGED=$(LC_ALL=C comm -23 "$BUILD/gate-m17-upgrade-dl-before.txt" "$BUILD/gate-m17-upgrade-dl-after.txt" | wc -l | tr -d ' ')
 assert_eq "dl/ is untouched: every file an older installer cached there is still there, unchanged ($(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') files)" "0" "$DL_CHANGED"
