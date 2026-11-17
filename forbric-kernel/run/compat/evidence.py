@@ -47,7 +47,8 @@ STAGED_BUILD_INPUTS = {"neo-patched": "neoforge-patched/patched-mc-neoforge-26.2
                        "neo-runtime": "neoforge-runtime/neoforge-runtime.jar",
                        "sidecar": "vanilla-reference/vanilla-reference-26.2.jar"}
 
-# The staged inputs DevPrepare builds and stamps (<jar>.pins: the installer's Pins.stamp() then its tools digest). The
+# The staged inputs DevPrepare builds and stamps (<jar>.pins: the installer's Pins.stamp(); a stamp written before C6
+# also carries the merge tools' digest after it, and only its mc= and neoforge= values are judged). The
 # base declares no NeoForge version of its own (its version.json says only 26.2, and the patched game of another NeoForge
 # can be byte-identical), so the stamp is the one record of which NeoForge built it; a release requires both stamps to
 # name the pinned platform (check_staged_build_stamps).

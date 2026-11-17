@@ -202,7 +202,8 @@ def artifact_versions(pins_java=None):
 def pins_stamp(pins_java=None):
     """The installer's Pins.stamp() (Pins.java), read as tools/dev.py reads it: 'mc=… neoforge=… nfrt=… result=…'.
 
-    DevPrepare writes it, followed by the tools digest, into the build stamp beside each artifact it builds."""
+    DevPrepare writes it as the build stamp beside each artifact it builds (a stamp written before C6 also carries the
+    merge tools' digest after it)."""
     value = {name: java_pin(name, pins_java) for name in ('MINECRAFT', 'NEOFORGE', 'NFRT', 'NFRT_RESULT')}
     return f"mc={value['MINECRAFT']} neoforge={value['NEOFORGE']} nfrt={value['NFRT']} result={value['NFRT_RESULT']}"
 
