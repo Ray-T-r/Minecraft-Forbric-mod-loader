@@ -53,19 +53,20 @@ def run_blocks(workflow):
 
 
 def gradle_invocations(block):
-    """(project directory relative to the root, tasks, -P properties) for each Gradle wrapper call in one run block.
+    """(project directory relative to the root, tasks, -P properties, --tests filters) for each Gradle wrapper call in
+    one run block.
 
     The directory follows the block's `cd`s (one inside a `( … )` subshell holds for that line only) and `-p`."""
     calls, cwd = [], Path('.')
     for line in block.split('\n'):
         line_cwd = cwd
-        for match in re.finditer(r'(\(\s*)?\bcd\s+([^\s;&|)]+)|(\S*gradlew(?:\.bat)?)([^;&|)"\n]*)', line):
+        for match in re.finditer(r'(\(\s*)?\bcd\s+([^\s;&|)]+)|(\S*gradlew(?:\.bat)?)((?:[^;&|)"\'\n]|"[^"\n]*"|\'[^\'\n]*\')*)', line):
             if match.group(2):
                 line_cwd = line_cwd / match.group(2)
                 if not match.group(1):
                     cwd = line_cwd
                 continue
-            words, project, tasks, properties, index = shlex.split(match.group(4)), line_cwd, [], {}, 0
+            words, project, tasks, properties, filters, index = shlex.split(match.group(4)), line_cwd, [], {}, [], 0
             while index < len(words):
                 word = words[index]
                 if word in VALUE_OPTIONS and index + 1 < len(words):
@@ -73,6 +74,8 @@ def gradle_invocations(block):
                         project = line_cwd / words[index + 1]
                     elif word in ('-x', '--exclude-task'):
                         tasks.append(words[index + 1])
+                    elif word == '--tests':
+                        filters.append(words[index + 1])
                     index += 2
                     continue
                 if word.startswith('-P'):
@@ -82,7 +85,7 @@ def gradle_invocations(block):
                     tasks.append(word)
                 index += 1
             calls.append((Path(*[part for part in project.parts if part != '.']) if project.parts else Path('.'),
-                          tasks, properties))
+                          tasks, properties, filters))
     return calls
 
 
@@ -100,6 +103,25 @@ def known_tasks(build_file):
         names.update({f'{source_set}Classes', f'compile{capital}Java', f'process{capital}Resources'})
     names.update('clean' + name[0].upper() + name[1:] for name in list(names))
     return names
+
+
+def source_classes(project_dir):
+    """Fully qualified names of the classes a project's source sets hold (src/<set>/java/**/<Class>.java)."""
+    names = set()
+    for source_root in project_dir.glob('src/*/java'):
+        names.update('.'.join(file.relative_to(source_root).with_suffix('').parts) for file in source_root.rglob('*.java'))
+    return names
+
+
+def filter_matches(pattern, classes):
+    """Whether a --tests filter selects a class of `classes`, as Gradle reads it: `*` is a wildcard, a pattern that
+    starts with an upper-case letter names a simple class name, and a trailing `.method` (or method pattern) is allowed.
+    Only the class part is checked: methods are not indexed, and a class that is gone is what a stale filter names."""
+    simple = pattern[:1].isupper()
+    # The whole pattern names a class, or all but its last `.part`, which is then a method (pattern).
+    class_parts = [pattern] + ([pattern.rsplit('.', 1)[0]] if '.' in pattern else [])
+    regexes = [re.compile('.*'.join(re.escape(piece) for piece in part.split('*'))) for part in class_parts]
+    return any(regex.fullmatch(name.rsplit('.', 1)[-1] if simple else name) for regex in regexes for name in classes)
 
 
 def path_words(text):
@@ -125,7 +147,7 @@ def stale_references(workflow, root=ROOT):
     for block in blocks:
         loops.update(loop_values(block))
         directories.update(Path(target) for target in re.findall(r'\bcd\s+([^\s;&|)]+)', block))
-        for project, tasks, properties in gradle_invocations(block):
+        for project, tasks, properties, filters in gradle_invocations(block):
             build_file = root / project / 'build.gradle'
             if not build_file.is_file():
                 problems.append(f'Gradle runs in {project}, which has no build.gradle')
@@ -133,6 +155,10 @@ def stale_references(workflow, root=ROOT):
             build_text = build_file.read_text(encoding='utf-8')
             known = known_tasks(build_file)
             problems += [f'{project}: task {task} does not exist' for task in tasks if task not in known]
+            # Gradle fails a run whose filter selects nothing, but only after building; the contract says which.
+            classes = source_classes(root / project) if filters else set()
+            problems += [f'{project}: --tests {pattern} selects no class of its sources' for pattern in filters
+                         if not filter_matches(pattern, classes)]
             for name, value in properties.items():
                 if f"'{name}'" not in build_text and f'"{name}"' not in build_text:
                     problems.append(f'{project}: -P{name} is read by nothing in its build.gradle')
@@ -189,7 +215,9 @@ class CiContractTest(unittest.TestCase):
             '      # Reads forbric-kernel/src/test/skip-baseline/ci-unstaged.tsv and forbric-kernel/no-such-dir/.',
             '      - name: one',
             '        run: cd forbric-kernel && ./gradlew jar noSuchTask -x alsoNoSuchTask -Pforbric.skipBaseline=no-such-profile'
-            ' -Pforbric.noSuchProperty -Pforbric.requireTransfer=true',
+            ' -Pforbric.noSuchProperty -Pforbric.requireTransfer=true --tests net.forbric.tools.NoSuchGoneTest'
+            ' --tests net.forbric.kernel.boot.LaunchInputCheckTest --tests "*InputCheck*" --tests LaunchInputCheckTest.someMethod'
+            " --tests '*NoSuchClassAnywhere*'",
             '      - name: two',
             '        run: ./forbric-kernel-installer/gradlew -p forbric-kernel-installer installerTest noSuchInstallerTask',
             '      - name: three',
@@ -211,6 +239,8 @@ class CiContractTest(unittest.TestCase):
             'forbric-kernel: task alsoNoSuchTask does not exist',
             'forbric-kernel: -Pforbric.noSuchProperty is read by nothing in its build.gradle',
             'forbric-kernel: skip baseline profile no-such-profile has no src/test/skip-baseline/no-such-profile.tsv',
+            'forbric-kernel: --tests net.forbric.tools.NoSuchGoneTest selects no class of its sources',
+            'forbric-kernel: --tests *NoSuchClassAnywhere* selects no class of its sources',
             'forbric-kernel-installer: task noSuchInstallerTask does not exist',
             # the subshell's cd held for its own line only, so this call runs at the root
             'Gradle runs in ., which has no build.gradle',
