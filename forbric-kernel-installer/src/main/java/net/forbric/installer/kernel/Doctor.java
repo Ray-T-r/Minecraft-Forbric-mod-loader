@@ -36,16 +36,21 @@ import java.util.function.Consumer;
 final class Doctor {
 
 	/**
-	 * Peak and resident disk, in megabytes, for a cold install.
+	 * Peak and resident disk, in megabytes (MiB), for a cold install: what the install itself puts in
+	 * {@code .forbric-build} and in the libraries it stages (Forbric's own under {@code net/forbric}, the kernel's few
+	 * dependencies), not the vanilla game and libraries a launcher already keeps.
 	 *
-	 * <p>Measured from the caches this project already produced rather than estimated, when the install still built
-	 * the merged base as well: NFRT's artifacts and intermediates for one version, the MinecraftForge download+work
-	 * trees, and six outputs. NeoForge alone needs less (its three outputs are about 68 MB of the old ~204 MB, and
-	 * the binary-patch path skips the decompiler), but that has not been measured cold yet, so the numbers below are
-	 * deliberately left high rather than guessed down.
+	 * <p>Measured on a cold NeoForge-only install (gate-m17's first install, sampled every second; Stage 4 C6, 2026-11-17):
+	 * nothing is deleted at the end of a build, so the peak is the resident size, give or take NFRT's work files. About
+	 * 470: NFRT's cache for one version (~250), the downloads (~71: the NeoForge userdev, universal and runtime libraries
+	 * and the 58 MB server jar), the three outputs in {@code out} (~66) and their staged copies in {@code libraries} (~70),
+	 * the tools (~6) and Forbric's jars (~9). Before Stage 4 the install also built MinecraftForge's game and runtime and
+	 * the merged base, and these numbers were 730 and 190 (estimated from earlier caches; what the 190 counted is not
+	 * recorded, and a NeoForge-only install alone keeps more than that, mostly NFRT's cache). An upgrade over such an install
+	 * holds the old files too until its last step, the clean-up of what nothing uses any more ({@link OldInstallCleanup}).
 	 */
-	private static final int PEAK_MB = 730;
-	private static final int RESIDENT_MB = 190;
+	private static final int PEAK_MB = 480;
+	private static final int RESIDENT_MB = 470;
 
 	private final Consumer<String> log;
 
