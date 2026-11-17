@@ -38,14 +38,6 @@ def stagedNeoRuntime   = new File(stagedRoot, 'neoforge-runtime/neoforge-runtime
 // kernel launches (--gameJar, --runtimeJar). There is no third: Forbric no longer has a MinecraftForge carrier.
 def stagedGameJars = [stagedBase, stagedNeoRuntime].findAll { it.isFile() }
 def stagedGameComplete = stagedBase.isFile() && stagedNeoRuntime.isFile()
-// Retired with the MinecraftForge carrier (Stage 4): there is nothing left to hide, so a run that passes it measures
-// exactly what a run without it measures. Said out loud rather than ignored, so nobody reads such a run as the
-// hidden-carrier control it used to be.
-if (project.hasProperty('forbric.hideForgeCarrier')) {
-	logger.warn('forbric.hideForgeCarrier is retired: Forbric no longer stages a MinecraftForge carrier, so this run '
-			+ 'is the ordinary suite, not a hidden-carrier control')
-}
-
 // Compile the transfer bridge against the exact API staged for the compatibility pack. These modules remain
 // supplied by the installed Fabric API mod; none is bundled in either kernel jar.
 //
@@ -677,7 +669,7 @@ tasks.register('linkCheckJar', Jar) {
 	}
 }
 // The installer's tests (its packaged link check on synthetic jars, and every other installer *Test main), run from the
-// kernel's `check` as linkToolTest ran the old link gate: without game inputs or bootstrap. The checker jar is built
+// kernel's `check` without game inputs or bootstrap. The checker jar is built
 // here and handed over (-x buildLinkCheck): the installer's own way to it is a nested build of this project, which must
 // not run inside this one.
 tasks.register('installerTest', Exec) {

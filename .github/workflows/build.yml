@@ -45,7 +45,7 @@ jobs:
 
   # The kernel is a second, independent build with its own wrapper. It is here for one specific reason:
   # forbric-kernel/build.gradle wires its GAME-side source set at CONFIGURATION time, and only when the
-  # staged game artifacts are present. Those artifacts embed Mojang/Forge/NeoForge code and are built on
+  # staged game artifacts are present. Those artifacts embed Mojang and NeoForge code and are built on
   # the user's own machine, so they are never in this repository and never on a runner -- which makes this
   # job the honest test of the claim that their absence costs a clean clone nothing. If that ever stops
   # being true, the boot jar silently ships without its game-side half, and this goes red instead.
@@ -66,7 +66,8 @@ jobs:
 
       # No bootstrap step: the kernel does not compile the fabric-loader substrate. It vendors the small
       # net.fabricmc.api surface it needs and is otherwise its own code.
-      # check now includes portable Python tools and the packaged link gate's negative controls.
+      # check also runs the portable Python tool tests (toolTest) and the installer's tests (installerTest), among them
+      # its packaged link check on synthetic jars.
       # This remains a boot-only check: the integrationTest task is for machines with prepared game fixtures.
       # Without game files about a third of the unit tests skip. skipBaseline holds that set to the committed
       # forbric-kernel/src/test/skip-baseline/ci-unstaged.tsv: a test that starts skipping turns this job red.
@@ -83,7 +84,7 @@ jobs:
           --results forbric-kernel/build/test-results --root "$GITHUB_WORKSPACE"
           --baseline forbric-kernel/src/test/skip-baseline/ci-unstaged.tsv >> "$GITHUB_STEP_SUMMARY"
 
-      # This runner has no Mojang, Forge or NeoForge bytes (the game-side set is not compiled), so the raw reports
+      # This runner has no Mojang or NeoForge bytes (the game-side set is not compiled), so the raw reports
       # are safe to publish: anyone can see which test skipped and why.
       - uses: actions/upload-artifact@v5
         if: always()
@@ -102,16 +103,15 @@ jobs:
           path: forbric-kernel/build/libs/*.jar
           if-no-files-found: error
 
-  # The same unit suite with the game files present, so the ~1000 tests the boot-only job has to skip run here.
-  # tools/dev.py prepare downloads Minecraft 26.2 from Mojang and the Forge / NeoForge userdev artifacts from their
-  # own mavens, and builds the merged base and carriers on this runner, the way Loom and NeoGradle prepare a CI
-  # workspace. Nothing derived from them leaves the runner: only upstream downloads are cached, the reports below are
+  # The same unit suite with the game files present, so the tests the boot-only job has to skip run here.
+  # tools/dev.py prepare downloads Minecraft 26.2 from Mojang and NeoForge's artifacts from its maven, and builds
+  # NeoForge's patched game, the NeoForge carrier and the vanilla reference on this runner, the way Loom and
+  # NeoGradle prepare a CI workspace. Nothing derived from them leaves the runner: only upstream downloads are cached, the reports below are
   # counts and test ids, and a guard refuses to upload any jar or JUnit XML (a failing bytecode comparison can print
   # disassembled game code into a test message).
   kernel-prepared:
     runs-on: ubuntu-latest
-    # 60 before the hidden-carrier pass, which runs the unit suite a second time (about 7 minutes on a laptop).
-    timeout-minutes: 75
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-java@v5
@@ -137,33 +137,10 @@ jobs:
       - name: Unit and transfer tests with the game files
         shell: bash
         run: cd forbric-kernel && ./gradlew jar test transferTest skipRatchet -Pforbric.skipBaseline=ci-prepared -Pforbric.requireTransfer=true -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25
-      # forbric-loader's merge-loss ratchet (MergedBaseHookLossRatchetTest) holds the merge to the platform calls the
-      # edit splice keeps. It reads a merged base together with the build record run/build-merged-base.sh writes
-      # beside it, which pairs the jar with its report; anywhere without one it skips, so this is the one place it
-      # runs. Build that base from the inputs prepared above into a stage of its own, and require it present.
-      - name: Merge-loss ratchet on the prepared inputs
-        shell: bash
-        env:
-          MC_DIR: ${{ github.workspace }}/forbric-kernel/.dev/minecraft
-        run: |
-          ./bootstrap.sh
-          staged="$GITHUB_WORKSPACE/forbric-kernel/.dev/staged/run"
-          ratchet="$RUNNER_TEMP/ratchet"
-          mkdir -p "$ratchet/run/merged-base"
-          ln -sfn "$staged/forge-patched" "$ratchet/run/forge-patched"
-          ln -sfn "$staged/neoforge-patched" "$ratchet/run/neoforge-patched"
-          (cd forbric-loader && ./gradlew -q toolsClasses)
-          FORGE="$staged/forge-patched/patched-mc-forge-26.2.jar" NEO="$staged/neoforge-patched/patched-mc-neoforge-26.2.jar" \
-          FORGE_RT="$staged/forge-runtime/forge-runtime.jar" NEO_RT="$staged/neoforge-runtime/neoforge-runtime.jar" \
-          OUT="$ratchet/run/merged-base/patched-mc-merged-26.2.jar" REPORT="$ratchet/run/merged-base/merge-conflicts.txt" \
-          FORGE_RT_PATCHED="$ratchet/run/merged-base/forge-runtime-interop.jar" \
-            bash forbric-loader/run/build-merged-base.sh
-          cd forbric-loader
-          FORBRIC_OLD="$ratchet" FORBRIC_COMPAT_FIXTURES_REQUIRED=1 ./gradlew test --tests net.forbric.tools.MergedBaseHookLossRatchetTest
       # Real dedicated servers through the kernel, on the same prepared files: a zero-mod boot (m1) and the gates whose
       # mods are canaries built from this repository's sources. m36 weaves real guest mixins in a running server and
       # checks what they did (its weave-level half also runs in the unit suite, see MixinOutcomeWeaveTest); m46 and m53
-      # check mixins written against vanilla that the merged game reshaped. Each gate writes eula.txt for its own
+      # check mixins written against vanilla that NeoForge's patched game reshaped. Each gate writes eula.txt for its own
       # throwaway server, as it does on a developer machine.
       - name: Server gates on the prepared files
         shell: bash
@@ -191,26 +168,6 @@ jobs:
           python tools/junit_report.py summary --title 'Kernel tests (game files prepared on this runner)'
           --results forbric-kernel/build/test-results --root "$GITHUB_WORKSPACE"
           --baseline forbric-kernel/src/test/skip-baseline/ci-prepared.tsv >> "$GITHUB_STEP_SUMMARY"
-      # The same unit suite as if the MinecraftForge carrier were not staged, which is the genuine NeoForge base's layout:
-      # -Pforbric.hideForgeCarrier hands the tests a mirror of the stage without forge-runtime/ or the merge's interop jar
-      # and keeps the carrier off every classpath a test runs with. A test that needs MinecraftForge skips as
-      # forge-carrier; one that fails here reaches the carrier without saying so. transferTest cannot load a class
-      # without it and is recorded as not executed. The fixture policy is the step above's, less the carrier it hides;
-      # ci-prepared-noforge.tsv then holds what moving off the carrier costs in skipped tests, and ratchets it. The
-      # results directory is the step above's, so it is cleared first: the summary must not read that run's transferTest.
-      - name: Unit tests with the MinecraftForge carrier hidden
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: |
-          rm -rf forbric-kernel/build/test-results
-          cd forbric-kernel && ./gradlew test transferTest skipRatchet -Pforbric.hideForgeCarrier -Pforbric.skipBaseline=ci-prepared-noforge -Pforbric.requireFixtures=staged,game-side,mc-libraries,java-25
-      - name: Test summary (MinecraftForge carrier hidden)
-        if: ${{ !cancelled() }}
-        shell: bash
-        run: >-
-          python tools/junit_report.py summary --title 'Kernel tests (game files prepared, MinecraftForge carrier hidden)'
-          --results forbric-kernel/build/test-results --root "$GITHUB_WORKSPACE"
-          --baseline forbric-kernel/src/test/skip-baseline/ci-prepared-noforge.tsv >> "$GITHUB_STEP_SUMMARY"
       - name: Refuse to publish game-derived files
         if: always()
         shell: bash
@@ -226,7 +183,8 @@ jobs:
           if-no-files-found: warn
           retention-days: 30
 
-  # Verify the new portable entry point and packaged merge link gate on each OS, without game downloads.
+  # Verify the portable entry point and the installer's tests (its packaged link check) on each OS, without game
+  # downloads.
   # Legacy Bash gate contracts remain covered by the Linux kernel job above.
   development-tools:
     strategy:
@@ -245,6 +203,8 @@ jobs:
           python-version: '3.12'
       - name: Portable development and evidence tool tests
         run: python tools/dev.py tool-test
-      - name: Packaged link gate positive and negative controls (no bootstrap)
+      # installerTest builds the kernel's link-checker jar (a nested kernel build, no game files), bundles it as the
+      # installer does, and runs every installer *Test main, the packaged link check's controls among them.
+      - name: Installer tests with the packaged link check (no bootstrap)
         shell: bash
-        run: ./forbric-kernel-installer/gradlew -p forbric-kernel-installer linkGateTest
+        run: ./forbric-kernel-installer/gradlew -p forbric-kernel-installer installerTest
