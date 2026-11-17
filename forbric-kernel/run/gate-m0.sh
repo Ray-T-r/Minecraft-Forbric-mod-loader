@@ -6,7 +6,9 @@
 #   3. kernel --scan produces well-formed JSON discovering Fabric and NeoForge mods, and no MinecraftForge mod, in both
 #      fixture sets (server-merged, client-merged: the names are the fixtures', Stage 5 renames them)
 #   4. the game links: the base and carrier as the kernel's first COREMOD pair hands them on, the kernel's game side and
-#      the helpers the step-1b launch generated -- existence, access levels, final, invokedynamic handles (D32)
+#      the helpers the step-1b launch generated -- existence, access levels and nest membership, final, a member's or
+#      class's kind (static or not, class or interface, abstract), invokedynamic handles (D32) -- against the launch's
+#      own class path, with every reference judged
 #   5. differential oracle: kernel parser ≡ independent ground-truth parser on the real mod sets, and its negative
 #      control (step 5b): with the kernel's refusals and set-asides withheld it fails on exactly those mods
 #   6. the evidence, soak and link-check tools' own tests, and the transfer-engine suite, all actually executed
@@ -224,8 +226,11 @@ done
 step "4. the game links (base, carrier, the kernel's game side, the helpers it generated)"
 # The link check of the game a launch assembles, reseeded on the genuine stage in C6 (D32): every reference the base, the
 # NeoForge carrier, the kernel's game side and the helper classes the step-1b launch generated make to one another must
-# link as the JVM links it -- the class and member exist, are accessible from the referring class, a final member is
-# not written or overridden, every invokedynamic bootstrap and method-handle constant resolves. The base and carrier are
+# link as the JVM links it -- the class and member exist, are accessible from the referring class (a nestmate only when
+# its host lists it), a final member is not written or overridden, a member or class is still of the kind the reference
+# expects (IncompatibleClassChangeError, InstantiationError), every invokedynamic bootstrap and method-handle constant
+# resolves. A helper Mixin synthesised is its target's nest member only in the target as Mixin wove it, so that one
+# attribute is taken from the capture's bytes of the target (GameLinkCheck). The base and carrier are
 # read as the kernel's first COREMOD pair (the vanilla twins, then the compat repairs) hands them on, so a reference to a
 # twin is judged against the twin as the game has it (Hud.extractHotbarAndDecorations exists there, and is private).
 # Helpers are the classes the capture holds that no input jar, library, the kernel's boot jar or fabric-api provides.
@@ -233,26 +238,38 @@ step "4. the game links (base, carrier, the kernel's game side, the helpers it g
 # LinkCheckTest and GameLinkStagedTest in step 2; step 6 holds step 2 to having run them.
 LINKLOG="$BUILD/gate-m0-link.log"
 [ -n "${KERNEL_CP:-}" ] || kernel_classpath
-MCLIBS="${MC_DIR:-$HOME/Library/Application Support/minecraft}/libraries"
+# The libraries are the ones the step-1b launch put on the game's class path, never a whole libraries folder (one folder
+# can hold several versions of a library and older Forbric jars, and the first one read would win): the Minecraft dir
+# that launch read (launch-kernel-server.sh's own default), whose version JSON GameLinkCheck resolves as that script does
+# (--minecraft), and the kernel's boot class path, which the launch puts on the same parent class path.
+GAME_MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
+BOOT_LIBS=()
+IFS=: read -ra BOOT_ENTRIES <<<"$KERNEL_CP"
+for entry in "${BOOT_ENTRIES[@]}"; do [ -n "$entry" ] && BOOT_LIBS+=(--lib "$entry"); done
 GAME_SIDE_JAR="$(ls "$BUILD"/libs/forbric-kernel-runtime-*.jar 2>/dev/null | head -1)"
 CAPTURE="$(ls -d "$DEFINED"/definitions-* 2>/dev/null | head -1)"
-if [ -z "$GAME_SIDE_JAR" ] || [ -z "$CAPTURE" ] || [ ! -d "$MCLIBS" ]; then
-  echo "[kernel] FAIL the link check has no inputs: game side '${GAME_SIDE_JAR}', capture '${CAPTURE}', libraries '$MCLIBS'"
+if [ -z "$GAME_SIDE_JAR" ] || [ -z "$CAPTURE" ] || [ ! -f "$GAME_MC/versions/26.2/26.2.json" ] || [ "${#BOOT_LIBS[@]}" -eq 0 ]; then
+  echo "[kernel] FAIL the link check has no inputs: game side '${GAME_SIDE_JAR}', capture '${CAPTURE}', version JSON" \
+    "'$GAME_MC/versions/26.2/26.2.json', boot class path entries ${#BOOT_LIBS[@]}"
   FAIL=1
 else
   java -cp "$KERNEL_CP" net.forbric.kernel.linkcheck.game.GameLinkCheck \
       --base "$RUN_OLD/neoforge-patched/patched-mc-neoforge-26.2.jar" \
       --carrier "$RUN_OLD/neoforge-runtime/neoforge-runtime.jar" \
       --sidecar "$RUN_OLD/vanilla-reference/vanilla-reference-26.2.jar" \
-      --game-side "$GAME_SIDE_JAR" --lib "$MCLIBS" \
+      --game-side "$GAME_SIDE_JAR" --minecraft "$GAME_MC" "${BOOT_LIBS[@]}" \
       --definitions "$CAPTURE" --known "$BUILD/libs/forbric-kernel-0.1.0-SNAPSHOT.jar" \
       --known "$KERNEL/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar" 2>&1 | filter_noise > "$LINKLOG"
-  grep -aE '^\[(MISSING_|CLASS_ACCESS|MEMBER_ACCESS|FINAL|INDY_)' "$LINKLOG" | head -20
-  grep -aE '^\[link-check\] (view|missing|loaded|generated helper)' "$LINKLOG"
-  check_exactly "the game links: nothing missing, inaccessible, final or unresolved in a method handle" \
+  grep -aE '^\[(MISSING_|CLASS_ACCESS|MEMBER_ACCESS|FINAL|INCOMPATIBLE|INDY_)' "$LINKLOG" | head -20
+  grep -aE '^\[link-check\] (view|missing|loaded|generated helper|nest member)' "$LINKLOG"
+  check_exactly "the game links: nothing missing, inaccessible, final, of another kind or unresolved in a method handle" \
     '^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$' "$LINKLOG" 1
-  check_exactly "the view is the launch's: every vanilla twin landed and every class was viewed" \
-    '^\[link-check\] view: [0-9]+ class\(es\) .* twins landed ([0-9]+) of \1; generated helpers scanned [0-9]+$' "$LINKLOG" 1
+  # With the launch's own class path every supertype is readable, so every reference is judged: a library the check was
+  # not given (or one the launch lacks) shows here as references it could only count.
+  check_exactly "every reference was judged: no supertype the launch's class path lacks" \
+    '^\[link-check\] loaded [0-9]+ classes .* 0 unresolvable through an unread supertype, .*; dangling references: [0-9]+$' "$LINKLOG" 1
+  check_exactly "the view is the launch's: every vanilla twin landed (at least one) and every class was viewed" \
+    '^\[link-check\] view: [0-9]+ class\(es\) .* twins landed ([1-9][0-9]*) of \1; generated helpers scanned [1-9][0-9]*$' "$LINKLOG" 1
   check "the launch's generated helpers were read from its capture and judged" '^\[link-check\] generated helper: ' "$LINKLOG"
 fi
 

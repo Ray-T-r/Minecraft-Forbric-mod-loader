@@ -72,7 +72,9 @@ import org.objectweb.asm.Type;
  *       {@code clone()} is always there). Catch types, {@code new}/casts/{@code instanceof}/array creation, {@code ldc}
  *       of a class, superclasses and interfaces are class references too;</li>
  *   <li>{@link Check#ACCESS} — the class referenced (public, or the same runtime package) and the member resolved,
- *       judged from the calling class: private (the same class or a nestmate, the Java 11 rule javac relies on),
+ *       judged from the calling class: private (the same class or a nestmate, the Java 11 rule javac relies on: one
+ *       nest host, which a class has only when its {@code NestHost} names a class of its package whose
+ *       {@code NestMembers} lists it back, else it is its own),
  *       package-private (the same package), protected (the same package, or a subclass of the declaring class whose
  *       instance access names a class related to the caller), public. This is what turns a member that is wider on
  *       one base and narrower on another into an {@code IllegalAccessError} before the game meets it. The scanned
@@ -80,6 +82,12 @@ import org.objectweb.asm.Type;
  *   <li>{@link Check#FINAL} — a write to a final field from another class (or, from class file version 53, from
  *       another method than the initializer), a class extending a final class, a method overriding an accessible
  *       final method;</li>
+ *   <li>{@link Check#KIND} — what the JVM refuses with {@code IncompatibleClassChangeError} or {@code InstantiationError}
+ *       when a class or member changed kind: a static instruction on an instance member or the reverse (JVMS 6.5
+ *       {@code getstatic}, {@code getfield}, {@code invokestatic}, {@code invokevirtual} ...), a class method reference
+ *       whose owner is an interface or an interface method reference whose owner is a class (JVMS 5.4.3.3, 5.4.3.4), a
+ *       superclass that is an interface or an interface that is a class (JVMS 5.3.5), {@code new} of an abstract class
+ *       or an interface;</li>
  *   <li>{@link Check#INDY} — every {@code invokedynamic} and every loaded constant that the JVM resolves as a method
  *       handle, a method type or a dynamic constant: its bootstrap method, each handle argument (field or method, by
  *       its kind, with the same existence, access and final rules as the instruction it stands for), each class and
@@ -98,14 +106,15 @@ import org.objectweb.asm.Type;
 public final class LinkCheck {
 
 	/** The checks, each of which can be switched off on its own (the red controls of its tests do exactly that). */
-	public enum Check { EXISTENCE, ACCESS, FINAL, INDY }
+	public enum Check { EXISTENCE, ACCESS, FINAL, KIND, INDY }
 
 	/** What a violation is, for its report line. */
 	public enum Kind {
 		MISSING_CLASS("missing class"), MISSING_FIELD("missing field"), MISSING_METHOD("missing method"),
 		CLASS_ACCESS("inaccessible class"), MEMBER_ACCESS("inaccessible member"), FINAL("final"),
-		INDY_MISSING("missing in a method handle"), INDY_ACCESS("inaccessible in a method handle"),
-		INDY_FINAL("final in a method handle");
+		INCOMPATIBLE("incompatible class change"), INDY_MISSING("missing in a method handle"),
+		INDY_ACCESS("inaccessible in a method handle"), INDY_FINAL("final in a method handle"),
+		INDY_INCOMPATIBLE("incompatible in a method handle");
 
 		final String label;
 
@@ -149,9 +158,10 @@ public final class LinkCheck {
 		public String breakdown() {
 			int missing = of(Kind.MISSING_CLASS).size() + of(Kind.MISSING_FIELD).size() + of(Kind.MISSING_METHOD).size();
 			int access = of(Kind.CLASS_ACCESS).size() + of(Kind.MEMBER_ACCESS).size();
-			int handles = of(Kind.INDY_MISSING).size() + of(Kind.INDY_ACCESS).size() + of(Kind.INDY_FINAL).size();
+			int handles = of(Kind.INDY_MISSING).size() + of(Kind.INDY_ACCESS).size() + of(Kind.INDY_FINAL).size()
+					+ of(Kind.INDY_INCOMPATIBLE).size();
 			return "[link-check] missing " + missing + ", inaccessible " + access + ", final " + of(Kind.FINAL).size()
-					+ ", in invokedynamic and method handles " + handles
+					+ ", incompatible " + of(Kind.INCOMPATIBLE).size() + ", in invokedynamic and method handles " + handles
 					+ (shadowed == 0 ? "" : "; " + shadowed + " class(es) shadowed by an earlier input, not scanned");
 		}
 	}
@@ -193,6 +203,7 @@ public final class LinkCheck {
 		final String superName;
 		final String[] interfaces;
 		String nestHost;
+		final Set<String> nestMembers = new HashSet<>();
 		final Map<String, Integer> fields = new HashMap<>();
 		final Map<String, Integer> methods = new LinkedHashMap<>();
 		final Source source;
@@ -212,8 +223,8 @@ public final class LinkCheck {
 			return (access & Opcodes.ACC_INTERFACE) != 0;
 		}
 
-		String host() {
-			return nestHost != null ? nestHost : name;
+		boolean isAbstract() {
+			return (access & (Opcodes.ACC_ABSTRACT | Opcodes.ACC_INTERFACE)) != 0;
 		}
 	}
 
@@ -227,6 +238,8 @@ public final class LinkCheck {
 	private final Set<String> runtimeMissing = new HashSet<>();
 	private final List<Violation> violations = new ArrayList<>();
 	private final Set<String> reported = new HashSet<>();
+	/** Nest members a host lists as the game defined it, beyond what its scanned bytes list ({@link #nestMember}). */
+	private final Map<String, Set<String>> definedNestMembers = new HashMap<>();
 	private int inputs;
 	private int shadowed;
 	private long judged;
@@ -263,6 +276,16 @@ public final class LinkCheck {
 	/** Adds one class's bytes, scanned and (when {@code judgedClass}) judged; an earlier definition of the name wins. */
 	public LinkCheck scanClass(byte[] bytes, boolean judgedClass) {
 		define(bytes, Source.SCANNED, judgedClass);
+		return this;
+	}
+
+	/**
+	 * Records that {@code host}, as the game defined it, lists {@code member} in its {@code NestMembers}, although the bytes
+	 * scanned for it do not: a class a transformer the check does not apply (Mixin) wove a nest member into, whose woven
+	 * bytes a definitions capture holds. Only that attribute is taken from the defined class; its members stay as scanned.
+	 */
+	public LinkCheck nestMember(String host, String member) {
+		definedNestMembers.computeIfAbsent(host, h -> new HashSet<>()).add(member);
 		return this;
 	}
 
@@ -325,6 +348,11 @@ public final class LinkCheck {
 			@Override
 			public void visitNestHost(String nestHost) {
 				out[0].nestHost = nestHost;
+			}
+
+			@Override
+			public void visitNestMember(String nestMember) {
+				out[0].nestMembers.add(nestMember);
 			}
 
 			@Override
@@ -539,8 +567,8 @@ public final class LinkCheck {
 		if ((access & Opcodes.ACC_PUBLIC) != 0) return true;
 		if ((access & Opcodes.ACC_PRIVATE) != 0) {
 			if (caller.name.equals(declarer.name)) return true;
-			// Nestmates (Java 11): one nest host. A class without NestHost is its own host.
-			return caller.host().equals(declarer.host());
+			// Nestmates (Java 11): one nest host.
+			return hostOf(caller).equals(hostOf(declarer));
 		}
 		if (samePackage(caller.name, declarer.name)) return true;
 		if ((access & Opcodes.ACC_PROTECTED) == 0) return false;
@@ -551,6 +579,20 @@ public final class LinkCheck {
 		if (down == null) return null;
 		if (down) return true;
 		return isSubclass(caller.name, symbolic);
+	}
+
+	/**
+	 * A class's nest host as the JVM validates it (JVMS 5.4.4, JDK 15+): the class its {@code NestHost} names, when that
+	 * class can be read, is in the same package and lists this one among its {@code NestMembers}; otherwise the class
+	 * itself (an invalid claim makes a class its own host, and private access across it fails).
+	 */
+	private String hostOf(Info c) {
+		if (c.nestHost == null || c.nestHost.equals(c.name)) return c.name;
+		Info host = lookup(c.nestHost);
+		if (host == null || !samePackage(host.name, c.name)) return c.name;
+		boolean listed = host.nestMembers.contains(c.name)
+				|| definedNestMembers.getOrDefault(host.name, Set.of()).contains(c.name);
+		return listed ? host.name : c.name;
 	}
 
 	// --- the scan --------------------------------------------------------------------------------------------------
@@ -574,8 +616,19 @@ public final class LinkCheck {
 
 	/** Superclass and interfaces: existence, access, a final superclass, and final methods this class overrides. */
 	private void checkHeader(Info c) {
-		if (c.superName != null) classReference(c, c.name, c.superName, false);
-		for (String itf : c.interfaces) classReference(c, c.name, itf, false);
+		if (c.superName != null && classReference(c, c.name, c.superName, false)) {
+			Info sup = lookup(c.superName);
+			if (options.on(Check.KIND) && sup != null && sup.judged && sup.isInterface()) {
+				report(Kind.INCOMPATIBLE, c.name, "CLASS " + sup.name, "its superclass is an interface");
+			}
+		}
+		for (String itf : c.interfaces) {
+			if (!classReference(c, c.name, itf, false)) continue;
+			Info i = lookup(itf);
+			if (options.on(Check.KIND) && i != null && i.judged && !i.isInterface()) {
+				report(Kind.INCOMPATIBLE, c.name, "CLASS " + i.name, "implemented as an interface, but it is a class");
+			}
+		}
 		if (!options.on(Check.FINAL) || c.superName == null) return;
 		Info sup = lookup(c.superName);
 		if (sup != null && sup.judged && (sup.access & Opcodes.ACC_FINAL) != 0) {
@@ -652,11 +705,11 @@ public final class LinkCheck {
 	}
 
 	/**
-	 * A field reference: {@code put} for a write, {@code isStatic} for the static form, {@code method} the referencing
-	 * method's name (the final-field rule depends on it).
+	 * A field reference: {@code put} for a write, {@code staticForm} for {@code getstatic}/{@code putstatic} (or the
+	 * handle kinds standing for them), {@code method} the referencing method's name (the final-field rule depends on it).
 	 */
 	private void fieldReference(Info caller, String from, String method, String owner, String name, String desc,
-			boolean put, boolean handle) {
+			boolean put, boolean staticForm, boolean handle) {
 		if (owner.startsWith("[")) return;
 		if (!classReference(caller, from, owner, handle)) return;
 		if (handle && !options.on(Check.INDY)) return;
@@ -680,8 +733,13 @@ public final class LinkCheck {
 				return;
 			}
 		}
+		boolean isStatic = (r.access & Opcodes.ACC_STATIC) != 0;
+		if (options.on(Check.KIND) && isStatic != staticForm) {
+			report(handle ? Kind.INDY_INCOMPATIBLE : Kind.INCOMPATIBLE, from, target, (staticForm ? "a static access of an"
+					+ " instance field" : "an instance access of a static field") + " in " + r.declarer.name);
+			return;
+		}
 		if (put && options.on(Check.FINAL) && (r.access & Opcodes.ACC_FINAL) != 0) {
-			boolean isStatic = (r.access & Opcodes.ACC_STATIC) != 0;
 			String initializer = isStatic ? "<clinit>" : "<init>";
 			String why = null;
 			if (!r.declarer.name.equals(caller.name)) why = "written from another class than " + r.declarer.name;
@@ -691,13 +749,26 @@ public final class LinkCheck {
 		}
 	}
 
-	/** A method reference, {@code itf} as the instruction (or handle) says. */
-	private void methodReference(Info caller, String from, String owner, String name, String desc, boolean itf, boolean handle) {
+	/**
+	 * A method reference, {@code itf} as the instruction (or handle) says (an InterfaceMethodref rather than a Methodref),
+	 * {@code staticForm} for {@code invokestatic} (or a handle of that kind).
+	 */
+	private void methodReference(Info caller, String from, String owner, String name, String desc, boolean itf,
+			boolean staticForm, boolean handle) {
 		if (owner.startsWith("[")) return; // clone() and Object's methods on an array: always there, always public
 		if (!classReference(caller, from, owner, handle)) return;
 		if (handle && !options.on(Check.INDY)) return;
 		if (scopeOf(owner) != Scope.JUDGED) return;
 		String target = "METHOD " + owner + "." + name + desc;
+		Kind incompatible = handle ? Kind.INDY_INCOMPATIBLE : Kind.INCOMPATIBLE;
+		Info ownerInfo = lookup(owner);
+		if (options.on(Check.KIND) && ownerInfo != null && ownerInfo.isInterface() != itf) {
+			// JVMS 5.4.3.3 / 5.4.3.4 step 1: the constant's kind must be the owner's, before anything is looked up.
+			judged++;
+			report(incompatible, from, target, itf ? "an interface method reference, but " + owner + " is a class"
+					: "a class method reference, but " + owner + " is an interface");
+			return;
+		}
 		Resolved r = resolveMethod(owner, name, desc, itf);
 		if (r == UNKNOWN) {
 			unresolved++;
@@ -714,7 +785,15 @@ public final class LinkCheck {
 		if (options.on(Check.ACCESS)) {
 			Boolean ok = memberAccessible(caller, r.declarer, r.access, owner);
 			if (ok == null) unresolved++;
-			else if (!ok) report(handle ? Kind.INDY_ACCESS : Kind.MEMBER_ACCESS, from, target, describe(r));
+			else if (!ok) {
+				report(handle ? Kind.INDY_ACCESS : Kind.MEMBER_ACCESS, from, target, describe(r));
+				return;
+			}
+		}
+		boolean isStatic = (r.access & Opcodes.ACC_STATIC) != 0;
+		if (options.on(Check.KIND) && isStatic != staticForm && !name.startsWith("<")) {
+			report(incompatible, from, target, (staticForm ? "a static call of an instance method" : "an instance call of a"
+					+ " static method") + " in " + r.declarer.name);
 		}
 	}
 
@@ -729,11 +808,12 @@ public final class LinkCheck {
 	private void handle(Info caller, String from, Handle h) {
 		if (!options.on(Check.INDY)) return;
 		switch (h.getTag()) {
-			case Opcodes.H_GETFIELD, Opcodes.H_GETSTATIC ->
-					fieldReference(caller, from, null, h.getOwner(), h.getName(), h.getDesc(), false, true);
-			case Opcodes.H_PUTFIELD, Opcodes.H_PUTSTATIC ->
-					fieldReference(caller, from, null, h.getOwner(), h.getName(), h.getDesc(), true, true);
-			default -> methodReference(caller, from, h.getOwner(), h.getName(), h.getDesc(), h.isInterface(), true);
+			case Opcodes.H_GETFIELD, Opcodes.H_GETSTATIC -> fieldReference(caller, from, null, h.getOwner(), h.getName(),
+					h.getDesc(), false, h.getTag() == Opcodes.H_GETSTATIC, true);
+			case Opcodes.H_PUTFIELD, Opcodes.H_PUTSTATIC -> fieldReference(caller, from, null, h.getOwner(), h.getName(),
+					h.getDesc(), true, h.getTag() == Opcodes.H_PUTSTATIC, true);
+			default -> methodReference(caller, from, h.getOwner(), h.getName(), h.getDesc(), h.isInterface(),
+					h.getTag() == Opcodes.H_INVOKESTATIC, true);
 		}
 	}
 
@@ -772,17 +852,23 @@ public final class LinkCheck {
 				@Override
 				public void visitFieldInsn(int opcode, String owner, String fieldName, String desc) {
 					fieldReference(caller, from, name, owner, fieldName, desc,
-							opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC, false);
+							opcode == Opcodes.PUTFIELD || opcode == Opcodes.PUTSTATIC,
+							opcode == Opcodes.GETSTATIC || opcode == Opcodes.PUTSTATIC, false);
 				}
 
 				@Override
 				public void visitMethodInsn(int opcode, String owner, String methodName, String desc, boolean itf) {
-					methodReference(caller, from, owner, methodName, desc, itf, false);
+					methodReference(caller, from, owner, methodName, desc, itf, opcode == Opcodes.INVOKESTATIC, false);
 				}
 
 				@Override
 				public void visitTypeInsn(int opcode, String type) {
-					classReference(caller, from, type, false);
+					if (!classReference(caller, from, type, false) || opcode != Opcodes.NEW || !options.on(Check.KIND)) return;
+					Info created = lookup(type);
+					if (created != null && created.judged && created.isAbstract()) {
+						report(Kind.INCOMPATIBLE, from, "CLASS " + type, "new of an " + (created.isInterface() ? "interface"
+								: "abstract class") + ": InstantiationError");
+					}
 				}
 
 				@Override

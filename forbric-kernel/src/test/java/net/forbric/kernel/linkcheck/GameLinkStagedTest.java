@@ -119,8 +119,10 @@ class GameLinkStagedTest {
 		Path runtime = Path.of("build/classes/java/runtime"), plugin = Path.of("build/classes/java/modMenuPlugin"),
 				standIn = Path.of("build/classes/java/modMenuApi");
 		TestFixtures.requireDirectory(Fixture.GAME_SIDE, "the kernel's compiled game side", runtime);
-		Path libraries = TestFixtures.minecraftDir().resolve("libraries");
-		TestFixtures.requireDirectory(Fixture.MC_LIBRARIES, "the game's libraries", libraries);
+		Path versionJson = TestFixtures.minecraftDir().resolve("versions/26.2/26.2.json");
+		TestFixtures.requireFiles(Fixture.MC_LIBRARIES, "the game's libraries, as its version JSON names them", versionJson);
+		// What a launch puts on the class path (the version JSON's exact coordinates), never the whole libraries folder.
+		List<Path> libraries = GameLinkCheck.launchLibraries(TestFixtures.minecraftDir());
 		List<Path> gameSide = new java.util.ArrayList<>(List.of(runtime));
 		for (Path optional : List.of(plugin, standIn)) if (Files.isDirectory(optional)) gameSide.add(optional);
 		gameSide.addAll(extraGameSide);
@@ -135,7 +137,7 @@ class GameLinkStagedTest {
 					return null;
 				}
 			});
-			return GameLinkCheck.check(new GameLinkCheck.Inputs(base, carrier, gameSide, List.of(libraries), null, List.of()),
+			return GameLinkCheck.check(new GameLinkCheck.Inputs(base, carrier, gameSide, libraries, null, List.of()),
 					vanilla, LinkCheck.Options.all());
 		} finally {
 			NativeGameReferences.configure(null);

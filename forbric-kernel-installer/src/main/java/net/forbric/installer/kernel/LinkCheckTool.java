@@ -29,8 +29,8 @@ import java.util.regex.Pattern;
 /**
  * Link-checks the game base against the NeoForge carrier before a profile may name them: every class, field and
  * method one of them refers to in the other, or in itself, must exist in one of the two and be accessible from the
- * class that refers to it, final members must not be written or overridden, and every invokedynamic bootstrap and
- * method-handle constant must resolve the same way (JVM semantics; see the kernel's
+ * class that refers to it, final members must not be written or overridden, a member or class must still be of the
+ * kind the reference expects, and every invokedynamic bootstrap and method-handle constant must resolve the same way (JVM semantics; see the kernel's
  * {@code net.forbric.kernel.linkcheck.LinkCheck}).
  *
  * <p>The checker is the kernel's own, built from the kernel tree into {@code forbric-link-check.jar} (its classes and
@@ -45,7 +45,7 @@ import java.util.regex.Pattern;
  * owner is a class of one of them ({@code --judge}): first the base's, then the carrier's. Together they judge every
  * reference into either jar, in both directions; apart, each verdict line says which jar a failure is in. The base is
  * given first in both, as the game's loader serves it first. Measured on NeoForge 26.2.0.93: 0 violations in either
- * run, under a second each.
+ * run, each taking about one to two seconds.
  *
  * <p>No baseline: NeoForge's patched game and its own carrier leave nothing dangling, so any violation is a defect and
  * fails the install (D10). Every kind counts in the one number the verdict line ends with.
@@ -62,7 +62,8 @@ final class LinkCheckTool {
 
 	/**
 	 * The checker's verdict line: {@code [link-check] loaded N classes (...); dangling references: K}, where K counts
-	 * every violation, missing, inaccessible, final and in method handles alike. Only K = 0 passes; a summary with
+	 * every violation, missing, inaccessible, final, of another kind (static or not, class or interface, abstract) and in
+	 * method handles alike. Only K = 0 passes; a summary with
 	 * anything after the count (the old checker's baseline form, {@code ... (known k, new n); ...}) does not match.
 	 */
 	private static final Pattern CLEAN = Pattern.compile("\\[link-check\\] loaded \\d+ classes .*; dangling references: 0");

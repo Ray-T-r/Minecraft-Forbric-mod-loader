@@ -87,6 +87,13 @@ class LinkCheckTest {
 			method(cw, ACC_STATIC, "pkg", "()V", mv -> { });
 			method(cw, ACC_PROTECTED | ACC_STATIC, "prot", "()V", mv -> { });
 			method(cw, ACC_PUBLIC, "inst", "()V", mv -> { });
+			field(cw, ACC_PUBLIC, "f", "I");
+		}));
+		out.put("p/Abs", cls("p/Abs", ACC_PUBLIC | ACC_ABSTRACT, null, cw -> ctor(cw, "java/lang/Object", ACC_PUBLIC)));
+		// A class a nest member names as its host, which does not list it back: the member is its own host (JDK 15+).
+		out.put("p/Lonely", cls("p/Lonely", ACC_PUBLIC, null, cw -> {
+			ctor(cw, "java/lang/Object", ACC_PUBLIC);
+			method(cw, ACC_PRIVATE | ACC_STATIC, "secret", "()V", mv -> { });
 		}));
 		out.put("p/Hidden", cls("p/Hidden", 0, null, cw -> {
 			ctor(cw, "java/lang/Object", ACC_PUBLIC);
@@ -201,6 +208,48 @@ class LinkCheckTest {
 				ACC_PUBLIC, "p/Hidden", cw -> method(cw, ACC_PUBLIC | ACC_STATIC, "run", "()V", mv -> { }))), "q/SubHidden",
 				Kind.CLASS_ACCESS, access,
 				IllegalAccessError.class, false));
+		cases.add(new Case("private access from a class whose nest host does not list it", Map.of("p/Lonely$Inner",
+				cls("p/Lonely$Inner", ACC_PUBLIC, null, cw -> {
+					cw.visitNestHost("p/Lonely");
+					ctor(cw, "java/lang/Object", ACC_PUBLIC);
+					method(cw, ACC_PUBLIC | ACC_STATIC, "run", "()V", mv -> mv.visitMethodInsn(INVOKESTATIC, "p/Lonely", "secret", "()V", false));
+				})), "p/Lonely$Inner", Kind.MEMBER_ACCESS, access, IllegalAccessError.class, false));
+		// A member or class that changed kind between two builds: IncompatibleClassChangeError, or InstantiationError.
+		Set<Check> kind = EnumSet.of(Check.KIND);
+		cases.add(red("static read of an instance field", Kind.INCOMPATIBLE, kind, IncompatibleClassChangeError.class, mv -> {
+			mv.visitFieldInsn(GETSTATIC, "p/A", "f", "I");
+			mv.visitInsn(POP);
+		}));
+		cases.add(red("instance read of a static field", Kind.INCOMPATIBLE, kind, IncompatibleClassChangeError.class, mv -> {
+			mv.visitInsn(ACONST_NULL);
+			mv.visitFieldInsn(GETFIELD, "p/A", "CONST", "I");
+			mv.visitInsn(POP);
+		}));
+		cases.add(red("static call of an instance method", Kind.INCOMPATIBLE, kind, IncompatibleClassChangeError.class,
+				mv -> mv.visitMethodInsn(INVOKESTATIC, "p/A", "inst", "()V", false)));
+		cases.add(red("instance call of a static method", Kind.INCOMPATIBLE, kind, IncompatibleClassChangeError.class, mv -> {
+			mv.visitInsn(ACONST_NULL);
+			mv.visitMethodInsn(INVOKEVIRTUAL, "p/A", "pub", "()V", false);
+		}));
+		cases.add(red("class method reference whose owner is an interface", Kind.INCOMPATIBLE, kind,
+				IncompatibleClassChangeError.class, mv -> mv.visitMethodInsn(INVOKESTATIC, "p/I", "s", "()V", false)));
+		cases.add(red("interface method reference whose owner is a class", Kind.INCOMPATIBLE, kind,
+				IncompatibleClassChangeError.class, mv -> {
+					mv.visitInsn(ACONST_NULL);
+					mv.visitMethodInsn(INVOKEINTERFACE, "p/A", "inst", "()V", true);
+				}));
+		cases.add(red("new of an abstract class", Kind.INCOMPATIBLE, kind, InstantiationError.class, mv -> {
+			mv.visitTypeInsn(NEW, "p/Abs");
+			mv.visitInsn(DUP);
+			mv.visitMethodInsn(INVOKESPECIAL, "p/Abs", "<init>", "()V", false);
+			mv.visitInsn(POP);
+		}));
+		cases.add(new Case("superclass that is an interface", Map.of("q/SubItf", cls("q/SubItf", ACC_PUBLIC, "p/I",
+				cw -> method(cw, ACC_PUBLIC | ACC_STATIC, "run", "()V", mv -> { }))), "q/SubItf", Kind.INCOMPATIBLE, kind,
+				IncompatibleClassChangeError.class, false));
+		cases.add(new Case("implements a class", Map.of("q/ImplCls", cls("q/ImplCls", ACC_PUBLIC, null,
+				cw -> method(cw, ACC_PUBLIC | ACC_STATIC, "run", "()V", mv -> { }), "p/A")), "q/ImplCls", Kind.INCOMPATIBLE,
+				kind, IncompatibleClassChangeError.class, false));
 		cases.add(red("write to another class's final field", Kind.FINAL, fin, IllegalAccessError.class, mv -> {
 			mv.visitInsn(ICONST_2);
 			mv.visitFieldInsn(PUTSTATIC, "p/A", "CONST", "I");
@@ -247,6 +296,11 @@ class LinkCheckTest {
 			mv.visitLdcInsn(new Handle(H_GETSTATIC, "p/A", "gone", "I", false));
 			mv.visitInsn(POP);
 		}));
+		cases.add(red("method handle constant calling an instance method as static", Kind.INDY_INCOMPATIBLE,
+				EnumSet.of(Check.INDY, Check.KIND), IncompatibleClassChangeError.class, mv -> {
+					mv.visitLdcInsn(new Handle(H_INVOKESTATIC, "p/A", "inst", "()V", false));
+					mv.visitInsn(POP);
+				}));
 		cases.add(red("method handle constant writing a final field", Kind.INDY_FINAL, EnumSet.of(Check.INDY, Check.FINAL),
 				IllegalAccessError.class, mv -> {
 					mv.visitLdcInsn(new Handle(H_PUTSTATIC, "p/A", "CONST", "I", false));
@@ -366,6 +420,41 @@ class LinkCheckTest {
 	}
 
 	/**
+	 * A host as the game defined it can list a nest member its scanned bytes do not (Mixin adds a helper it synthesises to
+	 * its target's NestMembers; GameLinkCheck takes that from a definitions capture): {@link LinkCheck#nestMember} records
+	 * it, and the JVM agrees once the host it defines lists the member. A member the host does not list stays refused.
+	 */
+	@Test void aNestMemberTheDefinedHostListsIsANestmate() {
+		Case lonely = redCases().stream().filter(c -> c.id().startsWith("private access from a class whose nest host"))
+				.findFirst().orElseThrow();
+		assertEquals(1, nestCheck(lonely, "p/Someone$Else").violations().size(), "a member the host does not list");
+		assertEquals(List.of(), nestCheck(lonely, "p/Lonely$Inner").violations());
+		Map<String, byte[]> defined = new LinkedHashMap<>(lonely.classes());
+		defined.put("p/Lonely", withNestMember(providers().get("p/Lonely"), "p/Lonely$Inner"));
+		assertNull(runInJvm(new Case(lonely.id(), defined, lonely.caller(), null, Set.of(), null, false)),
+				"the JVM refused a nest member its defined host lists");
+	}
+
+	private static LinkCheck.Result nestCheck(Case c, String member) {
+		LinkCheck check = new LinkCheck();
+		c.classes().values().forEach(b -> check.scanClass(b, true));
+		providers().values().forEach(b -> check.scanClass(b, true));
+		return check.nestMember("p/Lonely", member).run();
+	}
+
+	private static byte[] withNestMember(byte[] host, String member) {
+		ClassWriter cw = new ClassWriter(0);
+		new ClassReader(host).accept(new ClassVisitor(ASM9, cw) {
+			@Override
+			public void visitEnd() {
+				super.visitNestMember(member);
+				super.visitEnd();
+			}
+		}, 0);
+		return cw.toByteArray();
+	}
+
+	/**
 	 * Both directions: the game base calling a carrier member that is gone, and the carrier calling a base member that is
 	 * gone. Each is judged in the run that judges the jar its owner belongs to, and only there.
 	 */
@@ -400,6 +489,7 @@ class LinkCheckTest {
 		classes.put("q/Caller", caller("q/Caller", "java/lang/Object", mv -> {
 			mv.visitMethodInsn(INVOKESTATIC, "p/A", "secret", "()V", false);
 			mv.visitMethodInsn(INVOKESTATIC, "p/A", "gone", "()V", false);
+			mv.visitMethodInsn(INVOKESTATIC, "p/A", "inst", "()V", false);
 		}));
 		Path jar = jar(dir.resolve("all.jar"), classes);
 		String[] out = new String[1];
@@ -408,7 +498,9 @@ class LinkCheckTest {
 		assertTrue(out[0].contains("[MEMBER_ACCESS] q/Caller#run()V  ->  METHOD p/A.secret()V  (private in p/A)"), out[0]);
 		assertTrue(out[0].contains("[MISSING_METHOD] q/Caller#run()V  ->  METHOD p/A.gone()V"), out[0]);
 		String verdict = out[0].lines().filter(l -> l.contains("dangling references:")).reduce((a, b) -> b).orElseThrow();
-		assertTrue(verdict.matches("\\[link-check\\] loaded \\d+ classes .*; dangling references: 2"), verdict);
+		assertTrue(out[0].contains("[INCOMPATIBLE] q/Caller#run()V  ->  METHOD p/A.inst()V"), out[0]);
+		assertTrue(out[0].contains("[link-check] missing 1, inaccessible 1, final 0, incompatible 1,"), out[0]);
+		assertTrue(verdict.matches("\\[link-check\\] loaded \\d+ classes .*; dangling references: 3"), verdict);
 
 		Path clean = jar(dir.resolve("clean.jar"), providers());
 		code = capture(out, new String[] { "--judge", clean.toString(), clean.toString() });

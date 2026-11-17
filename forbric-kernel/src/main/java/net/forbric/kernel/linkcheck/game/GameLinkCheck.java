@@ -60,14 +60,22 @@ import net.forbric.kernel.util.Caught;
  * <p><b>Generated helpers.</b> Classes a launch defined that no input jar holds: read from a definitions capture
  * ({@code -Dforbric.definedClassEvidence}, gate-m0 step 1b), as the bytes the loader defined. Every name the capture
  * holds that a scanned input, a library or a {@code --known} jar (the mods installed for the capture, the kernel's boot
- * jar) provides is not a helper.
+ * jar) provides is not a helper. A helper a mixin synthesised names its target as its nest host, and Mixin adds it to
+ * that target's {@code NestMembers}, which the view (the first COREMOD pair, not Mixin) does not do: when the capture
+ * holds the host as the launch defined it and that lists the helper, the check takes that one attribute from it, so
+ * the helper's private access to its host is judged as the JVM judges it, against the host it validated.
  *
  * <p>What is judged is {@link LinkCheck}'s rule: references whose owner the base, the carrier, the game side or a helper
  * defines (or whose missing owner is in a package they define). Libraries resolve inheritance only.
  *
+ * <p><b>Libraries.</b> What a launch puts on the game's class path, never a whole {@code libraries} folder (one folder can
+ * hold several versions of a library, and older Forbric jars): {@code --minecraft <dir>} adds the libraries the version
+ * JSON names, as {@code run/launch-kernel-server.sh} resolves them ({@link #launchLibraries}); the caller adds the
+ * kernel's boot class path with {@code --lib}, as the launch puts it there too.
+ *
  * <p>Usage: {@code GameLinkCheck --base <jar> --carrier <jar> --sidecar <vanilla-reference jar> --game-side <jar|dir>...
- * [--lib <jar|dir>]... [--definitions <capture dir> [--known <jar|dir>]...]}. Exit codes as {@link LinkCheck}'s, and
- * 2 when the view is not the launch's (a twin did not land, a class could not be viewed).
+ * [--minecraft <dir>] [--lib <jar|dir>]... [--definitions <capture dir> [--known <jar|dir>]...]}. Exit codes as
+ * {@link LinkCheck}'s, and 2 when the view is not the launch's (a twin did not land, a class could not be viewed).
  */
 public final class GameLinkCheck {
 
@@ -93,10 +101,11 @@ public final class GameLinkCheck {
 	 * @param twinsAdded   twins the view added
 	 * @param twinRows     twins the injector has rows for
 	 * @param helpers      generated helpers scanned, by name
+	 * @param nestMembers  helpers whose nest host, as the launch defined it, lists them (taken from the capture)
 	 * @param viewFailures classes the view could not produce, with the reason
 	 */
 	public record Outcome(LinkCheck.Result result, int viewed, int twinsAdded, int twinRows, List<String> helpers,
-			List<String> viewFailures) {
+			List<String> nestMembers, List<String> viewFailures) {
 		/** True when the view is the launch's: every twin landed and every class was viewed. */
 		public boolean viewComplete() {
 			return twinsAdded == twinRows && viewFailures.isEmpty();
@@ -161,21 +170,80 @@ public final class GameLinkCheck {
 			names(library, provided);
 		}
 		List<String> helpers = new ArrayList<>();
+		List<String> nestMembers = new ArrayList<>();
 		if (in.definitions() != null) {
 			for (Path known : in.known()) names(known, provided);
-			for (String[] row : definitions(in.definitions())) {
+			List<String[]> rows = definitions(in.definitions());
+			java.util.Map<String, Path> blobs = new java.util.HashMap<>();
+			for (String[] row : rows) blobs.put(row[0], in.definitions().resolve("blobs").resolve(row[1] + ".class"));
+			for (String[] row : rows) {
 				if (provided.contains(row[0])) continue;
-				Path blob = in.definitions().resolve("blobs").resolve(row[1] + ".class");
+				Path blob = blobs.get(row[0]);
 				if (!Files.isRegularFile(blob)) {
 					failures.add(row[0] + ": the capture has no bytes for it (" + blob + ")");
 					continue;
 				}
-				check.scanClass(Files.readAllBytes(blob), true);
+				byte[] bytes = Files.readAllBytes(blob);
+				check.scanClass(bytes, true);
 				helpers.add(row[0]);
+				String host = nestHost(bytes);
+				Path hostBlob = host == null ? null : blobs.get(host);
+				if (hostBlob != null && Files.isRegularFile(hostBlob) && nestMembersOf(Files.readAllBytes(hostBlob)).contains(row[0])) {
+					check.nestMember(host, row[0]);
+					nestMembers.add(row[0] + " (listed by " + host + " as the launch defined it)");
+				}
 			}
 		}
 		return new Outcome(check.run(), viewed, twins.twinsAdded(), VanillaMemberTwinInjector.rowCount(),
-				List.copyOf(helpers), List.copyOf(failures));
+				List.copyOf(helpers), List.copyOf(nestMembers), List.copyOf(failures));
+	}
+
+	private static String nestHost(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+		return node.nestHostClass;
+	}
+
+	private static List<String> nestMembersOf(byte[] bytes) {
+		ClassNode node = new ClassNode();
+		new ClassReader(bytes).accept(node, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
+		return node.nestMembers == null ? List.of() : node.nestMembers;
+	}
+
+	/** The game version whose version JSON {@link #launchLibraries} reads, as the launch scripts do. */
+	static final String GAME_VERSION = "26.2";
+
+	/**
+	 * The Minecraft libraries a launch puts on the game's class path, resolved as {@code run/launch-kernel-server.sh}
+	 * resolves them: each library {@code versions/26.2/26.2.json} names, at the path its exact coordinate gives under
+	 * {@code libraries/}, when that file exists (the others are another platform's natives); then the server console's
+	 * jline 3.25.1, which the launch adds because the JSON does not list it.
+	 */
+	public static List<Path> launchLibraries(Path minecraftDir) throws IOException {
+		Path json = minecraftDir.resolve("versions").resolve(GAME_VERSION).resolve(GAME_VERSION + ".json");
+		Path root = minecraftDir.resolve("libraries");
+		com.electronwill.nightconfig.core.Config version;
+		try (java.io.Reader reader = Files.newBufferedReader(json, StandardCharsets.UTF_8)) {
+			version = com.electronwill.nightconfig.json.JsonFormat.minimalInstance().createParser().parse(reader);
+		}
+		List<Path> out = new ArrayList<>();
+		List<?> libraries = version.getOrElse("libraries", List.of());
+		for (Object library : libraries) {
+			if (!(library instanceof com.electronwill.nightconfig.core.Config entry)) continue;
+			Object name = entry.get("name");
+			String[] parts = name == null ? new String[0] : name.toString().split(":");
+			if (parts.length < 3) continue;
+			String file = parts[1] + "-" + parts[2] + (parts.length > 3 ? "-" + parts[3] : "") + ".jar";
+			Path jar = root.resolve(parts[0].replace('.', '/')).resolve(parts[1]).resolve(parts[2]).resolve(file);
+			if (Files.isRegularFile(jar)) out.add(jar);
+		}
+		Path jline = root.resolve("org/jline");
+		if (Files.isDirectory(jline)) {
+			try (Stream<Path> walk = Files.walk(jline)) {
+				walk.filter(f -> f.getFileName().toString().matches("jline-.*-3\\.25\\.1\\.jar")).sorted().forEach(out::add);
+			}
+		}
+		return out;
 	}
 
 	private static boolean isClass(String entry) {
@@ -274,6 +342,13 @@ public final class GameLinkCheck {
 				case "--sidecar" -> sidecar = value;
 				case "--game-side" -> gameSide.add(value);
 				case "--lib" -> libraries.add(value);
+				case "--minecraft" -> {
+					Path json = value.resolve("versions").resolve(GAME_VERSION).resolve(GAME_VERSION + ".json");
+					if (!Files.isRegularFile(json)) return usage("--minecraft " + value + " has no " + json.getFileName());
+					List<Path> launch = launchLibraries(value);
+					if (launch.isEmpty()) return usage("--minecraft " + value + ": none of the libraries its version JSON names is on disk");
+					libraries.addAll(launch);
+				}
 				case "--definitions" -> definitions = value;
 				case "--known" -> known.add(value);
 				default -> {
@@ -310,6 +385,7 @@ public final class GameLinkCheck {
 		LinkCheck.Result result = outcome.result();
 		for (LinkCheck.Violation v : result.violations()) System.out.println(v.line());
 		for (String helper : outcome.helpers()) System.out.println("[link-check] generated helper: " + helper);
+		for (String member : outcome.nestMembers()) System.out.println("[link-check] nest member from the capture: " + member);
 		for (String failure : outcome.viewFailures()) System.out.println("[link-check] NOT VIEWED " + failure);
 		System.out.println(outcome.viewLine());
 		System.out.println(result.breakdown());
@@ -323,7 +399,7 @@ public final class GameLinkCheck {
 
 	private static int usage(String why) {
 		System.err.println("usage: GameLinkCheck --base <jar> --carrier <jar> --sidecar <jar> --game-side <jar|dir>..."
-				+ " [--lib <jar|dir>]... [--definitions <capture> [--known <jar|dir>]...]");
+				+ " [--minecraft <dir>] [--lib <jar|dir>]... [--definitions <capture> [--known <jar|dir>]...]");
 		System.err.println("       (" + why + ")");
 		return 2;
 	}
