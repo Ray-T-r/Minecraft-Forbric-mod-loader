@@ -2,6 +2,10 @@
 # Compared on the first three columns; the reason is for the reader.
 # Regenerate: ./gradlew check -Pforbric.skipBaseline=ci-prepared -Pforbric.writeSkipBaseline
 # or copy skips-actual-ci-prepared.tsv from the CI artifact.
+# Measured 2026-11-17 on a clean clone of the C6 tree with a stage laid out as tools/dev.py prepare --no-assets lays
+# it out (NeoForge 26.2.0.93 base, carrier, vanilla reference, canary built from this tree; MC libraries; API jars),
+# on macOS with JDK 25. Three Fabric Loader 0.19.3 rows are kept from the last CI artifact because this host's launcher
+# has that jar and a runner has not. The first CI run's skips-actual-ci-prepared.tsv replaces this file.
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:third-party] staged pack or carriers absent
 test	net.forbric.kernel.boot.ArbitratedAwayDispatchersRealJarTest	aWinnerThatReadsTheSameDeclarationItsOwnWayLostNothing()	[fixture:third-party] sweep100 Sodium builds absent
 test	net.forbric.kernel.boot.ArbitratedAwayDispatchersRealJarTest	onlyWhenTheNeoForgeBuildWonIsTheKeyTheKernelsToDispatch()	[fixture:third-party] sweep100 mod fixture absent: build/sweep100-mac-network/mods/cherishedworlds-fabric-17.0.0+26.2.jar
@@ -246,7 +250,7 @@ test	net.forbric.kernel.mixin.GuestMixinPolicyStagedTest	thirdPartyRedirectConfl
 test	net.forbric.kernel.mixin.GuiItemCaptureMixinAdapterTest	theCaptureSelectsTheSubmissionAndDoesNotMoveTheTooltipCallback()	[fixture:third-party] local fixture unavailable
 test	net.forbric.kernel.mixin.GuiRendererBuilderAnchorTest	everyReleasedBuilderHookBindsTheConstructorTheKernelShaped()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.GuiRendererBuilderAnchorTest	onTheConstructorNeoForgeLeftNoHookHasAPoint()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
-test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()	[fixture:third-party] sweep pack absent
+test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualFusionSpriteLoaderHookFollowsNeoForgesLiveLambda()	[fixture:third-party] build/sweep80-mac/v020-rounds/r3/mods/fusion-1.3.15a-fabric-mc26.2.jar absent (link build/sweep80-mac from the main checkout)
 test	net.forbric.kernel.mixin.InsertedLambdaArgumentShimTest	actualLitematicaOpaqueAndTranslucentHandlersFollowTheLiveLambda()	[fixture:third-party] local merged mod pack: run/client-merged-pack/mods
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	jecharactersOwnHookWrapsTheWeaverTheClassPipelineReads()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
 test	net.forbric.kernel.mixin.JecharactersKnotDecoratorTest	onALoaderWithoutKnotsFieldTheHookFails()	[fixture:third-party] local mod fixture absent: build/sweep100-mac-network/mods/jecharacters-26.1.2-fabric-4.6.8.jar
@@ -589,6 +593,11 @@ test	net.forbric.kernel.mixin.MixinCapturedLocalsTest	onVanillaTheCaptureStaysAs
 test	net.forbric.kernel.mixin.MixinExpressionThunksTest	aProjectileThatOnlyInheritsTheMethodOrHasNoThunkKeepsItsDefinition()	[fixture:third-party] sweep Lithium fixture
 test	net.forbric.kernel.mixin.MixinExpressionThunksTest	theArrowsMethodReferenceExpressionAlsoNamesTheThunkItNowGoesThrough()	[fixture:third-party] sweep Lithium fixture
 test	net.forbric.kernel.mixin.MixinFitLivenessCensusStagedTest	exactlyThePinnedMixinsChangeVerdict()	[fixture:third-party] build/compat-inputs/sweep90/mods required (symlink it from the main checkout)
+test	net.forbric.kernel.mixin.MixinFluidReactionHeadTest	aTailOrReactionPointHandlerKeepsItsOwnArm()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionHeadTest	createFlysFluidReactionAlsoRunsOnANeighbourChange()	[fixture:third-party] real fixture required: build/compat-inputs/create-fly/create-fly.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionHeadTest	fabricBlockApisFlowVetoAlsoRunsOnANeighbourChange()	[fixture:third-party] real fixture required: build/compat-inputs/sweep90-nowover/mods/fabric-api-0.161.0+26.2.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionHeadTest	onlyAFabricMixinGetsTheHeadWrap()	[fixture:third-party] real fixture required: build/compat-inputs/sweep90-nowover/mods/fabric-api-0.161.0+26.2.jar
+test	net.forbric.kernel.mixin.MixinFluidReactionHeadTest	switchedOffTheHeadHandlersStayAsCompiled()	[fixture:third-party] real fixture required: build/compat-inputs/sweep90-nowover/mods/fabric-api-0.161.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleAtAnotherCallIsNotTheReaction()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatNeverCallsFizzIsServedToo()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
 test	net.forbric.kernel.mixin.MixinFluidReactionShapesTest	aRuleThatReadsTheBlockIsServedInTheBlock()	[fixture:third-party] real fixture required: build/compat-inputs/carpet/mods/fabric-carpet-26.2+v260616.jar
@@ -622,10 +631,10 @@ test	net.forbric.kernel.mixin.MixinStubRebindTest	architecturysBreakSpeedMovesTo
 test	net.forbric.kernel.mixin.MixinStubRebindTest	coreLibsModelHookMovesWrappedWithItsByTypeLocal()	[fixture:third-party] build/compat-inputs/sweep90/mods/supermartijn642corelib-1.1.24b-fabric-mc26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	fusionsOverlayHookMovesWithTheOnlyModelDiscoveryInTheBody()	[fixture:third-party] build/compat-inputs/sweep90/mods/fusion-1.3.15a-forge-mc26.2.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	fusionsSpriteCaptureMovesToTheBodyMinecraftForgeRan()	[fixture:third-party] build/compat-inputs/sweep90/mods/fusion-1.3.15a-forge-mc26.2.jar absent
-test	net.forbric.kernel.mixin.MixinStubRebindTest	fusionsVerdictFindsTheAnchorWhereTheRebindPutsIt()	[fixture:third-party] fusion and the merged base required
+test	net.forbric.kernel.mixin.MixinStubRebindTest	fusionsVerdictFindsTheAnchorWhereTheRebindPutsIt()	[fixture:third-party] fusion and the staged base required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	malilibsFormatRestoreMovesToTheBodyClientLanguageCalls()	[fixture:third-party] malilib absent from the merged pack
 test	net.forbric.kernel.mixin.MixinStubRebindTest	owosLangHooksMoveTogetherToTheBodyClientLanguageCalls()	[fixture:third-party] build/compat-inputs/sweep90/mods/owo-lib-0.13.1+26.2.jar absent
-test	net.forbric.kernel.mixin.MixinStubRebindTest	owosVerdictFollowsTheGroup()	[fixture:third-party] owo and the merged base required
+test	net.forbric.kernel.mixin.MixinStubRebindTest	owosVerdictFollowsTheGroup()	[fixture:third-party] owo and the staged base required
 test	net.forbric.kernel.mixin.MixinStubRebindTest	theSwitchMovesNothing()	[fixture:third-party] run/client-popular/mods/architectury-fabric-21.1.10.jar absent
 test	net.forbric.kernel.mixin.MixinStubRebindTest	theVerdictFollowsTheRebind()	[fixture:third-party] malilib absent from the merged pack
 test	net.forbric.kernel.mixin.MixinSubtypeOwnerRetargetSpellingTest	aPointOrHostTheMoveCannotTellAsTheSameCallStaysAsWritten()	[fixture:third-party] lithostitched's Fabric jar required
@@ -639,12 +648,12 @@ test	net.forbric.kernel.mixin.MixinTailCaptureTest	aCaptureOfAnotherTypeOrTwoOnO
 test	net.forbric.kernel.mixin.MixinTailCaptureTest	aTailWhoseFrameServesTheCaptureIsLeftAtTheTail()	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinTailCaptureTest	theSplitGuiItemsTailStillLacksTheStateAndTheCaptureFollowsTheBody()	[fixture:third-party] real fixture required: build/sweep80-mac/v020-rounds/r3/mods/itemglintrelight-fabric-26.2-0.3.0+26.2.jar
 test	net.forbric.kernel.mixin.MixinTwinRebindTest	releasedLiquidBounceMovesItsFaceTestAndNothingElse()	[fixture:third-party] ../build/lb-vfp/jars/liquidbounce-0.40.1+26.2-20260925.jar absent
-test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	aRegisteredMixinAnchoringElsewhereLeavesTheInlinePlanned()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack: run/client-merged-pack/mods/lambdynamiclights-4.12.2+26.2.jar
-test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	aRegisteredMixinMixinDoesNotApplyLeavesTheInlinePlannedAndApplied()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack: run/client-merged-pack/mods/lambdynamiclights-4.12.2+26.2.jar
-test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	decidedOnTheMixinsPlannedSoFarTheInlineIsPlanned()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack: run/client-merged-pack/mods/lambdynamiclights-4.12.2+26.2.jar
-test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	decidedOnTheMixinsPlannedSoFarTheSeamIsNotTriedAndTheWithdrawnInlineLosesTheWrap()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack: run/client-merged-pack/mods/lambdynamiclights-4.12.2+26.2.jar
-test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	journeyMapsHeadCallbackIntoTheInstrumentedGatewayIsAnAddition()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack: run/client-merged-pack/mods/lambdynamiclights-4.12.2+26.2.jar
-test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	spruceuisAnchorDeclinesTheInlineBeforeItsConfigIsReadAndTheSeamCarriesTheScreenDraw()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack: run/client-merged-pack/mods/lambdynamiclights-4.12.2+26.2.jar
+test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	aRegisteredMixinAnchoringElsewhereLeavesTheInlinePlanned()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack
+test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	aRegisteredMixinMixinDoesNotApplyLeavesTheInlinePlannedAndApplied()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack
+test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	decidedOnTheMixinsPlannedSoFarTheInlineIsPlanned()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack
+test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	decidedOnTheMixinsPlannedSoFarTheSeamIsNotTriedAndTheWithdrawnInlineLosesTheWrap()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack
+test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	journeyMapsHeadCallbackIntoTheInstrumentedGatewayIsAnAddition()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack
+test	net.forbric.kernel.mixin.NativeCallInliningRegisteredMixinsStagedTest	spruceuisAnchorDeclinesTheInlineBeforeItsConfigIsReadAndTheSeamCarriesTheScreenDraw()	[fixture:third-party] LambDynamicLights (nests spruceui) from the client pack
 test	net.forbric.kernel.mixin.NestHostFieldWritesTest	actualC2meVolatileAndSynchronizedGuardsAreNotSuppressed()	[fixture:third-party] build/compat-inputs/c2me-barrel-20261001/alpha-worldgen.jar absent
 test	net.forbric.kernel.mixin.PluginAddedMixinEcosystemTest	createsPluginAddedModelMixinLandsOnNeoForgesParser()	[fixture:third-party] real fixture required: $ROOT/forbric-kernel/build/compat-inputs/create-fly/create-fly.jar
 test	net.forbric.kernel.mixin.PostMixinFixupsAliasTargetTest	everyShippedFabricRegistrySyncHasExactlyTheWarningsCheckRepaired()	[fixture:third-party] no fabric-registry-sync in the compatibility packs on this machine
