@@ -17,7 +17,6 @@
 /run/mp-server/
 /run/parity-*/
 /run/savedrop/
-/run/world-events-m49/
 /run/compat-world/
 # installed, energy-api and .gate-downloads carry no trailing slash either: a worktree recreates them (a local dir, or a
 # link/clone of the main checkout's), and 36dfef28 committed all three as symlinks into one worktree's own path because

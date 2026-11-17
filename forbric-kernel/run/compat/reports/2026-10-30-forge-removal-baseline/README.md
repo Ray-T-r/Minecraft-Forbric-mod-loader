@@ -187,7 +187,7 @@ sweep has gate-m0 RED for the R3 corpus only and gate-m14 RED once because its p
 HTTPS handshake while downloading (`SSLHandshakeException: Remote host terminated the handshake`, before the game
 started); rerun alone under zh it is GREEN. Every other gate GREEN.
 
-## Stage 4: the flip to NeoForge's own patched game, C2 + C1 + C3 + C4 (tips 00a5e585, 73a4314c, s4-c3, s4-c4); C5 and C6 not done yet
+## Stage 4: the flip to NeoForge's own patched game, C2 + C1 + C3 + C4 + C5 + C6
 
 Stage 4 is one stack of branches: `s4-c2` (C2: delete MinecraftForge's code, on the merged base) → `s4-c1` (C1: build,
 test and launch on NeoForge's patched 26.2 jar, "G", with the NeoForge 26.2.0.93 carrier and the vanilla-reference
@@ -195,8 +195,10 @@ sidecar) → `s4-c3` (C3: delete the repairs that existed only because the base 
 after three checks). Every lane was reviewed adversarially twice (A, B) and followed by a review-fix round; each phase
 ended with a completeness critic. Decisions D1-D41 bound every lane, and D42 bound C4's close. C4's census lane (census tables regenerated with
 `Ecosystem.FORGE`'s removal, then its review fixes: the anchor census test, the furnace rows, the stand-ins) is recorded at
-the end of this section, followed by C4's wording lane and C4's outcome as a whole; **C5 (rebaseline: tests, gates, C5b
-world upgrade, C5c Forge → NeoForge build swap) and C6 (CI, release, installer clean-up) have not started**.
+the end of this section, followed by C4's wording lane and C4's outcome as a whole. C5 (rebaseline: tests, gates, C5b
+world upgrade, C5c Forge → NeoForge build swap) and C6 (link check, installer clean-up, release evidence, CI, docs) follow
+as the sections "C5" and "C6" at the end of this record; the decisions after D42 (D43-D94) are in the orchestrator's notes,
+and each is cited where it binds.
 
 | phase | commits | tip | diff | details |
 |---|---|---|---|---|
@@ -405,7 +407,8 @@ Totals: C4 18, C4+C5 6, C5 34, C5 (tool) 1, P1 6.
 - An install made by Forbric 0.3.x or earlier (or a 0.4.0-dev build that still had MinecraftForge) is refused with exit 2
   and the message to rerun the new installer on the same game directory (D9; worded so since C6 VER, 0.4.x being the
   first release without MinecraftForge).
-- Hoppers follow NeoForge's semantics (plan; C5's hopper Fabric-storage parity check still to run).
+- Hoppers follow NeoForge's semantics (plan). The hopper Fabric-storage parity check is gate-m52: GREEN, 29 PASS / 0 FAIL
+  in the C5 merger's no-cache sweep at 394b8804 (`gate-m52-hopper-fabric-storage.sh.log` of that sweep).
 - Shears: **no longer a loss** (D35). BCLib's tag shears shear sheep and snow golems again. Approximations: tag shears on
   those mobs follow NeoForge's IShearable answer (PASS when not shearable) rather than vanilla's CONSUME; a Fabric shears
   wrap that vetoes real shears on them is not carried over; an item in `c:tools/shear` that is not a ShearsItem and has its
@@ -433,18 +436,9 @@ consumeClick key (#6); whether `LocalRanges`' one site could be written correctl
 ### Not done yet
 
 - **C4**: done (census lane, its review fixes, the wording lane and its review fixes, the closing verify lane and the
-  critic's F1-F8 closed, sections below). Left for Stage 6's
-  naming pass: the merged-base identifiers. No present-tense merged-base prose is left in `src/main` or `src/runtime`
-  (`stage4-c4-wording-left.txt`).
-- **C5**: every gate line classified above, the 34 + 6 + 1 re-pins, the C1 gate list, gate-m49's retired switches, the
-  four-native-call-sites pin, weave scenarios for the new adapters, wiring regress-gate.py and fluid-head-gate.py into the
-  gate list, the `KernelModFile.perJar()` default flip (its own commit, on/off A/B on gate-m21, gate-m9 and
-  client-merged-pack; D42), VanillaDamageReadInjectorTest's MinecraftForge stand-in, MergedBaseCalleeSwapTest's
-  rewrite-or-explain, C5b (world upgrade) and C5c (Forge → NeoForge build swap).
-- **C6**: CI (merge-loss ratchet, hidden-carrier job, `ci-prepared-noforge.tsv`), release roles, installer clean-up of its
-  own old artifacts (D6), gate-m17's 7 installer premises, docs for the new switches and classes (KernelFluidReactions,
-  KernelItemDamage, KernelMobShears), introduction.md:1502/1531 and introduction.zh-CN.md:390/391 (deleted `ForeignType`
-  rows named in the breathe/drown history), introduction.md:951-952 (repair-drift.sh needs the vanilla-reference sidecar).
+  critic's F1-F8 closed, sections below). Left for Stage 6's naming pass: the merged-base identifiers.
+- **C5**: done (section "C5" below).
+- **C6**: done in the tree except the CI half and acceptance (section "C6" below, "Open after C6").
 
 ### C4, lane census-forge (3d8364b4): census tables regenerated, `Ecosystem.FORGE` removed
 
@@ -664,3 +658,92 @@ Suite at 1a27b7fe (`.stage4`, `-Pforbric.requireFixtures=all`, `cleanTest test -
 failed**. Name for name against cb1aaf20's 42 (`s4/c4/failures-c4.txt`): 0 new, the same 1 gone, 0 message differences over 240
 characters, digits not folded; the failing set equals `stage4-c4-close-open-failures.txt`. +4 tests, all passing (the A-1 red
 checks). No gate reads what 1a27b7fe changed (repair-drift.sh is no gate's input), so no gate was re-run.
+
+### C5: rebaseline on NeoForge's own base (tests, gates, C5b world upgrade, C5c Forge → NeoForge swap)
+
+C5 ran in waves of parallel lanes, each in its own worktree from the stage tip, each reviewed adversarially (A, B) and
+fixed, then merged fast-forward only; decisions D43-D92 bound it. Its lane RECORD step, owed before C6, never ran as a
+separate lane; this section is that summary. Every number below is in the lane record named.
+
+| lane | what it did | record |
+|---|---|---|
+| INFRA | Phase 0: run/installed, energy-api and .gate-downloads untracked (they were symlinks into one worktree); `refuse_shared_rundir` in lib.sh, so no gate writes into a fixture every worktree shares (D39/D46); the lane bootstrap | `stage4-c5-infra.md` |
+| S1, S | `featuresPerStep` as a Fabric adaptation (`FeaturesPerStepRefreshInjector`, D52); AccessCensus on NeoForge's package only; game-side class liveness check; `customPayloadInteropSeam=off` measured null-safe and kept offered; NeoForge's condition leniency narrowed to Fabric mods' packs (`neoConditions.fabricPacksOnly`, `KernelConditionSources`, D69) | `stage4-c5-s1.md`, `stage4-c5-s.md` |
+| T-A, T-B | the C1/C3 unit-test re-pins on NeoForge's base (screen draw on `ClientHooks.extractScreen`, inserted lambdas, R3's corpus moves pinned per jar, transform/boot rows, stand-ins) | `stage4-c5-t-a.md`, `stage4-c5-t-b.md` (+ `stage4-c5-t-b-wording-left.tsv`) |
+| G-A, G-B1, G-B2, G-C | every gate run and re-pinned on the genuine stage; the `KernelModFile` per-jar default flipped with an on/off A/B (G-A); `merged_calls`/`MERGED_NATIVE` deleted with m4/m42/m48/m49 edits (D3, G-B1); m35's withhold set made phase-aware (D72, G-B2); gate-m17's 7 premises re-pinned plus reverse control N, and the key-modifier repair deleted after its three checks (D70, D73, G-C) | `stage4-c5-g-a.md` (+ `-open-failures.txt`), `-g-b1.md`, `-g-b2.md`, `-g-c.md` |
+| UPG | C5b: `run/old-kernel.sh` (the kernel at `tri-eco-26.2-final`), `run/compat/world-snapshot.py`, gate-m58 (worlds the old kernel wrote open whole, server and client, reverse control); the carrier's datapack id made stable and old worlds migrated (`CarrierPackIdMigrationInjector`, D43) | `stage4-c5-upg.md` |
+| SWAP | C5c: the Forge → NeoForge build swap measured against the native swap, gate-m59 and `canary/forge-swap/expected-losses.tsv` (6 rows, all tombstone, D77) | `stage4-c5-swap.md`, `stage4-forge-swap.md` |
+| K1-K4, K3c | kernel defects the gates found: block-state ids on a socket join (K1), fabric-registry-sync's remap tracker on the particle view (K2, `ParticleViewTrackerInjector`), mods' mixins on NeoForge's `GameData.postRegisterEvents` (K3, `RegisterEventsSeam`), a Fabric mod's PoI states (K4, `KernelPoiStates`), a registration failure stops the boot as native (K3c, D82) | `stage4-c5-k1.md` … `-k4.md`, `-k3c.md` |
+| HARN, ZH, OPT, HARN2 | gate harness: `stop_when_ready`'s settle, m12's scheduling, `FORBRIC_JVM` reaching every gate's game JVMs, the verdict cache and build-once sweep (opt/verify, D88), m15 removed as a strict subset of m16 (D89), `check_kept_up`'s window and the GATE-PARALLEL vocabulary | `stage4-c5-harn.md`, `-zh.md`, `-opt.md`, `-harn2.md` |
+| THR, STOP, DLG | NeoForge mod loading on NeoForge's `modloading-worker` threads (`NeoParallelDispatch`, D87c); a loading failure in every phase stops like native (D87e); NeoForge's own fatal-error screen (`NeoFatalErrorWindow`, D87b) | `stage4-c5-thr.md`, `-stop.md`, `-dlg.md` |
+| VERIFY | runs 1-3 of the stage tip (run 3 at 394b8804) | `stage4-c5-verify.md` |
+
+**At the C5 close (394b8804, VERIFY run 3 and the merger's sweep):** suite 5,951 tests, 0 skipped, 5 failed, the five being
+the D58 fixtures (LiquidBounce ×3, SharedFinalSourceActualTest ×2); `gates-all.sh -j 4 --no-cache --skip gate-m34-soak.sh`
+59 GREEN and gate-m0 red on the three LiquidBounce skips only (exempt, D87a), CAUGHT none, 37.0 min; pure-Fabric A/B
+126/4/0/0, by name the 2026-10-11 result; native NeoForge A/B 3/3 (D91). The soak (m34) runs once at the very end (D84).
+
+**Reconciliation with Stage 0.** The baseline's 75 unit failures were all lost third-party fixtures; ViaFabricPlus was
+restored in Stage 0 and the R3 corpus test was re-pinned per jar in C5 (T-A), so what is left are the same three
+LiquidBounce tests (their jars cannot be fetched, D58) and the two opt-in shared-final tests, which fail rather than skip
+because the suite runs with `-Pforbric.requireFixtures=all`. The baseline's three red gates were environment (m0 on the
+corpus, m54 and m56 on fixtures a worktree lacked); at the C5 close m0 is red on D58 alone and every other gate is green.
+The 60 gates of Stage 0 (56 green, 3 red, the soak skipped) became 61 (m15, m41, m47, m48, m49 deleted with what they
+tested; m24d, m58, m59, m60, m61, m62 added).
+
+Still open after C5, by owner (D91/D92, none blocking C6): m24d opens client windows on the desktop; an in-game stop shows a
+message box where native draws the error in the game window; the crash report's mod list is empty and "Complete loading of
+N" short; a throwing Fabric main exits 1; THR's F2 (construction in three kernel-level passes, registration on the caller's
+thread); downstream listeners of a failed dependency still run; datapack declaration after the freeze.
+
+### C6: link check, installer clean-up, release evidence, CI, docs
+
+| wave | lane | what it did | record |
+|---|---|---|---|
+| 1 | LINK | the link check reseeded in the kernel tree (`net.forbric.kernel.linkcheck.LinkCheck`: existence, access, final, invokedynamic; `GameLinkCheck` for a launch's whole game); the installer carries `forbric-link-check.jar` instead of the merge tools; `linkGateTest`/`linkToolTest` became `installerTest`; gate-m0 step 4 judges 1,360,706 references with 0 dangling | `stage4-c6-link.md` |
+| 1 | INST | `OldInstallCleanup` (D6); gate-m17 phase U on an install the real v0.3.1-beta2 installer laid out (22 removals, 258.5 MB, reverse control 22/22); reproducible NeoForge runtime bytes; Doctor's PEAK 480 / RESIDENT 470 measured | `stage4-c6-inst.md` |
+| 1 | REL | release evidence roles trimmed to vanilla / neo-patched / neo-runtime / kernel / kernel-runtime / sidecar; push-and-run rewrites a profile's game arguments; native-controls without a MinecraftForge image; stamped stages required | `stage4-c6-rel.md` |
+| 2 | VER | every player-read "Forbric 0.4 or earlier" text reworded for a 0.4.x release ("Forbric 0.3.x or earlier, or a 0.4.0-dev build that still had MinecraftForge"), with a guard test | `stage4-c6-ver.md` |
+| 2 | INSTFIX | INST's review fixes reviewed, its record brought to the tip, the clean-up's link/junction and spelling rules, m17's language pins | `stage4-c6-instfix.md` |
+| 2 | CIPREP | build.yml without the merge-loss ratchet, the hidden-carrier job and `ci-prepared-noforge.tsv`; dev-tools runs `installerTest`; both skip TSVs re-measured locally (not yet from CI) | `stage4-c6-ciprep.md` |
+| 2 | merger | three lanes fast-forwarded; gate-m0's locale-rule red fixed (a5708f73) | `stage4-c6-merger-w2.md` |
+| 3 | DOCS | introduction.md / zh corrected for Stages 1-4, this record's C5/C6 sections, the release-notes draft, the B5 ruling proposal, the m49 ignore entry | `stage4-c6-docs.md` |
+
+**Suite and gates at the C6 wave-2 tip (a5708f73, the merger):** 5,969 tests, 0 skipped, 5 failed, the D58 five by name and
+message; gate-m0 18 PASS / 1 FAIL (D58 only, no `[kernel] SKIP (C6` line left), gate-m10 24/0, gate-m17 119/0 (phase U's
+reverse control 22/22), CAUGHT none, FORBRIC_GATE_CACHE=0, ports 46800-46806. Wave 1 at 9cd04fc1: 5,966/0/5; m0 18/1, m1
+19/0, m9 163/0, m17 119/0, m36 6/0, m59 30/0.
+
+**Open after C6** (owners in brackets):
+- CI has not run on the C6 tree: the push to `ci/remove-forge-stage2` was refused by the session's permission check before
+  git ran, so there is no run, both skip TSVs are CIPREP's local pre-measure, and the first-run list (the `build` job, the
+  Windows `OldInstallCleanupTest`) is unread [owner pushes; next CI runner].
+- `dl/` keeps 13.4 MiB of beta2's MinecraftForge jars after an upgrade [owner ruling].
+- ACCEPT: Windows PCL2 install (fresh `.minecraft` backup first), the release rehearsal stopped before any upload, the soak
+  m34 at the final tip; `gates-all --release` cannot be green while D58 stands.
+- Three kernel `latest.log` lines VER changed stay English [orchestrator/owner].
+- Stage 5: `build-merged-base.sh` and the `tools/test_pins.py` lines and `LinkBaselineProvenanceTest` that read it, CI's
+  `build` job, the `forbric-loader/run` fallbacks.
+- Stage 6: renames (`MergedBase*`, "Forge-family", gate file names), README titles and the full rewrite of the
+  introductions, canary READMEs that still describe the merged game, `ForeignType` to plain constants.
+
+### Ruling owed: unit tests for KernelFluidReactions and KernelMobShears (C3 critic B5)
+
+Proposal (the owner decides): close B5 on the existing coverage, with no new test class. Each class is reached only
+through its mixin adapter, and that path is tested three ways: the weave tests run synthetic mods through the real Mixin
+with the mechanism on and off (`MixinFluidReactionWeaveTest`, `MixinShearsRelayMobsWeaveTest`), and the adapter's own unit
+tests pin its shapes and HEAD arm (`MixinFluidReactionShapesTest`, `MixinFluidReactionHeadTest`); gate-m60 (`regress-gate.py`) and gate-m61 (`fluid-head-gate.py`) run the real mods in
+dedicated servers with `-Dforbric.shearsRelayMobs=off` and `-Dforbric.fluidReactionNeighbourChange.head=off` as red
+controls that must fail exactly their cases; gate-m62 (Carpet) has `-Dforbric.fluidReactionNeighbourChange=off`. A
+unit test of the runtime class alone would need the game classes it is compiled against (both import
+`net.minecraft.*`: items, entities, levels, fluid tags), which only the staged game provides. If the owner rules the other way, the tests are new staged test classes in a later
+lane. Not recorded in DECISIONS.md by this lane (the orchestrator's file).
+
+### Corrections to this record (C6 DOCS)
+
+- The Stage 3 section says a refused jar's fake `fabric.mod.json` reached the classpath "with
+  `-Dforbric.duplicateArbitration=off`". No switch of that name exists in the tree; the kernel's switch for cross-jar
+  arbitration is `-Dforbric.crossJarArbitration`, presumably the one meant (not re-measured here).
+- The census-forge section lists D31's every-chain anchor census as "still open after this lane"; it was landed by the
+  review fixes in the same C4 (`ChainAnchorCensusStagedTest`, 15138373), as the review-fix table below it says.
+- The C4 "Not done yet" list said C5 and C6 had not started; both are recorded above.
