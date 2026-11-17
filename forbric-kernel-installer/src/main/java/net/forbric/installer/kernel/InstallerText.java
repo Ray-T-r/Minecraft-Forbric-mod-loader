@@ -73,10 +73,11 @@ final class InstallerText {
 				: "[cleanup] removed " + file + " (an older Forbric's file that no installed version uses)";
 	}
 
-	/** A symbolic link the clean-up met and left alone. */
+	/** A link the clean-up met and left alone: a symbolic link or a junction, or a directory reached through one. */
 	static String cleanupLeftLink(Path link) {
-		return chinese() ? "[cleanup] 保留 " + link + "：它是符号链接，清理从不跟随或删除链接"
-				: "[cleanup] left " + link + " in place: it is a symbolic link, which the clean-up never follows or removes";
+		return chinese() ? "[cleanup] 保留 " + link + "：它是链接（符号链接或目录联接），或经由链接到达；清理从不跟随或删除链接"
+				: "[cleanup] left " + link + " in place: it is a link (a symbolic link or a junction), or is reached through"
+						+ " one, which the clean-up never follows or removes";
 	}
 
 	/** A file that could not be deleted (on Windows, typically one a running game holds open). */
@@ -90,6 +91,20 @@ final class InstallerText {
 		return chinese() ? "[cleanup] 无法读取 " + json + "（" + reason + "），不知道它用到哪些库，所以 libraries/net/forbric 下的旧文件全部保留"
 				: "[cleanup] could not read " + json + " (" + reason + "), so what it uses is unknown and every old file in"
 						+ " libraries/net/forbric is kept";
+	}
+
+	/** A JSON file beside a profile that does not parse: the game's or a mod's, not a profile, so it decides nothing. */
+	static String cleanupSkippedJson(Path json, String reason) {
+		return chinese() ? "[cleanup] 跳过 " + json + "（" + reason + "）：它不是版本配置文件（只有 versions/<id>/<id>.json 是），不影响保留哪些库"
+				: "[cleanup] skipped " + json + " (" + reason + "): it is not a version profile (only versions/<id>/<id>.json"
+						+ " is), so it does not decide which libraries are kept";
+	}
+
+	/** Something unexpected stopped the clean-up part-way: what it had not reached is left, and the install stands. */
+	static String cleanupStopped(String reason) {
+		return chinese() ? "[cleanup] 清理中途停止（" + reason + "）：还没处理到的旧文件全部保留；安装照常完成"
+				: "[cleanup] the clean-up stopped part-way (" + reason + "): every old file it had not reached yet is left in"
+						+ " place, and the install carries on";
 	}
 
 	/** The switch is off. */

@@ -26,7 +26,9 @@ import java.util.TreeMap;
  *
  * <p>Then the controls, each of which must turn the checks red (D34): a clean-up that ignores the profiles, and one with
  * its guard off and a rule broad enough to reach this install's own outputs. A delete that fails is named and the run
- * carries on. The lines are checked in Chinese too, forced (D88b).
+ * carries on; an unexpected failure stops the clean-up and says so. Every way a profile may spell a library keeps it.
+ * The lines are checked in Chinese too, forced (D88b); the English ones are pinned to English (and the caller's language
+ * restored after), so the class passes on a machine whose language is Chinese.
  */
 public final class OldInstallCleanupTest {
 	private static final String KERNEL_NOW = "net/forbric/forbric-kernel/0.4.0-dev/forbric-kernel-0.4.0-dev.jar";
@@ -57,7 +59,10 @@ public final class OldInstallCleanupTest {
 			"out/forge-runtime.jar", "out/forge-runtime.jar.pins", "out/forge-runtime-interop.jar",
 			"out/forge-runtime-interop.jar.pins", "out/patched-mc-forge-26.2.jar", "out/patched-mc-forge-26.2.jar.pins",
 			"server-main.jar", "patched-subset.jar", "patched-full.jar", "patched-at.jar", "joined.lzma",
-			"ats/accesstransformer.cfg");
+			"ats/accesstransformer.cfg",
+			// v0.1.0's work tree, .forbric-build/<mc>-<forge>/, with its own download cache and work files.
+			"26.2-65.0.1/dl/forge-userdev.jar", "26.2-65.0.1/dl/server.jar", "26.2-65.0.1/patched-full.jar",
+			"26.2-65.0.1/ats/accesstransformer.cfg");
 	/** This install's own build outputs and their stamps, the download cache and NFRT's: never touched. */
 	private static final List<String> CURRENT_BUILD = List.of(
 			"out/patched-mc-neoforge-26.2.jar", "out/patched-mc-neoforge-26.2.jar.pins", "out/neoforge-runtime.jar",
@@ -67,11 +72,25 @@ public final class OldInstallCleanupTest {
 	private static final List<String> USER_DATA = List.of(
 			"saves/World/level.dat", "mods/some-mod.jar", "config/some.toml", "options.txt");
 
+	private static final String LANGUAGE = "forbric.dialogLanguage";
+	/** The cases this machine could not run: printed with the verdict, never silently counted as passed. */
+	private static final List<String> NOT_RUN = new ArrayList<>();
+
 	public static void main(String[] args) throws Exception {
 		Path work = Files.createDirectories(args.length > 0 ? Path.of(args[0])
 				: Files.createTempDirectory("old-install-cleanup"));
+		// The checks below read the English lines; whatever this machine's language, ask for English, and give the
+		// caller's choice back afterwards (the installer's tests share one JVM).
+		String language = System.getProperty(LANGUAGE);
+		String cleanupSwitch = System.getProperty(OldInstallCleanup.SWITCH);
+		System.setProperty(LANGUAGE, "en");
+		System.clearProperty(OldInstallCleanup.SWITCH);
 		try {
 			theRulesHold(work.resolve("tip"));
+			everySpellingOfALibraryKeepsIt(work.resolve("spellings"));
+			aLinkOrJunctionAtAnyStepIsRedirected(work.resolve("redirected"));
+			onlyAProfileThatCannotBeReadStopsTheLibraries(work.resolve("json"));
+			anUnexpectedFailureStopsAndSaysSo(work.resolve("stopped"));
 			theMergeToolsGoOnlyWhenThisInstallerCarriesNone(work.resolve("tools"));
 			anUnreadableProfileKeepsEveryLibrary(work.resolve("unreadable"));
 			aFailedDeleteIsNamedAndTheRunCarriesOn(work.resolve("locked"));
@@ -80,10 +99,16 @@ public final class OldInstallCleanupTest {
 			reachingThisInstallsOutputsTurnsItRedWithoutTheGuard(work.resolve("control-guard"));
 			theLinesExistInChinese(work.resolve("zh"));
 		} finally {
-			System.clearProperty("forbric.dialogLanguage");
-			System.clearProperty(OldInstallCleanup.SWITCH);
+			restore(LANGUAGE, language);
+			restore(OldInstallCleanup.SWITCH, cleanupSwitch);
 		}
-		System.out.println("OldInstallCleanupTest: OK");
+		System.out.println("OldInstallCleanupTest: OK" + (NOT_RUN.isEmpty() ? ""
+				: " -- NOT RUN on this machine, so not checked here: " + String.join("; ", NOT_RUN)));
+	}
+
+	private static void restore(String property, String value) {
+		if (value == null) System.clearProperty(property);
+		else System.setProperty(property, value);
 	}
 
 	// --- the tip ---------------------------------------------------------------------------------------------
@@ -149,29 +174,36 @@ public final class OldInstallCleanupTest {
 		Layout layout = layout(mc);
 		Path lockedDir = mc.resolve("libraries/net/forbric/forge-runtime/26.2");
 		Path locked = lockedDir.resolve("forge-runtime-26.2.jar");
-		// A directory nobody may write to: deleting a file in it fails, the way a file a running game holds open does on
-		// Windows. Where that cannot be arranged (no POSIX permissions, or a user the permissions do not stop) the case says
-		// so and is not counted as a pass.
-		if (!java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
-			System.out.println("OldInstallCleanupTest: the failed-delete case needs POSIX permissions; not run here");
-			return;
-		}
-		Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("r-xr-xr-x"));
-		try {
-			Files.delete(Files.createFile(lockedDir.resolve("probe")));
-			Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x"));
-			System.out.println("OldInstallCleanupTest: this user writes into a read-only directory; the failed-delete case"
-					+ " is not run here");
-			return;
-		} catch (IOException refused) {
-			// As intended: nothing may be written, or deleted, in it.
-		}
 		List<String> log = new ArrayList<>();
 		OldInstallCleanup.Result result;
-		try {
-			result = new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
-		} finally {
-			Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x"));
+		if (System.getProperty("os.name", "").startsWith("Windows")) {
+			// The case itself: a file a running game holds open. java.io opens without FILE_SHARE_DELETE, as the game's
+			// own jar reads do, so Windows refuses to delete it while the stream is open.
+			try (java.io.FileInputStream held = new java.io.FileInputStream(locked.toFile())) {
+				result = new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
+			}
+		} else if (java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+			// Elsewhere an open file can be deleted; a directory nobody may write to makes the delete fail the same way.
+			Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("r-xr-xr-x"));
+			try {
+				Files.delete(Files.createFile(lockedDir.resolve("probe")));
+				Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x"));
+				NOT_RUN.add("the failed-delete case (this user writes into a read-only directory)");
+				System.out.println("OldInstallCleanupTest: SKIP the failed-delete case: this user writes into a read-only"
+						+ " directory");
+				return;
+			} catch (IOException refused) {
+				// As intended: nothing may be written, or deleted, in it.
+			}
+			try {
+				result = new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
+			} finally {
+				Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x"));
+			}
+		} else {
+			NOT_RUN.add("the failed-delete case (neither Windows nor POSIX permissions)");
+			System.out.println("OldInstallCleanupTest: SKIP the failed-delete case: neither Windows nor POSIX permissions");
+			return;
 		}
 		require(Files.isRegularFile(locked), "the file that could not be deleted is still there");
 		require(result.failed() == 1, "one failure counted: " + result + " " + log);
@@ -185,17 +217,130 @@ public final class OldInstallCleanupTest {
 		Layout layout = layout(mc);
 		Map<String, String> before = manifest(mc);
 		List<String> log = new ArrayList<>();
+		String before_ = System.getProperty(OldInstallCleanup.SWITCH);
 		System.setProperty(OldInstallCleanup.SWITCH, "off");
 		try {
 			new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
 		} finally {
-			System.clearProperty(OldInstallCleanup.SWITCH);
+			restore(OldInstallCleanup.SWITCH, before_);
 		}
 		require(before.equals(manifest(mc)), "-D" + OldInstallCleanup.SWITCH + "=off removes nothing");
 		require(log.equals(List.of("[cleanup] off (-Dforbric.installerCleanup=off): an older Forbric's files are left in place")),
 				"and says so: " + log);
 		// And the checks see it: the reverse control gate-m17 phase U makes of the switch.
 		require(!verify(mc, layout, log).isEmpty(), "with the clean-up off the removal checks are red");
+	}
+
+	/**
+	 * Every way a profile may name a library keeps it (review A, F1): a coordinate with an {@code @ext}, or a
+	 * classifier and an {@code @ext}; two paths in one string joined by a launcher's {@code ${classpath_separator}};
+	 * a path after {@code =} in a JVM argument; a sub-group's coordinate inside a longer string. An unnamed one beside
+	 * them still goes, so the case cannot pass by keeping everything.
+	 */
+	private static void everySpellingOfALibraryKeepsIt(Path mc) throws Exception {
+		Layout layout = layout(mc);
+		Path libraries = mc.resolve("libraries");
+		List<String> spelled = List.of("net/forbric/forbric-kernel/0.3.1/forbric-kernel-0.3.1.jar",
+				"net/forbric/natives/1/natives-1-macos.jar", "net/forbric/a/1/a-1.jar", "net/forbric/b/1/b-1.jar",
+				"net/forbric/c/1/c-1.jar", "net/forbric/extra/thing/2/thing-2.jar");
+		String unnamed = "net/forbric/extra/other/2/other-2.jar";
+		for (String library : spelled) write(libraries.resolve(library), "old " + library);
+		write(libraries.resolve(unnamed), "old " + unnamed);
+		write(mc.resolve("versions/spelled/spelled.json"), "{\"id\":\"spelled\",\"inheritsFrom\":\"26.2\","
+				+ "\"libraries\":[{\"name\":\"net.forbric:forbric-kernel:0.3.1@jar\"},"
+				+ "{\"name\":\"net.forbric:natives:1:macos@jar\"}],"
+				+ "\"arguments\":{\"jvm\":[\"-p\",\"${library_directory}/net/forbric/a/1/a-1.jar${classpath_separator}"
+				+ "${library_directory}/net/forbric/b/1/b-1.jar\",\"-Dsome.path=net/forbric/c/1/c-1.jar\"],"
+				+ "\"game\":[\"--uses net.forbric.extra:thing:2 for something\"]}}");
+		List<String> log = new ArrayList<>();
+		new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
+		List<String> problems = new ArrayList<>();
+		for (String library : spelled) {
+			if (!Files.isRegularFile(libraries.resolve(library))) problems.add("removed, though the profile names it: " + library);
+		}
+		require(problems.isEmpty(), "every spelling keeps its library: " + problems + "\n" + log);
+		require(!Files.exists(libraries.resolve(unnamed)), "the sub-group's unnamed sibling still goes: " + log);
+		require(verify(mc, layout, log).isEmpty(), "and the rest of the rules hold: " + verify(mc, layout, log));
+	}
+
+	/**
+	 * The test behind the guard for junctions (review A, F2), on what this machine can make: a symbolic link at a
+	 * step is redirected, a plain directory is not, and neither is a plain directory whose ancestors are links (a
+	 * Minecraft directory under a linked folder). Windows junctions resolve the same way through toRealPath; that
+	 * leg is checked on Windows only (ACCEPT).
+	 */
+	private static void aLinkOrJunctionAtAnyStepIsRedirected(Path base) throws Exception {
+		Path real = Files.createDirectories(base.resolve("real/mc/libraries/net/forbric"));
+		Path elsewhere = Files.createDirectories(base.resolve("elsewhere/net"));
+		Path linkedParent = Files.createSymbolicLink(base.resolve("linked-parent"), base.resolve("real"));
+		Path mc = base.resolve("real/mc");
+		require(!OldInstallCleanup.redirected(mc.resolve("libraries")), "a plain libraries is not redirected");
+		require(!OldInstallCleanup.redirected(linkedParent.resolve("mc/libraries/net")),
+				"a plain directory under a linked ancestor is not redirected");
+		require(!OldInstallCleanup.redirected(mc.resolve("LIBRARIES")) || !Files.exists(mc.resolve("LIBRARIES")),
+				"a different case of the same name is not redirected on a case-insensitive file system");
+		Path second = Files.createDirectories(base.resolve("second"));
+		Path linked = Files.createSymbolicLink(second.resolve("libraries"), elsewhere.getParent());
+		require(OldInstallCleanup.redirected(linked), "a libraries that is a link is redirected");
+		// (A step below it is judged against its own resolved parent, so the guard checks from libraries down.)
+		// And the clean-up refuses such a tree, naming it, with what is in it untouched.
+		write(elsewhere.resolve("forbric/old/1/old-1.jar"), "another directory's library");
+		List<String> log = new ArrayList<>();
+		new OldInstallCleanup(log::add).run(second, List.of(), List.of());
+		require(Files.isRegularFile(elsewhere.resolve("forbric/old/1/old-1.jar")), "a linked libraries is left whole");
+		require(log.stream().anyMatch(l -> l.startsWith("[cleanup] left " + linked + " ")), "and named: " + log);
+	}
+
+	/**
+	 * Only a profile -- versions/<id>/<id>.json, or a parent one names -- that cannot be read stops the libraries
+	 * (review B, 5). Any other JSON beside it that does not parse (the game's or a mod's under version isolation: an
+	 * empty file, comments) is skipped and named; a profile written with a byte-order mark is read.
+	 */
+	private static void onlyAProfileThatCannotBeReadStopsTheLibraries(Path mc) throws Exception {
+		Layout layout = layout(mc);
+		write(mc.resolve("versions/26.2-forbric/usercache.json"), "");
+		write(mc.resolve("versions/keep-old/some-mod.json"), "// a mod's settings\n{\"a\": 1}");
+		String bomNamed = "net/forbric/bom/1/bom-1.jar";
+		write(mc.resolve("libraries").resolve(bomNamed), "old " + bomNamed);
+		write(mc.resolve("versions/bom/bom.json"), "\uFEFF{\"id\":\"bom\",\"libraries\":[{\"name\":\"net.forbric:bom:1\"}]}");
+		List<String> log = new ArrayList<>();
+		new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
+		require(verify(mc, layout, log).isEmpty(), "the libraries are still cleaned: " + verify(mc, layout, log) + "\n" + log);
+		for (String skipped : List.of("usercache.json", "some-mod.json")) {
+			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] skipped ") && l.contains(skipped)),
+					"a JSON that is not a profile is named as skipped: " + skipped + " " + log);
+		}
+		require(Files.isRegularFile(mc.resolve("libraries").resolve(bomNamed)), "a profile with a byte-order mark is read");
+		require(OldInstallCleanup.isProfile(mc.resolve("versions/a/a.json")) && !OldInstallCleanup.isProfile(
+				mc.resolve("versions/a/b.json")), "a profile is versions/<id>/<id>.json");
+		// A parent named by inheritsFrom that cannot be read stops the libraries, like any profile.
+		Path parentMc = mc.resolveSibling(mc.getFileName() + "-parent");
+		Layout parent = layout(parentMc);
+		write(parentMc.resolve("versions/old-parent/old-parent.json"), "");
+		List<String> parentLog = new ArrayList<>();
+		new OldInstallCleanup(parentLog::add).run(parentMc, parent.built, parent.staged);
+		for (String orphan : ORPHANS) {
+			require(Files.isRegularFile(parentMc.resolve("libraries").resolve(orphan)), "kept while a parent is unreadable: " + orphan);
+		}
+	}
+
+	/**
+	 * Something unexpected (here: a staged path no file system accepts) stops the clean-up with its own line -- not
+	 * "could not remove" the Minecraft directory (review B, 3) -- and nothing is counted as a failed file.
+	 */
+	private static void anUnexpectedFailureStopsAndSaysSo(Path mc) throws Exception {
+		Layout layout = layout(mc);
+		List<Map<String, Object>> staged = new ArrayList<>(layout.staged);
+		staged.add(Map.of("downloads", Map.of("artifact", Map.of("path", "net/forbric/bad\u0000name.jar"))));
+		Map<String, String> before = manifest(mc);
+		List<String> log = new ArrayList<>();
+		OldInstallCleanup.Result result = new OldInstallCleanup(log::add).run(mc, layout.built, staged);
+		require(log.stream().anyMatch(l -> l.startsWith("[cleanup] the clean-up stopped part-way (")
+				&& l.endsWith("): every old file it had not reached yet is left in place, and the install carries on")),
+				"the stop has its own line: " + log);
+		require(log.stream().noneMatch(l -> l.startsWith("[cleanup] could not remove")), "and no 'could not remove': " + log);
+		require(result.removed() == 0 && result.failed() == 0, "nothing removed, nothing counted as failed: " + result);
+		require(before.equals(manifest(mc)), "every file is still there");
 	}
 
 	// --- the controls -------------------------------------------------------------------------------------------
@@ -237,13 +382,13 @@ public final class OldInstallCleanupTest {
 	private static void theLinesExistInChinese(Path mc) throws Exception {
 		Layout layout = layout(mc);
 		List<String> log = new ArrayList<>();
-		System.setProperty("forbric.dialogLanguage", "zh");
+		System.setProperty(LANGUAGE, "zh");
 		try {
 			new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
 			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] 已删除 ") && l.endsWith("（旧版 Forbric 留下的文件，已没有任何版本使用）")),
 					"removals in Chinese: " + log);
-			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] 保留 ") && l.endsWith("：它是符号链接，清理从不跟随或删除链接")),
-					"links in Chinese: " + log);
+			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] 保留 ")
+					&& l.endsWith("：它是链接（符号链接或目录联接），或经由链接到达；清理从不跟随或删除链接")), "links in Chinese: " + log);
 			require(log.get(log.size() - 1).matches("\\[cleanup\\] 已删除旧版 Forbric 留下的 [0-9]+ 个文件（[0-9.]+ MB）"),
 					"the summary in Chinese: " + log);
 			Path any = mc.resolve("x");
@@ -254,10 +399,14 @@ public final class OldInstallCleanupTest {
 			require(InstallerText.cleanupOff().equals("[cleanup] 已关闭（-Dforbric.installerCleanup=off）：旧版 Forbric 的文件全部保留"),
 					InstallerText.cleanupOff());
 			require(InstallerText.cleanupSummary(2, 0, 1).endsWith("；1 个无法删除，已保留"), InstallerText.cleanupSummary(2, 0, 1));
+			require(InstallerText.cleanupStopped("r").equals("[cleanup] 清理中途停止（r）：还没处理到的旧文件全部保留；安装照常完成"),
+					InstallerText.cleanupStopped("r"));
+			require(InstallerText.cleanupSkippedJson(any, "r").startsWith("[cleanup] 跳过 " + any + "（r）：它不是版本配置文件"),
+					InstallerText.cleanupSkippedJson(any, "r"));
 		} finally {
-			System.clearProperty("forbric.dialogLanguage");
+			System.setProperty(LANGUAGE, "en");
 		}
-		require(InstallerText.cleanupOff().startsWith("[cleanup] off"), "and English again once the property is gone");
+		require(InstallerText.cleanupOff().startsWith("[cleanup] off"), "and English again once English is asked for");
 	}
 
 	// --- the layout ---------------------------------------------------------------------------------------------
@@ -356,6 +505,7 @@ public final class OldInstallCleanupTest {
 			}
 		}
 		if (Files.exists(build.resolve("ats"), LinkOption.NOFOLLOW_LINKS)) problems.add("the emptied ats directory was kept");
+		if (Files.exists(build.resolve("26.2-65.0.1"), LinkOption.NOFOLLOW_LINKS)) problems.add("v0.1.0's work tree was kept");
 		for (String current : CURRENT_BUILD) {
 			if (!Files.isRegularFile(build.resolve(current))) problems.add("this install's own build file was removed: " + current);
 		}
