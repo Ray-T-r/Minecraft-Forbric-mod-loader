@@ -187,7 +187,7 @@ class GameLinkStagedTest {
 		return out;
 	}
 
-	private static int cli(String[] out, String... args) {
+	private static int cli(String[] out, String... args) throws IOException {
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 		PrintStream both = new PrintStream(buffer, true, StandardCharsets.UTF_8);
 		int code = LinkCheck.run(args, both, both);

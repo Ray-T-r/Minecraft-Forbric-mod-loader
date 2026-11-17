@@ -356,8 +356,9 @@ public final class LinkCheck {
 		if (module != null) {
 			try (InputStream in = module.getResourceAsStream(name + ".class")) {
 				if (in != null) jdk = header(in.readAllBytes(), Source.RUNTIME, options.judgeRuntime);
-			} catch (IOException | RuntimeException unreadable) {
-				jdk = null;
+			} catch (IOException unreadable) {
+				// The running JDK's own class file: unreadable means the JVM is broken, not that the class is absent.
+				throw new java.io.UncheckedIOException("could not read the JDK's " + name, unreadable);
 			}
 		}
 		if (jdk == null) runtimeMissing.add(name);
@@ -812,12 +813,16 @@ public final class LinkCheck {
 
 	// --- command line ----------------------------------------------------------------------------------------------
 
-	public static void main(String[] args) {
+	/**
+	 * Exit 0 links, 1 does not, 2 usage or nothing judged. An input that cannot be read (a damaged jar or class file)
+	 * ends it with its exception and no verdict line, which a caller reading the verdict takes as a failure.
+	 */
+	public static void main(String[] args) throws IOException {
 		System.exit(run(args, System.out, System.err));
 	}
 
-	/** The command line, returning the exit code: 0 links, 1 does not, 2 usage, unreadable input or nothing judged. */
-	public static int run(String[] args, java.io.PrintStream out, java.io.PrintStream err) {
+	/** The command line, returning the exit code: 0 links, 1 does not, 2 usage or nothing judged. */
+	public static int run(String[] args, java.io.PrintStream out, java.io.PrintStream err) throws IOException {
 		List<Path> inputs = new ArrayList<>();
 		Set<Path> judgedInputs = new LinkedHashSet<>();
 		List<Path> libraries = new ArrayList<>();
@@ -846,31 +851,19 @@ public final class LinkCheck {
 			}
 		}
 		LinkCheck check = new LinkCheck(options);
-		try {
-			for (Path input : inputs) {
-				boolean judgedInput = judgedInputs.isEmpty() || judgedInputs.contains(input.toAbsolutePath().normalize());
-				if (!Files.exists(input)) return usage(err, "no such input: " + input);
-				if (judgedInput) check.scan(input);
-				else check.scanUnjudged(input);
-				out.println("[link-check] " + (judgedInput ? "judged " : "scanned") + " " + input);
-			}
-			for (Path library : libraries) {
-				if (!Files.exists(library)) return usage(err, "no such library: " + library);
-				check.library(library);
-			}
-		} catch (IOException | RuntimeException unreadable) {
-			// A damaged jar or class file: no verdict on links, and said so, never a stack trace instead of a summary.
-			err.println("[link-check] could not read the inputs: " + unreadable);
-			return 2;
+		for (Path input : inputs) {
+			boolean judgedInput = judgedInputs.isEmpty() || judgedInputs.contains(input.toAbsolutePath().normalize());
+			if (!Files.exists(input)) return usage(err, "no such input: " + input);
+			if (judgedInput) check.scan(input);
+			else check.scanUnjudged(input);
+			out.println("[link-check] " + (judgedInput ? "judged " : "scanned") + " " + input);
+		}
+		for (Path library : libraries) {
+			if (!Files.exists(library)) return usage(err, "no such library: " + library);
+			check.library(library);
 		}
 		if (check.judgedPackages.isEmpty()) return usage(err, "the judged inputs contain no classes; no link check was performed");
-		Result result;
-		try {
-			result = check.run();
-		} catch (RuntimeException unreadable) {
-			err.println("[link-check] could not read a class body: " + unreadable);
-			return 2;
-		}
+		Result result = check.run();
 		for (Violation v : result.violations()) out.println(v.line());
 		out.println(result.breakdown());
 		out.println(result.summary());

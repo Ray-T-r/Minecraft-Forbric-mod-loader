@@ -544,7 +544,7 @@ class LinkCheckTest {
 	}
 
 	/** Runs the command line with its output and errors captured into {@code out[0]}. */
-	private static int capture(String[] out, String[] args) {
+	private static int capture(String[] out, String[] args) throws IOException {
 		ByteArrayOutputStream buffer = new ByteArrayOutputStream();
 		PrintStream both = new PrintStream(buffer, true, StandardCharsets.UTF_8);
 		int code = LinkCheck.run(args, both, both);

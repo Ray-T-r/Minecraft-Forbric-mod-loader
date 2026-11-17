@@ -40,6 +40,7 @@ import net.forbric.kernel.mixin.NativeGameReferences;
 import net.forbric.kernel.mixin.NativeReferenceSources;
 import net.forbric.kernel.transform.ForbricMergedBaseCompatTransformer;
 import net.forbric.kernel.transform.VanillaMemberTwinInjector;
+import net.forbric.kernel.util.Caught;
 
 /**
  * The link check of the game a launch assembles, not only of the jars the installer stages: NeoForge's patched game and
@@ -140,6 +141,8 @@ public final class GameLinkCheck {
 						String dotted = internal.replace('/', '.');
 						view = compat.transform(dotted, twins.transform(dotted, raw, null), null);
 					} catch (RuntimeException | LinkageError unviewable) {
+						Caught.warn(unviewable, "[Forbric/LinkCheck] the vanilla twins or the compat repairs could not view %s;"
+								+ " it is checked as the jar holds it, and the check reports an incomplete view", internal);
 						failures.add(internal + ": " + unviewable);
 						view = raw;
 					}
@@ -253,12 +256,12 @@ public final class GameLinkCheck {
 
 	// --- command line ----------------------------------------------------------------------------------------------
 
-	public static void main(String[] args) {
+	public static void main(String[] args) throws IOException {
 		System.exit(run(args));
 	}
 
-	/** The command line, returning the exit code. */
-	public static int run(String[] args) {
+	/** The command line, returning the exit code. An unreadable input ends it with its exception and no verdict line. */
+	public static int run(String[] args) throws IOException {
 		Path base = null, carrier = null, sidecar = null, definitions = null;
 		List<Path> gameSide = new ArrayList<>(), libraries = new ArrayList<>(), known = new ArrayList<>();
 		for (int i = 0; i < args.length; i++) {
@@ -295,13 +298,14 @@ public final class GameLinkCheck {
 				try (InputStream stream = baseJar.getInputStream(entry)) {
 					return stream.readAllBytes();
 				} catch (IOException unreadable) {
+					// As KernelBoot's reader for the twins: an unreadable resource reads as absent, and a twin that needs
+					// it stands down, which the view line then reports as a twin that did not land.
+					Caught.warn(unreadable, "[Forbric/LinkCheck] could not read the base's %s for the vanilla twins; it reads"
+							+ " as absent", path);
 					return null;
 				}
 			});
 			outcome = check(new Inputs(base, carrier, gameSide, libraries, definitions, known), vanilla, LinkCheck.Options.all());
-		} catch (IOException unreadable) {
-			System.err.println("[link-check] could not read the inputs: " + unreadable);
-			return 2;
 		}
 		LinkCheck.Result result = outcome.result();
 		for (LinkCheck.Violation v : result.violations()) System.out.println(v.line());
