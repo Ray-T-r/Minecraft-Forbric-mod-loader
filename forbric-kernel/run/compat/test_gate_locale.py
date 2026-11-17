@@ -52,6 +52,9 @@ PINS = {
                                 [('user.language=en', 'forbric.dialogLanguage=en')]),
     'gate-m29-forgecaps.sh': ('its refusal boot asserts the English load report and finding detail',
                               [('user.language=en', 'forbric.dialogLanguage=en')]),
+    'gate-m17-installer.sh': ('its installer runs (not game JVMs) print the [cleanup] summary its checks read, and '
+                              'InstallerText follows the installer JVM\'s language',
+                              [('user.language=en', 'forbric.dialogLanguage=en')]),
 }
 LANGUAGE_SWITCHES = ('user.language', 'forbric.dialogLanguage')
 DIALOG_LANG = RUN.parent / 'src/main/java/net/forbric/kernel/ui/DialogLang.java'
