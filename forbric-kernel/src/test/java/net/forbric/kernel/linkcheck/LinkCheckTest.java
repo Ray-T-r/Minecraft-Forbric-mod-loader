@@ -205,6 +205,15 @@ class LinkCheckTest {
 			mv.visitInsn(ICONST_2);
 			mv.visitFieldInsn(PUTSTATIC, "p/A", "CONST", "I");
 		}));
+		// The same write from the writer's own initializer: only the declaring-class rule sees it (the method is <clinit>).
+		cases.add(new Case("write to another class's final field from the writer's initializer", Map.of("q/Init", cls("q/Init",
+				ACC_PUBLIC, null, cw -> {
+					method(cw, ACC_STATIC, "<clinit>", "()V", mv -> {
+						mv.visitInsn(ICONST_2);
+						mv.visitFieldInsn(PUTSTATIC, "p/A", "CONST", "I");
+					});
+					method(cw, ACC_PUBLIC | ACC_STATIC, "run", "()V", mv -> { });
+				})), "q/Init", Kind.FINAL, fin, IllegalAccessError.class, false));
 		cases.add(new Case("extends a final class", Map.of("q/SubFin", cls("q/SubFin", ACC_PUBLIC, "p/Fin",
 				cw -> method(cw, ACC_PUBLIC | ACC_STATIC, "run", "()V", mv -> { }))), "q/SubFin",
 				Kind.FINAL, fin, IncompatibleClassChangeError.class, false));

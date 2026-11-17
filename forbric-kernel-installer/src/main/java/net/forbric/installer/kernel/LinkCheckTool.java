@@ -140,7 +140,7 @@ final class LinkCheckTool {
 	 * current one would refuse.
 	 *
 	 * <p>Like the artifact cache, this only ever misbehaves on a machine that has installed before — the gate
-	 * wipes its directory, so a gated install always unpacked into an empty one. It is 280 KB; there is nothing
+	 * wipes its directory, so a gated install always unpacked into an empty one. It is 150 KB; there is nothing
 	 * to save by being clever about it.
 	 */
 	private Path unpackTools() throws IOException {
