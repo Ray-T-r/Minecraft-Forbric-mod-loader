@@ -6,7 +6,8 @@
 # inputs which the build did not declare (its baseline) left the bundling UP-TO-DATE: every player's install then ran the
 # previous tool. This builds the installer's checker twice in a throwaway copy of the tracked sources -- changing only a
 # checker source in between -- and reads the checker back out of the jar the installer would carry, comparing it with
-# the class the copy's kernel compiled.
+# the class the copy's kernel compiled. Then it changes the source once more and bundles with -x buildLinkCheck, which
+# leaves the checker jar as the previous sources built it: the bundling must refuse that jar, not ship it.
 #
 # Usage: ./test-bundled-checker.sh      (needs a warm gradle cache: it builds offline)
 set -uo pipefail
@@ -30,7 +31,7 @@ same() { # <what>
   if [ -f "$COMPILED" ] && packed | cmp -s - "$COMPILED"; then echo "  PASS $1"; else echo "  FAIL $1"; FAIL=1; fi
 }
 
-echo "[test-bundled-checker] 1/3 the first bundle carries the checker the tree compiles"
+echo "[test-bundled-checker] 1/4 the first bundle carries the checker the tree compiles"
 bundle first || { echo "  FAIL bundleLinkCheck failed: $(tail -5 "$WORK/first.log")"; exit 1; }
 same "the bundled jar holds the kernel's LinkCheck.class"
 # Listed into a variable first: `unzip -l | grep -q` under pipefail fails when grep stops reading early.
@@ -43,7 +44,7 @@ fi
 FIRST="$(packed | shasum | cut -d' ' -f1)"
 echo "  (first bundle's LinkCheck.class: $FIRST)"
 
-echo "[test-bundled-checker] 2/3 a checker-source-only change reaches the bundled jar"
+echo "[test-bundled-checker] 2/4 a checker-source-only change reaches the bundled jar"
 python3 - "$SOURCE" <<'PY' || { echo "  FAIL could not change the copy's checker source"; exit 1; }
 import sys
 p = sys.argv[1]
@@ -63,7 +64,7 @@ else
   echo "  FAIL the bundled class is still the first build's"; FAIL=1
 fi
 
-echo "[test-bundled-checker] 3/3 the bundled checker runs on its own and says it ran"
+echo "[test-bundled-checker] 3/4 the bundled checker runs on its own and says it ran"
 JAVA="${JAVA_HOME:+$JAVA_HOME/bin/}java"
 mkdir -p "$WORK/empty"
 OUT="$("$JAVA" -cp "$BUNDLED" net.forbric.kernel.linkcheck.LinkCheck "$WORK/empty" 2>&1)"; RC=$?
@@ -71,6 +72,24 @@ if [ "$RC" = 2 ] && printf '%s\n' "$OUT" | grep -aq 'no classes'; then
   echo "  PASS a checker with nothing to judge refuses a verdict (exit 2) instead of passing"
 else
   echo "  FAIL the bundled checker did not refuse an empty input (exit $RC): $OUT"; FAIL=1
+fi
+
+echo "[test-bundled-checker] 4/4 a checker built from other sources than the tree's is refused (-x buildLinkCheck)"
+python3 - "$SOURCE" <<'PY' || { echo "  FAIL could not change the copy's checker source again"; exit 1; }
+import sys
+p = sys.argv[1]
+s = open(p, encoding="utf-8").read()
+old = '"usage (changed): LinkCheck '
+if old not in s:
+    sys.exit(1)
+open(p, "w", encoding="utf-8").write(s.replace(old, '"usage (changed twice): LinkCheck ', 1))
+PY
+if (cd "$WORK/forbric-kernel-installer" && ./gradlew --offline -q bundleLinkCheck -x buildLinkCheck) > "$WORK/stale.log" 2>&1; then
+  echo "  FAIL bundleLinkCheck -x buildLinkCheck bundled a checker the changed sources never built"; FAIL=1
+elif grep -aq 'built from other link-checker sources' "$WORK/stale.log"; then
+  echo "  PASS the stale checker jar was refused, naming why"
+else
+  echo "  FAIL bundleLinkCheck failed, but not for the stale checker: $(tail -5 "$WORK/stale.log")"; FAIL=1
 fi
 
 echo

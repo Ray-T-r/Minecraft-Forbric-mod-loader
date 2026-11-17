@@ -38,6 +38,21 @@ def isWindows = System.getProperty('os.name').toLowerCase().contains('win')
 // What the kernel's :linkCheckJar writes, and the checker's sources: a change to either must reach the installer.
 def linkCheckJar = file("${kernelDir}/build/link-check/forbric-link-check.jar")
 def linkCheckSources = file("${kernelDir}/src/main/java/net/forbric/kernel/linkcheck")
+// The kernel's :linkCheckJar records the sources it was built from in its manifest (Forbric-LinkCheck-Sources); this is the
+// same digest of this tree's sources (linkcheck/*.java and the ASM version), so a checker built from other sources is
+// refused rather than bundled -- `-x buildLinkCheck` after a source change nothing rebuilt would otherwise ship it.
+def linkCheckSourceDigest = {
+	def asm = (file("${kernelDir}/gradle.properties").text =~ /(?m)^asm_version\s*=\s*(\S+)/)
+	if (!asm) throw new GradleException("no asm_version in ${kernelDir}/gradle.properties")
+	def md = java.security.MessageDigest.getInstance('SHA-256')
+	md.update("asm ${asm[0][1]}\n".getBytes('UTF-8'))
+	(linkCheckSources.listFiles().findAll { it.isFile() && it.name.endsWith('.java') }).sort { it.name }.each { f ->
+		md.update("${f.name}\n".getBytes('UTF-8'))
+		md.update(f.bytes)
+		md.update((byte) 0)
+	}
+	md.digest().encodeHex().toString()
+}
 
 tasks.register('buildForbricJars', Exec) {
 	description = "Build the kernel jar the installer bundles."
@@ -65,9 +80,17 @@ tasks.register('bundleLinkCheck') {
 	description = "Copy the kernel's link-checker jar into the installer's resources."
 	dependsOn 'buildLinkCheck'
 	inputs.file(linkCheckJar).withPropertyName('linkCheck').withPathSensitivity(PathSensitivity.NONE)
+	// The sources too: a source change with the jar left as it was must re-run this task, so the check below sees it.
+	inputs.files(fileTree(linkCheckSources) { include '*.java' }).withPropertyName('linkCheckSources')
 	outputs.dir(genLinkCheck)
 	doLast {
 		if (!linkCheckJar.isFile()) throw new GradleException("missing ${linkCheckJar} — run the kernel's :linkCheckJar")
+		def built = new java.util.jar.JarFile(linkCheckJar).withCloseable { it.manifest?.mainAttributes?.getValue('Forbric-LinkCheck-Sources') }
+		def tree = linkCheckSourceDigest()
+		if (built != tree) {
+			throw new GradleException("${linkCheckJar} was built from other link-checker sources than this tree's (jar ${built ?: 'names none'},"
+					+ " tree ${tree}): run the kernel's :linkCheckJar, or this task without -x buildLinkCheck")
+		}
 		def outDir = genLinkCheck.get().asFile
 		outDir.deleteDir()
 		def dest = new File(outDir, 'forbric/tools/forbric-link-check.jar')
@@ -89,20 +112,30 @@ tasks.register('devToolsJar', Jar) {
 	manifest { attributes 'Main-Class': 'net.forbric.installer.kernel.DevPrepare' }
 }
 
-// This module's tests are main() programs, not a JUnit suite: InstallerTests runs every *Test class under src/test/java
-// that has one, found by name, so a new test joins without an edit here. They need the checker as the installer carries
-// it (LinkCheckToolTest runs it as the install does), not the player payload processResources would build.
+// This module's tests are main() programs, not a JUnit suite: InstallerTests runs every *Test class under src/test/java,
+// found by name, so a new test joins without an edit here (and one without a runnable main fails the run). They need the
+// checker as the installer carries it (LinkCheckToolTest runs it as the install does), not the player payload.
+// So they compile here, against the installer's classes only. The stock compileTestJava puts all of main's output on its
+// class path, resources included, and main's resources are the player payload: processResources -> bundleForbric ->
+// buildForbricJars, a nested kernel build that runs online and without the caller's -P settings (and, from the kernel's
+// own `check`, inside a kernel build).
+def installerTestClasses = tasks.register('compileInstallerTests', JavaCompile) {
+	dependsOn 'compileJava'
+	source = fileTree('src/test/java') { include '**/*.java' }
+	classpath = files(sourceSets.main.output.classesDirs)
+	destinationDirectory = layout.buildDirectory.dir('installer-test-classes')
+}
 tasks.register('installerTest', JavaExec) {
 	group = 'verification'
 	description = "Run the installer's tests: the packaged link check on synthetic jars, and every other *Test main."
-	dependsOn 'testClasses', 'bundleLinkCheck'
-	classpath = files(sourceSets.test.output.classesDirs, sourceSets.main.output.classesDirs, genLinkCheck)
+	dependsOn installerTestClasses, 'bundleLinkCheck'
+	classpath = files(installerTestClasses.flatMap { it.destinationDirectory }, sourceSets.main.output.classesDirs, genLinkCheck)
 	mainClass = 'net.forbric.installer.kernel.InstallerTests'
 	doFirst {
 		def scratch = layout.buildDirectory.dir('installer-test').get().asFile
 		scratch.deleteDir()
 		scratch.mkdirs()
-		args = [scratch.absolutePath] + sourceSets.test.output.classesDirs.files.collect { it.absolutePath }
+		args = [scratch.absolutePath, installerTestClasses.get().destinationDirectory.get().asFile.absolutePath]
 	}
 }
 tasks.named('check') { dependsOn 'installerTest' }

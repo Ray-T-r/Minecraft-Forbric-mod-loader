@@ -637,6 +637,20 @@ tasks.named('check') { dependsOn 'toolTest' }
 // which is all it needs (LinkCheckTest pins that). The installer carries it (its :bundleLinkCheck) and runs it on every
 // install before it has staged any of Forbric's jars, a slim installer included. The game check beside it
 // (linkcheck.game.GameLinkCheck) reads the kernel's transformers, so it stays in the kernel jar and is not in this one.
+// The jar names the sources it was built from (Forbric-LinkCheck-Sources: a digest of linkcheck/*.java and the ASM version,
+// computed the same way by the installer's :bundleLinkCheck), so the installer can refuse to bundle a checker that is not
+// this tree's -- the hazard of every `-x buildLinkCheck` run after a source change that nothing rebuilt.
+def linkCheckSourceDir = file('src/main/java/net/forbric/kernel/linkcheck')
+def linkCheckSourceDigest = {
+	def md = java.security.MessageDigest.getInstance('SHA-256')
+	md.update("asm ${project.asm_version}\n".getBytes('UTF-8'))
+	(linkCheckSourceDir.listFiles().findAll { it.isFile() && it.name.endsWith('.java') }).sort { it.name }.each { f ->
+		md.update("${f.name}\n".getBytes('UTF-8'))
+		md.update(f.bytes)
+		md.update((byte) 0)
+	}
+	md.digest().encodeHex().toString()
+}
 tasks.register('linkCheckJar', Jar) {
 	group = 'build'
 	description = 'Build forbric-link-check.jar: the link checker the installer ships, with ASM shaded in.'
@@ -646,7 +660,10 @@ tasks.register('linkCheckJar', Jar) {
 	from({ configurations.runtimeClasspath.files.findAll { it.name == "asm-${project.asm_version}.jar" }.collect { zipTree(it) } }) {
 		exclude 'META-INF/MANIFEST.MF', 'META-INF/versions/**', 'module-info.class'
 	}
+	// A source change that compiles to the same classes (a comment) still changes the digest the manifest carries.
+	inputs.files(fileTree(linkCheckSourceDir) { include '*.java' }).withPropertyName('linkCheckSources')
 	manifest { attributes 'Main-Class': 'net.forbric.kernel.linkcheck.LinkCheck' }
+	doFirst { manifest.attributes('Forbric-LinkCheck-Sources': linkCheckSourceDigest()) }
 	// Reproducible: the installer's own build compares nothing, but two builds of one tree should ship one jar.
 	preserveFileTimestamps = false
 	reproducibleFileOrder = true
@@ -668,8 +685,9 @@ tasks.register('installerTest', Exec) {
 	description = "Run the installer's tests: its packaged link check on synthetic jars and its other *Test mains."
 	dependsOn 'linkCheckJar'
 	workingDir file('../forbric-kernel-installer')
+	// Offline when this build is: the installer's build resolves nothing for its tests, and a pinned run must not go online.
 	commandLine((osName.contains('windows') ? ['cmd', '/d', '/c', 'gradlew.bat'] : ['./gradlew'])
-			+ ['installerTest', '-x', 'buildLinkCheck'])
+			+ (gradle.startParameter.offline ? ['--offline'] : []) + ['installerTest', '-x', 'buildLinkCheck'])
 }
 tasks.named('check') { dependsOn 'installerTest' }
 // The suites whose tests ran in THIS invocation. Results left by an earlier invocation are not evidence.
