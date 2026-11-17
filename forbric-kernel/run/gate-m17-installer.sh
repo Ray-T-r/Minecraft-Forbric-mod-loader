@@ -32,8 +32,12 @@
 # v0.3.1-beta2 installer jar (the owner allowed that one download, 2026-11-17) is fetched once into run/.gate-downloads/m17,
 # SHA-1 checked, and run once into an empty directory there; that directory -- beta2's own profile, libraries and
 # .forbric-build, built from what beta2 itself downloads -- is cloned for every run. A second profile still names beta2's
-# merged base and its kernel; both must survive while everything else old goes, each removal named in the install's log.
-# The reverse control runs the same installer with -Dforbric.installerCleanup=off first: every removal check must be red.
+# kernel; it must survive while everything else old goes -- beta2's merged base in libraries among them, as on a player's
+# machine -- each removal named in the install's log. A JSON beside a profile that is not one (the game's, under a
+# launcher's version isolation) and does not parse must not stop the clean-up. The reverse control runs the same installer
+# with -Dforbric.installerCleanup=off first: every removal check must be red. If the old install cannot be fetched or laid
+# out (a fresh worktree without the network), phase U alone is red and every other phase still runs; copying
+# run/.gate-downloads/m17 from a worktree that has it saves the fetch (the SHA-1 and the marker are checked either way).
 #
 # Rundir: M17_DEST (default run/installed, which the gate wipes). M17_SEED_CACHE=<an earlier install's directory> copies
 # that install's download caches (.forbric-build/dl and tools) and NeoForm's patched game (.forbric-build/out/
@@ -68,31 +72,39 @@ mkdir -p "$BUILD"
 
 [ -d "$MC/assets" ] || { echo "[kernel] SKIP-FATAL: no Minecraft assets at $MC/assets" >&2; exit 3; }
 [ -d "$SRC_RUNDIR/saves/$WORLD" ] || { echo "[kernel] SKIP-FATAL: no world at $SRC_RUNDIR/saves/$WORLD" >&2; exit 3; }
-# The released installer: fetched once (owner answer 2), and refused unless it is the one published.
-if [ "$(shasum -a 1 "$BETA2_JAR" 2>/dev/null | cut -d' ' -f1)" != "$BETA2_SHA1" ]; then
-  mkdir -p "$(dirname "$BETA2_JAR")"
-  curl -fsSL -o "$BETA2_JAR.part" "$BETA2_URL" \
-    || { echo "[kernel] SKIP-FATAL: could not fetch the v0.3.1-beta2 installer from $BETA2_URL" >&2; exit 3; }
-  GOT_SHA1="$(shasum -a 1 "$BETA2_JAR.part" | cut -d' ' -f1)"
-  [ "$GOT_SHA1" = "$BETA2_SHA1" ] \
-    || { rm -f "$BETA2_JAR.part"; echo "[kernel] SKIP-FATAL: $BETA2_URL has sha1 $GOT_SHA1, not the published $BETA2_SHA1" >&2; exit 3; }
-  mv "$BETA2_JAR.part" "$BETA2_JAR"
-fi
-# Its install, once: an empty directory with the base version, as a player's .minecraft had it. Kept only when beta2 says
-# it installed; the marker names the jar that wrote it.
-if [ "$(cat "$BETA2_INSTALL.done" 2>/dev/null)" != "$BETA2_SHA1" ]; then
-  echo "[kernel] laying out phase U's old install with the released v0.3.1-beta2 installer (once; it downloads and builds)"
-  rm -rf "$BETA2_INSTALL" "$BETA2_INSTALL.done"
-  mkdir -p "$BETA2_INSTALL/versions/26.2"
-  cp "$MC/versions/26.2/26.2.json" "$MC/versions/26.2/26.2.jar" "$BETA2_INSTALL/versions/26.2/" 2>/dev/null || true
-  if java -jar "$BETA2_JAR" --dir "$BETA2_INSTALL" --mc 26.2 > "$BUILD/gate-m17-beta2-install.log" 2>&1 \
-      && grep -aq '^Installed\.' "$BUILD/gate-m17-beta2-install.log"; then
-    echo "$BETA2_SHA1" > "$BETA2_INSTALL.done"
-  else
-    echo "[kernel] SKIP-FATAL: the v0.3.1-beta2 installer did not install (log $BUILD/gate-m17-beta2-install.log)" >&2; exit 3
+# The released installer: fetched once (owner answer 2), and refused unless it is the one published. Its install, once:
+# an empty directory with the base version, as a player's .minecraft had it, kept only when beta2 says it installed (the
+# marker names the jar that wrote it). A failure here is phase U's alone (BETA2_FAIL, judged there), not the gate's.
+BETA2_FAIL=""
+lay_out_beta2() {
+  if [ "$(shasum -a 1 "$BETA2_JAR" 2>/dev/null | cut -d' ' -f1)" != "$BETA2_SHA1" ]; then
+    mkdir -p "$(dirname "$BETA2_JAR")"
+    curl -fsSL -o "$BETA2_JAR.part" "$BETA2_URL" \
+      || { rm -f "$BETA2_JAR.part"; BETA2_FAIL="could not fetch the v0.3.1-beta2 installer from $BETA2_URL"; return 1; }
+    local got
+    got="$(shasum -a 1 "$BETA2_JAR.part" | cut -d' ' -f1)"
+    [ "$got" = "$BETA2_SHA1" ] \
+      || { rm -f "$BETA2_JAR.part"; BETA2_FAIL="$BETA2_URL has sha1 $got, not the published $BETA2_SHA1"; return 1; }
+    mv "$BETA2_JAR.part" "$BETA2_JAR"
   fi
+  if [ "$(cat "$BETA2_INSTALL.done" 2>/dev/null)" != "$BETA2_SHA1" ]; then
+    echo "[kernel] laying out phase U's old install with the released v0.3.1-beta2 installer (once; it downloads and builds)"
+    rm -rf "$BETA2_INSTALL" "$BETA2_INSTALL.done"
+    mkdir -p "$BETA2_INSTALL/versions/26.2"
+    cp "$MC/versions/26.2/26.2.json" "$MC/versions/26.2/26.2.jar" "$BETA2_INSTALL/versions/26.2/" 2>/dev/null || true
+    if java -jar "$BETA2_JAR" --dir "$BETA2_INSTALL" --mc 26.2 > "$BUILD/gate-m17-beta2-install.log" 2>&1 \
+        && grep -aq '^Installed\.' "$BUILD/gate-m17-beta2-install.log"; then
+      echo "$BETA2_SHA1" > "$BETA2_INSTALL.done"
+    else
+      BETA2_FAIL="the v0.3.1-beta2 installer did not install (log $BUILD/gate-m17-beta2-install.log)"; return 1
+    fi
+  fi
+}
+if lay_out_beta2; then
+  echo "[kernel] phase U's old install: $BETA2_INSTALL, written by v0.3.1-beta2 (sha1 $BETA2_SHA1)"
+else
+  echo "[kernel] phase U's old install is missing: $BETA2_FAIL; phase U will be red, the rest of the gate runs"
 fi
-echo "[kernel] phase U's old install: $BETA2_INSTALL, written by v0.3.1-beta2 (sha1 $BETA2_SHA1)"
 
 kernel_jar
 
@@ -626,17 +638,25 @@ check_exactly "and the clean-up removed nothing" "^\[cleanup\] removed 0 file\(s
 # above), plus a second profile the player still has. Two installs: first with -Dforbric.installerCleanup=off, the reverse
 # control (every removal check must be red), then the real one over the same directory, after which only what nothing
 # names is gone, every removal is in the log, dl/ and the player's files are untouched, and the game boots from the result.
+if [ -n "$BETA2_FAIL" ]; then
+step "phase U: lay out the install v0.3.1-beta2 left"
+echo "[kernel] FAIL phase U has no old install to upgrade: $BETA2_FAIL"; FAIL=1
+else  # phase U, to the line "fi  # phase U" (not indented: its here-documents end at column 0)
 step "phase U: lay out the install v0.3.1-beta2 left"
 rm -rf "$DEST_UP"
 cp -cR "$BETA2_INSTALL" "$DEST_UP" 2>/dev/null || { rm -rf "$DEST_UP"; cp -R "$BETA2_INSTALL" "$DEST_UP"; }
 UB="$DEST_UP/.forbric-build"
-# The keep-old control: a second profile naming beta2's merged base and its kernel (critic 24: an older kernel another
-# profile names survives).
+# The keep-old control: a second profile naming beta2's kernel (critic 24: an older kernel another profile names
+# survives). Only the kernel: beta2's merged base in libraries is named by nothing once the new profile replaces beta2's,
+# and must go, as it does on a player's machine.
 mkdir -p "$DEST_UP/versions/keep-old"
 cat > "$DEST_UP/versions/keep-old/keep-old.json" <<'KEEP'
 {"id": "keep-old", "inheritsFrom": "26.2", "type": "release", "mainClass": "net.forbric.kernel.boot.KernelClientLaunch",
- "libraries": [{"name": "net.forbric:patched-mc-merged:26.2"}, {"name": "net.forbric:forbric-kernel:0.3.1-beta2"}]}
+ "libraries": [{"name": "net.forbric:forbric-kernel:0.3.1-beta2"}]}
 KEEP
+# Under a launcher's version isolation versions/<id> is the game directory, and the game writes JSON there: one that does
+# not parse is skipped, named, and does not stop the clean-up (only versions/<id>/<id>.json is a profile).
+: > "$DEST_UP/versions/keep-old/usercache.json"
 grep -aq '"--gameJar"' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
   && grep -aq 'patched-mc-merged/26.2/' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
   && echo "[kernel] PASS the old profile is beta2's: it opens the merged base" \
@@ -670,6 +690,7 @@ user_data > "$BUILD/gate-m17-upgrade-userdata-before.txt"
 # What must go (relative to $DEST_UP) and what must stay: everything of beta2's that no profile names, and every
 # MinecraftForge or merged product in .forbric-build -- not dl/ (critic 19: the download cache is never touched).
 UP_GONE=(
+  libraries/net/forbric/patched-mc-merged/26.2/patched-mc-merged-26.2.jar
   libraries/net/forbric/forge-runtime/26.2/forge-runtime-26.2.jar
   libraries/net/forbric/neoforge-runtime/26.2/neoforge-runtime-26.2.jar
   libraries/net/forbric/forbric-loader/0.3.1-beta2/forbric-loader-0.3.1-beta2.jar
@@ -683,7 +704,6 @@ UP_GONE=(
   .forbric-build/patched-at.jar .forbric-build/joined.lzma .forbric-build/ats/accesstransformer.cfg
 )
 UP_KEPT_OLD=(
-  libraries/net/forbric/patched-mc-merged/26.2/patched-mc-merged-26.2.jar
   libraries/net/forbric/forbric-kernel/0.3.1-beta2/forbric-kernel-0.3.1-beta2.jar
 )
 # This install's own: its four libraries and .forbric-build/out's outputs with their stamps.
@@ -752,6 +772,9 @@ done
 check_exactly "the clean-up removed exactly those ${#UP_GONE[@]} files" \
   "^\[cleanup\] removed ${#UP_GONE[@]} file\(s\) an older Forbric left behind \([0-9.]+ MB\)$" "$BUILD/gate-m17-upgrade.log" 1
 check_absent "and none failed" "^\[cleanup\] could not" "$BUILD/gate-m17-upgrade.log"
+check_absent "and it did not stop part-way" "^\[cleanup\] the clean-up stopped" "$BUILD/gate-m17-upgrade.log"
+check_exactly "the game's unparsable JSON beside a profile was skipped, and named" \
+  "^\[cleanup\] skipped $DEST_UP/versions/keep-old/usercache\.json " "$BUILD/gate-m17-upgrade.log" 1
 for rel in "${UP_KEPT_OLD[@]}"; do
   [ -f "$DEST_UP/$rel" ] && echo "[kernel] PASS kept, the keep-old profile still names it: $rel" \
     || { echo "[kernel] FAIL removed, though the keep-old profile names it: $rel"; FAIL=1; }
@@ -767,7 +790,7 @@ assert_eq ".forbric-build holds no MinecraftForge or merged product" "" "$LEFT"
 dl_files > "$BUILD/gate-m17-upgrade-dl-after.txt"
 DL_CHANGED=$(LC_ALL=C comm -23 "$BUILD/gate-m17-upgrade-dl-before.txt" "$BUILD/gate-m17-upgrade-dl-after.txt" | wc -l | tr -d ' ')
 assert_eq "dl/ is untouched: every file an older installer cached there is still there, unchanged ($(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') files)" "0" "$DL_CHANGED"
-# And nothing else is left under net/forbric: this install's four, and the two the keep-old profile names.
+# And nothing else is left under net/forbric: this install's four, and the one the keep-old profile names.
 FORBRIC_LEFT=$(cd "$DEST_UP/libraries" && find net/forbric -type f | LC_ALL=C sort | tr '\n' ' ')
 FORBRIC_WANT=$(for rel in "${UP_KEPT_OLD[@]}" "${UP_CURRENT[@]}"; do case "$rel" in (libraries/*) echo "${rel#libraries/}";; esac; done | LC_ALL=C sort | tr '\n' ' ')
 assert_eq "libraries/net/forbric holds exactly this install's files and the ones another profile names" "$FORBRIC_WANT" "$FORBRIC_LEFT"
@@ -792,10 +815,15 @@ check "the kernel booted from the upgraded profile" "Forbric/Boot\] sovereign ke
 check "it opened the game base"                    "Forbric/Boot\] game base"                 "$UP_CLOG"
 check "it entered the world"                        "ClientSmoke\] client-ready after"         "$UP_CLOG"
 check "it left cleanly"                             "ClientSmoke\] clean disconnect observed"  "$UP_CLOG"
-check_absent "it was not refused as an old install" "installed by Forbric 0\.4 or earlier"     "$UP_CLOG"
+# A refusal of the launch inputs is told by the kernel's install tag, not by its wording (which names versions, and is
+# due to change): control N's refused launch above must match the same pattern, so it cannot go blind.
+UP_REFUSED='\[Forbric/Install\] (launch stopped|the Forbric install is broken)'
+[ "$PY_RC" -eq 0 ] && check "the refusal pattern matches control N's refused launch" "$UP_REFUSED" "$BUILD/gate-m17-old-refused.log"
+check_absent "it was not refused as an old install" "$UP_REFUSED"                              "$UP_CLOG"
 check_absent "no client crash"                      "Preparing crash report"                   "$UP_CLOG"
 check_absent "nothing the installer staged went missing" \
   "(NoClassDefFoundError|ClassNotFoundException).*(net/forbric|net\\.forbric|net/minecraft|org/apache/logging|com/mojang|org/objectweb/asm|org/spongepowered)" "$UP_CLOG"
+fi  # phase U
 
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then
