@@ -237,8 +237,12 @@ public final class OldInstallCleanupTest {
 	 * a path after {@code =} in a JVM argument; a sub-group's coordinate inside a longer string. And (C6 wave 2, the
 	 * review of those fixes): paths joined by a comma (NeoForge's own {@code -DmergeModules} style) or a bar, with no
 	 * separator the path pattern stops at; a directory above a library (a module path); a path in another letter case
-	 * than the directory on disk. Unnamed ones beside them still go -- one a character longer than the named
-	 * directory -- so the case cannot pass by keeping everything.
+	 * than the directory on disk. And (C6 wave 2, the review of lane INSTFIX): {@code net/forbric} and
+	 * {@code net.forbric} themselves in another letter case; coordinates joined by a colon, where the first one's
+	 * optional classifier swallows the second's group; a sub-directory of a version directory whose file a profile
+	 * names (a natives/ folder). Unnamed ones beside them still go -- one a character longer than the named directory,
+	 * and a version under an artifact directory that holds a file of its own while a sibling version is named -- so the
+	 * case cannot pass by keeping everything.
 	 */
 	private static void everySpellingOfALibraryKeepsIt(Path mc) throws Exception {
 		Layout layout = layout(mc);
@@ -248,20 +252,29 @@ public final class OldInstallCleanupTest {
 				"net/forbric/c/1/c-1.jar", "net/forbric/extra/thing/2/thing-2.jar",
 				"net/forbric/d/1/d-1.jar", "net/forbric/e/1/e-1.jar", "net/forbric/f/1/f-1.jar", "net/forbric/g/1/g-1.jar",
 				"net/forbric/modules/m/1/m-1.jar", "net/forbric/cased/1/cased-1.jar",
-				"net/forbric/UpDisk/1/UpDisk-1.jar");
-		List<String> unnamed = List.of("net/forbric/extra/other/2/other-2.jar", "net/forbric/modulesx/n/1/n-1.jar");
+				"net/forbric/UpDisk/1/UpDisk-1.jar", "net/forbric/upperprefix/1/upperprefix-1.jar",
+				"net/forbric/uppercoord/1/uppercoord-1.jar", "net/forbric/h/1/h-1.jar", "net/forbric/i/2/i-2.jar",
+				"net/forbric/withnatives/1/withnatives-1.jar",
+				"net/forbric/withnatives/1/natives/withnatives-natives.dylib",
+				"net/forbric/meta/1/meta-1.jar", "net/forbric/meta/maven-metadata.xml");
+		List<String> unnamed = List.of("net/forbric/extra/other/2/other-2.jar", "net/forbric/modulesx/n/1/n-1.jar",
+				"net/forbric/meta/2/meta-2.jar");
 		for (String library : spelled) write(libraries.resolve(library), "old " + library);
 		for (String library : unnamed) write(libraries.resolve(library), "old " + library);
 		write(mc.resolve("versions/spelled/spelled.json"), "{\"id\":\"spelled\",\"inheritsFrom\":\"26.2\","
 				+ "\"libraries\":[{\"name\":\"net.forbric:forbric-kernel:0.3.1@jar\"},"
-				+ "{\"name\":\"net.forbric:natives:1:macos@jar\"}],"
+				+ "{\"name\":\"net.forbric:natives:1:macos@jar\"},{\"name\":\"NET.FORBRIC:uppercoord:1\"}],"
 				+ "\"arguments\":{\"jvm\":[\"-p\",\"${library_directory}/net/forbric/a/1/a-1.jar${classpath_separator}"
 				+ "${library_directory}/net/forbric/b/1/b-1.jar\",\"-Dsome.path=net/forbric/c/1/c-1.jar\","
 				+ "\"-DmergeModules=net/forbric/d/1/d-1.jar,net/forbric/e/1/e-1.jar\","
 				+ "\"libraries\\\\net\\\\forbric\\\\f\\\\1\\\\f-1.jar|libraries\\\\net\\\\forbric\\\\g\\\\1\\\\g-1.jar\","
 				+ "\"-p\",\"${library_directory}/net/forbric/modules\","
 				+ "\"${library_directory}/net/forbric/Cased/1/Cased-1.jar\","
-				+ "\"${library_directory}/net/forbric/updisk/1/updisk-1.jar\"],"
+				+ "\"${library_directory}/net/forbric/updisk/1/updisk-1.jar\","
+				+ "\"${library_directory}/Net/Forbric/upperprefix/1/upperprefix-1.jar\","
+				+ "\"-Dmods=net.forbric:h:1:net.forbric:i:2\","
+				+ "\"${library_directory}/net/forbric/withnatives/1/withnatives-1.jar\","
+				+ "\"${library_directory}/net/forbric/meta/1/meta-1.jar\"],"
 				+ "\"game\":[\"--uses net.forbric.extra:thing:2 for something\"]}}");
 		List<String> log = new ArrayList<>();
 		new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
@@ -302,6 +315,40 @@ public final class OldInstallCleanupTest {
 		new OldInstallCleanup(log::add).run(second, List.of(), List.of());
 		require(Files.isRegularFile(elsewhere.resolve("forbric/old/1/old-1.jar")), "a linked libraries is left whole");
 		require(log.stream().anyMatch(l -> l.startsWith("[cleanup] left " + linked + " ")), "and named: " + log);
+		if (System.getProperty("os.name", "").startsWith("Windows")) aJunctionedLibrariesIsLeftWhole(base);
+	}
+
+	/**
+	 * The same on Windows with a real directory junction (C6 wave 2, review of lane INSTFIX, R-4): {@code mklink /J}
+	 * needs no privilege, so CI's Windows job runs this. The junction's target holds a library no profile of the
+	 * junctioned install names; the clean-up must leave it, and name the junction.
+	 */
+	private static void aJunctionedLibrariesIsLeftWhole(Path base) throws Exception {
+		Path target = Files.createDirectories(base.resolve("junction-target/libraries"));
+		write(target.resolve("net/forbric/sentinel/1/sentinel-1.jar"), "another install's library");
+		Path mc = Files.createDirectories(base.resolve("junctioned"));
+		Path junction = mc.resolve("libraries");
+		Process mklink = new ProcessBuilder("cmd", "/c", "mklink", "/J", junction.toString(), target.toString())
+				.redirectErrorStream(true).start();
+		String output = new String(mklink.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+		if (mklink.waitFor() != 0 || !Files.isDirectory(junction)) {
+			NOT_RUN.add("the junction case (mklink /J failed: " + output + ")");
+			System.out.println("OldInstallCleanupTest: SKIP the junction case: mklink /J failed: " + output);
+			return;
+		}
+		try {
+			require(OldInstallCleanup.isLink(junction) || OldInstallCleanup.redirected(junction),
+					"a junctioned libraries is a link or redirected");
+			List<String> log = new ArrayList<>();
+			new OldInstallCleanup(log::add).run(mc, List.of(), List.of());
+			require(Files.isRegularFile(target.resolve("net/forbric/sentinel/1/sentinel-1.jar")),
+					"a junctioned libraries is left whole: " + log);
+			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] left ") && l.contains(junction.toString())),
+					"and named: " + log);
+		} finally {
+			// rmdir on a junction removes the junction only, never what it points at.
+			new ProcessBuilder("cmd", "/c", "rmdir", junction.toString()).inheritIO().start().waitFor();
+		}
 	}
 
 	/**

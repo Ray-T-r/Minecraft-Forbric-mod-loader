@@ -65,7 +65,9 @@ import java.util.regex.Pattern;
  *       and every string in it that names a {@code net.forbric} coordinate or a {@code net/forbric/...} path counts,
  *       wherever it sits (libraries, arguments), however many share one string (a classpath joined by a launcher's
  *       separator or by any other character, a coordinate with a classifier or an {@code @ext}), and in any letter
- *       case (the file systems most players have ignore it). So a second profile that still uses an old base keeps it,
+ *       case, {@code net/forbric} itself included (the file systems most players have ignore it). A directory below a
+ *       library's version directory (a {@code natives/} folder, say) belongs to that library: it stays while the profile
+ *       names a file in the version directory. So a second profile that still uses an old base keeps it,
  *       and an older kernel version another profile names survives. Nothing outside {@code net/forbric} is ever
  *       touched: the kernel's third-party libraries sit beside Mojang's under their own groups, and other launchers'
  *       profiles may use them.</li>
@@ -116,19 +118,19 @@ final class OldInstallCleanup {
 	private static final String MERGE_TOOLS_RESOURCE = "/forbric/tools/forbric-merge-tools.jar";
 
 	/**
-	 * A {@code net.forbric} coordinate anywhere in a string: group (with any sub-group), artifact, version, then an
-	 * optional classifier and {@code @ext}, which do not change the library's directory.
+	 * A {@code net.forbric} coordinate anywhere in a string, in any letter case: group (with any sub-group), artifact,
+	 * version, then an optional classifier and {@code @ext}, which do not change the library's directory.
 	 */
 	private static final Pattern COORDINATE = Pattern.compile(
 			"(?<![A-Za-z0-9_.-])net\\.forbric((?:\\.[A-Za-z0-9_-]+)*):([A-Za-z0-9_.-]+):([A-Za-z0-9_.+-]+)"
-					+ "(?::[A-Za-z0-9_.-]+)?(?:@[A-Za-z0-9]+)?");
+					+ "(?::[A-Za-z0-9_.-]+)?(?:@[A-Za-z0-9]+)?", Pattern.CASE_INSENSITIVE);
 	/**
-	 * A path into {@code net/forbric} anywhere in a string, up to the next separator a launcher or a classpath would put
-	 * after it -- {@code :} or {@code ;}, a quote, white space, or the {@code $} of a launcher's placeholder such as
-	 * {@code ${classpath_separator}}.
+	 * A path into {@code net/forbric} anywhere in a string, in any letter case, up to the next separator a launcher or a
+	 * classpath would put after it -- {@code :} or {@code ;}, a quote, white space, or the {@code $} of a launcher's
+	 * placeholder such as {@code ${classpath_separator}}.
 	 */
-	private static final Pattern FORBRIC_PATH =
-			Pattern.compile("(?<![A-Za-z0-9_.-])(net[/\\\\]forbric[/\\\\][^:;\"'\\s$]+)");
+	private static final Pattern FORBRIC_PATH = Pattern.compile(
+			"(?<![A-Za-z0-9_.-])(net[/\\\\]forbric[/\\\\][^:;\"'\\s$]+)", Pattern.CASE_INSENSITIVE);
 
 	private final Consumer<String> log;
 	private final List<String> retiredBuildFiles;
@@ -299,9 +301,14 @@ final class OldInstallCleanup {
 			Path unreadable = readReferences(mcDir.resolve("versions"), referenced);
 			if (unreadable != null) return;
 		}
+		Set<String> referencedLower = new HashSet<>();
+		for (String path : referenced) referencedLower.add(path.toLowerCase(Locale.ROOT));
 
-		// Every directory under net/forbric that holds a file of its own is one unit: a library's version directory.
+		// Every directory under net/forbric that holds a file of its own is one unit: a library's version directory, or
+		// a directory inside one (a natives/ folder). A unit holding a file a profile names is a version directory in
+		// use, and every unit below it is that library's too.
 		List<Path> units = new ArrayList<>();
+		Set<Path> holdingNamedFile = new HashSet<>();
 		Files.walkFileTree(root, new SimpleFileVisitor<>() {
 			@Override
 			public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attributes) throws IOException {
@@ -312,8 +319,11 @@ final class OldInstallCleanup {
 				}
 				try (DirectoryStream<Path> listing = Files.newDirectoryStream(dir)) {
 					for (Path entry : listing) {
-						if (Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) {
-							units.add(dir);
+						if (!Files.isRegularFile(entry, LinkOption.NOFOLLOW_LINKS)) continue;
+						if (units.isEmpty() || !units.get(units.size() - 1).equals(dir)) units.add(dir);
+						if (referencedLower.contains(
+								slashes(libraries.relativize(entry).toString()).toLowerCase(Locale.ROOT))) {
+							holdingNamedFile.add(dir);
 							break;
 						}
 					}
@@ -322,7 +332,10 @@ final class OldInstallCleanup {
 			}
 		});
 		for (Path unit : units) {
-			if (named(slashes(libraries.relativize(unit).toString()) + "/", referenced)) continue;
+			if (named(slashes(libraries.relativize(unit).toString()) + "/", referenced)
+					|| insideNamedLibrary(unit, root, holdingNamedFile)) {
+				continue;
+			}
 			try (DirectoryStream<Path> listing = Files.newDirectoryStream(unit)) {
 				for (Path file : listing) {
 					if (isLink(file)) {
@@ -404,6 +417,18 @@ final class OldInstallCleanup {
 	}
 
 	/**
+	 * Whether a directory above {@code unit} (below {@code root}) holds a file a profile names: then it is that
+	 * library's version directory, and {@code unit} one of its sub-directories. Only such a directory counts, never a
+	 * mere prefix: an artifact directory that some version below it is named under keeps nothing by itself.
+	 */
+	private static boolean insideNamedLibrary(Path unit, Path root, Set<Path> holdingNamedFile) {
+		for (Path dir = unit.getParent(); dir != null && dir.startsWith(root) && !dir.equals(root); dir = dir.getParent()) {
+			if (holdingNamedFile.contains(dir)) return true;
+		}
+		return false;
+	}
+
+	/**
 	 * {@code versions/<id>/<id>.json}: the file a launcher reads as version {@code <id>}. Letter case aside, as for
 	 * {@link #named}: an unreadable file that might be one stops the library half rather than being skipped.
 	 */
@@ -424,15 +449,18 @@ final class OldInstallCleanup {
 		} else if (node instanceof List<?> list) {
 			for (Object value : list) collect(value, referenced);
 		} else if (node instanceof String text) {
+			// Both scans resume one character after each match's start, not at its end: a list joined by a character no
+			// rule foresaw runs on into the next entry (a comma, as in NeoForge's own -DmergeModules, or a bar after a
+			// path; a colon after a coordinate, which the optional classifier swallows), and that entry must count on
+			// its own.
 			Matcher coordinate = COORDINATE.matcher(text);
-			while (coordinate.find()) {
+			int at = 0;
+			while (at < text.length() && coordinate.find(at)) {
 				// group/artifact/version/ -- the library's directory, whatever classifier or extension follows.
 				referenced.add("net/forbric" + coordinate.group(1).replace('.', '/') + "/" + coordinate.group(2) + "/"
 						+ coordinate.group(3) + "/");
+				at = coordinate.start() + 1;
 			}
-			// Every occurrence, also one inside the run of an earlier match: a list joined by a character no rule
-			// foresaw (a comma, as in NeoForge's own -DmergeModules, or a bar) runs on into the next path, and that
-			// path must count on its own.
 			Matcher path = FORBRIC_PATH.matcher(text);
 			int from = 0;
 			while (from < text.length() && path.find(from)) {
