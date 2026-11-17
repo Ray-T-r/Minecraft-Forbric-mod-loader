@@ -234,23 +234,34 @@ public final class OldInstallCleanupTest {
 	/**
 	 * Every way a profile may name a library keeps it (review A, F1): a coordinate with an {@code @ext}, or a
 	 * classifier and an {@code @ext}; two paths in one string joined by a launcher's {@code ${classpath_separator}};
-	 * a path after {@code =} in a JVM argument; a sub-group's coordinate inside a longer string. An unnamed one beside
-	 * them still goes, so the case cannot pass by keeping everything.
+	 * a path after {@code =} in a JVM argument; a sub-group's coordinate inside a longer string. And (C6 wave 2, the
+	 * review of those fixes): paths joined by a comma (NeoForge's own {@code -DmergeModules} style) or a bar, with no
+	 * separator the path pattern stops at; a directory above a library (a module path); a path in another letter case
+	 * than the directory on disk. Unnamed ones beside them still go -- one a character longer than the named
+	 * directory -- so the case cannot pass by keeping everything.
 	 */
 	private static void everySpellingOfALibraryKeepsIt(Path mc) throws Exception {
 		Layout layout = layout(mc);
 		Path libraries = mc.resolve("libraries");
 		List<String> spelled = List.of("net/forbric/forbric-kernel/0.3.1/forbric-kernel-0.3.1.jar",
 				"net/forbric/natives/1/natives-1-macos.jar", "net/forbric/a/1/a-1.jar", "net/forbric/b/1/b-1.jar",
-				"net/forbric/c/1/c-1.jar", "net/forbric/extra/thing/2/thing-2.jar");
-		String unnamed = "net/forbric/extra/other/2/other-2.jar";
+				"net/forbric/c/1/c-1.jar", "net/forbric/extra/thing/2/thing-2.jar",
+				"net/forbric/d/1/d-1.jar", "net/forbric/e/1/e-1.jar", "net/forbric/f/1/f-1.jar", "net/forbric/g/1/g-1.jar",
+				"net/forbric/modules/m/1/m-1.jar", "net/forbric/cased/1/cased-1.jar",
+				"net/forbric/UpDisk/1/UpDisk-1.jar");
+		List<String> unnamed = List.of("net/forbric/extra/other/2/other-2.jar", "net/forbric/modulesx/n/1/n-1.jar");
 		for (String library : spelled) write(libraries.resolve(library), "old " + library);
-		write(libraries.resolve(unnamed), "old " + unnamed);
+		for (String library : unnamed) write(libraries.resolve(library), "old " + library);
 		write(mc.resolve("versions/spelled/spelled.json"), "{\"id\":\"spelled\",\"inheritsFrom\":\"26.2\","
 				+ "\"libraries\":[{\"name\":\"net.forbric:forbric-kernel:0.3.1@jar\"},"
 				+ "{\"name\":\"net.forbric:natives:1:macos@jar\"}],"
 				+ "\"arguments\":{\"jvm\":[\"-p\",\"${library_directory}/net/forbric/a/1/a-1.jar${classpath_separator}"
-				+ "${library_directory}/net/forbric/b/1/b-1.jar\",\"-Dsome.path=net/forbric/c/1/c-1.jar\"],"
+				+ "${library_directory}/net/forbric/b/1/b-1.jar\",\"-Dsome.path=net/forbric/c/1/c-1.jar\","
+				+ "\"-DmergeModules=net/forbric/d/1/d-1.jar,net/forbric/e/1/e-1.jar\","
+				+ "\"libraries\\\\net\\\\forbric\\\\f\\\\1\\\\f-1.jar|libraries\\\\net\\\\forbric\\\\g\\\\1\\\\g-1.jar\","
+				+ "\"-p\",\"${library_directory}/net/forbric/modules\","
+				+ "\"${library_directory}/net/forbric/Cased/1/Cased-1.jar\","
+				+ "\"${library_directory}/net/forbric/updisk/1/updisk-1.jar\"],"
 				+ "\"game\":[\"--uses net.forbric.extra:thing:2 for something\"]}}");
 		List<String> log = new ArrayList<>();
 		new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
@@ -259,7 +270,9 @@ public final class OldInstallCleanupTest {
 			if (!Files.isRegularFile(libraries.resolve(library))) problems.add("removed, though the profile names it: " + library);
 		}
 		require(problems.isEmpty(), "every spelling keeps its library: " + problems + "\n" + log);
-		require(!Files.exists(libraries.resolve(unnamed)), "the sub-group's unnamed sibling still goes: " + log);
+		for (String library : unnamed) {
+			require(!Files.exists(libraries.resolve(library)), "an unnamed sibling still goes: " + library + " " + log);
+		}
 		require(verify(mc, layout, log).isEmpty(), "and the rest of the rules hold: " + verify(mc, layout, log));
 	}
 
@@ -313,6 +326,8 @@ public final class OldInstallCleanupTest {
 		require(Files.isRegularFile(mc.resolve("libraries").resolve(bomNamed)), "a profile with a byte-order mark is read");
 		require(OldInstallCleanup.isProfile(mc.resolve("versions/a/a.json")) && !OldInstallCleanup.isProfile(
 				mc.resolve("versions/a/b.json")), "a profile is versions/<id>/<id>.json");
+		require(OldInstallCleanup.isProfile(mc.resolve("versions/Upper/upper.json")),
+				"a profile in another letter case is a profile (a launcher on Windows or macOS reads it)");
 		// A parent named by inheritsFrom that cannot be read stops the libraries, like any profile.
 		Path parentMc = mc.resolveSibling(mc.getFileName() + "-parent");
 		Layout parent = layout(parentMc);

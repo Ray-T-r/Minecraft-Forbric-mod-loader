@@ -34,6 +34,7 @@ import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -59,11 +60,12 @@ import java.util.regex.Pattern;
  *       v0.1.0's MinecraftForge work tree, {@code .forbric-build/<mc>-<forge>/}, goes whole: no profile ever read it
  *       (its outputs were copied into {@code libraries} and the profile's {@code mods}).</li>
  *   <li><strong>{@code libraries/net/forbric}</strong> is shared with the launcher. A Forbric library directory there
- *       (one {@code <artifact>/<version>/}) is removed only when no version profile names anything inside it: every
- *       {@code versions/<id>/*.json} is read, with the profile each one {@code inheritsFrom}, and every string in it
- *       that names a {@code net.forbric} coordinate or a {@code net/forbric/...} path counts, wherever it sits
- *       (libraries, arguments) and however many share one string (a classpath joined by a launcher's separator, a
- *       coordinate with a classifier or an {@code @ext}). So a second profile that still uses an old base keeps it,
+ *       (one {@code <artifact>/<version>/}) is removed only when no version profile names anything inside it, or a
+ *       directory above it: every {@code versions/<id>/*.json} is read, with the profile each one {@code inheritsFrom},
+ *       and every string in it that names a {@code net.forbric} coordinate or a {@code net/forbric/...} path counts,
+ *       wherever it sits (libraries, arguments), however many share one string (a classpath joined by a launcher's
+ *       separator or by any other character, a coordinate with a classifier or an {@code @ext}), and in any letter
+ *       case (the file systems most players have ignore it). So a second profile that still uses an old base keeps it,
  *       and an older kernel version another profile names survives. Nothing outside {@code net/forbric} is ever
  *       touched: the kernel's third-party libraries sit beside Mojang's under their own groups, and other launchers'
  *       profiles may use them.</li>
@@ -320,15 +322,7 @@ final class OldInstallCleanup {
 			}
 		});
 		for (Path unit : units) {
-			String relative = slashes(libraries.relativize(unit).toString()) + "/";
-			boolean named = false;
-			for (String path : referenced) {
-				if (path.startsWith(relative)) {
-					named = true;
-					break;
-				}
-			}
-			if (named) continue;
+			if (named(slashes(libraries.relativize(unit).toString()) + "/", referenced)) continue;
 			try (DirectoryStream<Path> listing = Files.newDirectoryStream(unit)) {
 				for (Path file : listing) {
 					if (isLink(file)) {
@@ -392,11 +386,31 @@ final class OldInstallCleanup {
 		return null;
 	}
 
-	/** {@code versions/<id>/<id>.json}: the file a launcher reads as version {@code <id>}. */
+	/**
+	 * Whether a profile names a library's version directory ({@code unit}, ending in {@code /}): a path or coordinate
+	 * inside it, or a directory above it (a module path or a class path entry may name a directory). Without regard to
+	 * letter case: on the file systems of Windows and macOS a launcher finds {@code Net/Forbric/Foo} at
+	 * {@code net/forbric/foo}, and a case-sensitive one only keeps more this way.
+	 */
+	static boolean named(String unit, Collection<String> referenced) {
+		String lowerUnit = unit.toLowerCase(Locale.ROOT);
+		for (String path : referenced) {
+			String lower = path.toLowerCase(Locale.ROOT);
+			if (lower.startsWith(lowerUnit)) return true;
+			String directory = lower.endsWith("/") ? lower : lower + "/";
+			if (lowerUnit.startsWith(directory)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * {@code versions/<id>/<id>.json}: the file a launcher reads as version {@code <id>}. Letter case aside, as for
+	 * {@link #named}: an unreadable file that might be one stops the library half rather than being skipped.
+	 */
 	static boolean isProfile(Path json) {
 		Path folder = json.getParent();
 		return folder != null && folder.getFileName() != null
-				&& json.getFileName().toString().equals(folder.getFileName() + ".json");
+				&& json.getFileName().toString().equalsIgnoreCase(folder.getFileName() + ".json");
 	}
 
 	private static String withoutByteOrderMark(String text) {
@@ -416,8 +430,15 @@ final class OldInstallCleanup {
 				referenced.add("net/forbric" + coordinate.group(1).replace('.', '/') + "/" + coordinate.group(2) + "/"
 						+ coordinate.group(3) + "/");
 			}
+			// Every occurrence, also one inside the run of an earlier match: a list joined by a character no rule
+			// foresaw (a comma, as in NeoForge's own -DmergeModules, or a bar) runs on into the next path, and that
+			// path must count on its own.
 			Matcher path = FORBRIC_PATH.matcher(text);
-			while (path.find()) referenced.add(slashes(path.group(1)));
+			int from = 0;
+			while (from < text.length() && path.find(from)) {
+				referenced.add(slashes(path.group(1)));
+				from = path.start(1) + 1;
+			}
 		}
 	}
 
