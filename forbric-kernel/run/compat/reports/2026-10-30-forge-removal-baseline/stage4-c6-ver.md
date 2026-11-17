@@ -19,8 +19,9 @@ about an older install.
 
 - Not "before 0.4.0" / "older than 0.4.0": Forbric's releases carry suffixes (v0.3.1-beta, v0.3.1-beta2), and if the first
   0.4 release is 0.4.0-beta it sorts before 0.4.0, so "older than 0.4.0" would include it.
-- "0.3.x or earlier" covers v0.1.0, v0.2.0, v0.3.0, v0.3.1-beta, v0.3.1-beta2. The parenthesis names the only other source
-  of a merged install: a 0.4.0-dev build from main before the removal. That matches the phrase UPG used in 3e33e7c4 for the
+- "0.3.x or earlier" covers v0.1.0, v0.2.0, v0.3.0, v0.3.1-beta, v0.3.1-beta2, and builds from unreleased main commits
+  (main's installer says 0.3.1-beta2). The parenthesis names the only other source of a merged install: a 0.4.0-dev build
+  from the removal branch before C1 (0.4.0-dev exists only on that branch, since f395dba3; main never built it). That matches the phrase UPG used in 3e33e7c4 for the
   carrier pack id ("v0.3.1-beta2 or older, or a 0.4.0-dev build that still had MinecraftForge").
 - The refusal's advice is unchanged (owner default): "run the new installer again with the same game directory".
 - No mod is named.
@@ -87,17 +88,28 @@ base existed in those releases".
 - **What it scans:** the kernel's `src/main`, `src/runtime` and `src/test` Java, the installer's `src/main` and
   `src/test` Java, `run/*.sh`, and `run/compat{,/mac,/win}/*.{sh,py}`. Not the dated records under `run/compat/reports/`.
   At least 1000 files, or it fails as run from the wrong directory.
-- **What it flags:**
-  - "Forbric 0.4 and|or earlier|older"
+- **What it flags** (since the review fix `c255008a`; case-insensitive; the version is `0.4`, `0.4.x` or `0.4.0` with an
+  optional `v`, not `0.4.1`, `0.4F` or `0.4.0-dev`):
+  - "Forbric [version(s)|版本] 0.4 and|or earlier|older|before|below|lower|prior", with spaces, hyphens or an opening
+    parenthesis between the words
+  - "Forbric [version(s)] up to|through 0.4"
   - "Forbric &le;|<=|≤ 0.4"
   - "as|like Forbric 0.4 did"
-  - Chinese "0.4 及|或 更早|以前|之前"
-- **How it reads:** a line break with its indentation and comment marker becomes one space, and a string concatenation
-  (`" + "`, also across lines) becomes nothing. So a phrase split across lines or literals is one phrase.
-- **Self-test:** a second test checks each phrase as the source split it (8 samples). It also checks the true statements
-  it must leave alone: "0.3.x or earlier (or a 0.4.0-dev build …)", "pre-0.4" Fabric Loader, "C2ME 0.4.x", `0.4F`,
-  "Forbric 0.4.0 is the first release …", "0.4.0 之前的 Forbric".
-- **Limit:** its inputs outside the kernel's own test sources (installer sources, run scripts) are not declared as
+  - Chinese "0.4 [版本] 及|或 更早|以前|之前"
+- **How it reads:** a line break with its indentation and comment marker becomes one space. The seam between two string
+  literals (double or single quotes) becomes nothing when only a `+` or white space (line breaks included) separates
+  them -- Java's `" + "`, Python's and shell's adjacent literals -- and one space when a `,` does (`String.join` or list
+  arguments). So a phrase split across lines or literals is one phrase.
+- **Self-test:** a second test checks each phrase as the source split it (29 samples: the first 9, and the 20 variants
+  the review's probes showed missing). It also checks 16 true statements it must leave alone, among them "0.3.x or
+  earlier (or a 0.4.0-dev build …)", "pre-0.4" Fabric Loader, "C2ME 0.4.x", `0.4F`, "Forbric 0.4.0 is the first
+  release …", "0.4.0 之前的 Forbric", "Forbric 0.4 and later", "Forbric 0.4.x or newer", "forbric-v0.4.0-dev" and
+  "Forbric 0.4 及以后".
+- **Limit (what it still cannot see):** a phrase assembled at run time from variables (`String.format`, a `%s` filled
+  with the version); one that names neither "Forbric" nor uses the Chinese form ("versions 0.4 and earlier" alone);
+  `.md` files and the dated records (not scanned on purpose). It is a regression net; the acceptance is the grep in
+  `c6ver/version-grep.txt` and the review's own grep.
+- **Limit (Gradle):** its inputs outside the kernel's own test sources (installer sources, run scripts) are not declared as
   Gradle inputs. A plain `test` after editing only those files is UP-TO-DATE and does not re-run it; `cleanTest test` (the
   suite command) and CI do re-run it. Recorded, not fixed (it would mean editing kernel build.gradle's test task).
 
@@ -129,9 +141,20 @@ Found by `git grep` over the whole tree for "0.4 or/and earlier|older", "≤/<=/
 
 ## Draft player-facing wording (README / release page; NOT applied — release commit)
 
-- en: "Upgrading from Forbric 0.3.x or earlier: run the new installer once over the same game directory. Until you do,
-  the game stops at launch with a message saying the install still carries MinecraftForge."
-- zh: "从 Forbric 0.3.x 或更早版本升级：用新安装器对同一个游戏目录再安装一次。在此之前，游戏启动时会停下，并提示这个安装仍带有 MinecraftForge。"
+Corrected after the review (F1): the first draft said the game "stops at launch" until the player reruns the installer.
+That is false for an ordinary 0.3.x player: their old profile names `net.forbric:forbric-kernel:0.3.1-beta2` (the
+installer writes its own version into the coordinate: build.gradle:182 at the tip, :164 in v0.3.1-beta2), so it keeps launching the old
+Forbric, which never runs the new kernel's check. The refusal fires only when the new kernel is handed an old install's
+game base: gate-m17 control N's synthetic case, a kernel jar swapped in by hand, or two 0.4.0-dev builds from either side
+of the removal sharing the `forbric-kernel:0.4.0-dev` coordinate.
+
+- en: "Upgrading from Forbric 0.3.x or earlier: run the new installer once over the same game directory. It replaces
+  the old files. If the game ever stops at launch saying the install still carries MinecraftForge, run the installer
+  again the same way."
+- zh: "从 Forbric 0.3.x 或更早版本升级：用新安装器对同一个游戏目录安装一次，它会替换旧文件。如果游戏启动时停下并提示这个安装仍带有 MinecraftForge，再用同样的方式安装一次即可。"
+
+Whoever copies this into README (DOCS or the release commit) should still check it against what the release's installer
+does to the old profile then; INSTFIX owns that behaviour.
 
 ## Verification
 
@@ -197,3 +220,39 @@ phrasings.
 - Only gate-m17 reads any changed string. gate-m21 reads the conditions behaviour, not the INFO line's wording: no gate or
   test matches "as Forbric".
 - The kernel runtime jar changed by one string constant. The boot path is unchanged.
+
+## VER review fixes
+
+The review (`~/Forbric-backups/stage4-notes/c6/review-c6ver.md`, at 22ced9bc) found every "done" claim held and raised
+F1-F7. Each was checked against the tree or git before acting; all seven held. Logs: `c6ver/rf/`.
+
+| finding | verdict | what was done |
+|---|---|---|
+| F1 draft player wording says the game stops until the installer is rerun | confirmed: a 0.3.x profile names `forbric-kernel:0.3.1-beta2` (installer build.gradle:182, :164 in v0.3.1-beta2, writes the installer's own version into the coordinate) and keeps launching the old Forbric | draft rewritten in en + zh, with when the refusal really fires ("Draft player-facing wording" above); this commit |
+| F2 the guard missed 10 of 14 planted variants; the record overclaimed "split across string literals" | confirmed: the old matcher returns 0 on all ten (`rf/guard-probes.tsv`) | `c255008a` widens the patterns and the literal joins (see "The guard"); the remaining limits are written down there |
+| F3 "a 0.4.0-dev build from main" | confirmed: f395dba3 is not an ancestor of main, main's installer says 0.3.1-beta2 | "from the removal branch before C1" (above); this commit |
+| F4 `KernelConditionSources` javadoc "0.3.x (v0.3.1-beta2)" | confirmed: 226d777b is in v0.3.0, v0.3.1-beta and v0.3.1-beta2, not in v0.2.0 | `d79def9f`: "(v0.3.0 to v0.3.1-beta2)" |
+| F5 the forced-zh test clears `forbric.dialogLanguage` instead of restoring it | confirmed (`LaunchInputCheckTest`, the finally block) | `d79def9f`: saves and restores the earlier value, as `SuppliedArtifactContentTest` does |
+| F6 D47 not stated | confirmed as a gap in the record; the conclusion holds: `OldReleaseWordingTest` reads sources only, and `theOldInstallIsNamedAsTheReleasesThatHadMinecraftForgeInEveryLocale` builds synthetic jars (`base`/`neo` helpers), neither touches `TestFixtures` or an assumption | **D47: no skip-TSV rows; neither new test can skip in ci-unstaged or ci-prepared.** Not run in an unstaged tree (a code argument, like the review's) |
+| F7 gate-m10's comment says every world an older Forbric wrote already holds the rank-2 carrier id | confirmed: an installed world recorded `forbric/carrier/2-neoforge-runtime-26.2`; `CarrierPackIdMigrationInjector` -> `KernelDataPacks.migrateCarrierIds` renames it on load (D43) | `d79def9f`: comment says staged/developer worlds hold it, installed ones are renamed on load. Comment only |
+
+**Red controls** (each reverted; tree clean after):
+- RF-F2a, matcher: the old guard (22ced9bc's class) and the new one, compiled side by side and run on the review's 14
+  probes plus 10 true statements (`rf/guard-probes.tsv`): old 4/14 caught, new 14/14; both 0/10 on the true ones. With
+  the old patterns the new self-test is therefore red on the first missed probe.
+- RF-F2b, scan: a Python adjacent-literal split ("installed by Forbric 0.4 or " / "earlier") appended to
+  `run/compat/abi-audit.py` and a comment "installed by Forbric v0.4 and before" in `KernelDataPacks.java` --
+  `OldReleaseWordingTest` red, naming exactly `abi-audit.py:115` and `KernelDataPacks.java:18` (`rf/RF-F2-guard.xml`).
+  Neither variant was caught before `c255008a`.
+- F5 has no red control: it only shows in a test JVM started with `-Dforbric.dialogLanguage` pinned, which no run passes
+  (D88b); the fix is the same save/restore `SuppliedArtifactContentTest` uses.
+
+**Runs** (pinned props, plain `--offline`, through `heavy.sh`; no gate, no port used):
+- Targeted at the code tip: `OldReleaseWordingTest` 2/0 (the tree scans clean under the widened patterns),
+  `LaunchInputCheckTest` 20/0 (`rf/targeted-2.log`; `rf/targeted-1.log` is the first try, red on the `String.join`
+  probe until a `,` seam joined to a space instead of nothing).
+- Full suite at `d79def9f` (`-Pforbric.requireFixtures=all jar cleanTest test --continue`, `rf/suite.log`, XML
+  `rf/suite-xml/`, 917 files): **5969 tests, 0 skipped, 5 failed**, name for name the D58 five of
+  `c6/failures-w1.txt` (`rf/failures-rf.txt`): 0 new, 0 gone. Same count as at cefbae32 (no test method added).
+- Not re-run: `installerTest` (no installer file changed since 22ced9bc), gate-m17 (no file it reads changed),
+  gate-m10 (a comment changed, not a check). No gate's reach changed.
