@@ -42,8 +42,9 @@ For the next random set, set `SEED=20260919`, `WANT_FABRIC=26`, `WANT_NEO=26`,
 resolved manifest, including dependencies and actual loaders, with the run evidence.
 
 `abi-audit.py` checks class references against explicitly supplied carrier/game jars;
-`field-drift.py` compares the field descriptors of vanilla and a game base (it was written for the merged base of
-Forbric 0.4 and earlier; it reads any two jars, so NeoForge's patched game is the base to give it now) and reports
+`field-drift.py` compares the field descriptors of vanilla and a game base (it was written for the merged base the
+installer staged before MinecraftForge was dropped; it reads any two jars, so NeoForge's patched game is the base to
+give it now) and reports
 affected guest jars. `fapi-usage.py` scans class references, including `META-INF/jars`, to prove
 that candidates actually call a named set of symbols — by default the Fabric loot/model
 surfaces, and with `--preset` / `--symbols` any other set, which is how "who is actually
@@ -246,10 +247,12 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
    profile's game arguments: `--gameJar`, `--runtimeJar` and `--nativeReference` become the paths of the base, carrier
    and sidecar libraries the profile names, one value per flag, with `--libraryPath` and every other argument kept
    (`PROFILE_REWRITES`, or `PROFILE_REWRITES none` when they already say that). It changes no library. A profile the
-   installer of this tree did not write -- one an older installer (Forbric 0.4 or earlier) wrote, naming the merged
-   base, a MinecraftForge carrier or the old loader's jars, or one naming the three game artifacts at other versions
-   than this tree stages, or lacking one -- is refused (exit 2) before anything is stopped or staged, with the advice
-   to run the new installer again with the same game directory; the kernel would refuse that game anyway (D9).
+   installer of this tree did not write -- one an older installer wrote (one that staged the merged base, before
+   MinecraftForge was dropped), naming the merged base, a MinecraftForge carrier or the old loader's jars, or one naming the three game artifacts at other versions
+   than this tree stages, or lacking one -- is refused (exit 2) before the kernel is built and before anything is
+   stopped or staged, with the advice to run the new installer again with the same game directory; the kernel would
+   refuse that game anyway (D9). A refused run leaves no evidence directory, so the same `--label` runs again after
+   the reinstall.
 3. Stop only PIDs read from `.forbric-sweep.pid` / `.forbric-gate.pid`, including the
    server subdirectory's gate file. Never kill all Java/Python/game processes by name.
    Those PIDs include the client and bisect drivers, so a stop also skips their own restore of the player's

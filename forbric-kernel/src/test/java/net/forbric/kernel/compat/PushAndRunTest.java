@@ -205,7 +205,8 @@ class PushAndRunTest {
                 expected_base = f'net/forbric/patched-mc-neoforge/{base}/patched-mc-neoforge-{base}.jar'
                 expected_neo = f'net/forbric/neoforge-runtime/{neo}/neoforge-runtime-{neo}.jar'
                 expected_sidecar = f'net/forbric/vanilla-reference/{base}/vanilla-reference-{base}.jar'
-                # A profile Forbric 0.2/0.4 wrote (the shape of a real one: the merged base, both carriers, the loader).
+                # A profile an older installer wrote, one that staged the merged base (the shape of a real 0.2.0 one:
+                # the merged base, both carriers, the loader).
                 old = dict(id='26.2-forbric', libraries=[
                     library('net.forbric:forbric-kernel:0.2.0', 'net/forbric/forbric-kernel/0.2.0/forbric-kernel-0.2.0.jar'),
                     library('net.forbric:forbric-loader:0.2.0', 'net/forbric/forbric-loader/0.2.0/l.jar'),
@@ -232,7 +233,7 @@ class PushAndRunTest {
                 assert not hasattr(m, 'with_genuine_base') and not hasattr(m, 'with_native_reference')
                 # The new installer's own profile, exactly: nothing to say, nothing changed.
                 new = dict(id='26.2-forbric', libraries=[
-                    library('net.forbric:forbric-kernel:0.5.0', 'net/forbric/forbric-kernel/0.5.0/forbric-kernel-0.5.0.jar'),
+                    library('net.forbric:forbric-kernel:0.4.0', 'net/forbric/forbric-kernel/0.4.0/forbric-kernel-0.4.0.jar'),
                     library('net.forbric:patched-mc-neoforge:' + base, expected_base),
                     library('net.forbric:neoforge-runtime:' + neo, expected_neo),
                     library('net.forbric:vanilla-reference:' + base, expected_sidecar),
@@ -272,7 +273,7 @@ class PushAndRunTest {
                 # And the profile is one resolve_artifacts accepts, with every staged artifact at its library's path.
                 entries = m.resolve_artifacts(json.loads(pristine), [])
                 assert {coordinate: path for coordinate, (_, path) in entries.items()} == {
-                    'net.forbric:forbric-kernel': 'net/forbric/forbric-kernel/0.5.0/forbric-kernel-0.5.0.jar',
+                    'net.forbric:forbric-kernel': 'net/forbric/forbric-kernel/0.4.0/forbric-kernel-0.4.0.jar',
                     m.BASE: expected_base, m.NEO_RUNTIME: expected_neo, m.VANILLA_REFERENCE: expected_sidecar}, entries
                 """);
         assertEquals(0, result.exit(), result.output());
@@ -300,6 +301,54 @@ class PushAndRunTest {
                 && result.output().contains("Run the new installer again with the same game directory"), result.output());
         assertFalse(result.output().contains("PUT_ARTIFACT") || result.output().contains("PROFILE_REWRITES")
                 || result.output().contains("STOP_BY_PID"), result.output());
+    }
+
+    /**
+     * A real (not dry) run refuses an older installer's profile before it builds the kernel or touches Windows, and
+     * leaves no evidence directory behind, so the same --label runs again once the player has reinstalled
+     * (C6 REL review A F7, B-6: the directory and the fetched version.json used to stay and block that rerun).
+     */
+    @Test
+    void aRefusedRealRunBuildsNothingAndLeavesNoEvidenceDirectory() throws Exception {
+        var result = python("""
+                import json, stat, sys
+                kernel = output / 'kernel'; kernel.mkdir()
+                gradlew = kernel / 'gradlew'
+                gradlew.write_text('#!/bin/sh\\ntouch "$(dirname "$0")/built"\\nexit 0\\n')
+                gradlew.chmod(gradlew.stat().st_mode | stat.S_IEXEC)
+                m.KERNEL = kernel
+                m.stamp_problems = lambda overrides: []
+                calls = []
+                m.remote = lambda command: calls.append(command) or ''
+                m.put = lambda *a: calls.append(a)
+                old = output / 'old.json'
+                old.write_text(json.dumps(dict(libraries=[
+                    dict(name='net.forbric:patched-mc-merged:26.2', downloads=dict(artifact=dict(path='m.jar'))),
+                    dict(name='net.forbric:forge-runtime:26.2', downloads=dict(artifact=dict(path='f.jar')))],
+                    arguments=dict(game=['--gameJar', 'm.jar', '--libraryPath', 'L']))))
+                mods = output / 'mods'; mods.mkdir(); (mods / 'a.jar').write_bytes(b'PK')
+                run = output / 'run'
+                for label in ('first', 'first'):
+                    sys.argv = ['push-and-run.py', '--label', label, '--mc', 'D:\\\\fixture-mc', '--version', 'fixture',
+                                '--mods', str(mods), '--version-json', str(old), '--output', str(run)]
+                    try:
+                        m.main(); raise AssertionError("an older installer's profile was run")
+                    except ValueError as refused:
+                        assert 'it names net.forbric:patched-mc-merged:26.2' in str(refused), refused
+                    assert not run.exists(), 'a refused run left ' + str(sorted(run.rglob('*')))
+                    assert not (kernel / 'built').exists(), 'the kernel was built for a refused profile'
+                    assert calls == [], calls
+                # An output directory that already existed, empty, is kept as it was found.
+                run.mkdir()
+                try:
+                    m.main(); raise AssertionError("an older installer's profile was run")
+                except ValueError:
+                    pass
+                assert run.is_dir() and list(run.iterdir()) == [], list(run.iterdir())
+                print('REFUSED-CLEANLY')
+                """);
+        assertEquals(0, result.exit(), result.output());
+        assertTrue(result.output().contains("REFUSED-CLEANLY"), result.output());
     }
 
     /** Without FORBRIC_OLD the stage is the one tools/dev.py prepare writes, never forbric-loader/run. */
@@ -557,6 +606,7 @@ class PushAndRunTest {
                     assert exit.code == 2, exit.code
                 assert (kernel / 'built').read_text().split() == ['--offline', '-q', 'jar']
                 assert calls == [], calls
+                assert not (output / 'run').exists(), 'a failed build leaves no evidence directory behind'
                 """);
         assertEquals(0, result.exit(), result.output());
         assertTrue(result.output().contains("building the kernel jar failed") && result.output().contains("compile error"),

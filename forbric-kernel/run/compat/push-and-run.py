@@ -39,8 +39,8 @@ CLEAN = ('config', 'mods', 'saves', 'logs', '.forbric-kernel', '.mixin.out', '.f
 BASE = 'net.forbric:patched-mc-neoforge'
 NEO_RUNTIME = 'net.forbric:neoforge-runtime'
 VANILLA_REFERENCE = 'net.forbric:vanilla-reference'
-# What only a profile an older installer (Forbric 0.4 and earlier) wrote names: the merged base, the MinecraftForge
-# carrier and patched game, and the old loader's two jars. The new kernel refuses that game (LaunchInputCheck, D9), and
+# What only a profile an older installer wrote names (one that staged the merged base, before MinecraftForge was dropped):
+# the merged base, the MinecraftForge carrier and patched game, and the old loader's two jars. The new kernel refuses that game (LaunchInputCheck, D9), and
 # push-and-run no longer swaps its libraries (plan Stage 4 C6): such a profile is refused (old_profile_problems).
 RETIRED_ARTIFACTS = ('net.forbric:patched-mc-merged', 'net.forbric:forge-runtime', 'net.forbric:patched-mc-forge',
                      'net.forbric:forbric-loader', 'net.forbric:forbricruntime')
@@ -244,8 +244,8 @@ def library_path(coordinate, version):
 
 REFUSED_PROFILE = ('this profile is not one the installer of this tree wrote ({problems}); push-and-run rewrites only a '
                    "profile's game arguments and no longer swaps libraries in an older installer's profile. Run the new "
-                   'installer again with the same game directory (a game installed by Forbric 0.4 or earlier is refused '
-                   'by the kernel anyway), then run push-and-run again.')
+                   'installer again with the same game directory (a game an older installer laid out, with the merged base '
+                   'and the MinecraftForge carrier, is refused by the kernel anyway), then run push-and-run again.')
 
 
 def coordinate_of(library):
@@ -686,6 +686,17 @@ def finish_run(args, output, remote_tools, server, client, started, errors):
     return report(args, output, artifacts, server, client, started, errors)
 
 
+def discard_unstaged(output, profile_path, created):
+    """Undo what a run wrote locally before it staged anything: the fetched profile, and the output directory when this
+    run created it (it was absent or empty before)."""
+    try:
+        Path(profile_path).unlink(missing_ok=True)
+        if created:
+            Path(output).rmdir()
+    except OSError:
+        pass
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--label', required=True)
@@ -787,23 +798,33 @@ def main():
     if not args.dry_run:
         if output.exists() and any(output.iterdir()):
             parser.error('output already contains evidence; choose a new --label or --output')
-        if not args.no_build:
-            build = subprocess.run([str(KERNEL / 'gradlew'), '--offline', '-q', 'jar'], cwd=KERNEL, text=True,
-                                   stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-            if build.returncode:
-                parser.error('building the kernel jar failed; nothing was staged:\n' + build.stdout[-4000:])
+        created = not output.exists()
         output.mkdir(parents=True, exist_ok=True)
         profile_path = output / 'version.json'
-        if args.version_json:
-            shutil.copy2(args.version_json, profile_path)
-        else:
-            get(ntpath.join(args.mc, 'versions', args.version, args.version + '.json'), profile_path)
+        try:
+            if args.version_json:
+                shutil.copy2(args.version_json, profile_path)
+            else:
+                get(ntpath.join(args.mc, 'versions', args.version, args.version + '.json'), profile_path)
+            profile = json.loads(profile_path.read_text(encoding='utf-8-sig'))
+            # Only the game arguments change; a profile an older installer wrote is refused here (exit 2), before the
+            # kernel is built and before anything is stopped or staged remotely, and its libraries are left as they are.
+            rewritten = with_game_arguments(profile)
+            if not args.no_build:
+                build = subprocess.run([str(KERNEL / 'gradlew'), '--offline', '-q', 'jar'], cwd=KERNEL, text=True,
+                                       stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+                if build.returncode:
+                    parser.error('building the kernel jar failed; nothing was staged:\n' + build.stdout[-4000:])
+        except BaseException:
+            # Nothing was staged: leave no evidence directory behind, so the same --label runs again after the
+            # player reinstalls or the build is fixed (C6 REL review A F7, B-6).
+            discard_unstaged(output, profile_path, created)
+            raise
     else:
         profile_path = args.version_json
-    profile = json.loads(profile_path.read_text(encoding='utf-8-sig'))
-    # Only the game arguments change; a profile an older installer wrote is refused here (exit 2), before anything is
-    # stopped or staged remotely, and its libraries are left as they are.
-    rewritten = with_game_arguments(profile)
+        profile = json.loads(profile_path.read_text(encoding='utf-8-sig'))
+        # A profile an older installer wrote is refused here as well (exit 2), before any upload is named.
+        rewritten = with_game_arguments(profile)
     if rewritten and not args.dry_run:
         profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     if not args.dry_run and not any(item.startswith(VANILLA_REFERENCE + '=') for item in args.artifact):
