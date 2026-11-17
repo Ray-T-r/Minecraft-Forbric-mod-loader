@@ -67,7 +67,10 @@ The rules as they stand at the stage tip (with INSTFIX's additions marked):
     `${classpath_separator}` ends it); **INSTFIX:** every occurrence counts, also one inside an earlier match's run, so a
     list joined by any other character (a comma, as in NeoForge's own `-DmergeModules`, or a bar) keeps each library;
   - **INSTFIX:** a directory above a library's version directory (a module path entry) keeps everything under it;
-  - **INSTFIX:** letter case is ignored (Windows and macOS file systems ignore it; a case-sensitive one only keeps more).
+  - **INSTFIX:** letter case is ignored (Windows and macOS file systems ignore it; a case-sensitive one only keeps more);
+    since 976f25f6 (INSTFIX review fixes, R-1) also in `net/forbric` / `net.forbric` themselves;
+  - **INSTFIX review fixes (976f25f6, R-2):** a directory below a version directory whose file a profile names (a
+    `natives/` folder) is kept with it; coordinates joined by a colon each count.
 - Which files are profiles (c27cc306, review B 5): every `versions/<id>/*.json` is read and counts when it parses (it can
   only keep more), plus the profile each `inheritsFrom` names. Only `versions/<id>/<id>.json` (INSTFIX: in any letter case)
   or an inherited parent that cannot be read stops the library half; any other JSON there that does not parse (the game's
@@ -139,12 +142,14 @@ none: no unit test drives `LinkCheckTool`'s unpack-over-a-stale-copy (git grep `
 installer tests: none), and nothing else runs an install with the network denied. Deleting them would drop live checks
 (D34). So both stay, re-pointed to follow whichever checker the installer carries:
 
-- build step: asks the installer's build file — `buildLinkCheck` (LINK) builds the kernel's `linkCheckJar` and excludes
-  `buildLinkCheck`; `buildMergeTools` (this tree) builds the loader's `mergeToolsJar` and excludes `buildMergeTools`; neither
-  is exit 3. This is LINK's `m17-scratch-repoints.diff` made to work on both sides of LINK's merge.
-- tools phase: the one jar under `forbric/tools/` (it FAILs on none or several); its unpacked copy is spoiled and must come
-  back as the bundled bytes. When it is not the merge tools, an older install's `forbric-merge-tools.jar` is planted and must
-  be cleaned away, named in the log, as the only removal.
+- build step (at c4199989 only, superseded; the stage tip has the first form alone, see the note above): asked the
+  installer's build file — `buildLinkCheck` (LINK) built the kernel's `linkCheckJar` and excluded `buildLinkCheck`;
+  `buildMergeTools` (the lane's tree before LINK) built the loader's `mergeToolsJar` and excluded `buildMergeTools`; neither
+  was exit 3. This was LINK's `m17-scratch-repoints.diff` made to work on both sides of LINK's merge.
+- tools phase (at c4199989; the stage tip requires exactly `forbric-link-check.jar`): the one jar under `forbric/tools/`
+  (it FAILed on none or several); its unpacked copy is spoiled and must come back as the bundled bytes. When it was not the
+  merge tools, an older install's `forbric-merge-tools.jar` was planted and had to be cleaned away, named in the log, as
+  the only removal.
 - offline phase: unchanged (its `[link-check] ... dangling references: 0` regex is LINK's verdict line, kept by LINK), plus
   "the clean-up removed nothing".
 - m17 prints no `[kernel] SKIP (C6` line (it printed none at 495e48fc either; `grep -c 'SKIP (C6' gate-m17-installer.sh` = 0).
@@ -223,7 +228,7 @@ outside the kernel suite whose skips the TSVs list, and no kernel-suite test was
 | `net/forbric` root widened to `libraries` (mutation) | red (other groups removed) |
 | removal not logged (mutation) | red |
 | failed delete thrown instead of logged (mutation) | red |
-| gate-m17 phase U, clean-up switched off | all 20 removal checks red (in every green run) |
+| gate-m17 phase U, clean-up switched off | all 22 removal checks red (in every green run at the stage tip; 20 at the lane's own c4199989) |
 
 red-controls-unit.log has the mutation runs (each: exit 1 and the first assertion).
 
