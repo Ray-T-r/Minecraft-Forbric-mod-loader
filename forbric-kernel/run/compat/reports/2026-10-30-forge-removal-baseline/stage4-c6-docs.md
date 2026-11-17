@@ -240,11 +240,10 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > space back (the next install downloads what it needs again).
 >
 > **Changed**
-> - In most cases, a mod that crashes while the game is loading now stops the game, as NeoForge and Fabric do on their
->   own, instead of the game starting without that mod. If it crashes before the game window opens, NeoForge's own error
->   screen names the mod. If it crashes after that, the error comes in a small separate message box, not on NeoForge's
->   error screen inside the game window. A Fabric mod that crashes as it starts closes the game with a crash report.
->   (Checked on macOS so far, not on Windows or Linux.)
+> - A mod that crashes while the game is loading now usually stops the game, as NeoForge and Fabric do on their own,
+>   instead of carrying on without that mod (or first asking you whether to). In the game client, a NeoForge mod's crash
+>   then shows NeoForge's error screen naming the mod, or a small separate message box if the game window is already
+>   open; a Fabric mod's crash just closes the game. (Checked on macOS only.)
 > - Fabric mods' settings screens open from Forbric's own Mods screen, with no Mod Menu needed.
 > - On phone launchers and on macOS, when the warning window cannot open, Forbric asks its question inside the game.
 >
@@ -276,10 +275,9 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > `.forbric-build` 文件夹里；想要回这部分空间，可以删掉这个文件夹（下次安装会重新下载需要的文件）。
 >
 > **改动**
-> - 游戏加载时崩溃的 mod，现在多数情况下会让游戏停下（NeoForge 和 Fabric 单独使用时也是这样），而不是游戏照样启动、只是少了这个
->   mod。如果崩溃发生在游戏窗口打开之前，你会看到 NeoForge 自己的错误界面，上面写着是哪个 mod。如果发生在窗口打开之后，错误会显示在
->   一个单独的小提示框里，而不是 NeoForge 在游戏窗口里显示的错误界面。Fabric mod 在启动时崩溃，游戏会直接关闭并留下崩溃报告。
->   （目前只在 macOS 上验证过，Windows 和 Linux 还没有。）
+> - 游戏加载时崩溃的 mod，现在通常会让游戏停下（NeoForge 和 Fabric 单独使用时也是这样），而不是不带这个 mod 继续启动（或先问你
+>   要不要继续）。在游戏客户端里，这时 NeoForge mod 会显示 NeoForge 的错误界面并写出是哪个 mod；如果游戏窗口已经打开，则会弹出一个
+>   单独的小提示框。Fabric mod 则是直接关闭游戏。（目前只在 macOS 上验证过。）
 > - Fabric mod 的设置界面可以从 Forbric 自己的 Mods 界面打开，不需要 Mod Menu。
 > - 在手机启动器和 macOS 上，警告窗口打不开时，Forbric 会在游戏里提问。
 >
@@ -299,7 +297,7 @@ ForbricTest copied into beta2's layout, which beta2 never wrote, so no world sav
 on this tree); the "in our tests" of the Tombstone line (gate-m59 drills three mods, D54; three of expected-losses.tsv's
 six rows are `NO NATIVE ROW`, judged from the mod's code); the Tombstone losses (expected-losses.tsv, D77; the knowledge/alignment/perks reading of `cap_tombstone`
 and `cap_protected_entity` is the TSV's own "why" column); disk (Doctor.java, stage4-c6-inst.md, stage4-c6-instfix.md §8);
-stop like native (D82, D87e, gate-m24/m24d; reworded by DOCFIX C6, check-w2 C-3, see the end of this file); config screens without Mod Menu (merge 0ec42139, gate-m56); asking in game
+stop like native (D82, D87e, gate-m24/m24d; reworded by DOCFIX C6, check-w2 C-3, and again after its review, see the end of this file); config screens without Mod Menu (merge 0ec42139, gate-m56); asking in game
 (1aa478ea, #56/#57); Create Fly crash (41df26d9, #52; on NeoForge's base gate-m61 boots Create Fly with fabric-api in
 two dedicated servers); Carry On (gate-m54, `FabricCommonPayloadMixinAdapter` on NeoForge's base); creative search
 (TCDCommons, gate-m55); breathing (merge 07eb4ce0, gate-m57 against native NeoForge). Each landed after v0.3.1-beta2
@@ -405,7 +403,9 @@ Branch `s4-c5-c6docfix`, cut from 0d310a36. Documentation and records only; no c
   - "After that, a small separate message box": NeoFatalErrorWindow answers IN_GAME and NeoForge takes its message-box
     fallback (stage4-c5-verify.md run 3: the six finish-path fixture modes plus m24d common/clientnetwork; D91/D92 open
     item). On macOS the box is tinyfd's osascript dialog. In m24d's common and clientnetwork phases it showed the mod's
-    name and the error (`c5/merger/w2d/gates-all-results/gate-m24d-registerstop-client.sh.log`). A message with quotes
+    name (`c5/merger/w2d/gates-all-results/gate-m24d-registerstop-client.sh.log` :105/:124; corrected by review R-8: this
+    said "the mod's name and the error", but the logged command line is cut after "encountered an error while dispat",
+    so the error text is not evidenced). A message with quotes
     can turn the box into "INVALID MESSAGE WITH QUOTES": that was seen in the pre-window phases before DLG, and the line
     makes no claim about the box's text either way.
   - "A Fabric mod that crashes as it starts closes the game with a crash report": the client's Fabric stop is
@@ -421,3 +421,43 @@ Branch `s4-c5-c6docfix`, cut from 0d310a36. Documentation and records only; no c
 - **Introductions.** "NeoForge's error screen on a client" (§12.4) now names both client cases. "no phase contains it"
   (invariant 13) now names the two phases still contained. The C-4 wording on the link baseline is in the same commit.
 - **Record README.** The THR/STOP/DLG row now says the same.
+
+### DOCFIX C6 review fixes (2026-11-18, review-docfix R-1..R-9)
+
+Same branch, on 070597c5. Documentation and records only; no code, no gate, no suite.
+
+- **Release-notes line, shortened and narrowed (R-2..R-5).** The line is now three sentences (en and zh). What changed
+  and what each clause rests on:
+  - "instead of carrying on without that mod (or first asking you whether to)" (R-2): v0.3.1-beta2 did not simply start
+    without the mod. a4e3c017 (an ancestor of beta2 5e735a31, `merge-base --is-ancestor`) made a throwing `@Mod`
+    constructor and a failed Fabric main/client/server entrypoint confirmed-required findings (beta2's
+    InitializationFailureProjectionTest: `initialization:constructor`, `initialization:entrypoint:main`), so an
+    installed profile (`ask`) asked the player, and where nobody could be asked the launch stopped (exit 78). Listener
+    failures did carry on. Beta2 itself was not run here.
+  - "usually" now covers the whole line, as "in most cases" did; the three still-contained phases are the same as above.
+  - "In the game client, … a small separate message box if the game window is already open" (R-4): the line no longer
+    says the box shows the error. The box's text is evidenced only by m24d's cut command line (the mod's name), and
+    tinyfd can show "INVALID MESSAGE WITH QUOTES" instead.
+  - "a Fabric mod's crash just closes the game" (R-3): the crash report is dropped. It was measured on the client only
+    (m24d fabric, exit 255); the server's Fabric stop writes no NeoForge crash file and no record shows a crash report
+    there. A crash in `preLaunch` is contained, which the first sentence's "usually" covers.
+  - "(Checked on macOS only.)": as before (DLG "Not measured: Windows and Linux").
+  - Length (R-5) is the owner's call; the shorter wording is the review's, adjusted for a server reader ("In the game
+    client") and for R-3.
+- **Introductions (R-1, R-7).** §3.4 (en and zh) said every client stop shows NeoForge's fatal-error window and "Nothing
+  is contained". It now says the window is shown while the client has no game window, that after that NeoForge falls
+  back to a message box, that a Fabric stage stop exits 1 on a dedicated server (native 0), that a Fabric stage stop
+  writes no NeoForge crash file (Main logs it on a server; a client ends with Minecraft's crash report), and it names the three phases still contained: NeoForge's "Config loading"
+  listeners, a Fabric `preLaunch` entrypoint and a throwing Fabric injector at the moved freeze point. Code at the tip:
+  `KernelFabricEcosystem.runPreLaunch` (:541-548) catches the throw, marks the mod FAILED and goes on;
+  `KernelLifecycle.fabricFreezePoint` (:2553-2556) logs it with `Caught.warn` and goes on. §3.5 narrows the stopping
+  entrypoints to `main`/`client`, says the freeze-point injector is contained, and says `KernelNeoClientStop`'s result
+  is the message-box fallback. §5 and §12.4 narrow "every entrypoint" to `main`/`client`/`server` and §5 says what a
+  throwing `preLaunch` does. Invariant 13 and the record README's THR/STOP/DLG row now name all three contained phases
+  (R-7), and §19's open list adds them.
+- **Link baseline (R-6).** "no script, gate or CI step calls the two scripts" was false: `run/test-link-check.sh` calls
+  `check-merged-links.sh` five times (:132-:163), each with its own `LINK_BASELINE`. It now says no gate or CI step
+  does, names test-link-check.sh, and says nothing runs it (`git grep test-link-check` outside .md: only the file
+  itself). build.gradle:259's comment naming the deleted `buildMergeTools` is left for Stage 5 (a code file, not docs).
+- **Record (R-8).** The m24d sentence above is corrected in place, marked as such.
+- **D87(e) (R-9).** DECISIONS.md is outside the repository; the annotation is the orchestrator's.
