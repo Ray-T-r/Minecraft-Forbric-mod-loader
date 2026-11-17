@@ -92,7 +92,9 @@ check "datapacks served"              "Forbric/DataPacks\] served [1-9][0-9]* da
 # carry (re-measured on the genuine base in Stage 4 C5: base 0, carrier 513; fabric-api ships the same 513 paths for
 # its own side), and every cross-mod recipe of a NeoForge mod is written against them. Assert the NUMBER: the line
 # keeps printing when the count goes to zero. One carrier since MinecraftForge left the stage (Stage 4), and its pack
-# id keeps its rank, 2 (D2): it is the id a world written by Forbric <= 0.3.x already holds in its enabled pack list.
+# id keeps its rank, 2 (D2). A staged or developer world written by Forbric <= 0.3.x already holds this id in its
+# enabled pack list; an installed one recorded the id with the carrier's file name in it, which is renamed to this one
+# when the world loads (D43, KernelDataPacks.migrateCarrierIds).
 CARRIERS=$(grep -aoE 'served [0-9]+ datapack\(s\).*— [0-9]+ loader carrier' "$LOG" | grep -oE '[0-9]+ loader' | grep -oE '[0-9]+' | head -1)
 assert_eq "loader carriers served" 1 "${CARRIERS:-none}"
 check "the carrier sits below the mods" "mod pack\(s\) .*: \[forbric/carrier/2-neoforge-runtime, forbric/data/" "$LOG"

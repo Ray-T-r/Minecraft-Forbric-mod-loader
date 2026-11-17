@@ -434,6 +434,7 @@ class LaunchInputCheckTest {
 		List<Path> runtimes = List.of(neo(dir));
 		String english = oldInstallProblem(List.of(merged), runtimes);
 		Locale before = Locale.getDefault();
+		String languageBefore = System.getProperty("forbric.dialogLanguage");
 		String zh;
 		try {
 			Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
@@ -441,7 +442,9 @@ class LaunchInputCheckTest {
 			zh = oldInstallProblem(List.of(merged), runtimes);
 		} finally {
 			Locale.setDefault(before);
-			System.clearProperty("forbric.dialogLanguage");
+			// Give back what the test JVM was started with, so a run that pins the dialogs' language keeps its pin.
+			if (languageBefore == null) System.clearProperty("forbric.dialogLanguage");
+			else System.setProperty("forbric.dialogLanguage", languageBefore);
 		}
 		assertEquals(english, zh, "the old-install line is a log line: the same in every locale");
 		for (String line : List.of(english, LaunchInputCheck.OLD_INSTALL_SWITCH_OFF)) {
