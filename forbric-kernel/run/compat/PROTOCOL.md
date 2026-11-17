@@ -42,8 +42,9 @@ For the next random set, set `SEED=20260919`, `WANT_FABRIC=26`, `WANT_NEO=26`,
 resolved manifest, including dependencies and actual loaders, with the run evidence.
 
 `abi-audit.py` checks class references against explicitly supplied carrier/game jars;
-`field-drift.py` compares vanilla and merged field descriptors and reports affected
-guest jars. `fapi-usage.py` scans class references, including `META-INF/jars`, to prove
+`field-drift.py` compares the field descriptors of vanilla and a game base (it was written for the merged base of
+Forbric 0.4 and earlier; it reads any two jars, so NeoForge's patched game is the base to give it now) and reports
+affected guest jars. `fapi-usage.py` scans class references, including `META-INF/jars`, to prove
 that candidates actually call a named set of symbols — by default the Fabric loot/model
 surfaces, and with `--preset` / `--symbols` any other set, which is how "who is actually
 waiting on this Forge event" gets answered from bytecode instead of from `javap` notes in
@@ -232,17 +233,22 @@ base. See [the menu probe instructions](../../canary/menu-codec/README.md).
 1. Build the four staged artifacts and canaries: the kernel jar, the base (NeoForge's patched game), its one carrier
    (the NeoForge runtime), and the vanilla-reference sidecar measured against that base (`tools/dev.py prepare` stages
    them; push-and-run builds a sidecar with `run/vanilla-reference-jar.sh` when the staged one records another base).
-   The base and the carrier go up only while their build stamps (`<jar>.pins`) name this tree's installer pins;
-   otherwise push-and-run refuses before building or touching anything (point `FORBRIC_OLD` at a prepared stage, or
-   name the files with `--artifact`). Do not run a gate while a Windows sweep is using those artifacts; gates rebuild
+   The stage is `FORBRIC_OLD` when it is set, else `forbric-kernel/.dev/staged` (what `tools/dev.py prepare` writes,
+   and what `build.gradle` reads without `FORBRIC_OLD`); never `forbric-loader/run`, whose carrier is NeoForge
+   26.2.0.88 and unstamped. The base and the carrier go up only while their build stamps (`<jar>.pins`) name this
+   tree's installer pins; otherwise push-and-run refuses before building or touching anything (prepare the stage,
+   point `FORBRIC_OLD` at a prepared one, or name the files with `--artifact`). Do not run a gate while a Windows sweep is using those artifacts; gates rebuild
    the kernel jar in place.
 2. Use `push-and-run.sh --label <label> --mods <mods-dir> --manifest <manifest.json>`.
    Preview with `--dry-run --version-json <installed-profile.json>`. The dry run names
-   all four artifact uploads, sanitized mod names, PID stop, cleanup, and evidence. A profile an older installer
-   (Forbric 0.4 or earlier) wrote is rewritten to the new installer's game: NeoForge's patched game in the merged
-   base's place, no MinecraftForge carrier, the carrier and sidecar at this tree's versions, and exactly the new
-   installer's game arguments (`PROFILE_REWRITES`). A profile that still lacks the sidecar gains its library and its
-   own `--nativeReference` game argument (`PROFILE_ADDS`).
+   all four artifact uploads, sanitized mod names, PID stop, cleanup, and evidence. push-and-run rewrites only the
+   profile's game arguments: `--gameJar`, `--runtimeJar` and `--nativeReference` become the paths of the base, carrier
+   and sidecar libraries the profile names, one value per flag, with `--libraryPath` and every other argument kept
+   (`PROFILE_REWRITES`, or `PROFILE_REWRITES none` when they already say that). It changes no library. A profile the
+   installer of this tree did not write -- one an older installer (Forbric 0.4 or earlier) wrote, naming the merged
+   base, a MinecraftForge carrier or the old loader's jars, or one naming the three game artifacts at other versions
+   than this tree stages, or lacking one -- is refused (exit 2) before anything is stopped or staged, with the advice
+   to run the new installer again with the same game directory; the kernel would refuse that game anyway (D9).
 3. Stop only PIDs read from `.forbric-sweep.pid` / `.forbric-gate.pid`, including the
    server subdirectory's gate file. Never kill all Java/Python/game processes by name.
    Those PIDs include the client and bisect drivers, so a stop also skips their own restore of the player's
@@ -523,24 +529,27 @@ The running commentary — what started when, on which slot and port, what each 
 what the run would have taken sequentially — goes to `build/gates/progress.log`; `--progress`
 also mirrors it to stderr.
 
-`gate-m25-worldgen.sh` still deliberately exposes the missing MinecraftForge biome-modifier
-mechanism (its Forge half is expected red until workstream D). `gate-m26-forgeclient.sh` was
-born expected red and turned green with Phase 1 A; it stages a data-free copy of its canary so adding a worldgen datapack cannot block
+`gate-m25-worldgen.sh` checks that NeoForge's biome and structure modifiers leave the NeoForge canary's blocks in
+saved overworld chunks (`M25_NO_DATA=1` is its red demonstration); its MinecraftForge half went in Stage 3 of
+dropping MinecraftForge, when Forbric began refusing a MinecraftForge-only jar. `gate-m26-forgeclient.sh` checks that
+the client event buses receive the game's real registration events and that a refused MinecraftForge mod is put to
+the player; it stages a data-free copy of the NeoForge canary so adding a worldgen datapack cannot block
 quick-play behind a new-pack confirmation; the source jar remains intact and m25 tests its data.
 It also invokes `win/prepare-world.py` on the zero-mod test save to acknowledge the
 carrier experimental-generation prompt before quick-play.
-Header `EXPECTED: RED until ...`, exit code 2, and an
-`EXPECTED-RED` observation together distinguish a known failure from boot failures
-or broken control assertions (exit 1). Remove the expected-red contract when its
+A gate that is red by declaration carries the header `EXPECTED: RED until ...`, exits 2 and prints an
+`EXPECTED-RED` observation, which together distinguish a known failure from boot failures
+or broken control assertions (exit 1); no gate carries that contract today. Remove it when its
 implementation lands, as m26's was. `gate-m27-frame.sh` requires the 97-jar pack and a PNG newer
 than the current launch. Gate headers document `M25_NO_DATA`, `M26_EXTRA_JVM`,
 `M27_SHOT_TICKS`, and `M27_FRAME` negative controls.
 
-`gate-m28-forgeconfig.sh` opens a fresh dedicated-server fixture, checks both the
-canary and Forge's own COMMON files, then changes the canary value from 11 to 73
-while the server is running. Only a new Reloading event within 40 seconds and a
+`gate-m28-forgeconfig.sh` opens a fresh dedicated-server fixture, checks the NeoForge
+canary's COMMON file, then changes the canary value from 11 to 73
+while the server is running (its MinecraftForge canary went in Stage 3 of dropping MinecraftForge, MinecraftForge's
+own `forge-common.toml` with the carrier in Stage 4). Only a new Reloading event within 40 seconds and a
 matching file readback pass. `M28_EXTRA_JVM=-Dforbric.earlyConfigs=off` is its negative
-control. `gate-m16-forge-handshake.sh` also checks that the client loads its CLIENT
+control. `gate-m16-forge-handshake.sh` also checks that the NeoForge canary's client loads its CLIENT
 config exactly once while the dedicated server creates no CLIENT file.
 
 After each step, run `./gradlew --offline cleanTest test`, read the JUnit XML, and
@@ -569,33 +578,43 @@ python3 run/compat/evidence.py run --source .. \
 
 Run from `forbric-kernel/`; command paths are resolved from the recorded repository source root. Supply every
 actual game/runtime/tool jar as a named `--artifact` in real acceptance runs. `--release` requires clean
-committed sources, a mods directory (empty is valid for zero-mod tests), and all of: `vanilla`,
-`forge-patched`, `neo-patched`, `merged`, `forge-runtime`, `neo-runtime`, `forge-interop`, `kernel`,
-`kernel-runtime`, `merge-tools`. Missing inputs fail. Keep output under ignored `build/` or outside the repo.
+committed sources, a mods directory (empty is valid for zero-mod tests), and all six release roles: `vanilla`,
+`neo-patched` (NeoForge's patched game, the base), `neo-runtime` (its carrier), `kernel`, `kernel-runtime` and
+`sidecar` (the vanilla-reference jar measured against the base). Missing inputs fail. Since Stage 4 of dropping
+MinecraftForge there is no merged base, MinecraftForge carrier, interop jar or merge-tools jar to attest. Keep output
+under ignored `build/` or outside the repo.
 
 A release capture also fails unless:
 - the versions read out of the artifacts are the pins (Minecraft `26.2` from each game jar's `version.json`,
-  MinecraftForge `26.2-65.0.1` and NeoForge `26.2.0.88` from the carriers' manifests);
-- the merged base and both runtimes the kernel build compiles against and its bytecode tests read
-  (`$FORBRIC_OLD/run/...`, else `forbric-loader/run/...`) are byte-identical to the attested ones;
-- `<merged>.provenance.json`, written by `build-merged-base.sh`, names the attested inputs and outputs, an
-  enforced link check, and merge-tool sources identical to the attested commit.
+  NeoForge `26.2.0.93` from the carrier's manifest);
+- the base, the carrier and the sidecar that the kernel build compiles against, its bytecode tests read and the
+  gates' launchers hand the kernel are byte-identical to the attested ones. The staged root resolves as
+  `build.gradle`'s does: `$FORBRIC_OLD/run`, else `forbric-kernel/.dev/staged/run` when it holds the base, else
+  `forbric-loader/run` (the old loader's stage, which `tools/dev.py prepare` never writes a sidecar into; a release
+  that falls back to it fails here);
+- the sidecar's `META-INF/forbric/vanilla-reference.properties` records the attested `neo-patched` and `vanilla`
+  jars (their SHA-1s) as what it was measured against.
 A release `run` refuses `--skip`, requires `gates-all.sh --release`, and records any `RESULT ... SKIP` or
 `EXPECTED_RED` line as a failed command. `${file.jarVersion}` mod versions are resolved from the archive's own
 `Implementation-Version` and kept beside the raw declaration.
 
 `evidence.py release-check --manifest <run.json> ... --publish kernel=<jar> ...` passes only when every manifest
 is a passed release run, all bind the same source and the same hash per role, and each published file is the
-accepted one. The installer's `releaseAssets` requires `-PreleaseEvidence=<run.json>[,...]` and runs it on the
-kernel and merge-tools jars it is about to publish.
+accepted one; a `--publish` role that is not a release role (`merge-tools`, `merged`, ...) is refused by name. The
+installer's `releaseAssets` requires `-PreleaseEvidence=<run.json>[,...]` and runs it on the kernel jar it is about to
+publish.
 
-`native-controls.py prepare` installs the fixed native Fabric, Forge and NeoForge servers into
-`build/native-controls`; `build` compiles one public-API canary per ecosystem. `run --engine native` and
-`run --engine forbric` execute the same jar hashes, seed and world actions, each in a fresh owned instance.
+`native-controls.py prepare` installs the fixed native Fabric and NeoForge servers into `build/native-controls`
+(`--family forge` also installs native MinecraftForge 26.2-65.0.1, which only the C5c swap oracle uses: Forbric loads
+no MinecraftForge mod, so there is no MinecraftForge behaviour control). `build [--family fabric|neo]` compiles the
+public-API canary of each family asked for, against that family's image only. `run --engine native` and
+`run --engine forbric` (`--family fabric|neo`) execute the same jar hashes, seed and world actions, each in a fresh
+owned instance, one server at a time on the caller's `GATE_PORT` (an OS ephemeral port without it).
 `compare <native-result.json> <forbric-result.json>` rejects mismatched inputs before comparing behavior.
 `NATIVE_CONTROL_CACHE` selects the read-only reference checkout; its default is the parent of `FORBRIC_OLD`,
-or this checkout when that variable is absent. The Forbric arm boots `FORBRIC_OLD` itself when it is set, and the
-cache's `forbric-loader` only when it is not. All generated files remain under this kernel's `build/`.
+or this checkout when that variable is absent. The Forbric arm boots `FORBRIC_OLD` when it is set, else the prepared
+`forbric-kernel/.dev/staged`, and refuses with neither (never the cache's `forbric-loader`, whose carrier is NeoForge
+26.2.0.88 and unstamped); `retention-control.py` does the same. All generated files remain under this kernel's `build/`.
 
 `native-controls.py run-set --engine native|forbric --family fabric --mods JAR... [--ticks 200] [--timeout 900]
 [--xmx 3G] [--level-type minecraft:normal] [--policy strict] [--keep]` boots one fresh server under `build/native-controls/instances/`
