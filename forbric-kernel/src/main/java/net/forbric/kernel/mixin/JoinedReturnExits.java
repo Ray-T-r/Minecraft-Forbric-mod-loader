@@ -33,7 +33,7 @@ import net.forbric.kernel.util.Caught;
  *
  * <p>The joined exits arrive at the JOIN: the straight-line run that ends in the hook, entered only at its first
  * instruction. Besides the hook's own operand loads it may hold other void calls fed by operand loads alone — on the
- * merged base of Forbric 0.4 and earlier, MinecraftForge's twin of the hook stood there; NeoForge's base has the hook
+ * merged base of Forbric 0.3.x and earlier, MinecraftForge's twin of the hook stood there; NeoForge's base has the hook
  * alone — so the join may begin before the hook itself; its first call ({@link #entry()}) is where "before the hook"
  * now starts.
  *

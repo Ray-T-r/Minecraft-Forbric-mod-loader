@@ -41,7 +41,7 @@
  *
  * <p>These were the differential oracle's, supplied to the kernel as two {@code runtimeOnly} jars from the other
  * repository. That made the kernel's runtime depend on a repo it does not build, and made a class the merged base
- * hard-references invisible to the kernel's own tests. They are kernel classes now. (The merged base of Forbric 0.4
+ * hard-references invisible to the kernel's own tests. They are kernel classes now. (The merged base of Forbric 0.3.x
  * and earlier named the old owners, and the compat transformer retargeted those calls on the way in; NeoForge's own
  * base names none of them.)
  */

@@ -31,7 +31,7 @@ import net.forbric.kernel.util.ForbricLog;
  * {@code ServerLifecycleHooks.runModifiers} applies the biome modifiers, then calls {@code refreshFeaturesPerStep()} on
  * every level stem's generator, then applies the structure modifiers: the {@code checkcast} throws
  * {@code ClassCastException} on the Guava supplier and no structure modifier applies ({@code KernelNeoWorldgen}'s guard
- * catches it: "NeoForge's biome/structure modifiers did not apply"). The merged base of Forbric 0.4 and earlier guarded
+ * catches it: "NeoForge's biome/structure modifiers did not apply"). The merged base of Forbric 0.3.x and earlier guarded
  * the cast; NeoForge's own base does not, because native NeoForge never meets fabric-biome-api.
  *
  * <p>The {@code checkcast; invokevirtual} pair becomes {@code aload_0; invokestatic

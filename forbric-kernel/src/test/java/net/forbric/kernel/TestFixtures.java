@@ -276,7 +276,7 @@ public final class TestFixtures {
 	 * The native-reference sources a launch on {@code base} has, for a test that builds its own
 	 * {@code NativeGameReferences} over {@code base}'s resources: {@link #vanillaReference} beside it, the sidecar every
 	 * launch path passes, from which FABRIC is answered (NEOFORGE is answered from the base's own bytes). A base that
-	 * still embeds a FABRIC index (a Forbric &le; 0.4 merged base, which no launch accepts any more) is opened alone, as
+	 * still embeds a FABRIC index (a Forbric &le; 0.3.x merged base, which no launch accepts any more) is opened alone, as
 	 * the kernel opened it then. Without this, a reader over {@link #stagedBase()} has no FABRIC index at all and every
 	 * FABRIC answer it gives is null. Opened once per base and kept open for the JVM, as a launch keeps its own.
 	 */

@@ -23,7 +23,7 @@ import org.objectweb.asm.ClassReader;
  * <p>{@link NativeGameReferences} answers "how did ecosystem E compile class C" — the evidence dozens of mixin adapters
  * compare against before they touch a guest mixin. That evidence used to have exactly one home: the
  * {@code META-INF/forbric/native-reference/<ECO>/} trees the old loader's merge tool embedded in the merged base of
- * Forbric 0.4 and earlier, read through the game class loader, with a null answer when absent. A base that is not that merge embeds nothing, and the
+ * Forbric 0.3.x and earlier, read through the game class loader, with a null answer when absent. A base that is not that merge embeds nothing, and the
  * null answer is silent: measured on the genuine NeoForge-patched jar, every adapter that compares against vanilla stood
  * down, 26 Fabric injectors warned that had not before, and fabric-api alone left 13 vanilla datapack registries empty.
  * So the sources are spelled out here instead of being whatever the classpath happens to hold:
@@ -37,7 +37,7 @@ import org.objectweb.asm.ClassReader;
  *       whatever the sidecar cannot verify against it: a sidecar built against another base never costs a base evidence
  *       it carries itself.</li>
  *   <li><b>The base's embedded index</b>, for every other ecosystem it carries — NEOFORGE on the merged base of
- *       Forbric &le; 0.4 (which no launch accepts any more; tests still drive the format). Read through the game class
+ *       Forbric &le; 0.3.x (which no launch accepts any more; tests still drive the format). Read through the game class
  *       loader exactly as before.</li>
  *   <li><b>The base itself</b>, for the base's own ecosystem when it embeds no index at all: a NeoForge-patched base IS
  *       NeoForge's compile of every class it holds, so its untransformed bytes are the NEOFORGE references, read on

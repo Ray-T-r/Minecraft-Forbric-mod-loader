@@ -30,7 +30,7 @@ import java.util.Set;
  * injections bind to unrelated code. Nothing else can see that.
  *
  * <p>Three buckets, derived from vanilla and the raw base (NeoForge's patched game) by
- * {@code MergedBaseAnonymousDriftTest}; the merged base of Forbric &le; 0.4 gave the same RELOCATED and RESHAPED sets. The
+ * {@code MergedBaseAnonymousDriftTest}; the merged base of Forbric &le; 0.3.x gave the same RELOCATED and RESHAPED sets. The
  * identity of an anonymous class is its superclass plus its non-{@code <init>} method set, and a patch may ADD
  * methods to it (NeoForge gives {@code MappedRegistry$2} data-map accessors): {@code $N} still holds vanilla's
  * class while every vanilla method is there. Only a vanilla method that is GONE from {@code $N} says otherwise:

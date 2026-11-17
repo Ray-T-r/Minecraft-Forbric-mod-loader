@@ -44,7 +44,7 @@ import net.forbric.kernel.util.Caught;
  *
  * <h2>Why resolution and not provenance</h2>
  *
- * <p>The base IS NeoForge's patched Minecraft (even the merged base of Forbric 0.4 and earlier was: its builder took
+ * <p>The base IS NeoForge's patched Minecraft (even the merged base of Forbric 0.3.x and earlier was: its builder took
  * NeoForge as the base and spliced Forge in, {@code forge=195 neo=10161 MERGED=611}). "The target is a class
  * NeoForge owns" therefore describes ~93% of every class in the jar: it is the normal state, not a hazard
  * signal. Measured over the 163 suppressions the previous owned-target rule actually made, 108 (66%) targeted a
@@ -849,7 +849,7 @@ public final class MixinFit {
 
 	/**
 	 * {@code @Shadow}ed fields the target still DECLARES but never ASSIGNS — the archetype that made the old
-	 * owned-target rule exist. On the merged base of Forbric 0.4 and earlier NeoForge's {@code GuiRenderer.<init>}
+	 * owned-target rule exist. On the merged base of Forbric 0.3.x and earlier NeoForge's {@code GuiRenderer.<init>}
 	 * re-typed its third parameter and replaced vanilla's {@code pictureInPictureRenderers} with its own
 	 * {@code pictureInPictureRendererPools} while the merge kept the field; erasure hides the change from Mixin (both descriptors are just {@code List}), so
 	 * fabric-rendering-v1's mixin applied with no error and then read a field with zero {@code putfield} anywhere → NPE.

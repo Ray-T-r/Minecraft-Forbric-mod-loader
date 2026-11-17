@@ -29,7 +29,7 @@ import net.forbric.kernel.util.Caught;
  *
  * <p>One declaration below the declarer is not an override: a method whose whole body hands its own arguments, unchanged,
  * to an interface's default with {@code invokespecial} and returns its answer, when that default is the very implementation
- * the declarer's method is (an interface default) or forwards to the same way. The merged base of Forbric 0.4 and earlier wrote such a
+ * the declarer's method is (an interface default) or forwards to the same way. The merged base of Forbric 0.3.x and earlier wrote such a
  * forwarder into a class that inherited two carriers' defaults of one signature, or re-declared the carrier's interface, and
  * it ran exactly that default: a bed that inherits NeoForge's {@code setBedOccupied} through {@code BedBlock}'s forwarder still inherits it.
  * The forwarder is read from the class's bytes as its loader serves them; one it cannot read is an override.

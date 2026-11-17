@@ -35,7 +35,7 @@ import net.forbric.kernel.util.ForbricLog;
  * }</pre>
  *
  * <p>On every real loader exactly one of those answers yes. On Forbric more than one is live in one instance (all three
- * on Forbric 0.4 and earlier), so a Fabric mod could take a Forge-family branch — code its author compiled against a different ABI and, on Fabric, never once
+ * on Forbric 0.3.x and earlier), so a Fabric mod could take a Forge-family branch — code its author compiled against a different ABI and, on Fabric, never once
  * executed. Observed: Flashback nests {@code mixinconstraints}, whose {@code ForgeAbstractionsImpl} calls
  * {@code LoadingModList.get()} as a public static on a CLASS. Real MinecraftForge 26.2 declares
  * {@code LoadingModList} as an INTERFACE whose {@code get()} is private, so the JVM refuses the call site with

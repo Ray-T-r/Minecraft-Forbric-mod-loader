@@ -28,7 +28,7 @@ import java.util.zip.ZipOutputStream;
  * <p><b>What it is for.</b> Fabric mods are written against vanilla bytecode, and the kernel's mixin adapters decide
  * what to do with a Fabric mixin by comparing the vanilla body it was written against with the body the base has
  * (the kernel's {@code NativeGameReferences}, ecosystem {@code FABRIC}). That evidence used to ride inside the merged
- * base Forbric 0.4 and earlier ran on: {@code MergedBaseBuilder.writeNativeReferences} embedded one
+ * base Forbric 0.3.x and earlier ran on: {@code MergedBaseBuilder.writeNativeReferences} embedded one
  * {@code META-INF/forbric/native-reference/<ECO>/} tree per ecosystem. NeoForge's patched game, the base Forbric runs
  * on now, embeds nothing, and every adapter that compares against vanilla would then stand down without a word:
  * measured on the genuine base, fabric-api alone left 13 vanilla datapack registries empty, and a resources-only jar

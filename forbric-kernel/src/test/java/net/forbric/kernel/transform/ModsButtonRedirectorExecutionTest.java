@@ -37,7 +37,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 /**
  * A menu that adds one mods button per family shows it once.
  *
- * <p>Seen on a real client of Forbric 0.4 and earlier: on the merged base, which kept both families' edits of
+ * <p>Seen on a real client of Forbric 0.3.x and earlier: on the merged base, which kept both families' edits of
  * {@code PauseScreen.createPauseMenu}, the pause
  * menu drew "Mods (Forbric)" twice, NeoForge's icon in the icon row and MinecraftForge's full-width button under
  * Options, because each family's body adds its own and the redirector points both at the one unified list. The stand-in

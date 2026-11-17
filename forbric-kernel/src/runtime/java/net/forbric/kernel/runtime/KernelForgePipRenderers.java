@@ -43,7 +43,7 @@ import net.neoforged.neoforge.client.gui.PictureInPictureRendererRegistration;
  *
  * <p>What goes in is what the constructor's own list carries besides NeoForge's registrations: the renderer
  * instances guest mixins add there (Physics Mod, fabric-rendering, Xaero, malilib), which are vanilla's plain-map
- * renderers and must never be owned by a NeoForge pool. (On the merged base of Forbric 0.4 and earlier the map was
+ * renderers and must never be owned by a NeoForge pool. (On the merged base of Forbric 0.3.x and earlier the map was
  * MinecraftForge's half of the class, filled the same way; the class kept its name, Stage 6 renames.)
  *
  * <p>An empty map is still the right answer when no mod supplies one, and it is a better answer than the null

@@ -514,7 +514,7 @@ public final class KernelBoot {
 		// Both sides, before the base compatibility repairs, which find the vanilla members these add and wire them to
 		// NeoForge's live ones: vanilla members NeoForge's patches dropped (the int-keyed particle providers, vanilla's
 		// payload codec, Hud's hotbar-and-decorations…), added where the base lacks them (on the merged base of Forbric
-		// 0.4 and earlier, MinecraftForge's half kept them, so nothing landed there). The copied bodies are vanilla's, read through this
+		// 0.3.x and earlier, MinecraftForge's half kept them, so nothing landed there). The copied bodies are vanilla's, read through this
 		// launch's native-reference sources: on a base that embeds no index, the sidecar is the only place they exist.
 		if (net.forbric.kernel.transform.VanillaMemberTwinInjector.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.VanillaMemberTwinInjector(
@@ -529,7 +529,7 @@ public final class KernelBoot {
 					})));
 		}
 		// Both sides: NeoForge's custom-payload codec looks codecs up by the payload's class across every ecosystem (the
-		// merged base of Forbric 0.4 and earlier had this splice built in, its builder's PASS 4b). Pre-Mixin, so the post-Mixin
+		// merged base of Forbric 0.3.x and earlier had this splice built in, its builder's PASS 4b). Pre-Mixin, so the post-Mixin
 		// codec arbitration finds the seam around fabric-networking's wrap.
 		if (net.forbric.kernel.transform.CustomPayloadInteropSeam.enabled()) {
 			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.CustomPayloadInteropSeam(path -> {

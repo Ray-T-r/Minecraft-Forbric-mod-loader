@@ -46,7 +46,7 @@ import net.forbric.kernel.mixin.NativeGameReferences;
 import net.forbric.kernel.util.ForbricLog;
 
 /**
- * Adds back the vanilla members NeoForge's base lacks (on the merged base of Forbric 0.4 and earlier, its
+ * Adds back the vanilla members NeoForge's base lacks (on the merged base of Forbric 0.3.x and earlier, its
  * MinecraftForge half kept them, so this did nothing there).
  *
  * <p>The genuine NeoForge-patched jar replaced or dropped a handful of vanilla members that the old merge kept because

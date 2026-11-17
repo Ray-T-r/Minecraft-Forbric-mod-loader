@@ -96,7 +96,7 @@ import net.forbric.kernel.util.ForbricLog;
  * difference: {@value #TABLE}, which NativeOnlyMethodsCensusTest re-derives from vanilla 26.2's own jar and the staged
  * base, and pins. A platform's declared methods are the base class's own plus that platform's rows for that class, so
  * a method the base class does not declare and no row of the platform names is a method the platform does not declare
- * either. (On the merged base of Forbric 0.4 and earlier the table also spoke for MinecraftForge, and subtracted what
+ * either. (On the merged base of Forbric 0.3.x and earlier the table also spoke for MinecraftForge, and subtracted what
  * the merge added; Stage 4 regenerated it from NeoForge's base.)
  *
  * <p>"The base class's own" means the base's RAW bytes, before the kernel's transform chain: the chain adds and removes

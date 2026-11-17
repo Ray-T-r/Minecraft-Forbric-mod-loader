@@ -51,7 +51,7 @@ class KeyActionExitsTest {
 			""";
 	/**
 	 * A second void hook fed by the hook's own operands, in the same join in front of it. JoinedReturnExits lets the join hold
-	 * such calls; on the merged base of Forbric 0.4 and earlier it held MinecraftForge's twin of the hook there. NeoForge's
+	 * such calls; on the merged base of Forbric 0.3.x and earlier it held MinecraftForge's twin of the hook there. NeoForge's
 	 * base holds NeoForge's hook alone (the staged test below), so this stand-in, in no platform's package, keeps the
 	 * allowance tested.
 	 */

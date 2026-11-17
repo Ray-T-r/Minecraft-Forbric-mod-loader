@@ -55,7 +55,7 @@ import net.forbric.kernel.util.ForbricLog;
  * mixin applies cleanly is therefore not a usable signal.
  *
  * <p><b>Provenance is not a usable signal either.</b> This used to drop every mixin whose target matched a
- * hand-curated owned-class/package table. That was wrong at the root: even the merged base of Forbric 0.4 and
+ * hand-curated owned-class/package table. That was wrong at the root: even the merged base of Forbric 0.3.x and
  * earlier was NeoForge's patched Minecraft ({@code MergedBaseBuilder} took NeoForge as the base and spliced Forge
  * in — {@code forge=195 neo=10161 MERGED=611}), so "Forge/NeoForge owns this class" describes ~93% of the jar. Measured over the 163
  * suppressions that rule actually made, 108 targeted a class byte-identical to NeoForge's own jar, and restoring

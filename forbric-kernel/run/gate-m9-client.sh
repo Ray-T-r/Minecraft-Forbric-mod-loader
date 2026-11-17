@@ -1042,7 +1042,7 @@ fi
 # M9_COMPATIBILITY_REPORT_END
 
 step "a NeoForge mod's multipart entity is tracked on the client with all its parts (must PASS)"
-# A multipart entity is where a client once disconnected: the merged base's tracking callback (Forbric 0.4 and earlier)
+# A multipart entity is where a client once disconnected: the merged base's tracking callback (Forbric 0.3.x and earlier)
 # read the other family's part array, which is null for a NeoForge mod's entity. This pack has no NeoForge multipart mod,
 # so a second, small client runs with TofuCraft's (and its library bagus_lib, both from client-popular) and the smoke
 # summons TofuCraft's shudofuspider and vanilla's ender dragon beside the player, then reads on the CLIENT whether each is

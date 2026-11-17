@@ -65,7 +65,7 @@ import net.forbric.kernel.util.ForbricLog;
  * tag files, the thing every cross-mod recipe is written against — simply does not exist, and neither does
  * {@code neoforge:damage_type} or NeoForge's data maps.
  *
- * <p>Forbric 0.4 and earlier also served a MinecraftForge carrier ({@code forge-runtime-interop.jar}), and ordering
+ * <p>Forbric 0.3.x and earlier also served a MinecraftForge carrier ({@code forge-runtime-interop.jar}), and ordering
  * the two was measured then: of the 746 data files both carriers shipped, 640 were byte-identical; of the 106 that
  * differed, the tags were additive and the 49 last-wins files went to NeoForge's, whose versions are written against
  * its own registered ingredient types ({@code neoforge:difference} and friends). The rank digit in a carrier's pack id

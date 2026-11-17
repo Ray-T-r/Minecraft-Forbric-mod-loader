@@ -5,7 +5,7 @@
 # WHAT IT IS. A RESOURCES-ONLY jar that says how vanilla Minecraft compiled each class, measured against the base the
 # game runs on (META-INF/forbric/native-reference/FABRIC/: an index of every vanilla class and its hash, plus the vanilla
 # bytes of every class the base changed). The kernel's mixin adapters compare a Fabric mixin's vanilla target against
-# it. The base (NeoForge's patched game) embeds no such tree -- the merged base of Forbric 0.4 and earlier did -- so
+# it. The base (NeoForge's patched game) embeds no such tree -- the merged base of Forbric 0.3.x and earlier did -- so
 # without this the kernel has no FABRIC references, and every adapter that needs them stands down without a word. The
 # installer builds it for a player's profile; tools/dev.py prepare stages it at <stage>/vanilla-reference/. This covers
 # a staged tree that predates it, or one this checkout must not write into.

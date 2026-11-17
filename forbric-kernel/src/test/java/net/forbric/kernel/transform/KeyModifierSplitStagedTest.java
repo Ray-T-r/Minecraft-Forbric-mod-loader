@@ -36,7 +36,7 @@ import org.objectweb.asm.tree.VarInsnNode;
  * base and carrier. This is the standing check of a repair deleted in Stage 4 C5 (D73, {@code dropTheKeyModifierSuffix}).
  *
  * <p>A modified key binding is saved as {@code key_key.jei.quickMove:key.mouse.left:SHIFT}, by NeoForge's {@code Options}
- * and by the merged base of Forbric 0.4 and earlier alike. On the merged base MinecraftForge's
+ * and by the merged base of Forbric 0.3.x and earlier alike. On the merged base MinecraftForge's
  * {@code Options.processOptionsKeysOnly} handed that whole value to {@code getKey}, vanilla's {@code Integer.parseInt}
  * threw, and {@code Options.load} (one try/catch around the whole file) cost the player every setting; the kernel split the
  * name at {@code getKey}'s entry. NeoForge's own {@code Options.processOptions} asks {@code getKey} twice: with

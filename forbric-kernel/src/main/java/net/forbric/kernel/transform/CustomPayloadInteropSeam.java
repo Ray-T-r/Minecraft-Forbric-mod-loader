@@ -37,7 +37,7 @@ import net.forbric.kernel.util.ForbricLog;
 /**
  * Makes NeoForge's custom-payload stream codec look its codec up through {@code PayloadInterop.findCodec}, which
  * chooses by the payload's runtime class across every ecosystem's registry — the splice the merged base of Forbric
- * 0.4 and earlier carried, moved into the kernel so NeoForge's own base gets it too.
+ * 0.3.x and earlier carried, moved into the kernel so NeoForge's own base gets it too.
  *
  * <p>The previous-generation loader's {@code MergedBaseBuilder} (its PASS 4b) rewrote the merged codec class's
  * {@code findCodec(Identifier)} at build time: NeoForge's body asks its own local map, then NeoForge's

@@ -76,7 +76,7 @@ import org.objectweb.asm.tree.MethodNode;
  * <p><b>"Before" means the jar's own bytes.</b> A class tweaker's {@code inject-interface} is the other way a mod puts a
  * second interface on a base class, and it runs in the kernel's pre-mixin chain — so the bytes Mixin is handed already
  * carry it, and judged against those, the conflict looked like the class's own. fabric-item-api-v1 injects
- * {@code FabricItem} into {@code Item}; on the merged base of Forbric 0.4 and earlier, {@code Item}'s hierarchy also had
+ * {@code FabricItem} into {@code Item}; on the merged base of Forbric 0.3.x and earlier, {@code Item}'s hierarchy also had
  * MinecraftForge's {@code IForgeItem}, both defaulting {@code getCraftingRemainder(ItemStack)}, and every crafting-table
  * result, brew and furnace fuel threw {@code IncompatibleClassChangeError} with fabric-api installed. The interfaces the class had in its jar are what the
  * carrier shipped settled; anything added on top is the kernel's pipeline's to settle.

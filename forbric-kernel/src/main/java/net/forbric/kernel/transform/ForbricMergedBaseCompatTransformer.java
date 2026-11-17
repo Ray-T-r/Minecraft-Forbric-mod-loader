@@ -296,7 +296,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	/**
 	 * Gives {@code BlockState} its own {@code getAppearance} where it inherits TWO.
 	 *
-	 * <p>On the merged base of Forbric 0.4 and earlier the class declared {@code IBlockStateExtension} (NeoForge) and
+	 * <p>On the merged base of Forbric 0.3.x and earlier the class declared {@code IBlockStateExtension} (NeoForge) and
 	 * {@code IForgeBlockState} (MinecraftForge); fabric-api's mixin then adds {@code FabricBlockState}. NeoForge's and Fabric's both
 	 * carry a {@code default getAppearance} with a byte-identical descriptor, neither overrides the other, and
 	 * the class declares nothing — so the JVM refuses to choose and the FIRST caller dies:
@@ -546,7 +546,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * {@code providers} as {@code Int2ObjectMap} keyed by particle id; NeoForge RE-TYPES that field to
 	 * {@code Map<Identifier, ?>}. VanillaMemberTwinInjector adds vanilla's descriptor back beside it (same name,
 	 * different descriptor is legal), and {@code <init>} writes only NeoForge's, so without this the vanilla-typed
-	 * one is null for the life of the process. (The merged base of Forbric 0.4 and earlier carried both fields, and
+	 * one is null for the life of the process. (The merged base of Forbric 0.3.x and earlier carried both fields, and
 	 * its merge tool could not initialise a re-typed vanilla field.) So the repair belongs here, where the whole class
 	 * is in hand.
 	 *
@@ -794,7 +794,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * {@code Codec.parse} — returns {@code DataResult.success(SKIP_DATA_MARKER)}, a bare {@code new Object()},
 	 * when a file's conditions say no. The consumer, an {@code @Inject} that recognises the marker, targets
 	 * {@code lambda$scanDirectory$0(Codec,Identifier,Map,Object)}; NeoForge's class carries only
-	 * {@code (Identifier,Identifier,Map,Optional)} under that name (the merged base of Forbric 0.4 and earlier carried
+	 * {@code (Identifier,Identifier,Map,Optional)} under that name (the merged base of Forbric 0.3.x and earlier carried
 	 * both, and the live {@code invokedynamic} bound the Optional one), so the consumer binds nothing. So the marker reaches {@code DataResult.ifSuccess}, whose
 	 * consumer casts it to {@code Optional}, and the datapack load dies: "can't proceed with server load".
 	 *
@@ -970,7 +970,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 * mod changed it (so a NeoForge mod's additions count), and vanilla's way again if the map is missing altogether,
 	 * so a world never loses its dungeons to an unloaded data map. gate-m31 holds "every dungeon spawns vanilla's mob".
 	 * This is a vanilla-parity repair, not merge damage: NeoForge's own base draws the same way the merged base of
-	 * Forbric 0.4 and earlier did.
+	 * Forbric 0.3.x and earlier did.
 	 *
 	 * <p>One instruction for one: the call is static, takes the same argument and returns the same type, so
 	 * nothing on the stack or in a frame moves.
@@ -1042,7 +1042,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 *
 	 * <p>This is not a patch either ecosystem wrote. {@code patched-mc-forge-26.2.jar} carries vanilla's
 	 * {@code l2d/dmul}; {@code patched-mc-neoforge-26.2.jar} carries the float form, which is what NeoForge's
-	 * decompile-recompile pipeline emitted (the merged base of Forbric 0.4 and earlier kept that body). It names no
+	 * decompile-recompile pipeline emitted (the merged base of Forbric 0.3.x and earlier kept that body). It names no
 	 * class from either ecosystem, so the old merge's {@code merge-conflicts.txt} — which reported conflicts by
 	 * REFERENCE, on purpose — never saw it. That is the general shape to watch for: a purely numeric method can be re-typed by the
 	 * pipeline and leave no trace in the conflict ledger.
@@ -1120,7 +1120,7 @@ public final class ForbricMergedBaseCompatTransformer implements ClassTransforme
 	 *
 	 * <p>Same origin as {@link #restoreDoublePrecisionToTheRandomSources(ClassNode)} and the same blind spot:
 	 * NeoForge's decompile-recompile pipeline wrote the folded constant back out as its expression (the merged base
-	 * of Forbric 0.4 and earlier kept that body), and because the method names no class from any ecosystem, the old
+	 * of Forbric 0.3.x and earlier kept that body), and because the method names no class from any ecosystem, the old
 	 * merge's {@code merge-conflicts.txt} — which reported conflicts by reference — never mentioned it. A differential
 	 * census of all 94,202 shared methods, normalised for everything a recompile may legally change, found
 	 * exactly two families of this kind: that one and this one.

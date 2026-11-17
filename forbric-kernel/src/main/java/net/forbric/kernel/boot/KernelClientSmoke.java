@@ -147,7 +147,7 @@ public final class KernelClientSmoke {
 	 * server, without AI) and, {@link #MULTIPART_HOLD} ticks later, read on the CLIENT whether each one is there with
 	 * every part its {@code getParts()} answers in the level's part list. 0 (the default) leaves it alone.
 	 *
-	 * <p>A multipart entity is where the client once disconnected: the merged base's tracking callback (Forbric 0.4 and earlier) read the other
+	 * <p>A multipart entity is where the client once disconnected: the merged base's tracking callback (Forbric 0.3.x and earlier) read the other
 	 * family's part array, which is null for a NeoForge mod's entity. A client that tracks one says so here, part by
 	 * part; a client that disconnected never gets to say anything, and the gate's clean-disconnect line goes missing.
 	 */
@@ -1469,7 +1469,7 @@ public final class KernelClientSmoke {
 	 *
 	 * <p>A mod's own assets are served into the repository as required packs, and required is what keeps them
 	 * applied. They are also marked hidden, and hidden is what is supposed to keep them off this screen — but the
-	 * merged base of Forbric 0.4 and earlier kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
+	 * merged base of Forbric 0.3.x and earlier kept the flag and dropped every reader of it, so ten rows a player did not add and cannot remove
 	 * appeared in their resource-pack list.
 	 *
 	 * <p>Counted from the SCREEN's own row widgets rather than from the repository, because the repository's id

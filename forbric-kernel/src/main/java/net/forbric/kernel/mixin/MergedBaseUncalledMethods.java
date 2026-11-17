@@ -48,7 +48,7 @@ import net.forbric.kernel.util.ForbricLog;
  * code spells its name (a call the kernel synthesizes, or a reflective lookup). A PRIVATE method is reached only through
  * its own class, so only a call or handle naming that class counts, and only a string a call can be made from (beside
  * its descriptor, inside one owner-qualified target, or in a class that looks methods up reflectively and names the
- * class): on the merged base of Forbric 0.4 and earlier, {@code Level.removeBlock(BlockPos, boolean)}, called
+ * class): on the merged base of Forbric 0.3.x and earlier, {@code Level.removeBlock(BlockPos, boolean)}, called
  * everywhere, had hidden that nothing called {@code ServerPlayerGameMode}'s private method of the same name and
  * descriptor. A STATIC method is reached only by a static call (or handle) naming its class or a subclass that does not
  * declare it again: {@code TripWireBlock}'s instance {@code shouldConnectTo(BlockState, Direction)}, which runs, had

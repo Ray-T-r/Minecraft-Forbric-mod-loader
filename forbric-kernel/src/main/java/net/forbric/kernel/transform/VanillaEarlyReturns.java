@@ -76,7 +76,7 @@ import net.forbric.kernel.util.ForbricLog;
  * every frame of the title screen died on it — the body it was written to follow had returned early because there is
  * no level.
  *
- * <p>Measured against 26.2 on the merged base of Forbric 0.4 and earlier: 3633 methods whose last return is reached by
+ * <p>Measured against 26.2 on the merged base of Forbric 0.3.x and earlier: 3633 methods whose last return is reached by
  * more control-flow edges than in vanilla — 1319 of them {@code void} — and a sweep of 1100 local mod jars found 70
  * Fabric TAIL injectors on them; NeoForge's own base is the same pipeline's output (the regenerated table holds 3276
  * methods). No ecosystem names any of these methods differently, so no name-based diff ever showed them.
