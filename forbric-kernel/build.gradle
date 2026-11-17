@@ -672,6 +672,8 @@ tasks.register('linkCheckJar', Jar) {
 // kernel's `check` without game inputs or bootstrap. The checker jar is built
 // here and handed over (-x buildLinkCheck): the installer's own way to it is a nested build of this project, which must
 // not run inside this one.
+// --no-daemon: a nested wrapper call otherwise joins the daemon pool, so a --no-daemon build (CI's, a lane's) left an idle
+// daemon behind, or ran its nested half inside another checkout's idle daemon.
 tasks.register('installerTest', Exec) {
 	group = 'verification'
 	description = "Run the installer's tests: its packaged link check on synthetic jars and its other *Test mains."
@@ -679,7 +681,7 @@ tasks.register('installerTest', Exec) {
 	workingDir file('../forbric-kernel-installer')
 	// Offline when this build is: the installer's build resolves nothing for its tests, and a pinned run must not go online.
 	commandLine((osName.contains('windows') ? ['cmd', '/d', '/c', 'gradlew.bat'] : ['./gradlew'])
-			+ (gradle.startParameter.offline ? ['--offline'] : []) + ['installerTest', '-x', 'buildLinkCheck'])
+			+ ['--no-daemon'] + (gradle.startParameter.offline ? ['--offline'] : []) + ['installerTest', '-x', 'buildLinkCheck'])
 }
 tasks.named('check') { dependsOn 'installerTest' }
 // The suites whose tests ran in THIS invocation. Results left by an earlier invocation are not evidence.

@@ -57,7 +57,8 @@ def linkCheckSourceDigest = {
 tasks.register('buildForbricJars', Exec) {
 	description = "Build the kernel jar the installer bundles."
 	workingDir kernelDir
-	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'jar'] : ['./gradlew', 'jar'])
+	// --no-daemon, like every nested wrapper call here: otherwise it joins the daemon pool and outlives a --no-daemon build.
+	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', '--no-daemon', 'jar'] : ['./gradlew', '--no-daemon', 'jar'])
 	inputs.dir("${kernelDir}/src/main")
 	inputs.file("${kernelDir}/build.gradle")
 	outputs.dir("${kernelDir}/build/libs")
@@ -68,7 +69,7 @@ tasks.register('buildForbricJars', Exec) {
 tasks.register('buildLinkCheck', Exec) {
 	description = "Build the kernel's standalone link-checker jar the installer ships and runs."
 	workingDir kernelDir
-	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', 'linkCheckJar'] : ['./gradlew', 'linkCheckJar'])
+	commandLine(isWindows ? ['cmd', '/c', 'gradlew.bat', '--no-daemon', 'linkCheckJar'] : ['./gradlew', '--no-daemon', 'linkCheckJar'])
 	inputs.dir(linkCheckSources).withPropertyName('linkCheckSources')
 	inputs.file("${kernelDir}/build.gradle")
 	inputs.file("${kernelDir}/gradle.properties").withPropertyName('asmVersion')
@@ -184,8 +185,8 @@ tasks.register('bundleForbric') {
 		// The kernel's own third-party dependencies, taken from the classpath the kernel itself reports so the
 		// installed profile cannot drift from what the gates run. All permissively licensed; staged locally so a
 		// launch needs no network and no guess about which Maven still carries a given version.
-		def command = isWindows ? ['cmd', '/c', 'gradlew.bat', '--offline', '-q', 'printBootClasspath']
-				: ['./gradlew', '--offline', '-q', 'printBootClasspath']
+		def command = isWindows ? ['cmd', '/c', 'gradlew.bat', '--offline', '--no-daemon', '-q', 'printBootClasspath']
+				: ['./gradlew', '--offline', '--no-daemon', '-q', 'printBootClasspath']
 		def process = new ProcessBuilder(command).directory(kernelDir).redirectErrorStream(true).start()
 		def cpOut = process.inputStream.text
 		if (process.waitFor() != 0) {
