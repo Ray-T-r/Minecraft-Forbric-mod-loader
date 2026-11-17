@@ -460,7 +460,7 @@ gate-m56 实际测到的（四个阶段都是必需的；缺 Mod Menu 或 fabric
 | `strict` | 阻止启动；不显示任何窗口 |
 | 其他任何值 | 按 `strict` 处理（失败时按拒绝处理） |
 
-这个决定会在进入游戏前的边界处询问一次（§3.2 第 17 步），加载结束时再问一次（服务端在 §3.4 第 3b 步，客户端在 `fireClientSetupLifecycle`），专用服务器还会在 `ServerStartedEvent` 时再问一次（世界加载期间出现的必要功能失败会让服务器按正常流程停机）。拒绝时抛出 `CompatibilityDecision.LaunchStopped`；`CompatibilityLaunchBoundary` 把它转成退出码 **78** 并打印报告路径；在 `Minecraft.<init>` 内部则通过 `SilentInitException` 退出，因此不会作为崩溃上报。策略只决定兼容性发现：mod 在加载时抛异常（它的构造函数、注册或初始化监听器、Fabric 入口点）不是发现，也没有哪个策略能让启动越过它继续——它像原生 NeoForge 那样停止游戏（§3.4），专用服务器退出码 `1`，客户端显示 NeoForge 的错误界面。启动之后才出现的检出项从不派生 Swing 进程，也不会退出 JVM：在服务端，它们在一个 tick 完成后的边界处处理（`LateServerCompatibility`）；在客户端，则在渲染线程的某个 tick 上由一个原生 Minecraft 界面处理（`KernelCompatibilityPrompts`、`KernelCompatibilityScreen`）。安装好的版本配置不传任何 JVM 参数，所以玩家得到的是 `ask`；`run/launch-kernel-{client,server}.sh` 默认用 `strict`（客户端脚本还默认 `-Dforbric.dependencyDialog=off`）。
+这个决定会在进入游戏前的边界处询问一次（§3.2 第 17 步），加载结束时再问一次（服务端在 §3.4 第 3b 步，客户端在 `fireClientSetupLifecycle`），专用服务器还会在 `ServerStartedEvent` 时再问一次（世界加载期间出现的必要功能失败会让服务器按正常流程停机）。拒绝时抛出 `CompatibilityDecision.LaunchStopped`；`CompatibilityLaunchBoundary` 把它转成退出码 **78** 并打印报告路径；在 `Minecraft.<init>` 内部则通过 `SilentInitException` 退出，因此不会作为崩溃上报。策略只决定兼容性发现：mod 在加载时抛异常（它的构造函数、注册或初始化监听器、Fabric 入口点）不是发现，也没有哪个策略能让启动越过它继续——它像原生 NeoForge 那样停止游戏（§3.4），专用服务器退出码 `1`；客户端在游戏还没有窗口时显示 NeoForge 的错误界面，有了窗口之后显示一个消息框（§19），Fabric 入口点导致的停止则只有 Minecraft 的崩溃报告。启动之后才出现的检出项从不派生 Swing 进程，也不会退出 JVM：在服务端，它们在一个 tick 完成后的边界处处理（`LateServerCompatibility`）；在客户端，则在渲染线程的某个 tick 上由一个原生 Minecraft 界面处理（`KernelCompatibilityPrompts`、`KernelCompatibilityScreen`）。安装好的版本配置不传任何 JVM 参数，所以玩家得到的是 `ask`；`run/launch-kernel-{client,server}.sh` 默认用 `strict`（客户端脚本还默认 `-Dforbric.dependencyDialog=off`）。
 
 ### 12.5 内核吞下继续运行的失败 —— `util.Caught`
 
@@ -529,11 +529,11 @@ vanilla 26.2.jar + patched-mc-neoforge ──→ vanilla-reference     (resource
 
 ## 14. `forbric-loader/` 还有什么用
 
-它不再构建内核运行或编译所依赖的任何东西：安装器不再携带或运行合并工具（`MergedBaseBuilder`、`EditSplicer`、`MergedLinkChecker`、`RuntimeInteropPatcher` 等），也没有东西再为它构建 `:mergeToolsJar`，除了它自己的出处测试，已经没有东西读链接基线，开发者的暂存目录来自 `tools/dev.py prepare`，而不是 `forbric-loader/run` 下的 shell 流水线。剩下的：
+它不再构建内核运行或编译所依赖的任何东西：安装器不再携带或运行合并工具（`MergedBaseBuilder`、`EditSplicer`、`MergedLinkChecker`、`RuntimeInteropPatcher` 等），也没有东西再为它构建 `:mergeToolsJar`，除了 `forbric-loader` 自己留给第 5 阶段的残余（见下），已经没有东西读链接基线，开发者的暂存目录来自 `tools/dev.py prepare`，而不是 `forbric-loader/run` 下的 shell 流水线。剩下的：
 
 - **测试输入。** `run/livemod-src*`/`testmod-src` 里的金丝雀 mod 源码（`build-testmods.sh`；`tools/dev.py` 用它们构建 NeoForge 金丝雀）、gate-m0 的发现预言机读取的那些运行目录里的 mod 集，以及 `native-controls.py prepare --family fabric` 从它的下载目录里读的 Fabric 服务端启动器 jar。
 - **回退。** `forbric-kernel/build.gradle` 的暂存根、`lib.sh` 和 `launch-kernel-*.sh` 在没有给出 `FORBRIC_OLD` / `-Pforbric.stagedRoot` / `.dev` 暂存目录时，仍回退到 `forbric-loader/run`；那样的暂存目录没有戳，检查出处的工具会拒绝它。请把 `FORBRIC_OLD` 设为 `tools/dev.py prepare` 做出的暂存目录。
-- **留给第 5 阶段的残余**（第 5 阶段会删掉这个目录）：`run/build-merged-base.sh`（已经没有 CI 步骤运行它；`tools/test_pins.py` 和 `LinkBaselineProvenanceTest` 仍读它）、旧的链接基线（`src/test/resources/merge/link-check-baseline.txt` 及其 `.provenance.json`，只有 `LinkBaselineProvenanceTest` 读），以及 CI 的 `build` 作业，它仍然引导并构建 `forbric-loader`。
+- **留给第 5 阶段的残余**（第 5 阶段会删掉这个目录）：`run/build-merged-base.sh`（已经没有 CI 步骤运行它；`tools/test_pins.py` 和 `LinkBaselineProvenanceTest` 仍读它）、旧的链接基线（`src/test/resources/merge/link-check-baseline.txt` 及其 `.provenance.json`；`LinkBaselineProvenanceTest` 读这两个文件，CI 的 `build` 作业构建 `forbric-loader` 时会运行这个测试；`build.gradle` 的 `mergeToolsJar` 会把基线打进 jar，`run/build-merged-base.sh` 和 `run/check-merged-links.sh` 把它当作默认的 `LINK_BASELINE`，但这三样已经没有东西运行：`mergeToolsJar` 不属于 `assemble`，也没有脚本、gate 或 CI 步骤调用这两个脚本），以及 CI 的 `build` 作业，它仍然引导并构建 `forbric-loader`。
 
 它自己的启动路径（Knot 宿主，加上由 `bootstrap.sh` 应用的八个 fabric-loader 底层补丁）内核并不使用。焊接方案的设计记录在 `forbric-loader/README.md` 和 `forbric-loader/run/README.md` 里。`forbric-installer/` 是焊接方案的安装器，不是对外发布的那个。
 
@@ -722,7 +722,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 10. **任何带有 Mojang 或 NeoForge 字节的东西都不提交、不分发。** 游戏侧以 `compileOnly` 方式链接暂存的 jar；这些 jar 由安装器在玩家的机器上构建。
 11. **没有静默的 catch。** 每个 catch 要么重新抛出，要么上报给 `Caught`（§12.5）；让内核吞下失败继续运行的单测会失败，除非它用 `@ExpectCaught` 说明。
 12. **修复不认名字。** 触发修复的是形状——字节码、描述符、继承与接口关系、契约、事件是否投递——绝不是 mod id、mod 的类名或包名、jar 名、mixin 配置名、mixin 类名、handler 名、`@Local` 或 `@Share` 名、mod 的实现类（fabric-api 也是 mod：可以调用它的公开 API，不能点名它的实现）、只针对某个 mod 的字节码模板或方法体哈希。具体 mod 是样本和测试用例，从不是条件（§16.1）。
-13. **加载失败会停止。** NeoForge mod 在游戏加载时抛异常，启动就带着 NeoForge 自己的错误停止，和原生 NeoForge 26.2.0.93 一样；没有哪个阶段兜住它继续运行（§3.4）。抛异常的 Fabric `main` 入口点也会让运行停止（退出码 `1`），而原生会继续运行（退出码 `0`；第 4 阶段的记录，D87(e)）；这个差异尚未解决（§19）。
+13. **加载失败会停止。** NeoForge mod 在游戏加载时抛异常，启动就带着 NeoForge 自己的错误停止，和原生 NeoForge 26.2.0.93 一样；除了 NeoForge 的“Config loading”，没有哪个阶段兜住它继续运行（§3.4；Fabric 的 `preLaunch` 也仍被兜住，见第 4 阶段记录里 STOP 的未决事项 2）。抛异常的 Fabric `main` 入口点也会让运行停止，和原生 Fabric 一样，但专用服务器的退出码是 `1`，原生 Fabric 是 `0`（两边都不会创建世界；第 4 阶段的记录，D87(e)）；这个差异尚未解决（§19）。
 14. **MinecraftForge 只被拒绝，从不加载。** jar 只由 `LoaderHalfJudge` 按字节判断，被拒绝的 jar 的认领从不是一个生态，也从不被当成库；这个内核拒绝在旧安装的游戏基底上启动（§5.3）。
 
 ## 19. 现状与已知边界
@@ -762,7 +762,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 - 漏斗按 NeoForge 的语义工作；向 Fabric 存储输送时走传输桥（gate-m52）。
 - 客户端资源预加载去掉之后（和原生一样），EnhancedVisuals 在客户端初始化期间会记 20 行 "Could not find any resources"，CreativeCore 记 "Could not load default style"；原生 NeoForge 也在第一次资源重载之前运行客户端初始化（由字节码顺序推断，没有在原生上观察到）。
 - 合并基底也有的已知缺口：better-nether 只在放置时生效的 `bn_shouldSpreadLiquid`（它的 handler 在方法里面捕获局部变量，所以邻居变化时的包装服务不了它）；挂在 `ItemStack.useOn` 上的 Fabric TAIL `@Inject` 在服务端很可能从不运行，因为 NeoForge 的服务端路径在原版的尾部之前就从 `CommonHooks.onPlaceItemIntoWorld` 返回了（只看了字节码，没有实测）。
-- 像原生那样停止，仍未解决的：抛异常的 Fabric `main` 入口点现在会以退出码 `1` 结束运行，而原生会以退出码 `0` 继续运行（纯 Fabric A/B 里，同样四个 mod 的 Forbric 特征从 `POLICY_STOP:78` 变成 `EXIT:1`，判定不变；要不要保留这个行为是留给所有者的问题）；必需依赖失败的 NeoForge mod 仍会运行它后面的阶段（原生此时已停止启动）；游戏内的停止显示一个消息框，而原生 NeoForge 在游戏窗口里画出错误；崩溃报告的 mod 列表是空的，“Complete loading of N”的数也偏少；在 Fabric `main` 于 `Minecraft.<init>` 里运行的客户端上，数据包注册表声明在冻结之后才处理；NeoForge 的 mod 构造在内核层面分三轮，注册在调用者线程上。这些都由所有者决定，记录在第 4 阶段的记录里。
+- 像原生那样停止，仍未解决的：抛异常的 Fabric `main` 入口点现在让专用服务器以退出码 `1` 结束，原生 Fabric 则以退出码 `0` 结束（两边都不会创建世界；纯 Fabric A/B 里，同样四个 mod 的 Forbric 特征从 `POLICY_STOP:78` 变成 `EXIT:1`，判定不变；要不要保留这个行为是留给所有者的问题）；必需依赖失败的 NeoForge mod 仍会运行它后面的阶段（原生此时已停止启动）；游戏内的停止显示一个消息框，而原生 NeoForge 在游戏窗口里画出错误；崩溃报告的 mod 列表是空的，“Complete loading of N”的数也偏少；在 Fabric `main` 于 `Minecraft.<init>` 里运行的客户端上，数据包注册表声明在冻结之后才处理；NeoForge 的 mod 构造在内核层面分三轮，注册在调用者线程上。这些都由所有者决定，记录在第 4 阶段的记录里。
 - 旧安装写下的旧世界第一次打开时，会为载体旧的包 id 记一条 `Missing data pack` 警告（包选择已迁移，§6）；预期之中，只有一次。
 - **版本。** `forbric-kernel/build.gradle` 写的是 `0.1.0-SNAPSHOT`；安装器是 `0.4.0-dev`，这条版本线的第一个发布版就是第一个不带 MinecraftForge 的版本。`net.forbric.api` 是内部 API，随时可能变动，不另行通知。
 

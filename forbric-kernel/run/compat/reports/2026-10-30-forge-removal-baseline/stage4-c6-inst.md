@@ -88,6 +88,9 @@ The rules as they stand at the stage tip (with INSTFIX's additions marked):
   leaves the rest, and is not counted as a failed file. `-Dforbric.installerCleanup=off` turns it off (phase U's reverse
   control). Lines start `[cleanup] ` and go through `InstallerText` with Chinese variants; the test pins English for its
   English assertions and gives the caller's language and switch back (review B 1: it failed under a zh JVM locale).
+  gate-m17 asks each of its seven installer runs for English with three switches, `INSTALLER_LANG=(-Duser.language=en
+  -Dforbric.dialogLanguage=en -Duser.country=US)` (a5708f73, merger wave 2; INSTFIX's first form was the dialog switch
+  alone, `stage4-c6-instfix.md` §4). Added 2026-11-18 by DOCFIX C6.
 - Evidence: `OldInstallCleanupTest` (in `installerTest`: 11 classes, 0 failed after the merger's rebase,
   `c6/merger/inst-installerTest.log`; INSTFIX's runs in `stage4-c6-instfix.md`); gate-m17 phase U.
 

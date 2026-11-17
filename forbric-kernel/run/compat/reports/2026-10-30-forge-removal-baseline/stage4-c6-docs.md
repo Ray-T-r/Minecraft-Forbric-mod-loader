@@ -1,4 +1,4 @@
-# Stage 4 C6 wave 3 — lane DOCS: the introductions, this record, the release-notes draft
+# Stage 4 C6 wave 2 — lane DOCS: the introductions, this record, the release-notes draft
 
 Branch `s4-c5-c6docs`, cut from the stage tip eba8222c (worktree `.claude/worktrees/s4c5-c6docs`, ports 46960-46979, none
 used). Notes and logs: `~/Forbric-backups/stage4-notes/c6/c6docs/`. Harness: D68 (pinned build, plain `--offline` from
@@ -240,8 +240,11 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > space back (the next install downloads what it needs again).
 >
 > **Changed**
-> - A mod that crashes while the game is loading now stops the game with an error screen, as it would on NeoForge, instead
->   of the game starting without it.
+> - In most cases, a mod that crashes while the game is loading now stops the game, as NeoForge and Fabric do on their
+>   own, instead of the game starting without that mod. If it crashes before the game window opens, NeoForge's own error
+>   screen names the mod. If it crashes after that, the error comes in a small separate message box, not on NeoForge's
+>   error screen inside the game window. A Fabric mod that crashes as it starts closes the game with a crash report.
+>   (Checked on macOS so far, not on Windows or Linux.)
 > - Fabric mods' settings screens open from Forbric's own Mods screen, with no Mod Menu needed.
 > - On phone launchers and on macOS, when the warning window cannot open, Forbric asks its question inside the game.
 >
@@ -273,7 +276,10 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > `.forbric-build` 文件夹里；想要回这部分空间，可以删掉这个文件夹（下次安装会重新下载需要的文件）。
 >
 > **改动**
-> - 游戏加载时崩溃的 mod 现在会让游戏停下并显示错误界面，和在 NeoForge 上一样，而不是游戏照样启动、只是少了这个 mod。
+> - 游戏加载时崩溃的 mod，现在多数情况下会让游戏停下（NeoForge 和 Fabric 单独使用时也是这样），而不是游戏照样启动、只是少了这个
+>   mod。如果崩溃发生在游戏窗口打开之前，你会看到 NeoForge 自己的错误界面，上面写着是哪个 mod。如果发生在窗口打开之后，错误会显示在
+>   一个单独的小提示框里，而不是 NeoForge 在游戏窗口里显示的错误界面。Fabric mod 在启动时崩溃，游戏会直接关闭并留下崩溃报告。
+>   （目前只在 macOS 上验证过，Windows 和 Linux 还没有。）
 > - Fabric mod 的设置界面可以从 Forbric 自己的 Mods 界面打开，不需要 Mod Menu。
 > - 在手机启动器和 macOS 上，警告窗口打不开时，Forbric 会在游戏里提问。
 >
@@ -293,7 +299,7 @@ ForbricTest copied into beta2's layout, which beta2 never wrote, so no world sav
 on this tree); the "in our tests" of the Tombstone line (gate-m59 drills three mods, D54; three of expected-losses.tsv's
 six rows are `NO NATIVE ROW`, judged from the mod's code); the Tombstone losses (expected-losses.tsv, D77; the knowledge/alignment/perks reading of `cap_tombstone`
 and `cap_protected_entity` is the TSV's own "why" column); disk (Doctor.java, stage4-c6-inst.md, stage4-c6-instfix.md §8);
-stop like native (D82, D87e, gate-m24/m24d); config screens without Mod Menu (merge 0ec42139, gate-m56); asking in game
+stop like native (D82, D87e, gate-m24/m24d; reworded by DOCFIX C6, check-w2 C-3, see the end of this file); config screens without Mod Menu (merge 0ec42139, gate-m56); asking in game
 (1aa478ea, #56/#57); Create Fly crash (41df26d9, #52; on NeoForge's base gate-m61 boots Create Fly with fabric-api in
 two dedicated servers); Carry On (gate-m54, `FabricCommonPayloadMixinAdapter` on NeoForge's base); creative search
 (TCDCommons, gate-m55); breathing (merge 07eb4ce0, gate-m57 against native NeoForge). Each landed after v0.3.1-beta2
@@ -384,3 +390,34 @@ Checks after the fixes (no gate: nothing a gate reads changed — two introducti
   XML `c6docs/review-fixes/suite-xml/`, 917 files): **5,969 tests, 0 skipped, 5 failed**, the five of failures-w1.txt /
   failures-w2.txt by name (the D58 fixtures). 0 new, 0 gone. No ports used; Gradle daemon 60297 is not this lane's.
 
+## DOCFIX C6 (2026-11-18): corrections after check-w2
+
+Branch `s4-c5-c6docfix`, cut from 0d310a36. Documentation and records only; no code, no gate, no suite.
+
+- **Title.** This file said "C6 wave 3". DOCS ran in C6 wave 2 (check-w2 C-5).
+- **Release-notes line on loading crashes (check-w2 C-3).** The draft said such a mod "stops the game with an error
+  screen, as it would on NeoForge". That was not true for what a player sees at the stage tip, so the line was rewritten
+  (en and zh) and kept, because the change is real and players will notice it. What the new line rests on:
+  - "In most cases": NeoForge's "Config loading" listeners, Fabric `preLaunch` and a throwing Fabric injector at the moved
+    freeze point are still contained (stage4-c5-stop.md, open item 2; not re-measured here).
+  - "Before the game window opens, NeoForge's own error screen names the mod": DLG 063e7b9a (NeoFatalErrorWindow). The
+    screenshots match native NeoForge byte for byte, and gate-m24d asserts it for listener, try, construct and datapackreg.
+  - "After that, a small separate message box": NeoFatalErrorWindow answers IN_GAME and NeoForge takes its message-box
+    fallback (stage4-c5-verify.md run 3: the six finish-path fixture modes plus m24d common/clientnetwork; D91/D92 open
+    item). On macOS the box is tinyfd's osascript dialog. In m24d's common and clientnetwork phases it showed the mod's
+    name and the error (`c5/merger/w2d/gates-all-results/gate-m24d-registerstop-client.sh.log`). A message with quotes
+    can turn the box into "INVALID MESSAGE WITH QUOTES": that was seen in the pre-window phases before DLG, and the line
+    makes no claim about the box's text either way.
+  - "A Fabric mod that crashes as it starts closes the game with a crash report": the client's Fabric stop is
+    "Initializing game", exit 255, crash report written, with no box and no early window (stage4-c5-stop.md; m24d
+    "fabric" phase).
+  - "As NeoForge and Fabric do on their own": for NeoForge, D82/D87e. For Fabric, native Fabric Loader also ends the
+    stage with its error. A native Fabric server starts no world and exits 0, where Forbric exits 1. A native client
+    leaves `Minecraft.<init>` for Main's handler (stage4-c5-stop.md "What native does": the server was measured, the
+    client was read from fabric-loader's source). D87(e) and the orchestrator brief said native "carries on (exit 0)".
+    That is true of the exit code only, so the introductions' three "carries on" sentences (en and zh) were corrected
+    in the same commit.
+  - "Checked on macOS so far": DLG did not run Windows or Linux (stage4-c5-dlg.md, "Not measured").
+- **Introductions.** "NeoForge's error screen on a client" (§12.4) now names both client cases. "no phase contains it"
+  (invariant 13) now names the two phases still contained. The C-4 wording on the link baseline is in the same commit.
+- **Record README.** The THR/STOP/DLG row now says the same.

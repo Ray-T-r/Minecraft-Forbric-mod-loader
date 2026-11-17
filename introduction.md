@@ -1580,7 +1580,8 @@ failure during world loading halts the server normally). A refusal throws `Compa
 `Minecraft.<init>` it leaves through `SilentInitException`, so it is not reported as a crash. The policy decides
 compatibility findings only: a mod that throws while loading (its constructor, a registration or setup listener, a
 Fabric entrypoint) is not a finding and no policy lets the boot carry on past it — it stops the game as native NeoForge
-does (§3.4), exit `1` on a dedicated server, NeoForge's error screen on a client. Findings that appear after boot never fork Swing or exit the JVM: on the server they are
+does (§3.4), exit `1` on a dedicated server; on a client, NeoForge's error screen while the game has no window yet and
+a message box once it has one (§19), and for a Fabric entrypoint Minecraft's crash report alone. Findings that appear after boot never fork Swing or exit the JVM: on the server they are
 consumed at the completed-tick boundary (`LateServerCompatibility`), on the client on a render-thread tick by a
 native Minecraft screen (`KernelCompatibilityPrompts`, `KernelCompatibilityScreen`). An installed profile passes no
 JVM arguments, so players get `ask`; `run/launch-kernel-{client,server}.sh` default to `strict` (and the client
@@ -1750,7 +1751,8 @@ install), and a one-line verdict.
 
 It no longer builds anything the kernel runs on or is built against: the installer no longer ships or runs the merge
 tools (`MergedBaseBuilder`, `EditSplicer`, `MergedLinkChecker`, `RuntimeInteropPatcher` and the rest), nothing builds
-`:mergeToolsJar` for it, nothing reads the link baseline any more except its own provenance test, and developer stages come from `tools/dev.py prepare`, not from the
+`:mergeToolsJar` for it, nothing outside `forbric-loader`'s own Stage-5 leftovers reads the link baseline any more (they
+are listed below), and developer stages come from `tools/dev.py prepare`, not from the
 shell pipeline under `forbric-loader/run`. What is left:
 
 - **Test inputs.** The canary mod sources in `run/livemod-src*`/`testmod-src` (`build-testmods.sh`; `tools/dev.py`
@@ -1761,8 +1763,11 @@ shell pipeline under `forbric-loader/run`. What is left:
   and the tools that check provenance refuse it. Set `FORBRIC_OLD` to a stage `tools/dev.py prepare` made.
 - **Leftovers for Stage 5**, which deletes the directory: `run/build-merged-base.sh` (no CI step runs it any more;
   `tools/test_pins.py` and `LinkBaselineProvenanceTest` still read it), the old link baseline
-  (`src/test/resources/merge/link-check-baseline.txt` and its `.provenance.json`, read only by
-  `LinkBaselineProvenanceTest`), and CI's `build` job, which still bootstraps and builds `forbric-loader`.
+  (`src/test/resources/merge/link-check-baseline.txt` and its `.provenance.json`; `LinkBaselineProvenanceTest` reads
+  both, and CI's `build` job runs that test when it builds `forbric-loader`; `build.gradle`'s `mergeToolsJar` packs
+  the baseline, and `run/build-merged-base.sh` and `run/check-merged-links.sh` take it as their default `LINK_BASELINE`, but
+  nothing runs those three any more: `mergeToolsJar` is not part of `assemble`, and no script, gate or CI step calls the
+  two scripts), and CI's `build` job, which still bootstraps and builds `forbric-loader`.
 
 Its own boot path (Knot host, eight fabric-loader substrate patches applied by `bootstrap.sh`) is not used by the
 kernel. The weld's design is documented in `forbric-loader/README.md` and `forbric-loader/run/README.md`.
@@ -2096,9 +2101,10 @@ Break one and the failure usually surfaces far from the cause.
     (fabric-api is a mod: its public API may be called, its implementation is not named), a one-mod bytecode
     template or a body hash. A mod is a sample and a test case, never the condition (§16.1).
 13. **A loading failure stops.** A NeoForge mod that throws while the game loads stops the boot with NeoForge's own
-    error, as native NeoForge 26.2.0.93 does; no phase contains it and carries on (§3.4). A Fabric `main` entrypoint
-    that throws stops the run too (exit `1`), where the native run carries on (exit `0`; the Stage 4 record, D87(e));
-    that difference is open (§19).
+    error, as native NeoForge 26.2.0.93 does; no phase but NeoForge's "Config loading" contains it and carries on
+    (§3.4; Fabric's `preLaunch` is still contained too, the Stage 4 record's STOP open item 2). A Fabric `main`
+    entrypoint that throws stops the run too, as native Fabric does, but a dedicated server exits `1` where native
+    Fabric's exits `0` (neither starts a world; the Stage 4 record, D87(e)); that difference is open (§19).
 14. **MinecraftForge is refused, never loaded.** A jar is judged from its bytes by `LoaderHalfJudge` alone, a refused
     jar's claim is never an ecosystem and never read as a library, and this kernel refuses to launch over an old install's game base (§5.3).
 
@@ -2221,8 +2227,8 @@ Located, not yet fixed (no impossibility proof):
   locals inside the method, so the neighbour-change wrap cannot serve it); a Fabric TAIL `@Inject` on `ItemStack.useOn`
   most likely never runs server-side, because NeoForge's server path returns from `CommonHooks.onPlaceItemIntoWorld`
   before vanilla's tail (bytecode only, not measured).
-- Stopping like native, open: a Fabric `main` entrypoint that throws now ends the run with exit `1`, where the native
-  run carries on with exit `0` (in the pure-Fabric A/B, Forbric's signature for the same four mods moved from `POLICY_STOP:78`
+- Stopping like native, open: a Fabric `main` entrypoint that throws now ends a dedicated server with exit `1`, where
+  native Fabric's ends with exit `0` (neither starts a world; in the pure-Fabric A/B, Forbric's signature for the same four mods moved from `POLICY_STOP:78`
   to `EXIT:1`, verdicts unchanged; whether to keep that is an open owner question); a NeoForge mod whose required dependency failed still runs its later phases (natively the boot
   has stopped); a stop inside the game shows a message box where native NeoForge draws the error in the game window;
   the crash report's mod list is empty and its "Complete loading of N" count short; datapack-registry declarations are

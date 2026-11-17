@@ -3,6 +3,12 @@
 Stage branch `claude/remove-forge-neoforge-fabric-83b024`: **9cd04fc1 -> a5708f73** (fast-forward only, no merge commit),
 plus this record. main is untouched. Notes and logs: `~/Forbric-backups/stage4-notes/c6/merge-w2.md` and `c6/merger-w2/`.
 
+> **2026-11-18, DOCFIX C6 (check-w2 C-1, C-5):** this record's commit was eba8222c. The stage moved after it: lane DOCS
+> fast-forwarded it to 0d310a36, and DOCFIX C6 added one docs/records commit on top. None of them changes code (only `.md`
+> files and one ignore line since a5708f73). The push below must name the stage tip at the time of the push
+> (`git -C <stage worktree> rev-parse HEAD`), not eba8222c. The active gh account (`rtiags`) has no push right on the
+> repository (`"push":false`), so the push needs an account that has it (check-w2 C-1).
+
 ## Merge
 
 | lane | branch tip before | rebased onto | tip merged | conflicts | checked before the fast-forward |

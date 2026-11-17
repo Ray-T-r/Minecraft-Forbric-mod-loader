@@ -110,6 +110,12 @@ beta2 installer run is untouched, the gate reads only its `Installed.` line). Ch
 `[cleanup]` tag is the same in both languages but every assertion reads the sentence (removed/kept/skipped/summary), and the
 summary's number is already formatted with `Locale.ROOT`.
 
+> **2026-11-18, DOCFIX C6 (check-w2 C-5):** this section describes INSTFIX's own pin (c91f6f3c on the lane), the dialog
+> switch alone. It is not what the stage tip runs. The wave-2 merger found that gate-m0's locale rules reject a
+> dialog-only pin and replaced it in a5708f73: `INSTALLER_LANG=(-Duser.language=en -Dforbric.dialogLanguage=en
+> -Duser.country=US)`, expanded as `"${INSTALLER_LANG[@]}"` on all seven installer runs, with a `PINS` row in
+> `run/compat/test_gate_locale.py` (`stage4-c6-merger-w2.md`, "A red the merge found"). m17 119/0 at a5708f73 ran with it.
+
 - **Green with a Chinese default locale forced on the installer** (the single forced-zh m17 run): a scratch `java` shim
   first on PATH added `-Duser.language=zh -Duser.country=CN` to every run of `…/build/libs/forbric-kernel-installer-*.jar`
   and passed every other java command through (`m17-zh-shim-invocations.log`: the 7 installer runs). Every `[cleanup]` check
@@ -250,12 +256,15 @@ Release notes line:
 
 No other gate (D87/D89): only m17 runs the installer; the clean-up and the gate are this lane's only code.
 
+The m17 runs above used INSTFIX's dialog-only pin. The stage tip's pin is the three-switch `INSTALLER_LANG` of a5708f73
+(§4's note); m17 at a5708f73 was 119 PASS / 0 FAIL (`stage4-c6-merger-w2.md`). Added 2026-11-18 by DOCFIX C6.
+
 ## Red controls
 
 | control | result | log |
 |---|---|---|
 | fb823db7's five rules, each taken out; the stage tip's clean-up | each red on its own case (section 1) | red-controls-spellings.log |
-| C-6: installer under a zh locale without the pin | the gate's `[cleanup]` check matches 0 (FAIL); with the pin 1 | c6-zh-red-control.log |
+| C-6: installer under a zh locale without the pin | the gate's `[cleanup]` check matches 0 (FAIL); with the pin 1 (INSTFIX's dialog-only pin; the stage tip's three-switch `INSTALLER_LANG` is a5708f73's, see §4's note) | c6-zh-red-control.log |
 | C-4: unpack that keeps an existing file | install exit 1, no link-check summary | c4-mut.log |
 | m17 phase U, clean-up off (the gate's own reverse control) | 22/22 removal checks red | m17-run2.out |
 
