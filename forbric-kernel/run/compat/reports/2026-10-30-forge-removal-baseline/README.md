@@ -722,6 +722,14 @@ reverse control 22/22), CAUGHT none, FORBRIC_GATE_CACHE=0, ports 46800-46806. Wa
 - ACCEPT: Windows PCL2 install (fresh `.minecraft` backup first), the release rehearsal stopped before any upload, the soak
   m34 at the final tip; `gates-all --release` cannot be green while D58 stands.
 - Three kernel `latest.log` lines VER changed stay English [orchestrator/owner].
+- gate-m17 phase U's client stalled once after joining the world (INSTFIX R-5, a forced-zh run); green three times since,
+  cause not found, possibly a kernel defect; a harness change that dumps the client's threads on m17's own timeout is not
+  made [ACCEPT watches m17 and gates-all; a later harness lane].
+- Harness: `test_gate_locale` reads a pin value directly before `)` with the paren (errs red); 72 top-level `gradlew`
+  calls in gate scripts run without `--no-daemon` (gate-m0 left a daemon); VER's guard inputs are not Gradle inputs of
+  `test` (`c6/merge-w2.md`) [harness owner].
+- The rundirs of the deleted gates m41/m47/m48/m49, in the stage worktree and in the main checkout; the
+  `/run/world-events-m49/` ignore entry stays until they are deleted [orchestrator/owner].
 - Stage 5: `build-merged-base.sh` and the `tools/test_pins.py` lines and `LinkBaselineProvenanceTest` that read it, CI's
   `build` job, the `forbric-loader/run` fallbacks.
 - Stage 6: renames (`MergedBase*`, "Forge-family", gate file names), README titles and the full rewrite of the
@@ -734,10 +742,14 @@ through its mixin adapter, and that path is tested three ways: the weave tests r
 with the mechanism on and off (`MixinFluidReactionWeaveTest`, `MixinShearsRelayMobsWeaveTest`), and the adapter's own unit
 tests pin its shapes and HEAD arm (`MixinFluidReactionShapesTest`, `MixinFluidReactionHeadTest`); gate-m60 (`regress-gate.py`) and gate-m61 (`fluid-head-gate.py`) run the real mods in
 dedicated servers with `-Dforbric.shearsRelayMobs=off` and `-Dforbric.fluidReactionNeighbourChange.head=off` as red
-controls that must fail exactly their cases; gate-m62 (Carpet) has `-Dforbric.fluidReactionNeighbourChange=off`. A
-unit test of the runtime class alone would need the game classes it is compiled against (both import
-`net.minecraft.*`: items, entities, levels, fluid tags), which only the staged game provides. If the owner rules the other way, the tests are new staged test classes in a later
-lane. Not recorded in DECISIONS.md by this lane (the orchestrator's file).
+controls that must fail exactly their cases; gate-m62 (Carpet) has `-Dforbric.fluidReactionNeighbourChange=off`. Both
+weave tests compile the production source of the runtime class into their fixture and run it
+(`MixinFluidReactionWeaveTest` adds `src/runtime/java/.../KernelFluidReactions.java`; `MixinShearsRelayMobsWeaveTest`
+compiles `KernelMobShears` in, its probe calling `vanillaIs` and `shearAsShears`), so the classes' own code is already
+under unit test, not only the adapter. Corrected after review (DOCS F14): the first wording said a unit test "would need
+the game classes … which only the staged game provides"; that is no obstacle, since the sibling `KernelItemDamage` has
+its own `KernelItemDamageTest`. The argument for closing B5 is the coverage above, not cost. If the owner rules the other
+way, the tests are new test classes beside `KernelItemDamageTest` in a later lane. Not recorded in DECISIONS.md by this lane (the orchestrator's file).
 
 ### Corrections to this record (C6 DOCS)
 

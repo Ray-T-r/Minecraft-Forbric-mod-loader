@@ -17,7 +17,9 @@ does not exist (nothing here reads it). `jar` built (`c6docs/jar.log`).
 | sha | subject |
 |---|---|
 | `ab086cf3` | Correct both introductions for Stages 1-4, since main is about to carry NeoForge's own base and no MinecraftForge |
-| (this file) | the Stage 4 record's C5/C6 sections and corrections, this record with the release-notes draft, and the m49 ignore entry dropped |
+| `181c41c2` | the Stage 4 record's C5/C6 sections and corrections, this record with the release-notes draft, and the m49 ignore entry dropped |
+| `e097f396` | review fixes in both introductions (F1-F3, F6, F9-F13) |
+| (this file) | review fixes in the records, the release-notes draft and the ignore file (F2, F4-F8, F14), and the section "DOCS review fixes" |
 
 ## Items
 
@@ -63,7 +65,7 @@ order). What changed, by section:
 - **§9**: data packs and client packs as they are (stable carrier pack id, the visible parent pack), two condition
   evaluators with D69's Fabric-pack-only leniency (`KernelConditionSources`), aliases via `aliasTargetPresent`, block→item
   native, no MinecraftForge worldgen.
-- **§10-§12**: `ForeignType` 46 rows, one column; the API table without `GameEventBridge`/`NativeEventDelivery`/
+- **§10-§12**: `ForeignType` 49 rows (corrected from 46 under "DOCS review fixes"), one column; the API table without `GameEventBridge`/`NativeEventDelivery`/
   `ForgeLoadingList`; Mods-screen rows without MinecraftForge; policy vs a loading stop.
 - **§13-§15 rewritten**: installer 0.4.0-dev, the NeoForge-only pipeline, the link check (`forbric-link-check.jar`, no
   baseline), `GameArtifacts`, Pins (.93), BuildStamp, the profile (`--nativeReference`, three artifacts), `OldInstallCleanup`
@@ -159,11 +161,12 @@ match mod names. DialogLang.java is not touched.
 
 ### gitignore-deleted-gate-rundirs — done
 
-`forbric-kernel/.gitignore`'s `/run/world-events-m49/` entry is dropped (gate-m49 is deleted). The stage worktree's
-untracked rundirs of the deleted gates (`run/server-chain-m41`, `server-damage-m47`, `server-events-m48`,
-`world-events-m49`, the last 5.1 MB) are left for the orchestrator to delete (rule: no folder this lane did not create).
-After the merge, `git status` in the stage worktree shows `forbric-kernel/run/world-events-m49/` as untracked until then;
-the other three stay ignored by `/run/server-*/`.
+First done by dropping `forbric-kernel/.gitignore`'s `/run/world-events-m49/` entry; **reverted under "DOCS review
+fixes" (F8)**: the main checkout has its own copy (`/Users/jerry/Documents/Forbric/forbric-kernel/run/world-events-m49`,
+4.9 MB) that would show as untracked once main fast-forwards, so the entry stays, with a comment, until both copies are
+deleted. The rundirs of the deleted gates (`run/server-chain-m41`, `server-damage-m47`, `server-events-m48`,
+`world-events-m49`) exist in the stage worktree and in the main checkout; this lane did not create them and leaves them
+for the orchestrator/owner to delete; the first three are ignored by `/run/server-*/`.
 
 ### Hand-offs read
 
@@ -189,8 +192,9 @@ All on the final text of both files (`c6docs/checks.txt`):
   openWindow, LIVING_BREATHE/DROWN rows, `<merged-base.jar>`, merge-loss ratchet, nightly): 0 present-tense hits.
 - Numbers: every figure written is copied from a record or log named in the text (suite 5,969/0/5 and the gate results:
   `c6/merge-w2.md`; m52 29/0: the C5 merger's log; phase U 22 / 258.5 MB and ~40 MiB kept: stage4-c6-inst/instfix.md;
-  Doctor 480/470 and 476,904 KiB: Doctor.java and stage4-c6-inst.md; 94/89/69/463/86/92/46 and the package counts:
-  counted in the tree at eba8222c with the commands in `c6docs/counts.txt`; 636/12: native-only-methods.txt's rows;
+  Doctor 480/470 and 476,904 KiB: Doctor.java and stage4-c6-inst.md; 94/89/69/463/86/92 and the package counts:
+  counted in the tree at eba8222c with the commands in `c6docs/counts.txt`; ForeignType's 49: counted under "DOCS review fixes" (the first commit wrote 46, which no command
+  measured); 636/12: native-only-methods.txt's rows;
   the C5-close numbers: D91 and stage4-c5-verify.md run 3; the Stage 3 sweep: this README's Stage 3 section).
 - `tools/test_ci_contract.py`: OK (above). No Java test reads either introduction, this README or the ignore file
   (`git grep` over `*.java *.py *.sh`), so no other test reaches what changed; the full suite was still run once, as the
@@ -220,14 +224,15 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > its NeoForge or Fabric part. A dedicated server with a Forge-only mod stops at startup and says which mod it is.
 >
 > **Upgrading from 0.3.x.** Run the new installer once over the same game directory; it replaces the old files. If the
-> game ever stops at launch saying the install still carries MinecraftForge, run the installer again the same way. Worlds
-> saved by earlier Forbric versions open on this one.
+> game ever stops at launch saying the install still carries MinecraftForge, run the installer again the same way.
+> **Back up your worlds before you upgrade.** A world still opens when a mod that made it no longer loads, but what a
+> Forge-only mod added to it (its blocks, items and creatures) is not there once that mod is gone.
 >
 > **If you switch a mod from its Forge build to its NeoForge build**, some of what the Forge build saved in your world
-> can be lost, exactly as it would be if you switched between the two loaders without Forbric. The one case we know of
+> can be lost, as it would be if you switched between the two loaders without Forbric. The one case we know of
 > is Tombstone: what it stored on your familiars and servants is lost, and so is your own Tombstone data (knowledge,
 > alignment, perks); the Silent Bond effect disappears (the NeoForge build calls it Beyond the Grave Bond), and so does
-> the ghostly swim speed. Forbric itself loses nothing else in that switch.
+> the ghostly swim speed. In our tests, Forbric itself lost nothing else in that switch.
 >
 > **Disk space.** Installing needs about 480 MB of free disk; almost all of it stays, so the next install is fast.
 > Installing over an older Forbric now removes most of what the older version left behind (about 260 MB when upgrading
@@ -256,11 +261,12 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > 会用它的 NeoForge 或 Fabric 部分。专用服务器里有只支持 Forge 的 mod 时，会在启动时停下并说明是哪个 mod。
 >
 > **从 0.3.x 升级。** 用新安装器对同一个游戏目录安装一次，它会替换旧文件。如果游戏启动时停下并提示这个安装仍带有
-> MinecraftForge，再用同样的方式安装一次即可。旧版 Forbric 存下的世界在这个版本上都能打开。
+> MinecraftForge，再用同样的方式安装一次即可。**升级前请先备份你的世界。** 做过这个世界的某个 mod 不再加载时，世界照样能打开，
+> 但只支持 Forge 的 mod 加进世界里的东西（它的方块、物品和生物）在这个 mod 没了之后就不在了。
 >
-> **如果把某个 mod 从 Forge 版换成 NeoForge 版**，Forge 版存在世界里的一部分东西可能会丢，和不用 Forbric、直接在两个加载器之间
-> 换版本时一样。目前已知的只有 Tombstone：它存在你的使魔和仆从身上的数据会丢，你自己的 Tombstone 数据（知识、阵营、天赋）也会丢；
-> “沉默羁绊”效果会消失（NeoForge 版叫“超越坟墓的羁绊”），幽灵形态的游泳速度也会没有。除此之外，Forbric 在这次替换中不会多丢任何东西。
+> **如果把某个 mod 从 Forge 版换成 NeoForge 版**，Forge 版存在世界里的一部分东西可能会丢，就像不用 Forbric、直接在两个加载器之间
+> 换版本时那样。目前已知的只有 Tombstone：它存在你的使魔和仆从身上的数据会丢，你自己的 Tombstone 数据（知识、阵营、天赋）也会丢；
+> “沉默羁绊”效果会消失（NeoForge 版叫“超越坟墓的羁绊”），幽灵形态的游泳速度也会没有。在我们的测试中，除此之外 Forbric 在这次替换中没有多丢任何东西。
 >
 > **磁盘空间。** 安装需要约 480 MB 的可用磁盘空间；装完后这些几乎都会保留，下次安装因此会很快。在旧版 Forbric 上安装新版本时，
 > 安装器会自动删掉旧版留下、已经没有版本在用的大部分文件（从 0.3.1-beta2 升级约 260 MB）。旧版的约 40 MB 下载文件会留在
@@ -278,9 +284,14 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > - 呼吸：有水下呼吸、在岩浆里或在能呼吸的流体里时，空气值像原版那样回升。
 
 What each line rests on (for the reviewer, not for players): the Forge refusal (Stage 3, §5.3); the server stop (exit 78,
-gate-m29); the upgrade sentence (stage4-c6-ver.md, as VER corrected it after its review F1); old worlds open (gate-m58
-208/0 at the C5 close, with worlds the kernel at `tri-eco-26.2-final` wrote — later than v0.3.1-beta2, so a beta2 world
-itself is covered only by phase U's upgraded install entering a world); the Tombstone losses (expected-losses.tsv, D77; the knowledge/alignment/perks reading of `cap_tombstone`
+gate-m29); the upgrade sentence (stage4-c6-ver.md, as VER corrected it after its review F1); the backup line and what a Forge-only mod's content does (gate-m32: a world
+written with a mod opens with that mod gone — m32 asserts the reduced server starts and stops, not what became of the
+mod's blocks; that an absent mod's content is not there is the game's own behaviour, not measured by a gate here; the
+first draft's "Worlds saved by earlier Forbric versions open on this one" was withdrawn after review F4: gate-m58's worlds
+were written by the kernel at `tri-eco-26.2-final`, later than v0.3.1-beta2, and phase U's world is the client fixture's
+ForbricTest copied into beta2's layout, which beta2 never wrote, so no world saved by a released version has been opened
+on this tree); the "in our tests" of the Tombstone line (gate-m59 drills three mods, D54; three of expected-losses.tsv's
+six rows are `NO NATIVE ROW`, judged from the mod's code); the Tombstone losses (expected-losses.tsv, D77; the knowledge/alignment/perks reading of `cap_tombstone`
 and `cap_protected_entity` is the TSV's own "why" column); disk (Doctor.java, stage4-c6-inst.md, stage4-c6-instfix.md §8);
 stop like native (D82, D87e, gate-m24/m24d); config screens without Mod Menu (merge 0ec42139, gate-m56); asking in game
 (1aa478ea, #56/#57); Create Fly crash (41df26d9, #52; on NeoForge's base gate-m61 boots Create Fly with fabric-api in
@@ -292,6 +303,12 @@ Dropped from the draft after checking: the LiquidBounce/ViaFabricPlus fixes (mer
 tests are lost on this machine (D58), so nothing measured them on NeoForge's base; BCLib's tag shears — they worked in
 v0.3.1-beta2 and broke only during Stage 4 development (D35), so a player sees no change; the load report's language
 (#42 pinned a behaviour, its date does not show the behaviour itself is new).
+
+Hoppers (plan §C6 lists "hoppers follow NeoForge's semantics" among the changes for the release notes): no player line,
+pending the owner. The one difference a Fabric player could meet, a hopper feeding or emptying a Fabric storage, gate-m52
+measures working (29 PASS / 0 FAIL at 394b8804); no other hopper difference from v0.3.1-beta2 was measured either way, so
+there is nothing measured to tell a player. If the owner wants the line anyway: "Hoppers now work the way they do on
+NeoForge." / "漏斗现在按 NeoForge 的方式工作。"
 
 Left out on purpose: developer-only items (log wording, switches, CI, the link check, gates), merged-base fixes that never
 reached a release and no longer exist (MinecraftForge field getters, Forge fluid types, the edit splice), and anything not
@@ -326,8 +343,8 @@ lines (README.zh-CN.md:7, :13, :29, :73, :110 per the scout).
 
 - **Owner**: the B5 ruling (proposal above, recorded in README.md); approve or change the release-notes and README drafts;
   the release commit applies them (README unchanged in this wave).
-- **Orchestrator**: delete the stage worktree's untracked rundirs of the deleted gates m41/m47/m48/m49 (5.1 MB for m49),
-  which `git status` shows once `/run/world-events-m49/` is no longer ignored; record the B5 ruling in DECISIONS.md if the
+- **Orchestrator/owner**: delete the rundirs of the deleted gates m41/m47/m48/m49 in the stage worktree and in the main
+  checkout (`forbric-kernel/run/world-events-m49` 4.9 MB there), then drop the `/run/world-events-m49/` ignore entry; record the B5 ruling in DECISIONS.md if the
   owner takes it (critic 10).
 - **Next CI runner**: if the CI bullet should carry counts again, restate them from the regenerated TSVs (the bullet now
   names none).
@@ -335,3 +352,35 @@ lines (README.zh-CN.md:7, :13, :29, :73, :110 per the scout).
   ecosystems"; "Forge family"), forbric-kernel/README*, canary READMEs, the full README rewrite if no release ships first.
 - **Not verified here**: the release-notes "Fixed" lines are taken from the commits and gates named, not re-played as a
   player would; LiquidBounce/ViaFabricPlus in particular have no runnable fixture on this machine (D58).
+
+## DOCS review fixes
+
+Review: `c6/review-c6docs.md` (14 findings). Each was checked against the tree, the logs or the records before it was
+acted on; all 14 were confirmed, none refuted. Evidence: `c6/c6docs/review-fixes/` and `c6/c6docs/counts.txt` (tail).
+
+| finding | verdict | fix |
+|---|---|---|
+| F1 the 0.3.x refusal | confirmed (stage4-c6-ver.md "Draft player-facing wording": an old profile names `net.forbric:forbric-kernel:0.3.1-beta2` and launches that kernel) | e097f396: §5.3, §3.2 step 0 and invariant 14 in en and zh say the new kernel refuses to launch over an old install's base, and that a 0.3.x profile keeps running its own kernel until the installer is rerun |
+| F2 ForeignType "46 rows" | confirmed: 49 constants at the tip, and counts.txt had no command for it | e097f396 (49 in both introductions); this commit: the record's two mentions; the command and its result appended to counts.txt |
+| F3 zh §2.1 / §7.3 out of step | confirmed: zh said 159 files and `net.minecraftforge.*`; zh §7.3 said `forge`/`neoforge` and "合并造成的" | e097f396; the reviewer's `enzh.py` rerun: §2.1 and §7.3 no longer differ, every other section reports what it reported before the fix |
+| F4 "worlds saved by earlier versions open" | confirmed: gate-m58's worlds come from `tri-eco-26.2-final` (187143a1, 2026-10-30; beta2 5e735a31 is its ancestor), and phase U's world is the client fixture's ForbricTest copied in (gate-m17-installer.sh `SRC_RUNDIR`, `cp -cR "$SRC_RUNDIR/saves"`) | release-notes draft en and zh: the claim withdrawn; a backup line and what a Forge-only mod's content does, resting on gate-m32 (a world opens with a mod gone) and stated as the game's own behaviour, not gate-measured; the "rests on" note rewritten |
+| F5 hopper line | confirmed: plan §C6 names it, the draft neither had it nor said why | the draft records it as left out pending the owner (gate-m52 29/0 at 394b8804 measures the Fabric-storage case; nothing else measured), with an optional en/zh line for the owner |
+| F6 "exactly as" / "nothing else" | confirmed: 3 of expected-losses.tsv's 6 rows are `NO NATIVE ROW (judged by the mod's code)`; m59 drills three mods (D54) | draft en/zh: "as it would be", "In our tests"; §5.3 in e097f396 says which three rows are judged from code |
+| F7 Open after C6 incomplete | confirmed: INSTFIX R-5 (stage4-c6-instfix.md:274, :294) and merge-w2.md's harness-owner items were missing | README "Open after C6": both added, plus the deleted gates' rundirs |
+| F8 main checkout's m49 rundir | confirmed: `/Users/jerry/Documents/Forbric/forbric-kernel/run/world-events-m49` (4.9 MB) exists and only that ignore line covers it (`git check-ignore -v`) | the `/run/world-events-m49/` entry is restored with a comment (gate-m49 deleted in 4ce446ff) until both copies are deleted; the gitignore item and Open items above say so |
+| F9 gate-m1 "65 of 99" | confirmed: the m1 run at 9cd04fc1 logged `71 of 107 … 0 hedge(s)` (stage `run/server-kernel/logs/latest.log`, 23:06, the C6 wave-1 merger's gate-m1.out 19/0; line copied into counts.txt) | e097f396 cites that line and its tip |
+| F10 "the link baseline is gone" | confirmed: `forbric-loader/src/test/resources/merge/link-check-baseline.txt` and `.provenance.json` are tracked; `LinkBaselineProvenanceTest` reads them | e097f396: "nothing reads the link baseline any more except its own provenance test", and both files are in §14's Stage 5 leftovers |
+| F11 "§5.2" for KernelServerDutiesInstaller | confirmed: §5.2 does not mention it; "Server duties" in §8 does | e097f396: points at "Server duties" below |
+| F12 render / diagram | confirmed | e097f396: blank line before "Since Stage 4" (en, zh); `linkcheck` in the §2 diagram (en, zh) |
+| F13 invariant 13 vs §19 / D87(e) | confirmed | e097f396: invariant 13 says a NeoForge loading failure stops as native and a throwing Fabric `main` stops with exit 1 where native carries on (D87(e)), open in §19; §19 states the native exit 0 instead of calling it unknown |
+| F14 B5 proposal's reason | confirmed: `KernelItemDamageTest` exists; both weave tests add the production source (`MixinFluidReactionWeaveTest` line 60, `MixinShearsRelayMobsWeaveTest` line 64) | README "Ruling owed": the cost argument withdrawn, the coverage argument stated; the owner still decides |
+
+Checks after the fixes (no gate: nothing a gate reads changed — two introductions, three records, one ignore line):
+- identifier check (the reviewer's `tokens.py` on introduction.md): the same unresolved set as the review's
+  `tokens-en.txt`, nothing new;
+- `tools/test_ci_contract.py`: 4 OK (`c6docs/review-fixes/ci-contract.log`);
+- full suite once, at e097f396 plus this commit's files in the tree (`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt)
+  -Pforbric.requireFixtures=all jar cleanTest test --continue`, 2026-11-18 02:16-02:20, 3m33s, `c6docs/review-fixes/suite.log`,
+  XML `c6docs/review-fixes/suite-xml/`, 917 files): **5,969 tests, 0 skipped, 5 failed**, the five of failures-w1.txt /
+  failures-w2.txt by name (the D58 fixtures). 0 new, 0 gone. No ports used; Gradle daemon 60297 is not this lane's.
+
