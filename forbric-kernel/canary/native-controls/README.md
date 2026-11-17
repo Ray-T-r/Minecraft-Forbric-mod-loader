@@ -1,13 +1,16 @@
 # Native server controls, Minecraft 26.2
 
-These are three separate mods, each using only Minecraft and its own loader's public API. They have no
+These are two separate mods, a Fabric one and a NeoForge one, each using only Minecraft and its own loader's public
+API. (A third, MinecraftForge, control went in Stage 4 C6 of dropping MinecraftForge: Forbric loads no MinecraftForge
+mod, so there is nothing of it to compare.) They have no
 Forbric runtime dependency and no cross-ecology claims. The same compiled jar and dependency set is used
 unchanged on the native and Forbric arms. Each arm has a fresh runner-owned world with seed `8035262`.
 
 Pinned native distributions:
 
 - Fabric Loader `0.19.5`, server launcher `1.1.2`, full Fabric API `0.155.2+26.2`.
-- Forge `26.2-65.0.1`, installed using its official installer and native shim/server.
+- Forge `26.2-65.0.1`, installed using its official installer and native shim/server, only with
+  `prepare --family forge` and only for the swap oracle below (D32); it has no canary and no control.
 - NeoForge `26.2.0.93`, installed using its official installer and native FML server entrypoint (the version
   `native-controls.py` pins in `VERSIONS`; an image prepared before that pin, such as a main checkout's `.88`, is not it).
 
@@ -21,19 +24,22 @@ M33 is a separate cross-ecology transfer test and cannot run on a native single-
 From the worktree root:
 
 ```sh
-python3 forbric-kernel/run/compat/native-controls.py prepare
-python3 forbric-kernel/run/compat/native-controls.py build
+python3 forbric-kernel/run/compat/native-controls.py prepare          # Fabric and NeoForge (--family forge: the swap oracle's)
+python3 forbric-kernel/run/compat/native-controls.py build            # or: build --family neo, needing only the NeoForge image
 python3 forbric-kernel/run/compat/native-controls.py run --engine native
 # The root agent schedules this separately: the existing Forbric launcher invokes kernel Gradle.
 python3 forbric-kernel/run/compat/native-controls.py run --engine forbric
 python3 forbric-kernel/run/compat/native-controls.py compare NATIVE_RESULT.json FORBRIC_RESULT.json
 ```
 
-`--family fabric|forge|neo` selects an arm of prepare/run. Each attempt is retained below
+`--family fabric|neo` selects an arm of build/run (and `forge` as well for prepare). A build compiles only the
+families asked for, against their own images. Each server binds the caller's `GATE_PORT` (one server at a time; an OS
+ephemeral port without it). Each attempt is retained below
 `forbric-kernel/build/native-controls/{instances,results}`; the runner never deletes/reuses worlds.
 `NATIVE_CONTROL_CACHE` points to the read-only existing download/cache workspace, defaulting to the
-original Forbric workspace. The Forbric arm boots the stage `FORBRIC_OLD` names, exactly as set; only without it
-does it fall back to the cache's `forbric-loader`. Only exact upstream-checksummed libraries seed Forge/Neo installations.
+original Forbric workspace. The Forbric arm boots the stage `FORBRIC_OLD` names, exactly as set; without it, the stage
+`tools/dev.py prepare` writes (`forbric-kernel/.dev/staged`), and with neither it refuses rather than boot the cache's
+`forbric-loader` (an unstamped NeoForge 26.2.0.88 carrier). Only exact upstream-checksummed libraries seed Forge/Neo installations.
 The official installer produces and validates their own game jars; no welded Forbric loader/carrier is
 used by the native arms or by compilation. Fabric copies only native distribution cache directories,
 never a cache instance's mods, configs, transformed mod cache, or world.

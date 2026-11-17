@@ -22,17 +22,20 @@ for engine in ('native','forbric'):
  token=uuid.uuid4().hex;run=BASE/(engine+'-'+token);run.mkdir();(run/'mods').mkdir()
  for mod in (upstream,canary):shutil.copy2(mod,run/'mods'/mod.name)
  (run/'.retention-owned').write_text(token);(run/'eula.txt').write_text('eula=true\n')
- (run/'server.properties').write_text('server-ip=127.0.0.1\nserver-port='+('25681' if engine=='native' else '25682')+'\nonline-mode=false\nlevel-name=world\nlevel-type=minecraft\\:flat\nview-distance=3\nmax-tick-time=-1\npause-when-empty-seconds=0\n')
+ # One server at a time: both arms bind the caller's GATE_PORT (else an OS ephemeral port), as native-controls' do.
+ (run/'server.properties').write_text('server-ip=127.0.0.1\nserver-port='+str(c.control_port())+'\nonline-mode=false\nlevel-name=world\nlevel-type=minecraft\\:flat\nview-distance=3\nmax-tick-time=-1\npause-when-empty-seconds=0\n')
  args=['-Xmx2G','-Djava.awt.headless=true',f'-Dretention.root={run}',f'-Dretention.token={token}'];env=os.environ.copy()
  if engine=='native':
   shutil.copytree(image/'libraries',run/'libraries');command=c.native_command('neo',image,args)
   carriers=[c.record(p) for p in c.jars(run)]
  else:
   command=[str(K/'run/launch-kernel-server.sh')];env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='strict',FORBRIC_JVM=' '.join(args))
-  # Same defaults as native-controls.py and launch-kernel-server.sh (NeoForge's patched game and its one carrier),
-  # exported so the launcher runs exactly the files recorded here. MERGED/FORGE_RT are retired: the launcher refuses them.
-  old=Path(env.setdefault('FORBRIC_OLD',str(c.ORIGINAL/'forbric-loader')))/'run'
-  for key,default in (('BASE','neoforge-patched/patched-mc-neoforge-26.2.jar'),('NEO_RT','neoforge-runtime/neoforge-runtime.jar')):env.setdefault(key,str(old/default))
+  # Same stage and defaults as native-controls.py's Forbric arm and launch-kernel-server.sh (NeoForge's patched game and
+  # its one carrier), exported so the launcher runs exactly the files recorded here: FORBRIC_OLD as the caller set it,
+  # else the prepared .dev stage, else a clear refusal (c.forbric_stage) -- never forbric-loader/'s unstamped 26.2.0.88
+  # carrier. MERGED/FORGE_RT are retired: the launcher refuses them.
+  env['FORBRIC_OLD']=str(c.forbric_stage());old=Path(env['FORBRIC_OLD'])/'run'
+  for key,default in (('BASE',c.STAGED_BASE),('NEO_RT',c.STAGED_CARRIER)):env.setdefault(key,str(old/default))
   carriers=[c.record(Path(env[key])) for key in ('BASE','NEO_RT')]+[c.record(K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')]
  inputs={'engine':engine,'token':token,'modSet':[c.record(p) for p in sorted((run/'mods').glob('*.jar'))],'carriers':carriers,'sources':[c.record(p) for p in sources]+[c.record(__file__)],'command':command}
  c.write_json(run/'inputs.json',inputs);began=time.monotonic();sent=False

@@ -4,6 +4,10 @@
 All mutable files live below kernel/build/native-controls. The source workspace/cache is read only.
 prepare downloads official fixed installers, verifies available upstream SHA-1s, then runs those installers.
 build uses installed native API jars, never a Forbric carrier. run preserves each attempt, including failure.
+
+The behaviour controls (build, run, compare) have two arms, Fabric and NeoForge: Forbric loads no MinecraftForge mod, so
+there is nothing of it to compare. MinecraftForge stays only as an install (`prepare --family forge`): the C5c swap
+oracle (`swap --engine native`) creates its world on the native MinecraftForge server (D32).
 """
 import argparse
 import hashlib
@@ -27,21 +31,45 @@ ORIGINAL = Path(os.environ.get("NATIVE_CONTROL_CACHE", Path(os.environ["FORBRIC_
                               if os.environ.get("FORBRIC_OLD") else KERNEL.parent))
 
 
-def forbric_stage():
-    """The staged tree the Forbric arm boots: FORBRIC_OLD as the caller set it, like every gate and launcher reads it.
+# What the Forbric arm launches from a stage (launch-kernel-server.sh's BASE and NEO_RT defaults, below <stage>/run).
+STAGED_BASE = "neoforge-patched/patched-mc-neoforge-26.2.jar"
+STAGED_CARRIER = "neoforge-runtime/neoforge-runtime.jar"
 
-    Only without FORBRIC_OLD does it fall back to the reference checkout's forbric-loader/. The arm used to replace
-    FORBRIC_OLD with ORIGINAL/forbric-loader whatever the caller had set: with the Stage 4 harness (FORBRIC_OLD=<wt>/.stage4)
-    ORIGINAL is the worktree, whose forbric-loader/run/neoforge-* are links into the main checkout's stage, so a Forbric
-    arm silently booted another carrier than the one the caller named (map-misc 4.1: carrier dd54e73f instead of
-    .stage4's 0e3ce8d9). NATIVE_CONTROL_CACHE still names the read-only reference workspace for the native caches.
+
+def forbric_stage():
+    """The staged tree the Forbric arm boots: FORBRIC_OLD as the caller set it, like every gate and launcher reads it;
+    without it, the stage `tools/dev.py prepare` writes (forbric-kernel/.dev/staged), which build.gradle also takes when
+    FORBRIC_OLD is unset. With neither, the arm refuses, naming both: there is no other stage it may boot.
+
+    It used to fall back to the reference checkout's forbric-loader/, whose carrier is NeoForge 26.2.0.88 and unstamped
+    (Stage 4 C6, critic 7): an arm started without FORBRIC_OLD then booted another NeoForge than the one it reported.
+    Before that it replaced FORBRIC_OLD with ORIGINAL/forbric-loader whatever the caller had set (map-misc 4.1: carrier
+    dd54e73f instead of .stage4's 0e3ce8d9). NATIVE_CONTROL_CACHE still names the read-only reference workspace for the
+    native caches.
     """
     given = os.environ.get("FORBRIC_OLD")
-    return Path(given).resolve() if given else ORIGINAL / "forbric-loader"
+    if given:
+        return Path(given).resolve()
+    prepared = KERNEL / ".dev/staged"
+    if (prepared / "run" / STAGED_BASE).is_file():
+        return prepared.resolve()
+    raise RuntimeError("no stage for the Forbric arm: set FORBRIC_OLD to a prepared stage (its run/ holds "
+                       f"{STAGED_BASE} and {STAGED_CARRIER}), or run `python3 tools/dev.py prepare` to write "
+                       f"{prepared}. forbric-loader/ is not a stage for it: its carrier is NeoForge 26.2.0.88 and unstamped.")
+
+
+def control_port():
+    """The port a control server binds: the caller's GATE_PORT (a lane's own block, as every gate takes it), else an OS
+    ephemeral port. One server runs at a time in an invocation, so every arm and family of it can share the one port.
+    It used to be 25651 + family index (+10 for Forbric), fixed for every lane on the machine."""
+    given = os.environ.get("GATE_PORT")
+    return int(given) if given else free_port()
 
 
 MC = Path(os.environ.get("MC_DIR", Path.home() / "Library/Application Support/minecraft"))
 VERSIONS = {"fabric": "0.19.5", "forge": "65.0.1", "neo": "26.2.0.93"}
+# The families with a behaviour control (build, run): Fabric and NeoForge. "forge" is an install only (the swap oracle).
+CONTROL_FAMILIES = ("fabric", "neo")
 INSTALLERS = {
     "forge": "https://maven.minecraftforge.net/net/minecraftforge/forge/26.2-65.0.1/forge-26.2-65.0.1-installer.jar",
     "neo": "https://maven.neoforged.net/releases/net/neoforged/neoforge/26.2.0.93/neoforge-26.2.0.93-installer.jar",
@@ -93,7 +121,15 @@ def install(family):
     image.mkdir(parents=True, exist_ok=True)
     if family == "fabric":
         cache = ORIGINAL / "forbric-kernel/run/fab-server"
+        # The official launcher jar has one copy on disk, in the reference checkout's forbric-loader download cache (a
+        # download, not a stage). Stage 5 moves the fixtures the kernel still reads out of forbric-loader/ before it
+        # deletes it; until then a checkout without it is named here rather than failing inside zipfile.
         launcher = ORIGINAL / "forbric-loader/run/downloads/fabric-server-26.2" / FABRIC_LAUNCHER
+        missing = [str(path) for path in (launcher, cache / "libraries", cache / ".fabric/server") if not path.exists()]
+        if missing:
+            raise RuntimeError("prepare --family fabric copies the official Fabric server launcher and its native cache "
+                               "from the read-only reference checkout (NATIVE_CONTROL_CACHE, else the parent of "
+                               "FORBRIC_OLD, else this checkout), and these are not there: " + ", ".join(missing))
         with zipfile.ZipFile(launcher) as jar:
             properties = jar.read("install.properties").decode()
             assert "fabric-loader-version=0.19.5" in properties and "game-version=26.2" in properties
@@ -149,29 +185,42 @@ def jars(image):
     return sorted((image / "libraries").rglob("*.jar"))
 
 
-def compile_canaries():
+def compile_canaries(families=CONTROL_FAMILIES):
+    """Compile the canary of each family asked for, against that family's prepared image only: a NeoForge control
+    needs no Fabric or MinecraftForge image. build-inputs.json keeps another family's earlier entry only while the canary
+    sources it was built from are the current ones."""
+    unknown = [family for family in families if family not in CONTROL_FAMILIES]
+    if unknown:
+        raise RuntimeError(f"no behaviour control for {', '.join(unknown)} (controls: {', '.join(CONTROL_FAMILIES)})")
     artifacts = BASE / "artifacts"
-    modules = BASE / "compile/fabric-modules"
-    modules.mkdir(parents=True, exist_ok=True)
-    fapi = fapi_source()
-    with zipfile.ZipFile(fapi) as archive:
-        assert json.loads(archive.read("fabric.mod.json"))["version"] == "0.155.2+26.2"
-        for name in archive.namelist():
-            if name.startswith("META-INF/jars/") and name.endswith(".jar"):
-                (modules / Path(name).name).write_bytes(archive.read(name))
+    current = sources()
     compiled = {}
-    for family in VERSIONS:
+    inputs_file = artifacts / "build-inputs.json"
+    if inputs_file.is_file():
+        earlier = json.loads(inputs_file.read_text())
+        if earlier.get("sources") == current:
+            compiled = {family: entry for family, entry in earlier.get("families", {}).items()
+                        if family in CONTROL_FAMILIES and family not in families}
+    for family in families:
         image = BASE / "native" / family
         if not (image / "installation.json").is_file():
             raise RuntimeError(f"prepare {family} before compiling native APIs")
+    fapi = fapi_source()
+    if "fabric" in families:
+        modules = BASE / "compile/fabric-modules"
+        modules.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(fapi) as archive:
+            assert json.loads(archive.read("fabric.mod.json"))["version"] == "0.155.2+26.2"
+            for name in archive.namelist():
+                if name.startswith("META-INF/jars/") and name.endswith(".jar"):
+                    (modules / Path(name).name).write_bytes(archive.read(name))
+    for family in families:
+        image = BASE / "native" / family
         if family == "fabric":
             game = BASE / "compile/vanilla-server-26.2.jar"
             with zipfile.ZipFile(image / ".fabric/server/26.2-server.jar") as bundle:
                 game.write_bytes(bundle.read("META-INF/versions/26.2/server-26.2.jar"))
-            classpath = [game, *jars(image), *sorted(modules.glob("*.jar"))]
-        elif family == "forge":
-            game = image / "libraries/net/minecraftforge/forge/26.2-65.0.1/forge-26.2-65.0.1-server.jar"
-            classpath = [game, *jars(image)]
+            classpath = [game, *jars(image), *sorted((BASE / "compile/fabric-modules").glob("*.jar"))]
         else:
             game = image / "libraries/net/neoforged/minecraft-server-patched/26.2.0.93/minecraft-server-patched-26.2.0.93.jar"
             classpath = [game, *jars(image)]
@@ -187,15 +236,15 @@ def compile_canaries():
         # Deterministic jar bytes allow exact jar identity between arms and across an unchanged rebuild.
         with zipfile.ZipFile(artifact, "w", zipfile.ZIP_DEFLATED) as archive:
             entries = [(p.relative_to(destination).as_posix(), p) for p in sorted(destination.rglob("*.class"))]
-            metadata = "fabric.mod.json" if family == "fabric" else "META-INF/" + ("mods.toml" if family == "forge" else "neoforge.mods.toml")
+            metadata = "fabric.mod.json" if family == "fabric" else "META-INF/neoforge.mods.toml"
             entries.append((metadata, SOURCE / family / metadata))
             for name, path in entries:
                 info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0)); info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info, path.read_bytes())
         compiled[family] = {"mod": record(artifact), "gameApi": record(game), "classpath": [record(p) for p in classpath], "javacCommand": command}
     copy_file(fapi, artifacts / fapi.name)
-    write_json(artifacts / "build-inputs.json", {"sources": sources(), "javac": subprocess.check_output(["javac", "-version"], text=True), "families": compiled, "fabricApi": record(artifacts / fapi.name)})
-    print(f"built all three fixed native API fixtures: {artifacts}")
+    write_json(inputs_file, {"sources": current, "javac": subprocess.check_output(["javac", "-version"], text=True), "families": compiled, "fabricApi": record(artifacts / fapi.name)})
+    print(f"built the native API fixtures of {', '.join(families)}: {artifacts}")
 
 
 def native_command(family, image, java_args):
@@ -231,8 +280,7 @@ def run_control(family, engine, timeout):
     for mod in mod_files:
         copy_file(mod, instance / "mods" / mod.name)
     (instance / "eula.txt").write_text("eula=true\n")
-    index = list(VERSIONS).index(family)
-    port = 25651 + index + (10 if engine == "forbric" else 0)
+    port = control_port()
     (instance / "server.properties").write_text(f"server-ip=127.0.0.1\nserver-port={port}\nonline-mode=false\nlevel-name=world\nlevel-seed={SEED}\nlevel-type=minecraft\\:flat\nmax-tick-time=-1\nview-distance=3\nsimulation-distance=3\npause-when-empty-seconds=0\nspawn-protection=0\n")
     java_args = ["-Xms256M", "-Xmx2G", "-Djava.awt.headless=true", f"-Dnativecontrol.root={instance}", f"-Dnativecontrol.token={token}"]
     env = os.environ.copy()
@@ -271,7 +319,7 @@ def run_control(family, engine, timeout):
     before = {"sources": sources(), "modSet": [record(instance / "mods" / p.name) for p in mod_files],
               "carriers": carrier_inputs, "installation": installation, "buildInputs": build_inputs,
               "java": subprocess.check_output(["java", "-version"], stderr=subprocess.STDOUT, text=True),
-              "command": command, "cwd": str(instance), "seed": SEED, "actions": ["await Done and 20 ticks", "nativecontrol", "save-all flush", "stop"],
+              "command": command, "cwd": str(instance), "port": port, "seed": SEED, "actions": ["await Done and 20 ticks", "nativecontrol", "save-all flush", "stop"],
               "environment": {k: env[k] for k in ("FORBRIC_OLD", "FORBRIC_COMPAT_POLICY", "FORBRIC_JVM", "RUNDIR") if k in env}}
     write_json(result_dir / "inputs.json", before)
     for item in before["sources"]:
@@ -833,9 +881,10 @@ def swap(engine, forge_mods, neo_mods, out, console=None, checks=None, old_world
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     sub = parser.add_subparsers(dest="action", required=True)
+    # "all" is the two behaviour controls; the MinecraftForge image (the swap oracle's) is installed only when named.
     prepare = sub.add_parser("prepare"); prepare.add_argument("--family", choices=["all", *VERSIONS], default="all")
-    sub.add_parser("build")
-    run = sub.add_parser("run"); run.add_argument("--engine", choices=["native", "forbric"], default="native"); run.add_argument("--family", choices=["all", *VERSIONS], default="all"); run.add_argument("--timeout", type=int, default=300)
+    build = sub.add_parser("build"); build.add_argument("--family", choices=["all", *CONTROL_FAMILIES], default="all")
+    run = sub.add_parser("run"); run.add_argument("--engine", choices=["native", "forbric"], default="native"); run.add_argument("--family", choices=["all", *CONTROL_FAMILIES], default="all"); run.add_argument("--timeout", type=int, default=300)
     diff = sub.add_parser("compare"); diff.add_argument("results", nargs=2)
     run_set_parser = sub.add_parser("run-set", help="one fresh server with exactly the given jars")
     run_set_parser.add_argument("--engine", choices=["native", "forbric"], required=True)
@@ -866,14 +915,14 @@ def main():
     swap_parser.add_argument("--timeout", type=int, default=900, help="seconds per phase")
     args = parser.parse_args(); BASE.mkdir(parents=True, exist_ok=True)
     if args.action == "prepare":
-        for family in VERSIONS if args.family == "all" else [args.family]:
+        for family in CONTROL_FAMILIES if args.family == "all" else [args.family]:
             install(family)
     elif args.action == "build":
-        compile_canaries()
+        compile_canaries(CONTROL_FAMILIES if args.family == "all" else (args.family,))
     elif args.action == "run":
         # Evaluate every declared arm even if the first fails. No scope reduction turns a failed set green.
         outcomes = []
-        for family in VERSIONS:
+        for family in CONTROL_FAMILIES:
             if args.family != "all" and family != args.family:
                 continue
             try:

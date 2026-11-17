@@ -10,6 +10,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
+import zipfile
 
 _spec = importlib.util.spec_from_file_location("native_controls", Path(__file__).with_name("native-controls.py"))
 nc = importlib.util.module_from_spec(_spec)
@@ -144,10 +145,20 @@ class ForbricStage(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"FORBRIC_OLD": tmp}):
             self.assertEqual(Path(tmp).resolve(), nc.forbric_stage())
 
-    def test_without_forbric_old_the_reference_checkouts_loader_is_the_stage(self):
+    def test_without_forbric_old_the_prepared_dev_stage_is_the_stage_and_never_forbric_loader(self):
+        """Without FORBRIC_OLD the arm boots the stage tools/dev.py prepare writes (as build.gradle reads it), and with
+        none it refuses by name. It used to boot ORIGINAL/forbric-loader, whose carrier is NeoForge 26.2.0.88 and
+        unstamped (C6, critic 7): a complete decoy stage there must never be the answer."""
         env = {k: v for k, v in os.environ.items() if k != "FORBRIC_OLD"}
-        with mock.patch.dict(os.environ, env, clear=True):
-            self.assertEqual(nc.ORIGINAL / "forbric-loader", nc.forbric_stage())
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env, clear=True):
+            tmp = Path(tmp)
+            kernel = tmp / "checkout/forbric-kernel"
+            reference = self._reference(tmp)
+            with mock.patch.object(nc, "KERNEL", kernel), mock.patch.object(nc, "ORIGINAL", reference):
+                with self.assertRaisesRegex(RuntimeError, r"no stage for the Forbric arm: set FORBRIC_OLD .*tools/dev.py prepare"):
+                    nc.forbric_stage()
+                prepared = self._stage(kernel / ".dev/staged")
+                self.assertEqual(prepared.resolve(), nc.forbric_stage())
 
     def _stage(self, root):
         for rel in ("run/neoforge-patched/patched-mc-neoforge-26.2.jar", "run/neoforge-runtime/neoforge-runtime.jar"):
@@ -333,6 +344,122 @@ class SwapSession(unittest.TestCase):
             (dst / "libraries/a.jar").write_bytes(b"changed")
             self.assertEqual(b"a", (src / "libraries/a.jar").read_bytes())
             self.assertTrue(dst.is_dir() and not dst.is_symlink())
+
+class ControlFamilies(unittest.TestCase):
+    """build and run cover the two behaviour controls; a family's build needs only that family's prepared image, and
+    MinecraftForge is an install (the swap oracle, D32), never a control."""
+
+    def test_the_controls_are_fabric_and_neoforge_and_forge_stays_an_install(self):
+        self.assertEqual(("fabric", "neo"), nc.CONTROL_FAMILIES)
+        self.assertIn("forge", nc.VERSIONS)
+        self.assertFalse((nc.SOURCE / "forge").exists(), "the MinecraftForge canary has no control to run in")
+        for action, family in (("build", "forge"), ("run", "forge")):
+            with self.subTest(action=action), mock.patch.object(sys, "argv", ["native-controls.py", action, "--family", family]), \
+                    mock.patch("sys.stderr", new_callable=io.StringIO) as err, self.assertRaises(SystemExit):
+                nc.main()
+            self.assertIn("invalid choice: 'forge'", err.getvalue())
+
+    def _image(self, base, family):
+        image = base / "native" / family
+        (image / "libraries").mkdir(parents=True, exist_ok=True)
+        (image / "installation.json").write_text(json.dumps({"family": family}))
+        if family == "neo":
+            game = image / "libraries/net/neoforged/minecraft-server-patched/26.2.0.93/minecraft-server-patched-26.2.0.93.jar"
+            game.parent.mkdir(parents=True, exist_ok=True)
+            game.write_bytes(b"stub game")
+        return image
+
+    def _fake_javac(self, seen):
+        def run_logged(command, cwd, log, timeout=900):
+            seen.append(command)
+            destination = Path(command[command.index("-d") + 1])
+            (destination / "nativecontrol").mkdir(parents=True, exist_ok=True)
+            (destination / "nativecontrol/Compiled.class").write_bytes(b"\xca\xfe\xba\xbe")
+        return run_logged
+
+    def test_build_of_the_neoforge_control_needs_no_other_image(self):
+        seen = []
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            base = tmp / "nc"
+            self._image(base, "neo")
+            fapi = tmp / "fabric-api-0.155.2+26.2.jar"
+            fapi.write_bytes(b"not read for a NeoForge build")
+            with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
+                    mock.patch.object(nc, "run_logged", self._fake_javac(seen)), \
+                    mock.patch.object(nc.subprocess, "check_output", return_value="javac 25"), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO), \
+                    mock.patch.object(sys, "argv", ["native-controls.py", "build", "--family", "neo"]):
+                self.assertEqual(0, nc.main())
+            self.assertEqual(1, len(seen))
+            self.assertIn("minecraft-server-patched-26.2.0.93.jar", seen[0][seen[0].index("-cp") + 1])
+            inputs = json.loads((base / "artifacts/build-inputs.json").read_text())
+            self.assertEqual(["neo"], list(inputs["families"]))
+            with zipfile.ZipFile(base / "artifacts/nativecontrolneo-1.0.0.jar") as jar:
+                self.assertIn("META-INF/neoforge.mods.toml", jar.namelist())
+            # The whole set still names every image it lacks.
+            with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
+                    mock.patch.object(nc, "run_logged", self._fake_javac(seen)), \
+                    self.assertRaisesRegex(RuntimeError, "prepare fabric before compiling"):
+                nc.compile_canaries()
+
+    def test_a_later_build_keeps_another_familys_entry_only_while_the_sources_are_the_same(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            base = tmp / "nc"
+            for family in nc.CONTROL_FAMILIES:
+                self._image(base, family)
+            fapi = tmp / "fabric-api-0.155.2+26.2.jar"
+            fapi.write_bytes(b"x")
+            earlier = {"sources": nc.sources(), "families": {"fabric": {"mod": {"sha256": "f"}}, "forge": {"mod": {}}}}
+            (base / "artifacts").mkdir(parents=True)
+            (base / "artifacts/build-inputs.json").write_text(json.dumps(earlier))
+            with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
+                    mock.patch.object(nc, "run_logged", self._fake_javac([])), \
+                    mock.patch.object(nc.subprocess, "check_output", return_value="javac 25"), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                nc.compile_canaries(("neo",))
+                self.assertEqual({"fabric", "neo"}, set(json.loads((base / "artifacts/build-inputs.json").read_text())["families"]))
+                earlier["sources"] = [{"path": "changed", "bytes": 1, "sha256": "0"}]
+                (base / "artifacts/build-inputs.json").write_text(json.dumps(earlier))
+                nc.compile_canaries(("neo",))
+                self.assertEqual({"neo"}, set(json.loads((base / "artifacts/build-inputs.json").read_text())["families"]))
+
+
+class ControlPort(unittest.TestCase):
+    def test_the_control_binds_the_callers_gate_port(self):
+        class Exited:
+            def __init__(self, command, cwd=None, env=None, **kw):
+                self.pid = os.getpid(); self.returncode = 1; self.stdin = io.StringIO()
+
+            def poll(self):
+                return 1
+
+            def wait(self, *a):
+                return 1
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            base = tmp / "nc"
+            image = base / "native/neo"
+            (image / "libraries/x").mkdir(parents=True)
+            (image / "libraries/x/lib.jar").write_bytes(b"lib")
+            (image / "installation.json").write_text("{}")
+            canary = base / "artifacts/nativecontrolneo-1.0.0.jar"
+            canary.parent.mkdir(parents=True)
+            canary.write_bytes(b"canary")
+            (base / "artifacts/build-inputs.json").write_text(json.dumps({"families": {"neo": {"mod": {"sha256": nc.sha(canary)}}}}))
+            with mock.patch.dict(os.environ, {"GATE_PORT": "46999"}), mock.patch.object(nc, "BASE", base), \
+                    mock.patch.object(nc.subprocess, "Popen", Exited), \
+                    mock.patch.object(nc.subprocess, "check_output", return_value="java 25"), \
+                    mock.patch("sys.stdout", new_callable=io.StringIO):
+                self.assertFalse(nc.run_control("neo", "native", 5))
+            (instance,) = (base / "instances").iterdir()
+            self.assertIn("server-port=46999\n", (instance / "server.properties").read_text())
+            (result,) = (base / "results").iterdir()
+            self.assertEqual(46999, json.loads((result / "inputs.json").read_text())["port"])
+        env = {k: v for k, v in os.environ.items() if k != "GATE_PORT"}
+        with mock.patch.dict(os.environ, env, clear=True), mock.patch.object(nc, "free_port", return_value=40001):
+            self.assertEqual(40001, nc.control_port())
 
 
 if __name__ == "__main__":
