@@ -33,7 +33,8 @@ import java.util.Locale;
  * locale, English otherwise -- and {@code -Dforbric.dialogLanguage} overrides it the way it overrides the kernel's, so a
  * test or a support session can ask for either. The rest of the installer's window is English only, as it was; these
  * two sentences are bilingual because they are the ones this change rewrote, and the kernel's rule is that every
- * user-facing sentence it changes exists in both languages.
+ * user-facing sentence it changes exists in both languages. The clean-up's lines ({@link OldInstallCleanup}) came later
+ * under the same rule.
  */
 final class InstallerText {
 	private InstallerText() {
@@ -60,5 +61,51 @@ final class InstallerText {
 				: "Fabric and NeoForge mods go in " + mods + " (a launcher with per-version isolation uses versions/"
 						+ versionId + "/mods instead). Forbric no longer loads MinecraftForge mods: use their NeoForge or "
 						+ "Fabric builds.";
+	}
+
+	// --- the clean-up of an older install's files (OldInstallCleanup) ---------------------------------------------
+	// Every line starts "[cleanup] " in both languages, the way the build steps' lines carry their tag, so a log can be
+	// searched for them whatever language wrote it.
+
+	/** One file removed. */
+	static String cleanupRemoved(Path file) {
+		return chinese() ? "[cleanup] 已删除 " + file + "（旧版 Forbric 留下的文件，已没有任何版本使用）"
+				: "[cleanup] removed " + file + " (an older Forbric's file that no installed version uses)";
+	}
+
+	/** A symbolic link the clean-up met and left alone. */
+	static String cleanupLeftLink(Path link) {
+		return chinese() ? "[cleanup] 保留 " + link + "：它是符号链接，清理从不跟随或删除链接"
+				: "[cleanup] left " + link + " in place: it is a symbolic link, which the clean-up never follows or removes";
+	}
+
+	/** A file that could not be deleted (on Windows, typically one a running game holds open). */
+	static String cleanupFailed(Path file, String reason) {
+		return chinese() ? "[cleanup] 无法删除 " + file + "（" + reason + "），已保留；安装照常完成"
+				: "[cleanup] could not remove " + file + " (" + reason + "); it is left in place and the install carries on";
+	}
+
+	/** A version profile that could not be read, so the old libraries are all kept. */
+	static String cleanupProfileUnreadable(Path json, String reason) {
+		return chinese() ? "[cleanup] 无法读取 " + json + "（" + reason + "），不知道它用到哪些库，所以 libraries/net/forbric 下的旧文件全部保留"
+				: "[cleanup] could not read " + json + " (" + reason + "), so what it uses is unknown and every old file in"
+						+ " libraries/net/forbric is kept";
+	}
+
+	/** The switch is off. */
+	static String cleanupOff() {
+		return chinese() ? "[cleanup] 已关闭（-D" + OldInstallCleanup.SWITCH + "=off）：旧版 Forbric 的文件全部保留"
+				: "[cleanup] off (-D" + OldInstallCleanup.SWITCH + "=off): an older Forbric's files are left in place";
+	}
+
+	/** The last clean-up line: how much went, and how much could not. */
+	static String cleanupSummary(int removed, long bytes, int failed) {
+		String megabytes = String.format(Locale.ROOT, "%.1f", bytes / (1024.0 * 1024.0));
+		if (chinese()) {
+			return "[cleanup] 已删除旧版 Forbric 留下的 " + removed + " 个文件（" + megabytes + " MB）"
+					+ (failed > 0 ? "；" + failed + " 个无法删除，已保留" : "");
+		}
+		return "[cleanup] removed " + removed + " file(s) an older Forbric left behind (" + megabytes + " MB)"
+				+ (failed > 0 ? "; " + failed + " could not be removed and were left in place" : "");
 	}
 }
