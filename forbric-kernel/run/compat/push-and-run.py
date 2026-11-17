@@ -16,7 +16,10 @@ import zipfile
 
 HERE = Path(__file__).resolve().parent
 KERNEL = HERE.parent.parent
-STAGED = Path(os.environ.get('FORBRIC_OLD', KERNEL.parent / 'forbric-loader')) / 'run'
+# The stage: FORBRIC_OLD as the caller set it, as every gate and launcher reads it; else the one `tools/dev.py prepare`
+# writes (forbric-kernel/.dev/staged), which build.gradle also reads when FORBRIC_OLD is unset. Never forbric-loader/run:
+# its carrier is NeoForge 26.2.0.88 and unstamped, so stamp_problems would refuse it anyway.
+STAGED = (Path(os.environ['FORBRIC_OLD']) if os.environ.get('FORBRIC_OLD') else KERNEL / '.dev/staged') / 'run'
 sys.path.insert(0, str(HERE / 'win'))
 from common import LANG_LINE, SWEEP_RECORD, client_language, safe_filename
 
@@ -36,10 +39,11 @@ CLEAN = ('config', 'mods', 'saves', 'logs', '.forbric-kernel', '.mixin.out', '.f
 BASE = 'net.forbric:patched-mc-neoforge'
 NEO_RUNTIME = 'net.forbric:neoforge-runtime'
 VANILLA_REFERENCE = 'net.forbric:vanilla-reference'
-# What a profile an older installer (Forbric 0.4 and earlier) wrote names instead: the merged base and the MinecraftForge
-# carrier. The new kernel refuses that game (LaunchInputCheck), so with_genuine_base rewrites such a profile.
-RETIRED_ARTIFACTS = {'net.forbric:patched-mc-merged': BASE, 'net.forbric:forge-runtime': None,
-                     'net.forbric:patched-mc-forge': None}
+# What only a profile an older installer (Forbric 0.4 and earlier) wrote names: the merged base, the MinecraftForge
+# carrier and patched game, and the old loader's two jars. The new kernel refuses that game (LaunchInputCheck, D9), and
+# push-and-run no longer swaps its libraries (plan Stage 4 C6): such a profile is refused (old_profile_problems).
+RETIRED_ARTIFACTS = ('net.forbric:patched-mc-merged', 'net.forbric:forge-runtime', 'net.forbric:patched-mc-forge',
+                     'net.forbric:forbric-loader', 'net.forbric:forbricruntime')
 ARTIFACTS = {
     'net.forbric:forbric-kernel': KERNEL / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar',
     BASE: STAGED / 'neoforge-patched/patched-mc-neoforge-26.2.jar',
@@ -207,9 +211,9 @@ def stamp_problems(overrides=(), stamp=None, pins_java=None):
     """Why a staged base or carrier cannot go out under the versions artifact_versions gives it: its build stamp
     (<jar>.pins) is missing or names other pins. Empty when both are stamped by this tree's pins.
 
-    with_genuine_base names the base and the carrier at this tree's pins whatever the profile said before, and
+    The profile names the base and the carrier at this tree's pins (with_game_arguments refuses any other), and
     version-json-sync records the SHA-1 of whatever bytes go up, so nothing downstream would notice a carrier built from
-    another NeoForge travelling under the new version: a jar from a stage nobody re-prepared (forbric-loader/run's
+    another NeoForge travelling under that version: a jar from a stage nobody re-prepared (forbric-loader/run's
     neoforge-runtime.jar is 26.2.0.88 and unstamped) would run on Windows under a profile that says 26.2.0.93. The stamp is
     dev.py's own readiness rule (stale_stamps). A file named with --artifact is the caller's choice and is not judged."""
     named = {item.split('=', 1)[0] for item in overrides}
@@ -238,53 +242,57 @@ def library_path(coordinate, version):
     return f"{group.replace('.', '/')}/{name}/{version}/{name}-{version}.jar"
 
 
-def with_genuine_base(profile, versions=None):
-    """Rewrite a profile an older installer wrote to the game the new installer stages: NeoForge's patched game and its
-    one carrier, without the merged base and the MinecraftForge carrier.
+REFUSED_PROFILE = ('this profile is not one the installer of this tree wrote ({problems}); push-and-run rewrites only a '
+                   "profile's game arguments and no longer swaps libraries in an older installer's profile. Run the new "
+                   'installer again with the same game directory (a game installed by Forbric 0.4 or earlier is refused '
+                   'by the kernel anyway), then run push-and-run again.')
 
-    Libraries: the net.forbric:patched-mc-merged entry becomes net.forbric:patched-mc-neoforge (in its place on the
-    classpath), net.forbric:forge-runtime goes, and the carrier and the vanilla reference are named at the versions the
-    installer of this tree gives them (artifact_versions); every other library is left as it was. Game arguments: exactly
-    the installer's --gameJar <base> --runtimeJar <carrier> --libraryPath <unchanged> --nativeReference <sidecar>, one
-    value per flag; any other argument is kept after them. Without this, resolve_artifacts refuses every remote whose
-    profile came from an older installer (no patched-mc-neoforge entry), and a kernel launched on the old arguments
-    refuses the merged game anyway.
 
-    Returns what changed, empty for a profile that already matches."""
+def coordinate_of(library):
+    return ':'.join(library.get('name', '').split(':')[:2])
+
+
+def old_profile_problems(profile, versions=None):
+    """Why a profile is not the one this tree's installer writes, by its libraries: it names an artifact only an older
+    installer staged (RETIRED_ARTIFACTS), or it lacks, repeats or versions differently one of the three game artifacts
+    the installer stages (artifact_versions). Empty for the installer's own profile."""
     versions = versions or artifact_versions()
-    wanted = {coordinate: f'{coordinate}:{version}' for coordinate, version in versions.items()}
-
-    def entry(coordinate):
-        return dict(name=wanted[coordinate], downloads=dict(artifact=dict(
-            path=library_path(coordinate, versions[coordinate]), sha1='', size=0)))
-
-    def coordinate_of(library):
-        return ':'.join(library.get('name', '').split(':')[:2])
-
-    changes, libraries, placed = [], [], set()
+    problems, seen = [], {}
     for library in profile.get('libraries', []):
         coordinate = coordinate_of(library)
-        if coordinate in RETIRED_ARTIFACTS or (coordinate in wanted and library.get('name') != wanted[coordinate]):
-            changes.append('drop library ' + library.get('name', ''))
-            replacement = RETIRED_ARTIFACTS.get(coordinate, coordinate if coordinate in wanted else None)
-            if replacement and replacement not in placed:
-                libraries.append(entry(replacement))
-                placed.add(replacement)
-                changes.append('library ' + wanted[replacement])
-            continue
-        if coordinate in wanted:
-            if coordinate in placed:
-                changes.append('drop duplicate library ' + library.get('name', ''))
-                continue
-            placed.add(coordinate)
-        libraries.append(library)
-    for coordinate in (BASE, NEO_RUNTIME, VANILLA_REFERENCE):
-        if coordinate not in placed:
-            libraries.append(entry(coordinate))
-            changes.append('library ' + wanted[coordinate])
-    paths = {coordinate_of(library): library['downloads']['artifact']['path']
-             for library in libraries if coordinate_of(library) in wanted}
+        if coordinate in RETIRED_ARTIFACTS:
+            problems.append('it names ' + library.get('name', coordinate))
+        elif coordinate in versions:
+            seen.setdefault(coordinate, []).append(library.get('name', ''))
+    for coordinate, version in versions.items():
+        names = seen.get(coordinate, [])
+        if not names:
+            problems.append('it has no ' + coordinate + ' library')
+        elif len(names) > 1:
+            problems.append('it names ' + coordinate + ' ' + str(len(names)) + ' times')
+        elif names[0] != coordinate + ':' + version:
+            problems.append('it names ' + names[0] + ' where this tree stages ' + coordinate + ':' + version)
+    return problems
 
+
+def with_game_arguments(profile, versions=None):
+    """Point a profile's game arguments at the artifacts push-and-run stages, and change nothing else.
+
+    The profile must be one the installer of this tree wrote (old_profile_problems); any other is refused with the
+    advice to reinstall (REFUSED_PROFILE), and its libraries are never rewritten. The game arguments become exactly the
+    installer's: --gameJar <base> --runtimeJar <carrier> --libraryPath <unchanged> --nativeReference <sidecar>, one value
+    per flag, each path the one its library entry names (where the artifact is staged); any other argument is kept
+    after them. Returns what changed, empty for a profile whose arguments already say that."""
+    problems = old_profile_problems(profile, versions)
+    if problems:
+        raise ValueError(REFUSED_PROFILE.format(problems='; '.join(problems)))
+    paths = {}
+    for library in profile.get('libraries', []):
+        if coordinate_of(library) in (BASE, NEO_RUNTIME, VANILLA_REFERENCE):
+            path = library.get('downloads', {}).get('artifact', {}).get('path')
+            if not path:
+                raise ValueError('profile library ' + library.get('name', '') + ' has no downloads.artifact.path')
+            paths[coordinate_of(library)] = path
     game = profile.get('arguments', {}).get('game', [])
     flags = ('--gameJar', '--runtimeJar', '--libraryPath', '--nativeReference')
     library_value, others, index = None, [], 0
@@ -303,39 +311,12 @@ def with_genuine_base(profile, versions=None):
         raise ValueError('profile has no --libraryPath game argument; reinstall it with the Forbric installer')
     target = ['--gameJar', LIBRARY_DIRECTORY + paths[BASE], '--runtimeJar', LIBRARY_DIRECTORY + paths[NEO_RUNTIME],
               '--libraryPath', library_value, '--nativeReference', LIBRARY_DIRECTORY + paths[VANILLA_REFERENCE]] + others
-    if changes or game != target:
-        profile['libraries'] = libraries
-        profile.setdefault('arguments', {})['game'] = target
-        if game != target:
-            changes.append('game arguments --gameJar ' + paths[BASE] + ' --runtimeJar ' + paths[NEO_RUNTIME]
-                           + ' --nativeReference ' + paths[VANILLA_REFERENCE])
-    return changes
-
-
-def with_native_reference(profile):
-    """Give a profile an older installer wrote the vanilla reference it lacks: the library and its own game flag.
-
-    Versioned like the base it is measured against, as the installer versions it. Returns what was added (empty when the
-    profile already had both), so a dry run can say it and a real run writes the profile before staging into it. The
-    flag is never a second --gameJar: a launcher keeping the last value of a repeated flag would then launch the
-    resources-only jar as the game."""
-    added = []
-    libraries = profile.setdefault('libraries', [])
-    entry = next((e for e in libraries if ':'.join(e.get('name', '').split(':')[:2]) == VANILLA_REFERENCE), None)
-    if entry is None:
-        base = next((e for e in libraries if e.get('name', '').startswith(BASE + ':')), None)
-        if base is None:
-            raise ValueError('profile has no ' + BASE + ' library to measure a vanilla reference against')
-        version = base['name'].split(':')[2]
-        path = f'net/forbric/vanilla-reference/{version}/vanilla-reference-{version}.jar'
-        entry = dict(name=f'{VANILLA_REFERENCE}:{version}', downloads=dict(artifact=dict(path=path, sha1='', size=0)))
-        libraries.append(entry)
-        added.append('library ' + entry['name'])
-    game = profile.setdefault('arguments', {}).setdefault('game', [])
-    if '--nativeReference' not in game:
-        game += ['--nativeReference', '${library_directory}/' + entry['downloads']['artifact']['path']]
-        added.append('--nativeReference')
-    return added
+    if game == target:
+        return []
+    profile['arguments']['game'] = target
+    return ['game arguments --gameJar ' + paths[BASE] + ' --runtimeJar ' + paths[NEO_RUNTIME]
+            + ' --nativeReference ' + paths[VANILLA_REFERENCE] + ' (--libraryPath and ' + str(len(others))
+            + ' other argument(s) kept)']
 
 
 def recorded_base_sha1(sidecar):
@@ -382,7 +363,7 @@ def resolve_artifacts(profile, overrides):
         result[coordinate] = Path(local).resolve()
     entries = {}
     for entry in profile.get('libraries', []):
-        coordinate = ':'.join(entry['name'].split(':')[:2])
+        coordinate = coordinate_of(entry)
         if coordinate in result:
             path = entry.get('downloads', {}).get('artifact', {}).get('path')
             if not path or ntpath.isabs(path) or '..' in Path(path.replace('\\', '/')).parts:
@@ -800,8 +781,9 @@ def main():
     stale = stamp_problems(args.artifact)
     if stale:
         parser.error('the staged game is not the one this tree installs, so nothing was staged:\n  ' + '\n  '.join(stale)
-                     + '\nRun python3 tools/dev.py prepare and set FORBRIC_OLD=forbric-kernel/.dev/staged, or name the '
-                     'files with --artifact ' + BASE + '=<jar> --artifact ' + NEO_RUNTIME + '=<jar>')
+                     + '\nRun python3 tools/dev.py prepare (it stages forbric-kernel/.dev/staged, the default without '
+                     'FORBRIC_OLD), point FORBRIC_OLD at a prepared stage, or name the files with --artifact ' + BASE
+                     + '=<jar> --artifact ' + NEO_RUNTIME + '=<jar>')
     if not args.dry_run:
         if output.exists() and any(output.iterdir()):
             parser.error('output already contains evidence; choose a new --label or --output')
@@ -819,11 +801,10 @@ def main():
     else:
         profile_path = args.version_json
     profile = json.loads(profile_path.read_text(encoding='utf-8-sig'))
-    # An older installer's profile first (merged base + MinecraftForge carrier -> NeoForge's patched game + its carrier),
-    # then the sidecar for a profile that still lacks it.
-    rewritten = with_genuine_base(profile)
-    added = with_native_reference(profile)
-    if (rewritten or added) and not args.dry_run:
+    # Only the game arguments change; a profile an older installer wrote is refused here (exit 2), before anything is
+    # stopped or staged remotely, and its libraries are left as they are.
+    rewritten = with_game_arguments(profile)
+    if rewritten and not args.dry_run:
         profile_path.write_text(json.dumps(profile, ensure_ascii=False, indent=2) + '\n', encoding='utf-8')
     if not args.dry_run and not any(item.startswith(VANILLA_REFERENCE + '=') for item in args.artifact):
         base = next((item.split('=', 1)[1] for item in args.artifact if item.startswith(BASE + '=')), ARTIFACTS[BASE])
@@ -831,10 +812,8 @@ def main():
     entries = resolve_artifacts(profile, args.artifact)
     if args.dry_run:
         print('STOP_BY_PID ' + stop_command(args.instance))
-        if rewritten:
-            print('PROFILE_REWRITES ' + '; '.join(rewritten))
-        if added:
-            print('PROFILE_ADDS ' + '; '.join(added))
+        print('PROFILE_REWRITES ' + ('; '.join(rewritten) if rewritten else
+                                     'none (the game arguments already name the staged base, carrier and sidecar)'))
         print('CLEAN ' + json.dumps(CLEAN))
         for coordinate, (local, path) in entries.items():
             print('PUT_ARTIFACT ' + coordinate + ' ' + str(local) + ' -> ' + ntpath.join(args.mc, 'libraries', path))

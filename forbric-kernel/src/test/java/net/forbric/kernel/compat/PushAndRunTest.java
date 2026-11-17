@@ -38,7 +38,7 @@ class PushAndRunTest {
     void dryRunStagesExactlyFourArtifactsAndKeepsLauncherFiles() throws Exception {
         Path mods = Files.createDirectory(temp.resolve("mods"));
         Files.writeString(mods.resolve("a?b.jar"), "fixture");
-        Path profile = profile();
+        Path profile = newProfile(true);
         var result = DriverTools.script("push-and-run.py", Map.of("FORBRIC_OLD", stampedStage().toString()), "--dry-run", "--label", "baseline",
                 "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
                 "--version-json", profile.toString(), "--output", temp.resolve("unused-output").toString());
@@ -51,13 +51,12 @@ class PushAndRunTest {
                 && line.endsWith(base)), result.output());
         assertFalse(result.output().contains("PUT_ARTIFACT net.forbric:patched-mc-merged")
                 || result.output().contains("PUT_ARTIFACT net.forbric:forge-runtime"), result.output());
-        // A profile an older installer wrote is rewritten to the new installer's game and arguments, the vanilla
-        // reference included, in its own flag -- never a second --gameJar.
-        assertTrue(result.output().contains("PROFILE_REWRITES drop library net.forbric:patched-mc-merged:1; library "
-                + "net.forbric:patched-mc-neoforge:" + baseVersion() + "; drop library net.forbric:forge-runtime:1"),
-                result.output());
-        assertTrue(result.output().contains("--nativeReference net/forbric/vanilla-reference/" + baseVersion() + "/"),
-                result.output());
+        // The new installer's profile with its game arguments out of order: only the game arguments are rewritten,
+        // the vanilla reference in its own flag -- never a second --gameJar -- and no library is named.
+        String rewrites = result.output().lines().filter(line -> line.startsWith("PROFILE_REWRITES ")).findFirst().orElseThrow();
+        assertTrue(rewrites.startsWith("PROFILE_REWRITES game arguments --gameJar " + base), rewrites);
+        assertTrue(rewrites.contains("--nativeReference net/forbric/vanilla-reference/" + baseVersion() + "/"), rewrites);
+        assertFalse(rewrites.contains("library ") || rewrites.contains("PROFILE_ADDS"), rewrites);
         assertTrue(result.output().lines().anyMatch(line -> line.startsWith("PUT_ARTIFACT net.forbric:vanilla-reference ")
                 && line.contains("vanilla-reference")), result.output());
         String clean = result.output().lines().filter(line -> line.startsWith("CLEAN ")).findFirst().orElseThrow();
@@ -113,7 +112,7 @@ class PushAndRunTest {
     void aStagedGameFromOtherPinsIsRefusedInsteadOfGoingUpUnderThisTreesVersions() throws Exception {
         Path mods = Files.createDirectory(temp.resolve("mods"));
         Files.writeString(mods.resolve("a.jar"), "fixture");
-        Path profile = profile();
+        Path profile = newProfile(false);
         Path stage = stampedStage();
         Path carrierPins = stage.resolve("run").resolve(TestFixtures.NEO_CARRIER_JAR + ".pins");
         java.util.function.Function<String[], DriverTools.Result> dryRun = extra -> {
@@ -188,76 +187,92 @@ class PushAndRunTest {
     }
 
     /**
-     * A profile an older installer wrote (merged base, MinecraftForge carrier, both runtimes in one --runtimeJar, the
-     * sidecar at the merged base's version) becomes exactly what the new installer writes: NeoForge's patched game in the
-     * merged base's place, the carrier and the sidecar at this tree's pins, one value per flag, --libraryPath and every
-     * other library and argument untouched. A profile already in that shape is left alone, and one the rewrite cannot
-     * complete (no --libraryPath) is refused rather than guessed at.
+     * push-and-run rewrites only a profile's game arguments (plan Stage 4 C6: no library swap for an old profile). A
+     * profile an older installer wrote (merged base, MinecraftForge carrier, the old loader's jars) is refused with the
+     * advice to reinstall, and its libraries are not touched; so is one that names the game artifacts at other versions
+     * than this tree stages, or lacks one. The new installer's own profile has its game arguments made exactly the
+     * installer's -- one value per flag, --libraryPath and every other argument kept -- and nothing else changes.
      */
     @Test
-    void anOlderInstallersProfileIsRewrittenToTheNewInstallersGameAndArguments() throws Exception {
+    void anOlderInstallersProfileIsRefusedAndANewOneHasOnlyItsGameArgumentsRewritten() throws Exception {
         var result = python("""
-                import json
+                import copy, json
                 versions = m.artifact_versions()
                 base, neo = versions[m.BASE], versions[m.NEO_RUNTIME]
                 assert versions[m.VANILLA_REFERENCE] == base, versions
                 def library(name, path):
                     return dict(name=name, downloads=dict(artifact=dict(path=path, sha1='x', size=1)))
-                old = dict(id='26.2-forbric', libraries=[
-                    library('net.forbric:forbric-kernel:0.3.1', 'net/forbric/forbric-kernel/0.3.1/forbric-kernel-0.3.1.jar'),
-                    library('net.forbric:patched-mc-merged:26.2-65.0.1-26.2.0.93', 'net/forbric/patched-mc-merged/m/m.jar'),
-                    library('net.forbric:forge-runtime:26.2-65.0.1', 'net/forbric/forge-runtime/f/f.jar'),
-                    library('net.forbric:neoforge-runtime:26.2.0.88', 'net/forbric/neoforge-runtime/26.2.0.88/n.jar'),
-                    library('net.forbric:vanilla-reference:26.2-65.0.1-26.2.0.93', 'net/forbric/vanilla-reference/v/v.jar'),
-                    library('fixture:unchanged:1', 'fixture/unchanged.jar')],
-                    arguments=dict(game=['--gameJar', '${library_directory}/net/forbric/patched-mc-merged/m/m.jar',
-                                         '--runtimeJar', '${library_directory}/net/forbric/forge-runtime/f/f.jar;'
-                                         '${library_directory}/net/forbric/neoforge-runtime/26.2.0.88/n.jar',
-                                         '--libraryPath', '${library_directory}/a.jar;${library_directory}/b.jar',
-                                         '--nativeReference', '${library_directory}/net/forbric/vanilla-reference/v/v.jar',
-                                         '--width', '854'], jvm=[]))
-                changes = m.with_genuine_base(old)
-                assert changes, changes
-                names = [entry['name'] for entry in old['libraries']]
-                assert names == ['net.forbric:forbric-kernel:0.3.1', 'net.forbric:patched-mc-neoforge:' + base,
-                                 'net.forbric:neoforge-runtime:' + neo, 'net.forbric:vanilla-reference:' + base,
-                                 'fixture:unchanged:1'], names
-                paths = [entry['downloads']['artifact']['path'] for entry in old['libraries']]
                 expected_base = f'net/forbric/patched-mc-neoforge/{base}/patched-mc-neoforge-{base}.jar'
                 expected_neo = f'net/forbric/neoforge-runtime/{neo}/neoforge-runtime-{neo}.jar'
                 expected_sidecar = f'net/forbric/vanilla-reference/{base}/vanilla-reference-{base}.jar'
-                assert paths[1:4] == [expected_base, expected_neo, expected_sidecar], paths
-                assert old['libraries'][4]['downloads']['artifact'] == dict(path='fixture/unchanged.jar', sha1='x', size=1)
-                assert old['arguments']['game'] == [
-                    '--gameJar', '${library_directory}/' + expected_base, '--runtimeJar', '${library_directory}/' + expected_neo,
-                    '--libraryPath', '${library_directory}/a.jar;${library_directory}/b.jar',
-                    '--nativeReference', '${library_directory}/' + expected_sidecar, '--width', '854'], old['arguments']['game']
-                assert old['arguments']['jvm'] == [] and old['id'] == '26.2-forbric'
-                assert 'drop library net.forbric:forge-runtime:26.2-65.0.1' in changes, changes
-                # Nothing more to say for the sidecar, and a second pass changes nothing.
-                assert m.with_native_reference(old) == [] and m.with_genuine_base(old) == [], old
-                rewritten = json.dumps(old, sort_keys=True)
-                # The new installer's own profile (its exact shape) is already right.
-                new = dict(libraries=[library('net.forbric:patched-mc-neoforge:' + base, expected_base),
-                                      library('net.forbric:neoforge-runtime:' + neo, expected_neo),
-                                      library('net.forbric:vanilla-reference:' + base, expected_sidecar)],
-                           arguments=dict(game=['--gameJar', '${library_directory}/' + expected_base,
-                                                '--runtimeJar', '${library_directory}/' + expected_neo,
-                                                '--libraryPath', 'L', '--nativeReference', '${library_directory}/' + expected_sidecar]))
-                before = json.dumps(new, sort_keys=True)
-                assert m.with_genuine_base(new) == [] and json.dumps(new, sort_keys=True) == before
-                # Without --libraryPath there is no game library list to keep: refused, nothing changed.
-                broken = dict(libraries=[library('net.forbric:patched-mc-merged:1', 'm.jar')],
-                              arguments=dict(game=['--gameJar', 'm.jar']))
+                # A profile Forbric 0.2/0.4 wrote (the shape of a real one: the merged base, both carriers, the loader).
+                old = dict(id='26.2-forbric', libraries=[
+                    library('net.forbric:forbric-kernel:0.2.0', 'net/forbric/forbric-kernel/0.2.0/forbric-kernel-0.2.0.jar'),
+                    library('net.forbric:forbric-loader:0.2.0', 'net/forbric/forbric-loader/0.2.0/l.jar'),
+                    library('net.forbric:patched-mc-merged:26.2', 'net/forbric/patched-mc-merged/26.2/m.jar'),
+                    library('net.forbric:forge-runtime:26.2', 'net/forbric/forge-runtime/26.2/f.jar'),
+                    library('net.forbric:neoforge-runtime:26.2', 'net/forbric/neoforge-runtime/26.2/n.jar'),
+                    library('fixture:unchanged:1', 'fixture/unchanged.jar')],
+                    arguments=dict(game=['--gameJar', '${library_directory}/net/forbric/patched-mc-merged/26.2/m.jar',
+                                         '--runtimeJar', '${library_directory}/net/forbric/forge-runtime/26.2/f.jar;'
+                                         '${library_directory}/net/forbric/neoforge-runtime/26.2/n.jar',
+                                         '--libraryPath', '${library_directory}/a.jar'], jvm=[]))
+                before = json.dumps(old, sort_keys=True)
                 try:
-                    m.with_genuine_base(broken); raise AssertionError('a profile without --libraryPath was rewritten')
+                    m.with_game_arguments(old); raise AssertionError("an older installer's profile was rewritten")
+                except ValueError as refused:
+                    text = str(refused)
+                for part in ('it names net.forbric:patched-mc-merged:26.2', 'it names net.forbric:forge-runtime:26.2',
+                             'it names net.forbric:forbric-loader:0.2.0', 'it has no net.forbric:patched-mc-neoforge library',
+                             'it has no net.forbric:vanilla-reference library',
+                             'it names net.forbric:neoforge-runtime:26.2 where this tree stages net.forbric:neoforge-runtime:' + neo,
+                             'no longer swaps libraries', 'Run the new installer again with the same game directory'):
+                    assert part in text, (part, text)
+                assert json.dumps(old, sort_keys=True) == before, 'a refused profile must be left exactly as it was'
+                assert not hasattr(m, 'with_genuine_base') and not hasattr(m, 'with_native_reference')
+                # The new installer's own profile, exactly: nothing to say, nothing changed.
+                new = dict(id='26.2-forbric', libraries=[
+                    library('net.forbric:forbric-kernel:0.5.0', 'net/forbric/forbric-kernel/0.5.0/forbric-kernel-0.5.0.jar'),
+                    library('net.forbric:patched-mc-neoforge:' + base, expected_base),
+                    library('net.forbric:neoforge-runtime:' + neo, expected_neo),
+                    library('net.forbric:vanilla-reference:' + base, expected_sidecar),
+                    library('fixture:unchanged:1', 'fixture/unchanged.jar')],
+                    arguments=dict(game=['--gameJar', '${library_directory}/' + expected_base,
+                                         '--runtimeJar', '${library_directory}/' + expected_neo,
+                                         '--libraryPath', 'L', '--nativeReference', '${library_directory}/' + expected_sidecar], jvm=[]))
+                pristine = json.dumps(new, sort_keys=True)
+                assert m.with_game_arguments(new) == [] and json.dumps(new, sort_keys=True) == pristine
+                # Its game arguments out of order, a repeated flag, an extra argument: the arguments become the
+                # installer's, the extra kept after them; the libraries are the very same objects, unchanged.
+                moved = copy.deepcopy(new)
+                moved['arguments']['game'] = ['--width', '854', '--runtimeJar', 'stale.jar', '--libraryPath', 'L',
+                                              '--gameJar', 'stale-base.jar', '--runtimeJar', 'again.jar']
+                libraries = json.dumps(moved['libraries'], sort_keys=True)
+                changes = m.with_game_arguments(moved)
+                assert len(changes) == 1 and changes[0].startswith('game arguments --gameJar ' + expected_base), changes
+                assert json.dumps(moved['libraries'], sort_keys=True) == libraries
+                assert moved['arguments']['game'] == new['arguments']['game'] + ['--width', '854'], moved['arguments']['game']
+                assert moved['arguments']['jvm'] == [] and moved['id'] == '26.2-forbric'
+                assert m.with_game_arguments(moved) == [], 'a second pass changes nothing'
+                # The installer of another pin set wrote it: refused as well, never relabelled.
+                other = copy.deepcopy(new)
+                other['libraries'][2]['name'] = 'net.forbric:neoforge-runtime:26.2.0.92'
+                try:
+                    m.with_game_arguments(other); raise AssertionError('a profile at another NeoForge was rewritten')
+                except ValueError as refused:
+                    assert 'net.forbric:neoforge-runtime:26.2.0.92 where this tree stages' in str(refused), refused
+                # Without --libraryPath there is no game library list to keep: refused, nothing changed.
+                broken = copy.deepcopy(new)
+                broken['arguments']['game'] = ['--gameJar', 'm.jar']
+                try:
+                    m.with_game_arguments(broken); raise AssertionError('a profile without --libraryPath was rewritten')
                 except ValueError as refused:
                     assert '--libraryPath' in str(refused), refused
-                assert broken['libraries'][0]['name'] == 'net.forbric:patched-mc-merged:1'
-                # And the rewritten profile is one resolve_artifacts accepts, with every staged artifact at its new path.
-                entries = m.resolve_artifacts(json.loads(rewritten), [])
+                assert broken['arguments']['game'] == ['--gameJar', 'm.jar']
+                # And the profile is one resolve_artifacts accepts, with every staged artifact at its library's path.
+                entries = m.resolve_artifacts(json.loads(pristine), [])
                 assert {coordinate: path for coordinate, (_, path) in entries.items()} == {
-                    'net.forbric:forbric-kernel': 'net/forbric/forbric-kernel/0.3.1/forbric-kernel-0.3.1.jar',
+                    'net.forbric:forbric-kernel': 'net/forbric/forbric-kernel/0.5.0/forbric-kernel-0.5.0.jar',
                     m.BASE: expected_base, m.NEO_RUNTIME: expected_neo, m.VANILLA_REFERENCE: expected_sidecar}, entries
                 """);
         assertEquals(0, result.exit(), result.output());
@@ -266,6 +281,47 @@ class PushAndRunTest {
         assertEquals(0, versions.exit(), versions.output());
         assertTrue(versions.output().contains(baseVersion() + " " + baseVersion().substring(baseVersion().indexOf('-') + 1)),
                 versions.output());
+    }
+
+    /**
+     * The dry run against an older installer's profile stops with the refusal, exit 2, before it names any upload:
+     * nothing is staged under a profile that the kernel would refuse and that push-and-run no longer rewrites.
+     */
+    @Test
+    void theDryRunRefusesAnOlderInstallersProfileBeforeNamingAnyUpload() throws Exception {
+        Path mods = Files.createDirectory(temp.resolve("mods"));
+        Files.writeString(mods.resolve("a.jar"), "fixture");
+        var result = DriverTools.script("push-and-run.py", Map.of("FORBRIC_OLD", stampedStage().toString()), "--dry-run",
+                "--label", "old", "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
+                "--version-json", oldProfile().toString());
+        assertEquals(2, result.exit(), result.output());
+        assertTrue(result.output().contains("compat run failed: this profile is not one the installer of this tree wrote")
+                && result.output().contains("it names net.forbric:patched-mc-merged:1")
+                && result.output().contains("Run the new installer again with the same game directory"), result.output());
+        assertFalse(result.output().contains("PUT_ARTIFACT") || result.output().contains("PROFILE_REWRITES")
+                || result.output().contains("STOP_BY_PID"), result.output());
+    }
+
+    /** Without FORBRIC_OLD the stage is the one tools/dev.py prepare writes, never forbric-loader/run. */
+    @Test
+    void theDefaultStageIsThePreparedDevStage() throws Exception {
+        var result = python("""
+                import os
+                def load(old):
+                    if old is None:
+                        os.environ.pop('FORBRIC_OLD', None)
+                    else:
+                        os.environ['FORBRIC_OLD'] = old
+                    fresh = importlib.util.module_from_spec(importlib.util.spec_from_file_location('push_stage', sys.argv[1]))
+                    fresh.__spec__.loader.exec_module(fresh)
+                    return fresh
+                unset = load(None)
+                assert unset.STAGED == unset.KERNEL / '.dev/staged/run', unset.STAGED
+                assert 'forbric-loader' not in str(unset.STAGED), unset.STAGED
+                given = load('/given/stage')
+                assert given.STAGED == pathlib.Path('/given/stage/run'), given.STAGED
+                """);
+        assertEquals(0, result.exit(), result.output());
     }
 
     /**
@@ -352,8 +408,8 @@ class PushAndRunTest {
                 m.run_job = run_job
                 m.finish_run = lambda args, output, remote_tools, server, client, started, errors: 1 if errors else 0
                 mods = output / 'mods'; mods.mkdir(); (mods / 'a.jar').write_bytes(b'PK')
-                profile = output / 'profile.json'
-                profile.write_text(json.dumps(dict(libraries=[dict(name=f'net.forbric:{n}:1', downloads=dict(artifact=dict(path=f'x/{n}.jar')))
+                profile = output / 'profile.json'  # the installer's shape, at this tree's versions (with_game_arguments)
+                profile.write_text(json.dumps(dict(libraries=[dict(name=f'net.forbric:{n}:' + m.artifact_versions().get('net.forbric:' + n, '1'), downloads=dict(artifact=dict(path=f'x/{n}.jar')))
                     for n in ('forbric-kernel', 'patched-mc-neoforge', 'neoforge-runtime', 'vanilla-reference')],
                     arguments=dict(game=['--gameJar', 'x/patched-mc-neoforge.jar', '--runtimeJar', 'x/neoforge-runtime.jar',
                                          '--libraryPath', 'x/lib.jar', '--nativeReference', 'x/vanilla-reference.jar']))))
@@ -418,7 +474,7 @@ class PushAndRunTest {
         Files.writeString(mods.resolve("a*b.jar"), "two");
         var collision = DriverTools.script("push-and-run.py", Map.of(), "--dry-run", "--label", "baseline",
                 "--mc", "D:\\FixtureMC", "--version", "test-profile", "--mods", mods.toString(),
-                "--version-json", profile().toString());
+                "--version-json", oldProfile().toString());
         assertEquals(2, collision.exit(), collision.output());
         assertTrue(collision.output().contains("sanitized filename collision"));
         var unsafe = DriverTools.script("push-and-run.py", Map.of(), "--dry-run", "--label", "baseline",
@@ -488,8 +544,8 @@ class PushAndRunTest {
                 m.remote = lambda command: calls.append(command) or ''
                 m.put = lambda *a: calls.append(a)
                 mods = output / 'mods'; mods.mkdir(); (mods / 'a.jar').write_bytes(b'PK')
-                profile = output / 'profile.json'
-                profile.write_text(json.dumps(dict(libraries=[dict(name=f'net.forbric:{n}:1', downloads=dict(artifact=dict(path=f'x/{n}.jar')))
+                profile = output / 'profile.json'  # the installer's shape, at this tree's versions (with_game_arguments)
+                profile.write_text(json.dumps(dict(libraries=[dict(name=f'net.forbric:{n}:' + m.artifact_versions().get('net.forbric:' + n, '1'), downloads=dict(artifact=dict(path=f'x/{n}.jar')))
                     for n in ('forbric-kernel', 'patched-mc-neoforge', 'neoforge-runtime', 'vanilla-reference')],
                     arguments=dict(game=['--gameJar', 'x/patched-mc-neoforge.jar', '--runtimeJar', 'x/neoforge-runtime.jar',
                                          '--libraryPath', 'x/lib.jar', '--nativeReference', 'x/vanilla-reference.jar']))))
@@ -790,8 +846,35 @@ class PushAndRunTest {
         return DriverTools.run(Map.of(), "-c", prefix + body, DriverTools.COMPAT.resolve("push-and-run.py").toString(), temp.toString());
     }
 
+    /**
+     * The new installer's profile (Installer.profile): the kernel, NeoForge's patched game, its carrier and the vanilla
+     * reference at this tree's versions, and one other library. {@code shuffled} puts its game arguments out of the
+     * installer's order (a hand-edited or launcher-touched profile), so the dry run has a game-argument rewrite to show.
+     */
+    private Path newProfile(boolean shuffled) throws Exception {
+        String base = baseVersion(), neo = neoVersion();
+        String basePath = "net/forbric/patched-mc-neoforge/" + base + "/patched-mc-neoforge-" + base + ".jar";
+        String neoPath = "net/forbric/neoforge-runtime/" + neo + "/neoforge-runtime-" + neo + ".jar";
+        String sidecarPath = "net/forbric/vanilla-reference/" + base + "/vanilla-reference-" + base + ".jar";
+        String game = shuffled
+                ? "\"--nativeReference\",\"${library_directory}/" + sidecarPath + "\",\"--libraryPath\",\"${library_directory}/fixture/unchanged.jar\","
+                        + "\"--runtimeJar\",\"${library_directory}/" + neoPath + "\",\"--gameJar\",\"${library_directory}/" + basePath + "\""
+                : "\"--gameJar\",\"${library_directory}/" + basePath + "\",\"--runtimeJar\",\"${library_directory}/" + neoPath + "\","
+                        + "\"--libraryPath\",\"${library_directory}/fixture/unchanged.jar\",\"--nativeReference\",\"${library_directory}/" + sidecarPath + "\"";
+        return Files.writeString(temp.resolve(shuffled ? "new-profile-shuffled.json" : "new-profile.json"), """
+                {"libraries":[
+                  {"name":"net.forbric:forbric-kernel:1","downloads":{"artifact":{"path":"net/forbric/kernel/1/kernel.jar"}}},
+                  {"name":"net.forbric:patched-mc-neoforge:%s","downloads":{"artifact":{"path":"%s"}}},
+                  {"name":"net.forbric:neoforge-runtime:%s","downloads":{"artifact":{"path":"%s"}}},
+                  {"name":"net.forbric:vanilla-reference:%s","downloads":{"artifact":{"path":"%s"}}},
+                  {"name":"fixture:unchanged:1","downloads":{"artifact":{"path":"fixture/unchanged.jar"}}}
+                ],
+                "arguments":{"game":[%s],"jvm":[]}}
+                """.formatted(base, basePath, neo, neoPath, base, sidecarPath, game));
+    }
+
     /** A profile an older installer wrote: the merged base and both carriers in one --runtimeJar, no vanilla reference. */
-    private Path profile() throws Exception {
+    private Path oldProfile() throws Exception {
         return Files.writeString(temp.resolve("profile.json"), """
                 {"libraries":[
                   {"name":"net.forbric:forbric-kernel:1","downloads":{"artifact":{"path":"net/forbric/kernel/1/kernel.jar"}}},
