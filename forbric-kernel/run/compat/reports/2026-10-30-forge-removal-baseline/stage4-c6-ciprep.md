@@ -13,7 +13,8 @@ tag, no release, no download. Evidence: `~/Forbric-backups/stage4-notes/c6/cipre
 |---|---|
 | d126640c | build.yml: merge-loss ratchet step and the hidden-carrier pass (+ its summary) deleted, `ci-prepared-noforge.tsv` deleted, development-tools runs `installerTest`, timeout 75 -> 60, comments without Forge / merged base; build.gradle's `forbric.hideForgeCarrier` notice and its `linkToolTest` comment gone; `tools/test_ci_contract.py` fails on a workflow that names anything the tree no longer has |
 | 8810e790 | `ci-unstaged.tsv` and `ci-prepared.tsv` re-measured on CI-like clones of the C6 tree |
-| (this record) | record |
+| 792bd69e | record |
+| d3c66685, 1825a827, a4d6ff09 | review fixes (see "CIPREP review fixes") |
 
 ## Items
 
@@ -105,7 +106,7 @@ scratch, `--offline --no-daemon`, JDK 25.0.3, macOS, FORBRIC_OLD and MC_DIR unse
   `neoforge-26.2.0.93-universal.jar` copied in, the class passes 5/0/0 (`prepared-nativecoremod-with-dl.log`). It is
   the only test that reads that directory, so no other row depends on it.
 
-Rows the host cannot reproduce are kept from the last CI artifact (said in each file's header): unstaged — four
+Rows the JDK-25 measure did not show are kept from the last CI artifact (said in each file's header): unstaged — four
 `[fixture:java-25]` rows (MixinAbsorbedCallbackTransportWeaveTest x2, MixinOperationSeamTransportWeaveTest x2: the
 kernel job runs JDK 21; every other JAVA_25 requirement sits behind a staged fixture) and three Fabric Loader 0.19.3
 rows (FabricLoaderApiSurfaceTest, FabricMixinCompatTest x2: `TestFixtures.fabricLoaderJar` also looks in
@@ -117,7 +118,8 @@ skips" lines are exactly the kept rows (`ratchet-check-*.log`). Reasons now name
 and MixinFitLivenessCensusStagedTest x5 still skip unstaged, MixinFitLiveness x1 still skips prepared (kept, as
 measured); the C4 rows (ChainAnchorCensusStagedTest, SupersededFurnaceRemainderStagedTest) are present.
 
-**Not reproducible here, for the merger to read off CI**: JDK 21 and Linux for the unstaged profile; a real
+**Not reproducible here, for the merger to read off CI**: Linux for the unstaged profile (JDK 21 was available after
+all, see "CIPREP review fixes", finding 1); a real
 `dev.py prepare` (fresh NFRT build, its own `.forbric-build/dl`). The merger replaces both files with the first run's
 `skips-actual-ci-unstaged.tsv` (artifact kernel-test-results) and `skips-actual-ci-prepared.tsv` (kernel-prepared-skips)
 in one commit, then pushes again for a green ratchet (D47, owner answer 1).
@@ -186,3 +188,63 @@ No gates-all (D87). No zh run (no user-visible text changed).
   nothing derived is uploaded)". "About a third" (about 2032 of 5812) still holds.
 - **Stage 5**: delete build-merged-base.sh with forbric-loader and test_pins.py:79-80,96-97 with it; the `build` job.
 - **Player-facing wording**: none; CI is not user-visible.
+
+## CIPREP review fixes
+
+The review (`~/Forbric-backups/stage4-notes/c6/review-c6ciprep.md`) had four low findings and no blocking one. Each was
+checked again here; three are fixed in their own commits, one is accepted with its reason. Evidence:
+`~/Forbric-backups/stage4-notes/c6/ciprep/review-fixes/`.
+
+| finding | verdict | commit |
+|---|---|---|
+| 1. "this host has no JDK 21" (walls, record, ci-unstaged.tsv header) | confirmed: `/usr/libexec/java_home -V` lists only 25 and 17, but Gradle's `~/.gradle/jdks/eclipse_adoptium-21-aarch64-os_x.2/jdk-21.0.12+8` runs (Temurin 21.0.12). The review's JDK-21 run of the kernel job mirror (5812 / 2029 / 0, ratchet 0 new, 3 stale = the Fabric Loader 0.19.3 rows) skips exactly the 4 kept `[fixture:java-25]` rows more than the JDK-25 measure | a4d6ff09 (header; no row changes), walls.md corrected, this section |
+| 2. `forbric.hideForgeCarrier` notice deleted against the scout default | accepted, not reverted. The scout's default (keep the retired-name notice) was overridden by the wave-2 brief, which asks that `git grep` find no `hideForgeCarrier` outside history records, and by 05bb87f5's own message (the notice existed only while CI still passed the property). Cost, stated: a local command that still passes `-Pforbric.hideForgeCarrier` now runs the ordinary suite without a word, and R1's "read by nothing" line exists because the notice is gone (with it R1 would show 3 lines). No wave-2 lane edits build.gradle's lines 41-47 | — |
+| 3. the CI contract ignores `--tests` filters | confirmed, and wider than reported: the wrapper-call scan also stopped at the first `"`, so a quoted filter and every word after it were never read. Each `--tests` value must now select a class of the call's project's source sets (`src/*/java`), read as Gradle reads it: `*` wildcards, an upper-case start is a simple class name, a trailing `.method` (pattern) allowed; quoted words are kept | d3c66685 |
+| 4. nested `./gradlew` calls without `--no-daemon` | confirmed, in four places: kernel `installerTest`; installer `buildForbricJars`, `buildLinkCheck`, and `bundleForbric`'s `printBootClasspath`. All four now pass `--no-daemon` | 1825a827 |
+
+### Red controls and checks
+
+| check | environment | result |
+|---|---|---|
+| test_ci_contract on the tip | python3 | 4 OK (`F3-tip.log`) |
+| control: the tip's self-test judged by 792bd69e's checker (`F3-control.py`) | python3 | FAIL, missing exactly `--tests net.forbric.tools.NoSuchGoneTest` and `--tests *NoSuchClassAnywhere*`; the three real filters beside them (FQN, quoted wildcard, simple name + method) are flagged by neither checker (`F3-control-old-checker.log`) |
+| review's probes with the new checker | python3 | the `--tests MergedBaseHookLossRatchetTest` probe is now flagged; R1 still exactly 4 lines (its old filter ran in forbric-loader, where the class still exists); the other 6 probes unchanged (`F3-probes-after.log`) |
+| contract on a CRLF copy of build.yml | python3 | no problems (`F3-crlf.log`) |
+| control: kernel `installerTest` with `--no-daemon` at 792bd69e | lane-env, props.txt `--offline`, heavy.sh, JDK 25 | 11 classes / 0 failed; the nested installer build ran inside another checkout's idle daemon (pid 60297 received `Build{currentDir=…/s4c5-c6ciprep/forbric-kernel-installer}`) (`F4-control-792bd69e-*.log`, `F4-daemon-log-scan.log`) |
+| control: installer `jar -x buildForbricJars -x buildLinkCheck` with the old build file | same | a new persistent daemon (96226) received the nested `printBootClasspath` build from this worktree and stayed alive; killed (`F4-control-printBootClasspath-daemon.log`) |
+| kernel `installerTest` after the fix | same | 11 classes / 0 failed; two single-use daemons (outer and nested), no daemon alive that received a build from this worktree (`F4-after-fix-*.log`, `F4-daemon-log-scan.log`) |
+| installer `buildLinkCheck --rerun` after the fix | same | BUILD SUCCESSFUL, single-use daemon, no new daemon (`F4-buildLinkCheck.log`) |
+| installer jar, old vs new build file | same | byte-identical (`cmp`), so `printBootClasspath` still yields the same library list |
+
+`buildForbricJars` was not executed: it builds online and every run here is `--offline`; its change is the same
+one-word change as `buildLinkCheck`'s, which ran.
+
+### Gates and suite
+
+No gate's subject changed, so none was re-run (D87/D89): gate-m17 builds the installer with `-x buildForbricJars -x
+buildLinkCheck`, and the installer jar it gets is byte-identical; gate-m0 runs the installer's `installerTest -x
+buildLinkCheck` itself, which reaches none of the four calls; the contract and the TSV header are read by no gate.
+
+Full suite at a4d6ff09 (`heavy.sh ./gradlew --no-daemon $(cat .stage4/props.txt) -Pforbric.requireFixtures=all jar cleanTest test
+--continue`; lane-env, FORBRIC_OLD = the lane's `.stage4`, MC_DIR unset, FORBRIC_GATE_CACHE unset, JDK 25.0.3, pinned `--offline`):
+5966 tests / 0 skipped / 5 failed, the same five names as `c6/failures-w1.txt` (the D58 fixture reds), 0 new
+(`review-fixes/suite.log`, `failures-review-fixes.txt`). No gates-all, no zh run (no user-visible text changed).
+
+### First-run risks the review named (for the merger; not changed here)
+
+- R-a: the real `dev.py prepare` has not run on CI since cf0498eb; the first run is cold. Timeout 60 stays.
+- R-b: development-tools now runs 11 installer classes on Windows, 10 of them for the first time there (nested
+  `gradlew.bat`, now with `--no-daemon`; `Files.createSymbolicLink` in DevPrepareRetiredTest and OldInstallCleanupTest).
+  A red there goes to the INST/LINK owner.
+- R-c: the lane's gate pre-measure ran with MC_DIR unset; CI sets `.dev/minecraft`.
+- R-d: no CI step passes `--continue`, so a failing unit test stops skipRatchet and no `skips-actual-*.tsv` is uploaded.
+  Not changed here: the kernel step's command is the one the introduction's CI bullet quotes (test_ci_contract checks
+  it), and the introduction is DOCS's. The TSVs must come from a CI run of the merged wave-2 tree (VER adds
+  OldReleaseWordingTest, 3 tests, which these TSVs never measured).
+
+### Open items added by the review
+
+- Gate scripts and run/ tools still start top-level `gradlew` calls without `--no-daemon` (`git grep` counts 72 lines,
+  for example gate-m0.sh:360-362 and lib.sh's `printBootClasspath`). They are not nested in a Gradle build, and on CI
+  the runner ends with the job; locally each leaves or reuses an idle daemon. Owner: whoever next owns the gate
+  harness; not CI-blocking.
