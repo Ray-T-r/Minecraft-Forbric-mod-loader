@@ -74,7 +74,7 @@ boots: there is no Knot, no ModLauncher, no FancyModLoader discovery, no module 
 ```
 system class loader  (BOOT side)
  ├─ forbric-kernel.jar            net.forbric.kernel.{boot,classloading,discovery,fabric,transform,mixin,
- │                                 access,metadata,mapping,interop,ui,util,soak}, net.forbric.api,
+ │                                 access,metadata,mapping,interop,ui,util,soak,linkcheck}, net.forbric.api,
  │                                 vendored net.fabricmc.api / net.fabricmc.loader surface
  └─ its dependencies               ASM, sponge-mixin, SAT4J, NightConfig, tiny-remapper, class-tweaker, mapping-io
      │  new ForbricClassLoader(owned, parent)
@@ -193,8 +193,9 @@ server rejects `--gameDir`, so `KernelBoot` strips it on that side. The game ver
    `--runtimeJar` must carry NeoForge completely (loader SPI, `ModContainer`, `FMLLoader`, `FMLEnvironment`, its
    `neoforge.mods.toml`; a jar with only the manifest is reported as a NeoForge mod), and NeoForge must be carried by
    something the launch owns. A failure logs each problem and the fix (rerun the installer with *Built artifacts*
-   empty) and stops with exit code `2`; `-Dforbric.launchInputCheck=off` only warns. An install made by Forbric 0.3.x
-   or earlier (or a 0.4.0-dev build from before MinecraftForge was removed) is recognised first, by any of three plain
+   empty) and stops with exit code `2`; `-Dforbric.launchInputCheck=off` only warns. When this kernel is launched
+   over an install made by Forbric 0.3.x or earlier (or by a 0.4.0-dev build from before MinecraftForge was removed),
+   that install is recognised first, by any of three plain
    signals — the base's `Block` implements a `net/minecraftforge/` interface, the base embeds
    `META-INF/forbric/native-reference/FORGE/index.tsv`, or a `--runtimeJar` is a complete MinecraftForge carrier — and
    refused with exit `2` and "run the new installer over the same game directory", also with the switch off. Then
@@ -646,11 +647,15 @@ is left is the judgement and the refusal:
 - **Data a MinecraftForge build stored** — swapping a mod's MinecraftForge build for its NeoForge build loses what the
   two builds store differently, as the same swap between the native loaders loses it (for example tombstone's
   `ForgeCaps` and MinecraftForge's own `forge:swim_speed` attribute). Forbric does not migrate it; gate-m59 pins those
-  rows against the native swap (`canary/forge-swap/expected-losses.tsv`) and holds every loss Forbric itself would
-  cause at zero.
-- **An old install** — a profile written by Forbric 0.3.x or earlier, still pointing at the merged base, is refused
-  at launch with exit `2` (§3.2 step 0); rerunning the new installer over the same game directory replaces it, and the
-  installer removes what the old one left behind (§13).
+  rows (`canary/forge-swap/expected-losses.tsv`) and holds every loss Forbric itself would cause at zero for the mods it
+  drills. Three of the file's six rows are measured lost on the native swap too; the other three have no native row
+  and are judged from the mod's code (`NO NATIVE ROW`).
+- **An old install** — a profile written by Forbric 0.3.x or earlier names its own kernel version
+  (v0.3.1-beta2's names `net.forbric:forbric-kernel:0.3.1-beta2`), so it keeps launching that old kernel, which never runs this check; rerunning the new
+  installer over the same game directory replaces it, and the installer removes what the old one left behind (§13).
+  When the new kernel is handed an old install's game base (a kernel jar swapped in by hand, or two 0.4.0-dev builds
+  from either side of the removal sharing the `forbric-kernel:0.4.0-dev` coordinate; gate-m17's control N), the launch
+  is refused with exit `2` (§3.2 step 0).
 
 ### 5.4 Cross-ecosystem services that are not events
 
@@ -808,7 +813,7 @@ passed through without being changed (a **Miss**, logged at ERROR immediately) a
 classes never loaded: `[Forbric/Anchor] N of M declared repair(s) landed; …, and H hedge(s) correctly found nothing to
 do`, followed by one INFO line per hedge naming it and what it is kept for (`hedge <transformer> on <class> found
 nothing to do; it is kept for: …`), so a hedge count can be traced to its claim. A hedge is a repair declared as
-possibly idle; gate-m1's zero-mod boot on NeoForge's base read `65 of 99 … 0 hedge(s)` at the Stage 4 C4 close. `RepairDriftCensus` (`run/compat/repair-drift.sh`) replays the claims against a *candidate*
+possibly idle; gate-m1's zero-mod boot on NeoForge's base read `71 of 107 … 0 hedge(s)` at the C6 wave-1 tip (9cd04fc1). `RepairDriftCensus` (`run/compat/repair-drift.sh`) replays the claims against a *candidate*
 game build — the question a carrier bump asks. It runs `VanillaMemberTwinInjector` first, as the boot does, so it needs
 the vanilla-reference sidecar among its jars (repair-drift.sh passes the staged one); without it the twins stand down
 and the replay says so (`H hedge(s) stood down`, each `HEDGED`) instead of printing its all-clear.
@@ -1330,7 +1335,7 @@ game does the work:
   (`-Dforbric.fabricFuel=off`, `-Dforbric.fabricFuel.returnHooks=off`).
 - **Experience from a break** — NeoForge computes it in `BlockDropsEvent` and pops it once in `handleBlockDrops`;
   Fabric mods hook vanilla's `Block.tryDropExperience`, which nothing in NeoForge's game calls. The kernel's listener
-  at `LOWEST` (installed on NeoForge's bus by `KernelServerDutiesInstaller`, §5.2) runs the relay of
+  at `LOWEST` (installed on NeoForge's bus by `KernelServerDutiesInstaller`, see "Server duties" below) runs the relay of
   `tryDropExperience` (`UncalledValueRelay`, §7.4.1) for a block whose native `spawnAfterBreak` asked it, handing it
   the event's value and dropping what it would have popped, so a Fabric mod's replaced or cancelled ore experience
   decides the experience once, where NeoForge pops it. A NeoForge listener at `LOWEST` registered after the kernel's
@@ -1421,7 +1426,7 @@ translating pairwise:
 | Type | Role |
 | --- | --- |
 | `Ecosystem`, `Side` | the one ecosystem and side vocabulary |
-| `ForeignType` | 46 rows naming one NeoForge concept's class — names only. Its MinecraftForge column and the rows only MinecraftForge read are gone; folding it into plain constants is a later step |
+| `ForeignType` | 49 rows naming one NeoForge concept's class — names only. Its MinecraftForge column and the rows only MinecraftForge read are gone; folding it into plain constants is a later step |
 | `DiscoveredMod`, `UnifiedDependency`, `VersionPredicate`, `ModIds` | the mod and dependency model |
 | `ModPresence`, `ModCatalog` | "is X running", and the list a player sees with status `OK` / `DEGRADED` / `FAILED` |
 | `OperationSeams`, `CallbackSeams`, `LookupOutcomes`, `VirtualProperties` | what the code the adapters of §7.4 write calls at run time: a callback run around a proved call inside a carrier gateway, a callback carried to its proved program point, a lookup's outcome steering its caller's cache, a property read only through a proved field getter |
@@ -1745,7 +1750,7 @@ install), and a one-line verdict.
 
 It no longer builds anything the kernel runs on or is built against: the installer no longer ships or runs the merge
 tools (`MergedBaseBuilder`, `EditSplicer`, `MergedLinkChecker`, `RuntimeInteropPatcher` and the rest), nothing builds
-`:mergeToolsJar` for it, the link baseline is gone, and developer stages come from `tools/dev.py prepare`, not from the
+`:mergeToolsJar` for it, nothing reads the link baseline any more except its own provenance test, and developer stages come from `tools/dev.py prepare`, not from the
 shell pipeline under `forbric-loader/run`. What is left:
 
 - **Test inputs.** The canary mod sources in `run/livemod-src*`/`testmod-src` (`build-testmods.sh`; `tools/dev.py`
@@ -1755,8 +1760,9 @@ shell pipeline under `forbric-loader/run`. What is left:
   `forbric-loader/run` when no `FORBRIC_OLD` / `-Pforbric.stagedRoot` / `.dev` stage is given; such a stage is unstamped
   and the tools that check provenance refuse it. Set `FORBRIC_OLD` to a stage `tools/dev.py prepare` made.
 - **Leftovers for Stage 5**, which deletes the directory: `run/build-merged-base.sh` (no CI step runs it any more;
-  `tools/test_pins.py` and `LinkBaselineProvenanceTest` still read it), and CI's `build` job, which still bootstraps and
-  builds `forbric-loader`.
+  `tools/test_pins.py` and `LinkBaselineProvenanceTest` still read it), the old link baseline
+  (`src/test/resources/merge/link-check-baseline.txt` and its `.provenance.json`, read only by
+  `LinkBaselineProvenanceTest`), and CI's `build` job, which still bootstraps and builds `forbric-loader`.
 
 Its own boot path (Knot host, eight fabric-loader substrate patches applied by `bootstrap.sh`) is not used by the
 kernel. The weld's design is documented in `forbric-loader/README.md` and `forbric-loader/run/README.md`.
@@ -2089,11 +2095,12 @@ Break one and the failure usually surfaces far from the cause.
     a jar name, a mixin config, mixin class, handler, `@Local` or `@Share` name, a mod's implementation class
     (fabric-api is a mod: its public API may be called, its implementation is not named), a one-mod bytecode
     template or a body hash. A mod is a sample and a test case, never the condition (§16.1).
-13. **A loading failure stops like native.** A mod that throws while the game loads stops the boot with its loader's
-    own error, as native NeoForge 26.2.0.93 (and Fabric Loader for its entrypoints) does; no phase contains it and
-    carries on (§3.4).
+13. **A loading failure stops.** A NeoForge mod that throws while the game loads stops the boot with NeoForge's own
+    error, as native NeoForge 26.2.0.93 does; no phase contains it and carries on (§3.4). A Fabric `main` entrypoint
+    that throws stops the run too (exit `1`), where the native run carries on (exit `0`; the Stage 4 record, D87(e));
+    that difference is open (§19).
 14. **MinecraftForge is refused, never loaded.** A jar is judged from its bytes by `LoaderHalfJudge` alone, a refused
-    jar's claim is never an ecosystem and never read as a library, and an old install is refused at launch (§5.3).
+    jar's claim is never an ecosystem and never read as a library, and this kernel refuses to launch over an old install's game base (§5.3).
 
 ## 19. Current state and known boundaries
 
@@ -2202,6 +2209,7 @@ Located, not yet fixed (no impossibility proof):
 - A deliberate difference: genuine NeoForge 26.2.0.88 crashed rendering a Corpse corpse (`NoSuchFieldError
   NeoForgeMod.NAMETAG_DISTANCE`); `ZeroNameTagMigrationInjector` proves the field is only used to set 0 and reads
   `Attributes.NAME_TAG_DISTANCE` instead, so the corpse renders without a name tag.
+
 **Since Stage 4** (NeoForge's own base):
 
 - `System.out`/`err` are wrapped as vanilla and Fabric wrap them; native NeoForge does not.
@@ -2213,8 +2221,9 @@ Located, not yet fixed (no impossibility proof):
   locals inside the method, so the neighbour-change wrap cannot serve it); a Fabric TAIL `@Inject` on `ItemStack.useOn`
   most likely never runs server-side, because NeoForge's server path returns from `CommonHooks.onPlaceItemIntoWorld`
   before vanilla's tail (bytecode only, not measured).
-- Stopping like native, open: a Fabric `main` entrypoint that throws now ends the run with exit `1` (whether that is
-  what a Fabric mod gets natively here is an open owner question); a NeoForge mod whose required dependency failed still runs its later phases (natively the boot
+- Stopping like native, open: a Fabric `main` entrypoint that throws now ends the run with exit `1`, where the native
+  run carries on with exit `0` (in the pure-Fabric A/B, Forbric's signature for the same four mods moved from `POLICY_STOP:78`
+  to `EXIT:1`, verdicts unchanged; whether to keep that is an open owner question); a NeoForge mod whose required dependency failed still runs its later phases (natively the boot
   has stopped); a stop inside the game shows a message box where native NeoForge draws the error in the game window;
   the crash report's mod list is empty and its "Complete loading of N" count short; datapack-registry declarations are
   processed after the freeze on a client whose Fabric mains run in `Minecraft.<init>`; and NeoForge's mod construction
