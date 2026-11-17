@@ -34,7 +34,8 @@ import java.util.Locale;
  * test or a support session can ask for either. The rest of the installer's window is English only, as it was; these
  * two sentences are bilingual because they are the ones this change rewrote, and the kernel's rule is that every
  * user-facing sentence it changes exists in both languages. The clean-up's lines ({@link OldInstallCleanup}) came later
- * under the same rule.
+ * under the same rule, and so did the two sentences that name an older Forbric's merged game base
+ * ({@link GameArtifacts}), reworded when 0.4.x became the first release without MinecraftForge.
  */
 final class InstallerText {
 	private InstallerText() {
@@ -61,6 +62,30 @@ final class InstallerText {
 				: "Fabric and NeoForge mods go in " + mods + " (a launcher with per-version isolation uses versions/"
 						+ versionId + "/mods instead). Forbric no longer loads MinecraftForge mods: use their NeoForge or "
 						+ "Fabric builds.";
+	}
+
+	// --- an older Forbric's merged game base, supplied as "Built artifacts" (GameArtifacts) -----------------------
+	// Which Forbric built one is named so that it stays true once 0.4.x ships, the first release line without
+	// MinecraftForge: every release up to v0.3.1-beta2 (0.3.x or earlier), and the 0.4.0-dev builds before the removal.
+
+	/** The problem a supplied merged base gets, in place of the base. */
+	static String oldMergedBase() {
+		return chinese()
+				? "它是 Forbric 0.3.x 或更早版本（或仍带 MinecraftForge 的 0.4.0-dev 开发构建）生成的合并游戏底包，仍带有 "
+						+ "MinecraftForge 的补丁。本安装器使用 NeoForge 修补过的 Minecraft，并且会自己构建它。"
+				: "It is the merged game base Forbric 0.3.x or earlier (or a 0.4.0-dev build that still had MinecraftForge) "
+						+ "built; it still carries MinecraftForge's patches. This installer runs on NeoForge's patched "
+						+ "Minecraft, which it builds itself.";
+	}
+
+	/** A merged base found where the base was looked for, under the name an older Forbric gave it. */
+	static String oldMergedBaseInDirectory(String oldBase) {
+		return chinese()
+				? "这个目录里有 " + oldBase + "，它是 Forbric 0.3.x 或更早版本（或仍带 MinecraftForge 的 0.4.0-dev 开发构建）"
+						+ "生成的合并游戏底包，仍带有 MinecraftForge 的补丁；本安装器使用的是 NeoForge 修补过的 Minecraft。"
+				: "This directory holds " + oldBase + ", the merged game base Forbric 0.3.x or earlier (or a 0.4.0-dev "
+						+ "build that still had MinecraftForge) built; it still carries MinecraftForge's patches, and this "
+						+ "installer runs on NeoForge's patched Minecraft.";
 	}
 
 	// --- the clean-up of an older install's files (OldInstallCleanup) ---------------------------------------------

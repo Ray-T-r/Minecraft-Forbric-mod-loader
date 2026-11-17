@@ -28,6 +28,19 @@ public final class SuppliedArtifactContentTest {
 	private static final String NEO = ArtifactBuilder.NEOFORGE_RUNTIME;
 
 	public static void main(String[] args) throws Exception {
+		// The sentences asserted below are English, and the installer speaks Chinese in a zh locale: pin English, as
+		// OldInstallCleanupTest does (olderForbricInChinese forces Chinese for its half), and give the property back.
+		String language = System.getProperty("forbric.dialogLanguage");
+		System.setProperty("forbric.dialogLanguage", "en");
+		try {
+			run(args);
+		} finally {
+			if (language == null) System.clearProperty("forbric.dialogLanguage");
+			else System.setProperty("forbric.dialogLanguage", language);
+		}
+	}
+
+	private static void run(String[] args) throws Exception {
 		Path work = Files.createDirectories(Path.of(args[0]));
 		int checks = 0;
 
@@ -81,12 +94,11 @@ public final class SuppliedArtifactContentTest {
 		requireProblem(BASE, jar(work.resolve("vanilla.jar"), patchedGame(MC, false, false, false)), "plain Minecraft 26.2");
 		requireProblem(BASE, jar(work.resolve("mc-26.1.jar"), patchedGame("26.1", true, false, false)),
 				"Minecraft 26.1, but this install is for Minecraft 26.2");
-		// The merged base Forbric 0.4 and earlier built: refused by name, whichever of its marks it shows.
-		requireProblem(BASE, jar(work.resolve("mc-merged.jar"), patchedGame(MC, true, true, false)), GameArtifacts.OLD_INSTALL);
+		// The merged base Forbric 0.3.x and earlier built: refused by name, whichever of its marks it shows.
+		requireProblem(BASE, jar(work.resolve("mc-merged.jar"), patchedGame(MC, true, true, false)), OLD_BASE_EN);
 		requireProblem(BASE, jar(work.resolve("mc-forge.jar"), patchedGame(MC, false, true, false)),
 				"It is Minecraft 26.2 patched by MinecraftForge.");
-		requireProblem(BASE, jar(work.resolve("mc-merged-index.jar"), patchedGame(MC, true, false, true)),
-				GameArtifacts.OLD_INSTALL);
+		requireProblem(BASE, jar(work.resolve("mc-merged-index.jar"), patchedGame(MC, true, false, true)), OLD_BASE_EN);
 		checks += 5;
 
 		// ---- NeoForge, but not the runtime Forbric assembles; and the wrong file in the runtime's place ----
@@ -170,7 +182,8 @@ public final class SuppliedArtifactContentTest {
 			require(message.contains("Leave \"Built artifacts\" empty"), "missing-file error has no way out: " + message);
 			require(message.indexOf("Leave \"Built artifacts\"") < message.indexOf("Developers"),
 					"the developer detail comes before the player's answer: " + message);
-			require(!message.contains("Forbric 0.4"), "a directory with no old merged base was said to hold one: " + message);
+			require(!message.contains("merged game base"), "a directory with no old merged base was said to hold one: "
+					+ message);
 		}
 		checks++;
 
@@ -185,10 +198,13 @@ public final class SuppliedArtifactContentTest {
 		} catch (IOException expected) {
 			String message = expected.getMessage();
 			require(message.contains("cannot find patched-mc-neoforge-26.2.jar in "), "the missing base not named: " + message);
-			require(message.contains(older.resolve("patched-mc-merged-26.2.jar")
-					+ ", the merged game base Forbric 0.4 or earlier built"), "the old merged base not named: " + message);
+			require(message.contains("This directory holds " + older.resolve("patched-mc-merged-26.2.jar") + ", the "
+					+ "merged game base Forbric 0.3.x or earlier (or a 0.4.0-dev build that still had MinecraftForge) "
+					+ "built; it still carries MinecraftForge's patches"), "the old merged base not named: " + message);
 		}
 		checks++;
+
+		checks += olderForbricInChinese(work, older);
 
 		checks += doctor(work, base, neo, forgeRuntime, wrong);
 
@@ -260,7 +276,7 @@ public final class SuppliedArtifactContentTest {
 
 	/**
 	 * Minecraft {@code version} as a base carries it: with NeoForge's patches (the real base), with MinecraftForge's
-	 * too (the merged base Forbric 0.4 and earlier built), and with the MinecraftForge native-reference index that merge
+	 * too (the merged base Forbric 0.3.x and earlier built), and with the MinecraftForge native-reference index that merge
 	 * embedded.
 	 */
 	private static Map<String, byte[]> patchedGame(String version, boolean neoPatched, boolean forgePatched,
@@ -344,6 +360,56 @@ public final class SuppliedArtifactContentTest {
 	private static void requireOk(String coordinate, Path jar) {
 		String problem = GameArtifacts.problem(coordinate, jar, MC);
 		require(problem == null, coordinate + " refused a correct " + jar.getFileName() + ": " + problem);
+	}
+
+	/**
+	 * What a supplied merged base is told, in English. Owner, 2026-11-17: 0.4.x is the first release without
+	 * MinecraftForge, so the Forbric that built one is named as the line that had it, never as "0.4 or earlier", which a
+	 * 0.4.x player would read as their own version.
+	 */
+	private static final String OLD_BASE_EN = "It is the merged game base Forbric 0.3.x or earlier (or a 0.4.0-dev build "
+			+ "that still had MinecraftForge) built; it still carries MinecraftForge's patches. This installer runs on "
+			+ "NeoForge's patched Minecraft, which it builds itself.";
+	/** The same two sentences in Chinese ({@link InstallerText}: both languages for every sentence it changes). */
+	private static final String OLD_BASE_ZH = "它是 Forbric 0.3.x 或更早版本（或仍带 MinecraftForge 的 0.4.0-dev 开发构建）"
+			+ "生成的合并游戏底包，仍带有 MinecraftForge 的补丁。本安装器使用 NeoForge 修补过的 Minecraft，并且会自己构建它。";
+	/** "0.4 or earlier" in either language: the old claim, true of no 0.4.x release. */
+	private static final java.util.regex.Pattern OLD_CLAIM =
+			java.util.regex.Pattern.compile("0\\.4 (or|and) (earlier|older)|0\\.4 ?(或|及)(更早|以前|之前)");
+
+	/**
+	 * Both old-base sentences with the language forced to Chinese ({@code -Dforbric.dialogLanguage=zh}, as a zh locale
+	 * gives): the supplied base's problem and the directory's line are the Chinese ones, and neither language makes the
+	 * old claim. The property is restored, so the checks after this one see the English the rest assert.
+	 */
+	private static int olderForbricInChinese(Path work, Path older) throws IOException {
+		Path merged = jar(work.resolve("zh/mc-merged.jar"), patchedGame(MC, true, true, false));
+		String english = GameArtifacts.problem(BASE, merged, MC);
+		require(english.equals(OLD_BASE_EN), "the English old-base problem is not the expected sentence: " + english);
+		String before = System.getProperty("forbric.dialogLanguage");
+		String chinese;
+		String chineseDirectory;
+		try {
+			System.setProperty("forbric.dialogLanguage", "zh");
+			chinese = GameArtifacts.problem(BASE, merged, MC);
+			try {
+				GameArtifacts.locate(MC, older.getParent());
+				throw new AssertionError("an older Forbric's stage was located (zh)");
+			} catch (IOException expected) {
+				chineseDirectory = expected.getMessage();
+			}
+		} finally {
+			if (before == null) System.clearProperty("forbric.dialogLanguage");
+			else System.setProperty("forbric.dialogLanguage", before);
+		}
+		require(OLD_BASE_ZH.equals(chinese), "the Chinese old-base problem is not the expected sentence: " + chinese);
+		require(chineseDirectory.contains("这个目录里有 " + older.resolve("patched-mc-merged-26.2.jar") + "，它是 Forbric "
+				+ "0.3.x 或更早版本（或仍带 MinecraftForge 的 0.4.0-dev 开发构建）生成的合并游戏底包"),
+				"the Chinese directory line does not name the old merged base: " + chineseDirectory);
+		for (String said : List.of(english, chinese, chineseDirectory, InstallerText.oldMergedBaseInDirectory("x"))) {
+			require(!OLD_CLAIM.matcher(said).find(), "an old-base sentence says \"0.4 or earlier\": " + said);
+		}
+		return 3;
 	}
 
 	private static void requireProblem(String coordinate, Path jar, String expected) {

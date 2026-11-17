@@ -236,7 +236,7 @@ stand-in (`weave/absorbeddamage/net/minecraftforge/common/ForgeHooks.java`), sti
 The installer builds only NeoForge's patched game (sha1 `67bbf24f…`, link check base-first and carrier-first
 `dangling references: 0` over 13,394 classes) and installs `net.forbric:patched-mc-neoforge:26.2-26.2.0.93` with one
 `--runtimeJar` and the sidecar; the kernel compiles and tests against G + carrier; launchers run G; an install made by
-Forbric 0.4 or earlier is refused with exit 2 (D9). The first genuine boots hit three kernel walls, each fixed with a unit
+Forbric 0.3.x or earlier (or a 0.4.0-dev build that still had MinecraftForge) is refused with exit 2 (D9). The first genuine boots hit three kernel walls, each fixed with a unit
 test: W1 "Unknown addon" one second after joining (122bf712), W2 `AbstractMethodError` on the first axolotl tick from a
 guest mixin's private `self()` hiding NeoForge's default (a1221860), W3 fabric-block-api's trapdoor rule not attached
 (14fb5fe7). W4 (three client-neo-pack jars NeoForge .93 cannot run natively) is native; W5 (BCLib's tag shears) was
@@ -402,8 +402,9 @@ Totals: C4 18, C4+C5 6, C5 34, C5 (tool) 1, P1 6.
 
 - MinecraftForge mods no longer load; a dedicated server with a MinecraftForge-only jar in `mods/` stops at launch
   (`-Dforbric.compatibilityPolicy=continue` launches anyway); a client asks (Stage 3).
-- An install made by Forbric 0.4 or earlier is refused with exit 2 and the message to rerun the new installer on the same
-  game directory (D9).
+- An install made by Forbric 0.3.x or earlier (or a 0.4.0-dev build that still had MinecraftForge) is refused with exit 2
+  and the message to rerun the new installer on the same game directory (D9; worded so since C6 VER, 0.4.x being the
+  first release without MinecraftForge).
 - Hoppers follow NeoForge's semantics (plan; C5's hopper Fabric-storage parity check still to run).
 - Shears: **no longer a loss** (D35). BCLib's tag shears shear sheep and snow golems again. Approximations: tag shears on
   those mobs follow NeoForge's IShearable answer (PASS when not shearable) rather than vanilla's CONSUME; a Fabric shears

@@ -193,7 +193,7 @@ public final class LinkCheckToolTest {
 		}
 		Files.copy(intact, neo, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
 
-		// The merged base Forbric 0.4 and earlier built: NeoForge's patches AND MinecraftForge's. It links (the old
+		// The merged base Forbric 0.3.x and earlier built: NeoForge's patches AND MinecraftForge's. It links (the old
 		// install's carrier set held both families) -- here against a carrier that has both -- and is still refused by
 		// its content, by name, before any link check, so it never reaches a profile.
 		compileWith(classes, neoClasses + java.io.File.pathSeparator + forgeClasses,
@@ -206,7 +206,7 @@ public final class LinkCheckToolTest {
 			new Installer(logs::add).install(mcDir, "26.2", supplied, jdk);
 			throw new AssertionError("the merged base of an older Forbric was installed");
 		} catch (IOException expected) {
-			require(expected.getMessage().contains(GameArtifacts.OLD_INSTALL), "not refused as an old install: " + expected);
+			require(expected.getMessage().contains(InstallerText.oldMergedBase()), "not refused as an old install: " + expected);
 			require(logs.stream().noneMatch(s -> s.contains("dangling references")), "the old base was link-checked: " + logs);
 		}
 		require(!Files.exists(mcDir.resolve("versions/26.2-forbric/26.2-forbric.json")), "a profile was written");

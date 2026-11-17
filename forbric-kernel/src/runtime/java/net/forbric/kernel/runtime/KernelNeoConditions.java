@@ -327,7 +327,7 @@ public final class KernelNeoConditions {
 		if (!NATIVE_REPORTED.add(type + "|" + pack)) return;
 		ForbricLog.info("[Forbric/Conditions] resource condition '%s' in pack '%s' is not in NeoForge's condition registry, "
 				+ "and that pack is not a Fabric mod's: NeoForge's evaluator decides, as on native NeoForge — the data file is "
-				+ "skipped (-D%s=off keeps it, as Forbric 0.4 did)", type, pack, KernelConditionSources.PROPERTY);
+				+ "skipped (-D%s=off keeps it, as Forbric 0.3.x did)", type, pack, KernelConditionSources.PROPERTY);
 	}
 
 	private static void report(String type) {

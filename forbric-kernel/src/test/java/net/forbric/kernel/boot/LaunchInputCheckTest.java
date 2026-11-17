@@ -30,6 +30,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Locale;
 import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
@@ -52,7 +53,7 @@ import net.forbric.kernel.TestFixtures.Fixture;
 
 /**
  * The check that the jars a launch was handed are a Forbric game, by content (issue #13), and that an install made
- * by Forbric 0.4 or earlier -- a merged base with a MinecraftForge carrier -- is refused with the one line that says
+ * by Forbric 0.3.x or earlier -- a merged base with a MinecraftForge carrier -- is refused with the one line that says
  * how to fix it.
  *
  * <p>The jars here are built to the check's own definition -- {@link LaunchInputCheck#markers} for a carrier, a
@@ -324,15 +325,15 @@ class LaunchInputCheckTest {
 		assertTrue(old != null && old.contains("forge-runtime-%s-%d.jar is a complete MinecraftForge runtime"), old);
 	}
 
-	// --- an install made by Forbric 0.4 or earlier (D9) ------------------------------------------------------
+	// --- an install made by Forbric 0.3.x or earlier (D9) ----------------------------------------------------
 
 	/** The single problem an old install gets, with its evidence. */
 	private static String oldInstallProblem(List<Path> gameJars, List<Path> runtimeJars) {
 		List<String> problems = LaunchInputCheck.problems(gameJars, runtimeJars);
 		assertEquals(1, problems.size(), "an old install is one problem, nothing else: " + all(problems));
 		String problem = problems.get(0);
-		assertTrue(problem.startsWith("this game was installed by Forbric 0.4 or earlier, still carries MinecraftForge ("),
-				problem);
+		assertTrue(problem.startsWith("this game was installed by Forbric 0.3.x or earlier (or a 0.4.0-dev build that "
+				+ "still had MinecraftForge), still carries MinecraftForge ("), problem);
 		assertTrue(problem.endsWith("); run the new installer again with the same game directory"), problem);
 		assertEquals(problem, LaunchInputCheck.oldInstall(gameJars, runtimeJars));
 		return problem;
@@ -414,10 +415,39 @@ class LaunchInputCheckTest {
 
 		String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
 				() -> LaunchInputCheck.require(List.of(merged), List.of(forge, neo(dir)))));
-		assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install]   - this game was installed by Forbric 0.4 or earlier, "
-				+ "still carries MinecraftForge ("), said);
+		assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install]   - this game was installed by Forbric 0.3.x or "
+				+ "earlier (or a 0.4.0-dev build that still had MinecraftForge), still carries MinecraftForge ("), said);
 		assertTrue(said.contains("(1 problem(s) below)"), said);
 		assertTrue(said.contains("run the Forbric installer again with the same Game directory"), said);
+	}
+
+	/**
+	 * Owner, 2026-11-17: 0.4.x is the first release without MinecraftForge, so the installs this refuses are named as the
+	 * ones that had it -- every release up to v0.3.1-beta2 (0.3.x or earlier) and the 0.4.0-dev builds before the
+	 * removal -- never as "0.4 or earlier", which a 0.4.x player would read as their own version. Both refusal lines go
+	 * to {@code latest.log}, so like every kernel log line they are English in a Chinese locale too (gate-m17's control
+	 * N matches them), which this holds with the dialogs' language forced to Chinese.
+	 */
+	@Test
+	void theOldInstallIsNamedAsTheReleasesThatHadMinecraftForgeInEveryLocale(@TempDir Path dir) throws IOException {
+		Path merged = base(dir.resolve("patched-mc-merged-26.2.jar"), NEO_EXTENSION, FORGE_EXTENSION);
+		List<Path> runtimes = List.of(neo(dir));
+		String english = oldInstallProblem(List.of(merged), runtimes);
+		Locale before = Locale.getDefault();
+		String zh;
+		try {
+			Locale.setDefault(Locale.SIMPLIFIED_CHINESE);
+			System.setProperty("forbric.dialogLanguage", "zh");
+			zh = oldInstallProblem(List.of(merged), runtimes);
+		} finally {
+			Locale.setDefault(before);
+			System.clearProperty("forbric.dialogLanguage");
+		}
+		assertEquals(english, zh, "the old-install line is a log line: the same in every locale");
+		for (String line : List.of(english, LaunchInputCheck.OLD_INSTALL_SWITCH_OFF)) {
+			assertTrue(line.contains("Forbric 0.3.x or earlier"), line);
+			assertFalse(line.matches("(?s).*0\\.4 (or|and) (earlier|older).*"), line);
+		}
 	}
 
 	/** D9: the switch that turns every other problem into a warning does not let an old install run. */
@@ -430,9 +460,11 @@ class LaunchInputCheckTest {
 			String said = KernelLoadReportTest.capture(() -> assertThrows(LaunchInputCheck.Rejected.class,
 					() -> LaunchInputCheck.require(List.of(merged), runtimes)));
 			assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install] the Forbric install is broken"), said);
-			assertTrue(said.contains("installed by Forbric 0.4 or earlier, still carries MinecraftForge"), said);
-			assertTrue(said.contains("-D" + LaunchInputCheck.SWITCH + "=off does not apply to an install made by Forbric "
-					+ "0.4 or earlier"), said);
+			assertTrue(said.contains("installed by Forbric 0.3.x or earlier (or a 0.4.0-dev build that still had "
+					+ "MinecraftForge), still carries MinecraftForge"), said);
+			assertTrue(said.contains("[Forbric/ERROR] [Forbric/Install] -D" + LaunchInputCheck.SWITCH + "=off does not "
+					+ "apply to an install made by Forbric 0.3.x or earlier: its game carries MinecraftForge, which this "
+					+ "Forbric no longer has"), said);
 			assertFalse(said.contains("[Forbric/WARN]"), said);
 			assertFalse(said.contains("launches it anyway"), said);
 		}

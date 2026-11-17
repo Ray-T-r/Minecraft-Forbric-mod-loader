@@ -53,8 +53,9 @@ import java.util.function.Predicate;
  * {@code ModPackResourcesFactory.openFull}), and that composite is the {@code Resource}'s source; the pack judged is its
  * primary ({@link #primary}).
  *
- * <p>{@code -Dforbric.neoConditions.fabricPacksOnly=off} applies the leniency to every pack again, as Forbric 0.4 did
- * (the red control of D69: gate-m21's {@code dual_forge} file is then kept). Read per decode.
+ * <p>{@code -Dforbric.neoConditions.fabricPacksOnly=off} applies the leniency to every pack again, as Forbric 0.3.x
+ * (v0.3.1-beta2) and the 0.4.0-dev builds before D69 did (the red control of D69: gate-m21's {@code dual_forge} file
+ * is then kept). Read per decode.
  */
 public final class KernelConditionSources {
 	/** {@code off}: tolerate an unregistered condition type in every pack's data files, as before D69. */

@@ -71,14 +71,14 @@ final class GameArtifacts {
 	private static final byte[] NEO_REFERENCE = "net/neoforged/".getBytes(StandardCharsets.US_ASCII);
 	/**
 	 * MinecraftForge, by name only: this installer builds and accepts nothing of it. A base that still refers to it is
-	 * the merged game base Forbric 0.4 and earlier built, and a "runtime" holding its core class is a MinecraftForge
+	 * the merged game base Forbric 0.3.x and earlier built, and a "runtime" holding its core class is a MinecraftForge
 	 * runtime picked up instead of NeoForge's.
 	 */
 	private static final String FORGE_CORE = "net/minecraftforge/common/MinecraftForge.class";
 	private static final byte[] FORGE_REFERENCE = "net/minecraftforge/".getBytes(StandardCharsets.US_ASCII);
 	/** The merged base's embedded native-reference index for MinecraftForge; NeoForge's patched game has none. */
 	private static final String FORGE_NATIVE_INDEX = "META-INF/forbric/native-reference/FORGE/index.tsv";
-	/** The file name Forbric 0.4 and earlier gave its merged base, recognised only to say so. */
+	/** The file name Forbric 0.3.x and earlier gave its merged base, recognised only to say so. */
 	private static final String OLD_MERGED_BASE = "patched-mc-merged-%s.jar";
 
 	private final Path dir;
@@ -184,8 +184,7 @@ final class GameArtifacts {
 		if (!missing.isEmpty()) {
 			String oldBase = oldMergedBase();
 			if (oldBase != null) {
-				lines.add("This directory holds " + oldBase + ", the merged game base Forbric 0.4 or earlier built; it "
-						+ "still carries MinecraftForge's patches, and this installer runs on NeoForge's patched Minecraft.");
+				lines.add(InstallerText.oldMergedBaseInDirectory(oldBase));
 			}
 			lines.add("Developers: the directory must hold what python3 tools/dev.py prepare stages "
 					+ "(neoforge-patched/patched-mc-neoforge-<mc>.jar and neoforge-runtime/neoforge-runtime.jar), or be an "
@@ -220,7 +219,7 @@ final class GameArtifacts {
 	 *       NeoForge's patches looks like in bytecode, and in the real base hundreds of classes do, so this does not
 	 *       hinge on any one class keeping one hook. Vanilla refers to it nowhere. A base that refers to
 	 *       {@code net/minecraftforge/} too, or embeds the MinecraftForge native-reference index, is the merged base
-	 *       Forbric 0.4 and earlier built: refused by name, because it would install and then fail far away.</li>
+	 *       Forbric 0.3.x and earlier built: refused by name, because it would install and then fail far away.</li>
 	 *   <li>The runtime holds NeoForge's core class AND its mod loader. The {@code -universal} jar has the first
 	 *       without the second; the kernel needs both, and the loader half is exactly what was absent in #13
 	 *       ({@code net/neoforged/neoforgespi/language/IModInfo}).</li>
@@ -263,9 +262,6 @@ final class GameArtifacts {
 		};
 	}
 
-	/** What a supplied merged base from Forbric 0.4 or earlier is told. */
-	static final String OLD_INSTALL = "It is the merged game base Forbric 0.4 or earlier built; it still carries "
-			+ "MinecraftForge's patches. This installer runs on NeoForge's patched Minecraft, which it builds itself.";
 
 	private static String baseProblem(ZipFile zip, String mcVersion) throws IOException {
 		String id = versionId(zip);
@@ -275,7 +271,7 @@ final class GameArtifacts {
 		if (!id.equals(mcVersion)) {
 			return "It is Minecraft " + id + ", but this install is for Minecraft " + mcVersion + ".";
 		}
-		if (zip.getEntry(FORGE_NATIVE_INDEX) != null) return OLD_INSTALL;
+		if (zip.getEntry(FORGE_NATIVE_INDEX) != null) return InstallerText.oldMergedBase();
 		boolean forge = false;
 		boolean neo = false;
 		// Every class is read, not just until NeoForge turns up: a merged base names NeoForge in some classes long
@@ -291,7 +287,7 @@ final class GameArtifacts {
 			forge |= contains(bytes, FORGE_REFERENCE);
 			neo |= contains(bytes, NEO_REFERENCE);
 		}
-		if (forge && neo) return OLD_INSTALL;
+		if (forge && neo) return InstallerText.oldMergedBase();
 		if (forge) {
 			return "It is Minecraft " + mcVersion + " patched by MinecraftForge. This installer runs on NeoForge's patched "
 					+ "Minecraft, which it builds itself.";

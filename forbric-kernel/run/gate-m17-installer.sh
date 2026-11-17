@@ -17,7 +17,7 @@
 # Stage 3 of dropping MinecraftForge: the installer's which-mods sentence and the profile's ecosystems list now name
 # Fabric and NeoForge only (the kernel refuses a MinecraftForge-only mod); both are asserted below. Stage 4: the
 # installed game is NeoForge's own patched game with one runtime, NeoForge's; the profile is checked for exactly that,
-# and a kernel handed the arguments of an install made by Forbric 0.4 or earlier refuses them (control N, below).
+# and a kernel handed the arguments of an install made by Forbric 0.3.x or earlier refuses them (control N, below).
 #
 # The tools-jar and offline phases were written around the merge, which no install runs since C1, and both now assert what
 # an install still does (D70): every install runs the link check from the checker jar the installer carries, unpacked over
@@ -464,7 +464,7 @@ check_absent "no client crash"             "Preparing crash report"             
 check_absent "nothing the installer staged went missing" \
   "(NoClassDefFoundError|ClassNotFoundException).*(net/forbric|net\\.forbric|net/minecraft|org/apache/logging|com/mojang|org/objectweb/asm|org/spongepowered)" "$CLOG"
 
-step "control N: this kernel, handed an install made by Forbric 0.4 or earlier, refuses it (must PASS)"
+step "control N: this kernel, handed an install made by Forbric 0.3.x or earlier, refuses it (must PASS)"
 # The reverse of everything above: the same resolved command, with the inputs an old install's profile passed -- a merged
 # base (it embedded MinecraftForge's native-reference index) and a second, MinecraftForge runtime. A kernel that carries
 # no MinecraftForge would otherwise fail far from here on the first MinecraftForge class that base names, so
@@ -508,12 +508,12 @@ if [ "$PY_RC" -eq 0 ]; then
   OLDOFF_RC=$(old_launch refused-off "-Dforbric.launchInputCheck=off")
   assert_eq "the old install's arguments end the launch with status 2" "2" "$OLD_RC"
   check "with the one old-install problem, naming the merged base's index" \
-    "this game was installed by Forbric 0\.4 or earlier, still carries MinecraftForge \(game jar patched-mc-merged-26\.2\.jar embeds META-INF/forbric/native-reference/FORGE/index\.tsv; runtime jar forge-runtime-26\.2\.jar is a complete MinecraftForge runtime\); run the new installer again" \
+    "this game was installed by Forbric 0\.3\.x or earlier \(or a 0\.4\.0-dev build that still had MinecraftForge\), still carries MinecraftForge \(game jar patched-mc-merged-26\.2\.jar embeds META-INF/forbric/native-reference/FORGE/index\.tsv; runtime jar forge-runtime-26\.2\.jar is a complete MinecraftForge runtime\); run the new installer again" \
     "$BUILD/gate-m17-old-refused.log"
   check_absent "and the game never booted" "Forbric/Boot\] game base" "$BUILD/gate-m17-old-refused.log"
   assert_eq "-Dforbric.launchInputCheck=off does not let it through: status 2 again" "2" "$OLDOFF_RC"
   check "and says why the switch does not apply" \
-    "launchInputCheck=off does not apply to an install made by Forbric 0\.4 or earlier" "$BUILD/gate-m17-old-refused-off.log"
+    "launchInputCheck=off does not apply to an install made by Forbric 0\.3\.x or earlier" "$BUILD/gate-m17-old-refused-off.log"
 fi
 
 # ---------------------------------------------------------------------------------------------------------

@@ -71,11 +71,13 @@ import net.forbric.kernel.util.ForbricLog;
  * it a version or link check -- the installer's link check is that. It asks only whether each jar is the kind of thing
  * its flag says it is, which is cheap enough to ask on every launch: one central directory per jar and one class read.
  *
- * <h2>An install made by Forbric 0.4 or earlier</h2>
+ * <h2>An install made by Forbric 0.3.x or earlier</h2>
  *
- * <p>Those installs ran a MERGED base (NeoForge's and MinecraftForge's patches in one jar) with a MinecraftForge
- * carrier beside the NeoForge one. The merged base is NeoForge-patched too -- its {@code Block} implements
- * {@code IBlockExtension} -- and its NeoForge carrier is complete, so the checks above would let it through, and this
+ * <p>Those installs (every release up to v0.3.1-beta2, and the 0.4.0-dev builds from before MinecraftForge was
+ * removed; 0.4.x is the first release line without it) ran a MERGED base (NeoForge's and MinecraftForge's patches in
+ * one jar) with a MinecraftForge carrier beside the NeoForge one. The merged base is NeoForge-patched too -- its
+ * {@code Block} implements {@code IBlockExtension} -- and its NeoForge carrier is complete, so the checks above would
+ * let it through, and this
  * kernel, which carries no MinecraftForge, would fail far away on the first MinecraftForge class the base names. So
  * an old install is recognised first, by three signals spelled here as plain strings (they must outlive the kernel's
  * own knowledge of MinecraftForge): the base's {@code Block} implements an interface under {@code net/minecraftforge/};
@@ -109,7 +111,7 @@ import net.forbric.kernel.util.ForbricLog;
  * </ul>
  *
  * <p>{@code -Dforbric.launchInputCheck=off} reports the same problems as warnings and launches anyway -- except an
- * install made by Forbric 0.4 or earlier, which it still refuses.
+ * install made by Forbric 0.3.x or earlier, which it still refuses.
  */
 final class LaunchInputCheck {
 	static final String SWITCH = "forbric.launchInputCheck";
@@ -124,7 +126,7 @@ final class LaunchInputCheck {
 	 */
 	static final String BLOCK = "net/minecraft/world/level/block/Block.class";
 
-	// --- an install made by Forbric 0.4 or earlier: plain strings, never the kernel's MinecraftForge names ---------
+	// --- an install made by Forbric 0.3.x or earlier: plain strings, never the kernel's MinecraftForge names -------
 
 	/** The package root MinecraftForge's extension interfaces on an old merged base's {@code Block} live under. */
 	static final String OLD_FORGE_ROOT = "net/minecraftforge/";
@@ -137,9 +139,18 @@ final class LaunchInputCheck {
 	static final List<String> OLD_FORGE_CARRIER = List.of("net/minecraftforge/forgespi/language/IModInfo.class",
 			"net/minecraftforge/fml/ModContainer.class", "net/minecraftforge/fml/loading/FMLLoader.class",
 			"net/minecraftforge/fml/loading/FMLEnvironment.class", "META-INF/mods.toml");
-	/** The one problem an old install gets; the evidence goes between the parentheses. */
-	static final String OLD_INSTALL = "this game was installed by Forbric 0.4 or earlier, still carries MinecraftForge "
-			+ "(%s); run the new installer again with the same game directory";
+	/**
+	 * The one problem an old install gets; the evidence goes between the last parentheses. Which Forbric wrote it is
+	 * named so that it stays true once 0.4.x ships, the first release line without MinecraftForge: every release up to
+	 * v0.3.1-beta2, and the 0.4.0-dev builds from before the removal. A {@code latest.log} line, so English in every
+	 * locale like the kernel's other log lines (gate-m17's control N reads it).
+	 */
+	static final String OLD_INSTALL = "this game was installed by Forbric 0.3.x or earlier (or a 0.4.0-dev build that "
+			+ "still had MinecraftForge), still carries MinecraftForge (%s); run the new installer again with the same "
+			+ "game directory";
+	/** Why {@code -Dforbric.launchInputCheck=off} does not let an old install through (logged after the problem). */
+	static final String OLD_INSTALL_SWITCH_OFF = "-D" + SWITCH + "=off does not apply to an install made by Forbric "
+			+ "0.3.x or earlier: its game carries MinecraftForge, which this Forbric no longer has";
 
 	private LaunchInputCheck() {
 	}
@@ -194,8 +205,7 @@ final class LaunchInputCheck {
 						: "the game is likely to crash, because -D" + SWITCH + "=off launches it anyway"));
 		for (String problem : problems) log(enforced, "[Forbric/Install]   - " + problem);
 		if (old != null && !enforced()) {
-			log(true, "[Forbric/Install] -D" + SWITCH + "=off does not apply to an install made by Forbric 0.4 or "
-					+ "earlier: its game carries MinecraftForge, which this Forbric no longer has");
+			log(true, "[Forbric/Install] " + OLD_INSTALL_SWITCH_OFF);
 		}
 		log(enforced, "[Forbric/Install] to fix it: close the launcher, run the Forbric installer again with the same "
 				+ "Game directory and leave \"Built artifacts\" EMPTY — the installer then builds NeoForge's patched game "
@@ -210,7 +220,7 @@ final class LaunchInputCheck {
 	}
 
 	/**
-	 * The evidence that these inputs are an install made by Forbric 0.4 or earlier -- one or more of the three
+	 * The evidence that these inputs are an install made by Forbric 0.3.x or earlier -- one or more of the three
 	 * signals, separated by "; " -- worded as {@link #OLD_INSTALL}, or {@code null} when none is there. A jar that
 	 * cannot be read gives no evidence here; {@link #problems} names it.
 	 */
@@ -256,7 +266,7 @@ final class LaunchInputCheck {
 
 	/**
 	 * Everything wrong with these inputs, one line each and worded for whoever reads {@code latest.log}; empty when
-	 * the launch can proceed. An install made by Forbric 0.4 or earlier is one problem, {@link #OLD_INSTALL}, and
+	 * the launch can proceed. An install made by Forbric 0.3.x or earlier is one problem, {@link #OLD_INSTALL}, and
 	 * nothing else is said about it: "the runtime jar is a MinecraftForge runtime" would send the player looking for
 	 * the wrong file.
 	 */
