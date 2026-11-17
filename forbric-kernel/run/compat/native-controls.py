@@ -211,10 +211,29 @@ def jars(image):
     return sorted((image / "libraries").rglob("*.jar"))
 
 
+def recorded_files(entry):
+    """Every file record a build-inputs.json family entry holds: its canary, the game API and classpath it compiled
+    against and, for Fabric, the Fabric API jar the run puts beside the canary."""
+    return [entry[key] for key in ("mod", "gameApi", "fabricApi") if key in entry] + list(entry.get("classpath", []))
+
+
+def still_built(entry):
+    """An earlier family entry still describes the files on disk: it records its own javac (older entries shared a
+    top-level one with whatever family was built last) and every file it names still has the recorded bytes."""
+    if "javac" not in entry or "mod" not in entry:
+        return False
+    for item in recorded_files(entry):
+        path = Path(item.get("path", ""))
+        if not path.is_file() or sha(path) != item.get("sha256"):
+            return False
+    return True
+
+
 def compile_canaries(families=CONTROL_FAMILIES):
     """Compile the canary of each family asked for, against that family's prepared image only: a NeoForge control
-    needs no Fabric or MinecraftForge image. build-inputs.json keeps another family's earlier entry only while the canary
-    sources it was built from are the current ones."""
+    needs no Fabric or MinecraftForge image and no Fabric API jar. Each family entry of build-inputs.json records
+    everything it was built from (its javac included); another family's earlier entry is kept only while the canary
+    sources are the current ones and every file it records still has the recorded bytes (still_built)."""
     unknown = [family for family in families if family not in CONTROL_FAMILIES]
     if unknown:
         raise RuntimeError(f"no behaviour control for {', '.join(unknown)} (controls: {', '.join(CONTROL_FAMILIES)})")
@@ -226,13 +245,16 @@ def compile_canaries(families=CONTROL_FAMILIES):
         earlier = json.loads(inputs_file.read_text())
         if earlier.get("sources") == current:
             compiled = {family: entry for family, entry in earlier.get("families", {}).items()
-                        if family in CONTROL_FAMILIES and family not in families}
+                        if family in CONTROL_FAMILIES and family not in families and still_built(entry)}
     for family in families:
         image = BASE / "native" / family
         if not (image / "installation.json").is_file():
             raise RuntimeError(f"prepare {family} before compiling native APIs")
-    fapi = fapi_source()
+    fapi = None
     if "fabric" in families:
+        fapi = fapi_source()
+        if not fapi.is_file():
+            raise RuntimeError(f"the Fabric control compiles and runs with the full Fabric API jar, and {fapi} is not there")
         modules = BASE / "compile/fabric-modules"
         modules.mkdir(parents=True, exist_ok=True)
         with zipfile.ZipFile(fapi) as archive:
@@ -240,6 +262,7 @@ def compile_canaries(families=CONTROL_FAMILIES):
             for name in archive.namelist():
                 if name.startswith("META-INF/jars/") and name.endswith(".jar"):
                     (modules / Path(name).name).write_bytes(archive.read(name))
+    javac = subprocess.check_output(["javac", "-version"], text=True) if families else None
     for family in families:
         image = BASE / "native" / family
         if family == "fabric":
@@ -267,9 +290,12 @@ def compile_canaries(families=CONTROL_FAMILIES):
             for name, path in entries:
                 info = zipfile.ZipInfo(name, (2026, 1, 1, 0, 0, 0)); info.compress_type = zipfile.ZIP_DEFLATED
                 archive.writestr(info, path.read_bytes())
-        compiled[family] = {"mod": record(artifact), "gameApi": record(game), "classpath": [record(p) for p in classpath], "javacCommand": command}
-    copy_file(fapi, artifacts / fapi.name)
-    write_json(inputs_file, {"sources": current, "javac": subprocess.check_output(["javac", "-version"], text=True), "families": compiled, "fabricApi": record(artifacts / fapi.name)})
+        compiled[family] = {"mod": record(artifact), "gameApi": record(game), "classpath": [record(p) for p in classpath],
+                            "javacCommand": command, "javac": javac}
+        if family == "fabric":
+            copy_file(fapi, artifacts / fapi.name)
+            compiled[family]["fabricApi"] = record(artifacts / fapi.name)
+    write_json(inputs_file, {"sources": current, "families": compiled})
     print(f"built the native API fixtures of {', '.join(families)}: {artifacts}")
 
 
@@ -300,9 +326,11 @@ def run_control(family, engine, timeout):
     artifacts = BASE / "artifacts"
     build_inputs = json.loads((artifacts / "build-inputs.json").read_text())
     canary = artifacts / f"nativecontrol{family}-1.0.0.jar"
-    if sha(canary) != build_inputs["families"][family]["mod"]["sha256"]:
-        raise RuntimeError("compiled fixture drift: rebuild and rerun both arms")
+    entry = build_inputs["families"][family]
     mod_files = [canary] + ([artifacts / "fabric-api-0.155.2+26.2.jar"] if family == "fabric" else [])
+    expected = [entry["mod"]] + ([entry.get("fabricApi", {})] if family == "fabric" else [])
+    if any(not path.is_file() or sha(path) != item.get("sha256") for path, item in zip(mod_files, expected)):
+        raise RuntimeError("compiled fixture drift: rebuild and rerun both arms")
     for mod in mod_files:
         copy_file(mod, instance / "mods" / mod.name)
     (instance / "eula.txt").write_text("eula=true\n")

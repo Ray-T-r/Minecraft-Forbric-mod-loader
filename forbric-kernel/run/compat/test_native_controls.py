@@ -417,13 +417,14 @@ class ControlFamilies(unittest.TestCase):
         return run_logged
 
     def test_build_of_the_neoforge_control_needs_no_other_image(self):
+        """No Fabric image and no Fabric API jar: C6 REL review A F3 / B-5 -- the build used to copy the Fabric API jar
+        for every family, so a NeoForge-only build raised after writing its canary and before build-inputs.json."""
         seen = []
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             base = tmp / "nc"
             self._image(base, "neo")
-            fapi = tmp / "fabric-api-0.155.2+26.2.jar"
-            fapi.write_bytes(b"not read for a NeoForge build")
+            fapi = tmp / "absent/fabric-api-0.155.2+26.2.jar"
             with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
                     mock.patch.object(nc, "run_logged", self._fake_javac(seen)), \
                     mock.patch.object(nc.subprocess, "check_output", return_value="javac 25"), \
@@ -434,35 +435,75 @@ class ControlFamilies(unittest.TestCase):
             self.assertIn("minecraft-server-patched-26.2.0.93.jar", seen[0][seen[0].index("-cp") + 1])
             inputs = json.loads((base / "artifacts/build-inputs.json").read_text())
             self.assertEqual(["neo"], list(inputs["families"]))
+            self.assertEqual("javac 25", inputs["families"]["neo"]["javac"])
+            self.assertNotIn("fabricApi", inputs["families"]["neo"])
+            self.assertEqual({"sources", "families"}, inputs.keys(), "no top-level record another family's build owns")
+            self.assertFalse((base / "artifacts" / fapi.name).exists())
             with zipfile.ZipFile(base / "artifacts/nativecontrolneo-1.0.0.jar") as jar:
                 self.assertIn("META-INF/neoforge.mods.toml", jar.namelist())
-            # The whole set still names every image it lacks.
+            # The whole set still names every image it lacks, and a Fabric build names the Fabric API jar it lacks.
             with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
                     mock.patch.object(nc, "run_logged", self._fake_javac(seen)), \
                     self.assertRaisesRegex(RuntimeError, "prepare fabric before compiling"):
                 nc.compile_canaries()
+            self._image(base, "fabric")
+            with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
+                    mock.patch.object(nc, "run_logged", self._fake_javac(seen)), \
+                    self.assertRaisesRegex(RuntimeError, "full Fabric API jar, and .*absent/fabric-api-0.155.2.26.2.jar is not there"):
+                nc.compile_canaries(("fabric",))
 
-    def test_a_later_build_keeps_another_familys_entry_only_while_the_sources_are_the_same(self):
+    def test_a_later_build_keeps_another_familys_entry_only_while_it_still_describes_the_files(self):
+        """C6 REL review A F8: a kept entry used to sit under the top-level javac of whatever was built last, and the
+        files it records were never looked at again. It is kept only with its own javac, the current canary sources
+        and every recorded file unchanged."""
         with tempfile.TemporaryDirectory() as tmp:
             tmp = Path(tmp)
             base = tmp / "nc"
             for family in nc.CONTROL_FAMILIES:
                 self._image(base, family)
-            fapi = tmp / "fabric-api-0.155.2+26.2.jar"
-            fapi.write_bytes(b"x")
-            earlier = {"sources": nc.sources(), "families": {"fabric": {"mod": {"sha256": "f"}}, "forge": {"mod": {}}}}
             (base / "artifacts").mkdir(parents=True)
-            (base / "artifacts/build-inputs.json").write_text(json.dumps(earlier))
-            with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
-                    mock.patch.object(nc, "run_logged", self._fake_javac([])), \
-                    mock.patch.object(nc.subprocess, "check_output", return_value="javac 25"), \
-                    mock.patch("sys.stdout", new_callable=io.StringIO):
-                nc.compile_canaries(("neo",))
-                self.assertEqual({"fabric", "neo"}, set(json.loads((base / "artifacts/build-inputs.json").read_text())["families"]))
-                earlier["sources"] = [{"path": "changed", "bytes": 1, "sha256": "0"}]
+            canary = base / "artifacts/nativecontrolfabric-1.0.0.jar"; canary.write_bytes(b"fabric canary")
+            game = tmp / "vanilla-server.jar"; game.write_bytes(b"game")
+            fapi = base / "artifacts/fabric-api-0.155.2+26.2.jar"; fapi.write_bytes(b"fapi")
+            fabric = {"mod": nc.record(canary), "gameApi": nc.record(game), "classpath": [nc.record(game)],
+                      "fabricApi": nc.record(fapi), "javac": "javac 24", "javacCommand": []}
+
+            def build_neo_over(entry, sources=None):
+                earlier = {"sources": sources or nc.sources(), "families": {"fabric": entry, "forge": {"mod": {}}}}
                 (base / "artifacts/build-inputs.json").write_text(json.dumps(earlier))
-                nc.compile_canaries(("neo",))
-                self.assertEqual({"neo"}, set(json.loads((base / "artifacts/build-inputs.json").read_text())["families"]))
+                with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: tmp / "absent.jar"), \
+                        mock.patch.object(nc, "run_logged", self._fake_javac([])), \
+                        mock.patch.object(nc.subprocess, "check_output", return_value="javac 25"), \
+                        mock.patch("sys.stdout", new_callable=io.StringIO):
+                    nc.compile_canaries(("neo",))
+                return json.loads((base / "artifacts/build-inputs.json").read_text())["families"]
+            kept = build_neo_over(fabric)
+            self.assertEqual({"fabric", "neo"}, set(kept))
+            self.assertEqual(("javac 24", "javac 25"), (kept["fabric"]["javac"], kept["neo"]["javac"]))
+            self.assertEqual({"neo"}, set(build_neo_over(fabric, [{"path": "changed", "bytes": 1, "sha256": "0"}])))
+            self.assertEqual({"neo"}, set(build_neo_over({k: v for k, v in fabric.items() if k != "javac"})))
+            for changed in (game, fapi, canary):
+                with self.subTest(changed=changed.name):
+                    original = changed.read_bytes()
+                    changed.write_bytes(b"other bytes")
+                    self.assertEqual({"neo"}, set(build_neo_over(fabric)))
+                    changed.write_bytes(original)
+            self.assertEqual({"fabric", "neo"}, set(build_neo_over(fabric)))
+
+    def test_the_fabric_run_refuses_a_fabric_api_jar_other_than_the_one_built_with(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp = Path(tmp)
+            base = tmp / "nc"
+            canary = base / "artifacts/nativecontrolfabric-1.0.0.jar"
+            canary.parent.mkdir(parents=True)
+            canary.write_bytes(b"canary")
+            fapi = base / "artifacts/fabric-api-0.155.2+26.2.jar"
+            fapi.write_bytes(b"fapi")
+            (base / "artifacts/build-inputs.json").write_text(json.dumps(
+                {"families": {"fabric": {"mod": nc.record(canary), "fabricApi": nc.record(fapi)}}}))
+            fapi.write_bytes(b"another fabric api")
+            with mock.patch.object(nc, "BASE", base), self.assertRaisesRegex(RuntimeError, "compiled fixture drift"):
+                nc.run_control("fabric", "native", 5)
 
 
 class ControlPort(unittest.TestCase):
