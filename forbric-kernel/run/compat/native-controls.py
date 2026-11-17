@@ -6,8 +6,10 @@ prepare downloads official fixed installers, verifies available upstream SHA-1s,
 build uses installed native API jars, never a Forbric carrier. run preserves each attempt, including failure.
 
 The behaviour controls (build, run, compare) have two arms, Fabric and NeoForge: Forbric loads no MinecraftForge mod, so
-there is nothing of it to compare. MinecraftForge stays only as an install (`prepare --family forge`): the C5c swap
-oracle (`swap --engine native`) creates its world on the native MinecraftForge server (D32).
+there is nothing of it to compare. MinecraftForge stays only as an install (`prepare --family forge`, never part of
+`prepare`'s default) for the native MinecraftForge arms that remain: the C5c swap oracle (`swap --engine native`) creates
+its world on the native MinecraftForge server (D32), and `breath-drown.py reference` runs the MinecraftForge canary on it
+to regenerate gate-m57's native reference.
 """
 import argparse
 import hashlib
@@ -41,21 +43,45 @@ def forbric_stage():
     without it, the stage `tools/dev.py prepare` writes (forbric-kernel/.dev/staged), which build.gradle also takes when
     FORBRIC_OLD is unset. With neither, the arm refuses, naming both: there is no other stage it may boot.
 
+    Either way the stage must be one this tree's pins built: the build stamps beside its base and carrier
+    (<jar>.pins) must begin with the installer's Pins.stamp(), dev.py's own readiness rule (stale_stamps), which
+    push-and-run applies to the same files (stamp_problems). Otherwise it refuses, naming the stale stamps. A path is no
+    provenance: in a worktree .dev links to the main checkout's, whose stage is an unstamped NeoForge 26.2.0.88 carrier
+    with a base byte-identical to a .93 one (C6 REL review A F1), so taking it by presence booted another NeoForge than
+    the one the arm reports.
+
     It used to fall back to the reference checkout's forbric-loader/, whose carrier is NeoForge 26.2.0.88 and unstamped
-    (Stage 4 C6, critic 7): an arm started without FORBRIC_OLD then booted another NeoForge than the one it reported.
-    Before that it replaced FORBRIC_OLD with ORIGINAL/forbric-loader whatever the caller had set (map-misc 4.1: carrier
-    dd54e73f instead of .stage4's 0e3ce8d9). NATIVE_CONTROL_CACHE still names the read-only reference workspace for the
-    native caches.
+    (Stage 4 C6, critic 7). Before that it replaced FORBRIC_OLD with ORIGINAL/forbric-loader whatever the caller had set
+    (map-misc 4.1: carrier dd54e73f instead of .stage4's 0e3ce8d9). NATIVE_CONTROL_CACHE still names the read-only
+    reference workspace for the native caches.
     """
     given = os.environ.get("FORBRIC_OLD")
-    if given:
-        return Path(given).resolve()
     prepared = KERNEL / ".dev/staged"
-    if (prepared / "run" / STAGED_BASE).is_file():
-        return prepared.resolve()
-    raise RuntimeError("no stage for the Forbric arm: set FORBRIC_OLD to a prepared stage (its run/ holds "
-                       f"{STAGED_BASE} and {STAGED_CARRIER}), or run `python3 tools/dev.py prepare` to write "
-                       f"{prepared}. forbric-loader/ is not a stage for it: its carrier is NeoForge 26.2.0.88 and unstamped.")
+    if given:
+        stage, origin = Path(given).resolve(), "FORBRIC_OLD"
+    elif (prepared / "run" / STAGED_BASE).is_file():
+        stage, origin = prepared.resolve(), "the prepared stage"
+    else:
+        raise RuntimeError("no stage for the Forbric arm: set FORBRIC_OLD to a prepared stage (its run/ holds "
+                           f"{STAGED_BASE} and {STAGED_CARRIER}), or run `python3 tools/dev.py prepare` to write "
+                           f"{prepared}. forbric-loader/ is not a stage for it: its carrier is NeoForge 26.2.0.88 and "
+                           "unstamped.")
+    dev = dev_tools()
+    stale = dev.stale_stamps(stage / "run")
+    if stale:
+        raise RuntimeError(f"{origin} {stage} is not a stage this tree's pins built: "
+                           + ", ".join(f"run/{name}" for name in stale)
+                           + f" missing or not beginning with \"{dev.pins_stamp()}\". Run `python3 tools/dev.py prepare`, "
+                           "or point FORBRIC_OLD at a stage it prepared.")
+    return stage
+
+
+def dev_tools():
+    """tools/dev.py of this checkout (standard library only, nothing runs on import): its pins and stamp rule."""
+    spec = importlib.util.spec_from_file_location("forbric_dev", Path(__file__).resolve().parents[3] / "tools/dev.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
 
 
 def control_port():

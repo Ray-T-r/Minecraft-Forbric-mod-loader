@@ -9,6 +9,11 @@ sys.dont_write_bytecode=True
 spec=importlib.util.spec_from_file_location('controls',Path(__file__).with_name('native-controls.py'))
 c=importlib.util.module_from_spec(spec);spec.loader.exec_module(c)
 K=c.KERNEL;BASE=K/'build/retention-control';BASE.mkdir(parents=True,exist_ok=True)
+# The Forbric arm's stage, resolved before anything is compiled or run (C6 REL review B-7: resolved in the loop, a missing
+# or stale stage was refused only after the native arm had run a server): FORBRIC_OLD as the caller set it, else the
+# prepared .dev stage, and only a stage this tree's pins built (c.forbric_stage), else a clear refusal -- never
+# forbric-loader/'s unstamped 26.2.0.88 carrier.
+STAGE=c.forbric_stage()
 image=c.BASE/'native/neo';upstream=K/'run/client-merged-pack/mods/unlitcampfire-neoforge-26.2-4.1.0.0.jar'
 sources=list((K/'canary/retention/src').rglob('*.java'))
 classes=BASE/'classes';classes.mkdir(exist_ok=True)
@@ -30,11 +35,10 @@ for engine in ('native','forbric'):
   carriers=[c.record(p) for p in c.jars(run)]
  else:
   command=[str(K/'run/launch-kernel-server.sh')];env.update(RUNDIR=str(run),FORBRIC_COMPAT_POLICY='strict',FORBRIC_JVM=' '.join(args))
-  # Same stage and defaults as native-controls.py's Forbric arm and launch-kernel-server.sh (NeoForge's patched game and
-  # its one carrier), exported so the launcher runs exactly the files recorded here: FORBRIC_OLD as the caller set it,
-  # else the prepared .dev stage, else a clear refusal (c.forbric_stage) -- never forbric-loader/'s unstamped 26.2.0.88
-  # carrier. MERGED/FORGE_RT are retired: the launcher refuses them.
-  env['FORBRIC_OLD']=str(c.forbric_stage());old=Path(env['FORBRIC_OLD'])/'run'
+  # Same stage (STAGE, above) and defaults as native-controls.py's Forbric arm and launch-kernel-server.sh (NeoForge's
+  # patched game and its one carrier), exported so the launcher runs exactly the files recorded here. MERGED/FORGE_RT
+  # are retired: the launcher refuses them.
+  env['FORBRIC_OLD']=str(STAGE);old=STAGE/'run'
   for key,default in (('BASE',c.STAGED_BASE),('NEO_RT',c.STAGED_CARRIER)):env.setdefault(key,str(old/default))
   carriers=[c.record(Path(env[key])) for key in ('BASE','NEO_RT')]+[c.record(K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')]
  inputs={'engine':engine,'token':token,'modSet':[c.record(p) for p in sorted((run/'mods').glob('*.jar'))],'carriers':carriers,'sources':[c.record(p) for p in sources]+[c.record(__file__)],'command':command}

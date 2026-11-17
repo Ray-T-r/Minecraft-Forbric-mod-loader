@@ -22,7 +22,8 @@ MinecraftForge, into `run/canary/forge-refused/` (entry-for-entry the jar the re
 `native-reference.json` is what native MinecraftForge 26.2-65.0.1 and NeoForge 26.2.0.88 do with these jars, every
 judged field and the body's random draws agreeing across three runs each. It records the digest of the `.java` and `.toml` sources it was measured
 with, and gate-m57 refuses a reference measured with other sources. After changing a canary, regenerate it from the
-native servers that `run/compat/native-controls.py prepare` installs:
+native servers that `run/compat/native-controls.py prepare --family forge` and `prepare --family neo` install (plain
+`prepare` installs Fabric and NeoForge only, not MinecraftForge):
 
 ```sh
 python3 forbric-kernel/run/compat/breath-drown.py reference      # M57_NATIVE=<dir> if the images live elsewhere

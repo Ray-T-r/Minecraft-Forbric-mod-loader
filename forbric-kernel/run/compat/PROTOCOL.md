@@ -186,7 +186,8 @@ Forbric refuses the MinecraftForge canary, so on Forbric the NeoForge one plays 
 loaders for the reference.
 
 - `breath-drown.py reference [--runs 3] [--port N]` rebuilds the canaries and runs native MinecraftForge 26.2-65.0.1
-  and NeoForge 26.2.0.93 (the images `native-controls.py prepare` installs; `M57_NATIVE` points elsewhere) `--runs`
+  and NeoForge 26.2.0.93 (the images `native-controls.py prepare --family forge` and `prepare --family neo` install;
+  `M57_NATIVE` points elsewhere) `--runs`
   times each, in fresh instances under `build/m57-reference/`. Every run of one loader must agree with its first on
   every stored field — what is judged, and the random draws — or it stops and names the differences; nothing is
   filtered. It then writes `canary/forge-breath-drown/native-reference.json` with the canary sources' digest. Run it
@@ -605,8 +606,9 @@ installer's `releaseAssets` requires `-PreleaseEvidence=<run.json>[,...]` and ru
 publish.
 
 `native-controls.py prepare` installs the fixed native Fabric and NeoForge servers into `build/native-controls`
-(`--family forge` also installs native MinecraftForge 26.2-65.0.1, which only the C5c swap oracle uses: Forbric loads
-no MinecraftForge mod, so there is no MinecraftForge behaviour control). `build [--family fabric|neo]` compiles the
+(`--family forge` also installs native MinecraftForge 26.2-65.0.1, which only the native MinecraftForge arms that remain
+use: the C5c swap oracle and `breath-drown.py reference`, gate-m57's native reference. Forbric loads no MinecraftForge
+mod, so there is no MinecraftForge behaviour control). `build [--family fabric|neo]` compiles the
 public-API canary of each family asked for, against that family's image only. `run --engine native` and
 `run --engine forbric` (`--family fabric|neo`) execute the same jar hashes, seed and world actions, each in a fresh
 owned instance, one server at a time on the caller's `GATE_PORT` (an OS ephemeral port without it).
@@ -614,7 +616,10 @@ owned instance, one server at a time on the caller's `GATE_PORT` (an OS ephemera
 `NATIVE_CONTROL_CACHE` selects the read-only reference checkout; its default is the parent of `FORBRIC_OLD`,
 or this checkout when that variable is absent. The Forbric arm boots `FORBRIC_OLD` when it is set, else the prepared
 `forbric-kernel/.dev/staged`, and refuses with neither (never the cache's `forbric-loader`, whose carrier is NeoForge
-26.2.0.88 and unstamped); `retention-control.py` does the same. All generated files remain under this kernel's `build/`.
+26.2.0.88 and unstamped). Either stage must also carry this tree's build stamps beside its base and carrier
+(`<jar>.pins` beginning with the installer's pins, `tools/dev.py`'s readiness rule, the one push-and-run applies), or the
+arm refuses naming them: in a worktree `.dev` links to the main checkout's, which can hold an unstamped 26.2.0.88
+carrier as well. `retention-control.py` resolves the same stage before it compiles or runs anything. All generated files remain under this kernel's `build/`.
 
 `native-controls.py run-set --engine native|forbric --family fabric --mods JAR... [--ticks 200] [--timeout 900]
 [--xmx 3G] [--level-type minecraft:normal] [--policy strict] [--keep]` boots one fresh server under `build/native-controls/instances/`

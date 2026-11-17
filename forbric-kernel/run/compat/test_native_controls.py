@@ -143,6 +143,7 @@ class ForbricStage(unittest.TestCase):
 
     def test_the_callers_forbric_old_is_the_stage(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, {"FORBRIC_OLD": tmp}):
+            self._stage(Path(tmp))
             self.assertEqual(Path(tmp).resolve(), nc.forbric_stage())
 
     def test_without_forbric_old_the_prepared_dev_stage_is_the_stage_and_never_forbric_loader(self):
@@ -160,9 +161,47 @@ class ForbricStage(unittest.TestCase):
                 prepared = self._stage(kernel / ".dev/staged")
                 self.assertEqual(prepared.resolve(), nc.forbric_stage())
 
-    def _stage(self, root):
+    def test_a_stage_this_trees_pins_did_not_build_is_refused_wherever_it_comes_from(self):
+        """C6 REL review A F1: in a worktree .dev links to the main checkout's, whose stage holds an unstamped NeoForge
+        26.2.0.88 carrier (and a base byte-identical to a .93 one), so a stage taken by its presence booted another
+        NeoForge than the arm reports. Base and carrier must carry this tree's build stamp (dev.py stale_stamps), for the
+        prepared stage and for FORBRIC_OLD alike, each stale stamp named."""
+        stamp = nc.dev_tools().pins_stamp()
+        env = {k: v for k, v in os.environ.items() if k != "FORBRIC_OLD"}
+        with tempfile.TemporaryDirectory() as tmp, mock.patch.dict(os.environ, env, clear=True):
+            tmp = Path(tmp)
+            kernel = tmp / "checkout/forbric-kernel"
+            with mock.patch.object(nc, "KERNEL", kernel), mock.patch.object(nc, "ORIGINAL", self._reference(tmp)):
+                prepared = self._stage(kernel / ".dev/staged", stamp=None)
+                with self.assertRaisesRegex(RuntimeError, r"the prepared stage .* is not a stage this tree's pins built: "
+                                            r"run/neoforge-patched/patched-mc-neoforge-26.2.jar.pins, "
+                                            r"run/neoforge-runtime/neoforge-runtime.jar.pins missing or not beginning"):
+                    nc.forbric_stage()
+                # Stamped by other pins (the carrier of another NeoForge): refused, only that stamp named.
+                self._stage(prepared, stamp=stamp)
+                (prepared / ("run/" + nc.STAGED_CARRIER + ".pins")).write_text(
+                    stamp.replace("neoforge=", "neoforge=0.") + " tools=x\n")
+                with self.assertRaises(RuntimeError) as refused:
+                    nc.forbric_stage()
+                self.assertIn("neoforge-runtime.jar.pins missing or not beginning with \"" + stamp + "\"", str(refused.exception))
+                self.assertNotIn("patched-mc-neoforge-26.2.jar.pins", str(refused.exception))
+                self._stage(prepared, stamp=stamp)
+                self.assertEqual(prepared.resolve(), nc.forbric_stage())
+                with mock.patch.dict(os.environ, {"FORBRIC_OLD": str(self._stage(tmp / "given", stamp=None))}):
+                    with self.assertRaisesRegex(RuntimeError, "FORBRIC_OLD .*given is not a stage this tree's pins built"):
+                        nc.forbric_stage()
+
+    def _stage(self, root, stamp=True):
+        """A stage with a base and a carrier; stamp True writes this tree's build stamp beside each (DevPrepare's
+        Pins.stamp() followed by its tools digest), a string writes that, None writes none."""
+        stamp = nc.dev_tools().pins_stamp() if stamp is True else stamp
         for rel in ("run/neoforge-patched/patched-mc-neoforge-26.2.jar", "run/neoforge-runtime/neoforge-runtime.jar"):
             (root / rel).parent.mkdir(parents=True, exist_ok=True); (root / rel).write_bytes(rel.encode())
+            pins = root / (rel + ".pins")
+            if stamp is None:
+                pins.unlink(missing_ok=True)
+            else:
+                pins.write_text(stamp + " tools=0000\n")
         return root
 
     def _reference(self, tmp):

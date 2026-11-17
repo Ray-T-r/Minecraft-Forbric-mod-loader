@@ -189,7 +189,7 @@ def run(engine, mods, driver, out, port, jvm='', tree=None, staged=None, timeout
     if engine.startswith('native-'):
         family = engine.split('-', 1)[1]
         image = NATIVE / family
-        if not image.is_dir(): raise SystemExit(f'no native {family} image at {image} (run/compat/native-controls.py prepare)')
+        if not image.is_dir(): raise SystemExit(f'no native {family} image at {image} (run/compat/native-controls.py prepare --family {family})')
         for rel in ('libraries', '.fabric'):
             if (image / rel).exists(): clone(image / rel, out / rel)
         for p in image.glob('*.jar'): clone(p, out / p.name)
