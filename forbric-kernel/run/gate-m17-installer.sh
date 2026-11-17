@@ -19,9 +19,21 @@
 # installed game is NeoForge's own patched game with one runtime, NeoForge's; the profile is checked for exactly that,
 # and a kernel handed the arguments of an install made by Forbric 0.4 or earlier refuses them (control N, below).
 #
-# The last two phases were written around the merge, which no install runs since C1, and both now assert what an install
-# still does (D70): every install runs the link check from the bundled tools jar, unpacked over whatever an earlier install
-# left in .forbric-build/tools, and a reinstall over a full cache goes to the network for nothing.
+# The tools-jar and offline phases were written around the merge, which no install runs since C1, and both now assert what
+# an install still does (D70): every install runs the link check from the checker jar the installer carries, unpacked over
+# whatever an earlier install left in .forbric-build/tools, and a reinstall over a full cache goes to the network for
+# nothing. D44 had C6 delete both; D70 found both premises live, and nothing else covers either (no unit test drives
+# LinkCheckTool's unpack, none denies an install the network), so they stay (D34, D89). Both follow the checker the
+# installer carries -- the merge tools' (forbric-merge-tools.jar) until C6's lane LINK, the kernel's own
+# (forbric-link-check.jar) after -- and once it is not the merge tools, an older install's merge-tools copy must be cleaned
+# away too.
+#
+# Phase U (D6, D32, D44; C6): the new installer run over the install a player of the last public release has. The public
+# v0.3.1-beta2 installer jar (the owner allowed that one download, 2026-11-17) is fetched once into run/.gate-downloads/m17,
+# SHA-1 checked, and run once into an empty directory there; that directory -- beta2's own profile, libraries and
+# .forbric-build, built from what beta2 itself downloads -- is cloned for every run. A second profile still names beta2's
+# merged base and its kernel; both must survive while everything else old goes, each removal named in the install's log.
+# The reverse control runs the same installer with -Dforbric.installerCleanup=off first: every removal check must be red.
 #
 # Rundir: M17_DEST (default run/installed, which the gate wipes). M17_SEED_CACHE=<an earlier install's directory> copies
 # that install's download caches (.forbric-build/dl and tools) and NeoForm's patched game (.forbric-build/out/
@@ -32,13 +44,21 @@
 # the NeoForge runtime and the vanilla reference and passed both link checks, while an empty directory behind the same
 # proxy fails at once ("could not reach maven.neoforged.net"). Unset, the first install builds everything and downloads
 # its inputs, as a player's does.
-# GATE-PARALLEL: rundirs=installed mem=3000
+# M17_UPGRADE_DEST: phase U's directory (default run/installed-upgrade, wiped too).
+# GATE-PARALLEL: rundirs=installed,installed-upgrade mem=3000
 set -uo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 INSTALLER="$KERNEL/../forbric-kernel-installer"
 DEST="${M17_DEST:-$KERNEL/run/installed}"
 refuse_shared_rundir "$DEST"
+DEST_UP="${M17_UPGRADE_DEST:-$KERNEL/run/installed-upgrade}"
+refuse_shared_rundir "$DEST_UP"
+# Phase U's old install: what the public v0.3.1-beta2 installer writes, laid out once under run/.gate-downloads.
+BETA2_URL=https://github.com/Ray-T-r/Minecraft-Forbric-mod-loader/releases/download/v0.3.1-beta2/forbric-kernel-installer-0.3.1-beta2.jar
+BETA2_SHA1=ae2ff4faa691665d4768218b97820d7ef9e11ce9
+BETA2_JAR="$GATE_DOWNLOADS/m17/forbric-kernel-installer-0.3.1-beta2.jar"
+BETA2_INSTALL="$GATE_DOWNLOADS/m17/v0.3.1-beta2-install"
 LOG="$BUILD/gate-m17-install.log"
 CLOG="$BUILD/gate-m17-client.log"
 MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
@@ -48,16 +68,49 @@ mkdir -p "$BUILD"
 
 [ -d "$MC/assets" ] || { echo "[kernel] SKIP-FATAL: no Minecraft assets at $MC/assets" >&2; exit 3; }
 [ -d "$SRC_RUNDIR/saves/$WORLD" ] || { echo "[kernel] SKIP-FATAL: no world at $SRC_RUNDIR/saves/$WORLD" >&2; exit 3; }
+# The released installer: fetched once (owner answer 2), and refused unless it is the one published.
+if [ "$(shasum -a 1 "$BETA2_JAR" 2>/dev/null | cut -d' ' -f1)" != "$BETA2_SHA1" ]; then
+  mkdir -p "$(dirname "$BETA2_JAR")"
+  curl -fsSL -o "$BETA2_JAR.part" "$BETA2_URL" \
+    || { echo "[kernel] SKIP-FATAL: could not fetch the v0.3.1-beta2 installer from $BETA2_URL" >&2; exit 3; }
+  GOT_SHA1="$(shasum -a 1 "$BETA2_JAR.part" | cut -d' ' -f1)"
+  [ "$GOT_SHA1" = "$BETA2_SHA1" ] \
+    || { rm -f "$BETA2_JAR.part"; echo "[kernel] SKIP-FATAL: $BETA2_URL has sha1 $GOT_SHA1, not the published $BETA2_SHA1" >&2; exit 3; }
+  mv "$BETA2_JAR.part" "$BETA2_JAR"
+fi
+# Its install, once: an empty directory with the base version, as a player's .minecraft had it. Kept only when beta2 says
+# it installed; the marker names the jar that wrote it.
+if [ "$(cat "$BETA2_INSTALL.done" 2>/dev/null)" != "$BETA2_SHA1" ]; then
+  echo "[kernel] laying out phase U's old install with the released v0.3.1-beta2 installer (once; it downloads and builds)"
+  rm -rf "$BETA2_INSTALL" "$BETA2_INSTALL.done"
+  mkdir -p "$BETA2_INSTALL/versions/26.2"
+  cp "$MC/versions/26.2/26.2.json" "$MC/versions/26.2/26.2.jar" "$BETA2_INSTALL/versions/26.2/" 2>/dev/null || true
+  if java -jar "$BETA2_JAR" --dir "$BETA2_INSTALL" --mc 26.2 > "$BUILD/gate-m17-beta2-install.log" 2>&1 \
+      && grep -aq '^Installed\.' "$BUILD/gate-m17-beta2-install.log"; then
+    echo "$BETA2_SHA1" > "$BETA2_INSTALL.done"
+  else
+    echo "[kernel] SKIP-FATAL: the v0.3.1-beta2 installer did not install (log $BUILD/gate-m17-beta2-install.log)" >&2; exit 3
+  fi
+fi
+echo "[kernel] phase U's old install: $BETA2_INSTALL, written by v0.3.1-beta2 (sha1 $BETA2_SHA1)"
 
 kernel_jar
 
 step "build the installer jar"
 # Offline and without a daemon, like every other Gradle run of a gate. kernel_jar (above) built the kernel jar the
-# installer bundles and the loader builds the merge-tools jar (the link checker's) here; the installer's own nested
-# builds of the two (buildForbricJars, buildMergeTools) are left out because they call gradlew online, and its bundle
-# tasks fail loudly on a jar that is not there.
-if ! { (cd "$KERNEL/../forbric-loader" && ./gradlew --offline --no-daemon -q mergeToolsJar) \
-       && (cd "$INSTALLER" && ./gradlew --offline --no-daemon -q jar -x buildForbricJars -x buildMergeTools); } \
+# installer bundles; the link checker it carries is built here by the module that owns it -- the kernel's linkCheckJar
+# since C6 (LINK), the loader's mergeToolsJar before -- and the installer's own nested builds of the two are left out
+# because they call gradlew online, and its bundle tasks fail loudly on a jar that is not there. Which one is asked of the
+# installer's build file, not assumed, so this gate runs on either side of that change.
+if grep -q "register('buildLinkCheck'" "$INSTALLER/build.gradle"; then
+  CHECKER_DIR="$KERNEL"; CHECKER_TASK=linkCheckJar; CHECKER_NESTED=buildLinkCheck
+elif grep -q "register('buildMergeTools'" "$INSTALLER/build.gradle"; then
+  CHECKER_DIR="$KERNEL/../forbric-loader"; CHECKER_TASK=mergeToolsJar; CHECKER_NESTED=buildMergeTools
+else
+  echo "[kernel] FATAL: the installer's build file has neither buildLinkCheck nor buildMergeTools; re-point this step" >&2; exit 3
+fi
+if ! { (cd "$CHECKER_DIR" && ./gradlew --offline --no-daemon -q "$CHECKER_TASK") \
+       && (cd "$INSTALLER" && ./gradlew --offline --no-daemon -q jar -x buildForbricJars -x "$CHECKER_NESTED"); } \
      > "$BUILD/gate-m17-installer-build.log" 2>&1; then
   echo "[kernel] FATAL: installer build failed" >&2
   grep -vE 'WARNING|^$' "$BUILD/gate-m17-installer-build.log" | tail -20 >&2
@@ -108,6 +161,9 @@ check "it staged the game artifacts"   "staged 3 game artifact"                 
 # below and InstallerWindowInputTest's English mods-folder line hold the wording.
 check "it says Fabric and NeoForge mods go in the mods folder" "Fabric and NeoForge mods go in .*Forbric no longer loads MinecraftForge mods" "$LOG"
 check "it built the vanilla reference" "^\[vanilla-reference\] wrote vanilla-reference-26.2.jar: [1-9][0-9]* vanilla classes" "$LOG"
+# Every install ends with the clean-up of what an older Forbric left (OldInstallCleanup, D6); an empty directory holds none
+# of it, so it ran and removed nothing. Phase U, at the end, is the install where it has something to do.
+check_exactly "the clean-up ran, and found nothing old in an empty directory" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$LOG" 1
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
   || { echo "[kernel] FAIL the profile exists"; FAIL=1; }
 
@@ -148,7 +204,9 @@ fi
 step "give the directory the vanilla libraries a launcher would have downloaded"
 # The base version's own libraries are the launcher's job. The installer fetches none of them since C1 (only the merge
 # read them, D13), so this copies every one the base version lists for this OS from the real Minecraft install.
-COPIED=$(python3 - "$DEST" "$MC" <<'LIBS'
+# copy_vanilla_libraries <install-dir> -- prints how many it copied. Phase U gives its directory the same.
+copy_vanilla_libraries() {
+  python3 - "$1" "$MC" <<'LIBS'
 import json, os, platform, shutil, sys
 dest, mc = sys.argv[1:3]
 with open(os.path.join(dest, "versions", "26.2", "26.2.json")) as f:
@@ -184,7 +242,8 @@ for entry in base.get("libraries", []):
         copied += 1
 print(copied)
 LIBS
-)
+}
+COPIED=$(copy_vanilla_libraries "$DEST")
 echo "[kernel] copied $COPIED vanilla librar(ies) into the install, as a launcher would"
 
 step "resolve that profile the way a launcher does, and launch it"
@@ -199,7 +258,9 @@ cp "$SRC_RUNDIR/mods"/*.jar "$DEST/mods/" 2>/dev/null || true
 echo "[kernel] mods: $(ls -1 "$DEST/mods" 2>/dev/null | wc -l | tr -d ' ')"
 
 CMD_FILE="$BUILD/gate-m17-command.txt"
-python3 - "$DEST" "$MC" "$WORLD" "$CMD_FILE" <<'PY'
+# resolve_profile <install-dir> <command-file> -- the profile there, resolved into one java command. Phase U resolves its own.
+resolve_profile() {
+  python3 - "$1" "$MC" "$WORLD" "$2" <<'PY'
 import json, os, platform, sys
 
 dest, mc, world, out = sys.argv[1:5]
@@ -336,6 +397,8 @@ print("[kernel]   classpath: %d jar(s); game args: %d (%d dropped by launcher-st
       "missing staged libraries: %s"
       % (len(classpath), len(deduped), len(game_args) - len(deduped), missing or "none"))
 PY
+}
+resolve_profile "$DEST" "$CMD_FILE"
 PY_RC=$?
 assert_eq "the profile resolved like a launcher would" "0" "$PY_RC"
 
@@ -352,26 +415,31 @@ check "the vanilla reference survived the dedup"    "/vanilla-reference-[0-9.-]+
 check_exactly "one game jar, and it is the base"    "^--gameJar$"                    "$CMD_FILE" 1
 check_exactly "the reference has its own flag"      "^--nativeReference$"            "$CMD_FILE" 1
 
-if [ "$PY_RC" -eq 0 ]; then
-  echo "[kernel] launching the resolved command (mainClass $(grep -c . "$CMD_FILE") argv entries)"
+# launch_resolved <install-dir> <command-file> <client-log> -- run that command into its world and out again.
+launch_resolved() {
+  local dest="$1" cmd="$2" clog="$3" pid game i
+  echo "[kernel] launching the resolved command (mainClass $(grep -c . "$cmd") argv entries)"
   # The resolved command is a java line of its own (no launcher reads FORBRIC_JVM there): the caller's FORBRIC_JVM -- a
   # sweep's locale, say -- reaches the game through JAVA_TOOL_OPTIONS, ahead of the smoke properties.
-  ( cd "$DEST" && tr '\n' '\0' < "$CMD_FILE" | xargs -0 env \
+  ( cd "$dest" && tr '\n' '\0' < "$cmd" | xargs -0 env \
       JAVA_TOOL_OPTIONS="${FORBRIC_JVM:-} -Dforbric.clientSmoke=true -Dforbric.clientSmokeWorld=$WORLD -Dforbric.clientSmokeReadyTicks=60 -Dforbric.clientSmokeDisconnectTicks=140" \
-      ) > "$CLOG" 2>&1 &
-  CLIENT_PID=$!
-  echo "[kernel] client pid=$CLIENT_PID (killed by pid only — another client may be running)"
-  CGAME="$DEST/logs/latest.log"
+      ) > "$clog" 2>&1 &
+  pid=$!
+  echo "[kernel] client pid=$pid (killed by pid only — another client may be running)"
+  game="$dest/logs/latest.log"
   for i in $(seq 1 300); do
-    kill -0 "$CLIENT_PID" 2>/dev/null || { echo "[kernel] client exited on its own after ~${i}s"; break; }
-    grep -qE 'ClientSmoke\] clean disconnect observed|Game crashed|Mod Loading has failed' "$CGAME" 2>/dev/null \
+    kill -0 "$pid" 2>/dev/null || { echo "[kernel] client exited on its own after ~${i}s"; break; }
+    grep -qE 'ClientSmoke\] clean disconnect observed|Game crashed|Mod Loading has failed' "$game" 2>/dev/null \
       && { echo "[kernel] outcome reached after ~${i}s"; break; }
     sleep 1
   done
-  for i in $(seq 1 25); do kill -0 "$CLIENT_PID" 2>/dev/null || break; sleep 1; done
-  stop_tree "$CLIENT_PID"   # the whole tree: lib.sh says why children-only orphans a JVM
-  wait "$CLIENT_PID" 2>/dev/null
-  cat "$CGAME" >> "$CLOG" 2>/dev/null || true
+  for i in $(seq 1 25); do kill -0 "$pid" 2>/dev/null || break; sleep 1; done
+  stop_tree "$pid"   # the whole tree: lib.sh says why children-only orphans a JVM
+  wait "$pid" 2>/dev/null
+  cat "$game" >> "$clog" 2>/dev/null || true
+}
+if [ "$PY_RC" -eq 0 ]; then
+  launch_resolved "$DEST" "$CMD_FILE" "$CLOG"
 fi
 
 step "the installed version runs the Fabric + NeoForge game (must PASS)"
@@ -457,6 +525,8 @@ assert_eq "every artifact came from the cache" "2" "$REUSED"
 # Reused by what it records -- the SHA-1 of the vanilla jar and of the base -- not by the pins: rebuilt only when either
 # input changed, and neither did.
 check "the vanilla reference came from the cache too" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-2.log"
+# The clean-up never takes this install's own files: its outputs and stamps, the download cache, its libraries.
+check_exactly "the clean-up removed none of this install's own files" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-2.log" 1
 
 step "and a pin that no longer matches is NOT served from it"
 # Only the NeoForge runtime's stamp is disturbed, because the stamp is the whole pin set: in real use both move
@@ -475,32 +545,56 @@ else
 fi
 
 step "the link checker's tools jar is not served from the previous install (must PASS)"
-# The layer below the artifact cache. The installer carries forbric/tools/forbric-merge-tools.jar for its link checker
+# The layer below the artifact cache. The installer carries one checker jar under forbric/tools/ for its link check
 # (LinkCheckTool) and runs the link check on every install, a reinstall served wholly from the cache included
-# (ArtifactBuilder.build). LinkCheckTool.unpackTools overwrites .forbric-build/tools/forbric-merge-tools.jar each time; it
-# used to keep a copy that was already there, and a rebuild then ran the PREVIOUS installer's tool -- a stale checker
-# passes jars the current one would refuse. So: spoil that copy, reinstall over the full cache, and the install must still
-# pass the link check (it cannot, from a file that is not a jar) and leave the bundled jar's bytes there. RED, measured
-# (C5, 2026-11-09): an installer built with unpackTools keeping an existing file, run on a copy of this install with the
-# same spoiled file, exits 1 ("Could not find or load main class net.forbric.tools.MergedLinkChecker").
+# (ArtifactBuilder.build). LinkCheckTool overwrites its copy in .forbric-build/tools each time; it used to keep a copy that
+# was already there, and a rebuild then ran the PREVIOUS installer's tool -- a stale checker passes jars the current one
+# would refuse. So: spoil that copy, reinstall over the full cache, and the install must still pass the link check (it
+# cannot, from a file that is not a jar) and leave the bundled jar's bytes there. RED, measured (C5, 2026-11-09): an
+# installer built with the unpack keeping an existing file, run on a copy of this install with the same spoiled file, exits 1
+# ("Could not find or load main class net.forbric.tools.MergedLinkChecker").
 # (On the merged base this phase forced a merge to make the install ask for the tool; since C1 the link check asks.)
-TOOLS="$DEST/.forbric-build/tools/forbric-merge-tools.jar"
+# Since C6 the checker is the kernel's own (forbric-link-check.jar), and an older install's forbric-merge-tools.jar is one
+# more file nothing reads: it is planted here and must be cleaned away, by name in the log (OldInstallCleanup).
+CHECKERS="$(unzip -Z1 "$JAR" 2>/dev/null | grep -aE '^forbric/tools/[^/]+\.jar$')"
 WANT="$BUILD/gate-m17-tools-bundled.jar"
-unzip -p "$JAR" forbric/tools/forbric-merge-tools.jar > "$WANT" 2>/dev/null
-if [ ! -s "$WANT" ]; then
-  echo "[kernel] FAIL the installer carries no bundled tools jar"; FAIL=$((FAIL+1))
+rm -f "$WANT"
+if [ "$(printf '%s\n' "$CHECKERS" | grep -ac .)" != 1 ]; then
+  echo "[kernel] FAIL the installer carries one checker jar under forbric/tools/ (it carries: ${CHECKERS:-none})"; FAIL=$((FAIL+1))
+  CHECKER=""
+else
+  CHECKER="$(basename "$CHECKERS")"
+  unzip -p "$JAR" "$CHECKERS" > "$WANT" 2>/dev/null
+fi
+TOOLS="$DEST/.forbric-build/tools/$CHECKER"
+OLD_MERGE_TOOLS="$DEST/.forbric-build/tools/forbric-merge-tools.jar"
+if [ -z "$CHECKER" ] || [ ! -s "$WANT" ]; then
+  echo "[kernel] FAIL the installer carries no bundled checker jar"; FAIL=$((FAIL+1))
 elif [ ! -s "$TOOLS" ]; then
-  echo "[kernel] FAIL the earlier installs left no tools jar in .forbric-build/tools"; FAIL=$((FAIL+1))
+  echo "[kernel] FAIL the earlier installs left no $CHECKER in .forbric-build/tools"; FAIL=$((FAIL+1))
 else
   printf 'not a jar at all' > "$TOOLS"
+  [ "$CHECKER" = forbric-merge-tools.jar ] || printf 'an older installer left this' > "$OLD_MERGE_TOOLS"
   java -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-4.log" 2>&1
-  assert_eq "the reinstall over a spoiled tools jar exited cleanly" "0" "$?"
+  assert_eq "the reinstall over a spoiled $CHECKER exited cleanly" "0" "$?"
   REUSED=$(grep -acE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-4.log")
   assert_eq "it was served from the cache (both built artifacts up to date)" "2" "$REUSED"
   check_exactly "and still ran the link check, in both orders" \
     "^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$" "$BUILD/gate-m17-install-4.log" 2
   assert_eq "the spoiled tool is replaced by the bundled one" \
     "$(shasum -a 1 "$WANT" | cut -d' ' -f1)" "$(shasum -a 1 "$TOOLS" | cut -d' ' -f1)"
+  if [ "$CHECKER" = forbric-merge-tools.jar ]; then
+    # The installer still runs its link checker from them, so the clean-up leaves them: nothing is removed.
+    check_exactly "and the clean-up left the tools jar this installer uses" \
+      "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-4.log" 1
+  else
+    [ ! -e "$OLD_MERGE_TOOLS" ] && echo "[kernel] PASS an older installer's merge-tools jar is cleaned away" \
+      || { echo "[kernel] FAIL an older installer's merge-tools jar survived an installer that carries none"; FAIL=$((FAIL+1)); }
+    check_exactly "and the install's log names it, and nothing else" \
+      "^\[cleanup\] removed .*/\.forbric-build/tools/forbric-merge-tools\.jar " "$BUILD/gate-m17-install-4.log" 1
+    check_exactly "one file removed in all" "^\[cleanup\] removed 1 file\(s\) an older Forbric left behind" \
+      "$BUILD/gate-m17-install-4.log" 1
+  fi
 fi
 
 step "an offline reinstall over that cache needs no network (must PASS)"
@@ -524,6 +618,184 @@ assert_eq "every built artifact came from the cache" "2" "$REUSED"
 check "and it measured no new vanilla reference" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-5.log"
 check_exactly "the link check ran offline, in both orders" \
   "^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$" "$BUILD/gate-m17-install-5.log" 2
+check_exactly "and the clean-up removed nothing" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-5.log" 1
+
+# ---------------------------------------------------------------------------------------------------------
+# Phase U: the new installer over the install the last public release left (D6, D32, D44). A player's directory, not an
+# empty one: v0.3.1-beta2's profile, libraries and .forbric-build as that installer wrote them (cloned from the one laid out
+# above), plus a second profile the player still has. Two installs: first with -Dforbric.installerCleanup=off, the reverse
+# control (every removal check must be red), then the real one over the same directory, after which only what nothing
+# names is gone, every removal is in the log, dl/ and the player's files are untouched, and the game boots from the result.
+step "phase U: lay out the install v0.3.1-beta2 left"
+rm -rf "$DEST_UP"
+cp -cR "$BETA2_INSTALL" "$DEST_UP" 2>/dev/null || { rm -rf "$DEST_UP"; cp -R "$BETA2_INSTALL" "$DEST_UP"; }
+UB="$DEST_UP/.forbric-build"
+# The keep-old control: a second profile naming beta2's merged base and its kernel (critic 24: an older kernel another
+# profile names survives).
+mkdir -p "$DEST_UP/versions/keep-old"
+cat > "$DEST_UP/versions/keep-old/keep-old.json" <<'KEEP'
+{"id": "keep-old", "inheritsFrom": "26.2", "type": "release", "mainClass": "net.forbric.kernel.boot.KernelClientLaunch",
+ "libraries": [{"name": "net.forbric:patched-mc-merged:26.2"}, {"name": "net.forbric:forbric-kernel:0.3.1-beta2"}]}
+KEEP
+grep -aq '"--gameJar"' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
+  && grep -aq 'patched-mc-merged/26.2/' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
+  && echo "[kernel] PASS the old profile is beta2's: it opens the merged base" \
+  || { echo "[kernel] FAIL the old profile is not the one v0.3.1-beta2 writes"; FAIL=1; }
+# dl/ before: every file an older installer cached there must come out of the upgrade unchanged (critic 19).
+dl_files() { (cd "$UB/dl" && find . -type f | LC_ALL=C sort | xargs shasum -a 1); }
+dl_files > "$BUILD/gate-m17-upgrade-dl-before.txt"
+# What this installer downloads that beta2's caches lack (NeoForge 26.2.0.93's userdev, universal and libraries, NFRT's
+# artifacts for it) is exactly what the first install above fetched in this run: copied in from there, never over a file
+# beta2 left, so phase U does not depend on the network a second time (two m17 runs on 2026-11-17 lost a cold download to a
+# TLS failure from Mojang's and NeoForge's servers).
+for cache in dl nfrt; do
+  [ -d "$DEST/.forbric-build/$cache" ] || continue
+  (cd "$DEST/.forbric-build/$cache" && find . -type f) | while IFS= read -r f; do
+    [ -e "$UB/$cache/$f" ] && continue
+    mkdir -p "$UB/$cache/$(dirname "$f")"
+    cp -c "$DEST/.forbric-build/$cache/$f" "$UB/$cache/$f" 2>/dev/null || cp "$DEST/.forbric-build/$cache/$f" "$UB/$cache/$f"
+  done
+done
+
+# The player's files, as in the first install, and their digests before anything runs.
+cp -cR "$SRC_RUNDIR/saves" "$DEST_UP/saves" 2>/dev/null || cp -R "$SRC_RUNDIR/saves" "$DEST_UP/saves"
+cp -R "$SRC_RUNDIR/config" "$DEST_UP/config" 2>/dev/null || true
+cp -R "$SRC_RUNDIR/defaultconfigs" "$DEST_UP/defaultconfigs" 2>/dev/null || true
+cp "$SRC_RUNDIR/options.txt" "$DEST_UP/options.txt" 2>/dev/null || true
+mkdir -p "$DEST_UP/mods" "$DEST_UP/quickPlay"
+cp "$SRC_RUNDIR/mods"/*.jar "$DEST_UP/mods/" 2>/dev/null || true
+user_data() { (cd "$DEST_UP" && find mods saves config defaultconfigs options.txt -type f 2>/dev/null | LC_ALL=C sort | xargs shasum -a 1); }
+user_data > "$BUILD/gate-m17-upgrade-userdata-before.txt"
+
+# What must go (relative to $DEST_UP) and what must stay: everything of beta2's that no profile names, and every
+# MinecraftForge or merged product in .forbric-build -- not dl/ (critic 19: the download cache is never touched).
+UP_GONE=(
+  libraries/net/forbric/forge-runtime/26.2/forge-runtime-26.2.jar
+  libraries/net/forbric/neoforge-runtime/26.2/neoforge-runtime-26.2.jar
+  libraries/net/forbric/forbric-loader/0.3.1-beta2/forbric-loader-0.3.1-beta2.jar
+  libraries/net/forbric/forbricruntime/0.3.1-beta2/forbricruntime-0.3.1-beta2.jar
+  .forbric-build/out/patched-mc-merged-26.2.jar .forbric-build/out/patched-mc-merged-26.2.jar.pins
+  .forbric-build/out/merge-conflicts.txt
+  .forbric-build/out/forge-runtime.jar .forbric-build/out/forge-runtime.jar.pins
+  .forbric-build/out/forge-runtime-interop.jar .forbric-build/out/forge-runtime-interop.jar.pins
+  .forbric-build/out/patched-mc-forge-26.2.jar .forbric-build/out/patched-mc-forge-26.2.jar.pins
+  .forbric-build/server-main.jar .forbric-build/clean.jar .forbric-build/patched-subset.jar .forbric-build/patched-full.jar
+  .forbric-build/patched-at.jar .forbric-build/joined.lzma .forbric-build/ats/accesstransformer.cfg
+)
+UP_KEPT_OLD=(
+  libraries/net/forbric/patched-mc-merged/26.2/patched-mc-merged-26.2.jar
+  libraries/net/forbric/forbric-kernel/0.3.1-beta2/forbric-kernel-0.3.1-beta2.jar
+)
+# This install's own: its four libraries and .forbric-build/out's outputs with their stamps.
+UP_CURRENT=(
+  libraries/net/forbric/patched-mc-neoforge/26.2-26.2.0.93/patched-mc-neoforge-26.2-26.2.0.93.jar
+  libraries/net/forbric/neoforge-runtime/26.2.0.93/neoforge-runtime-26.2.0.93.jar
+  libraries/net/forbric/vanilla-reference/26.2-26.2.0.93/vanilla-reference-26.2-26.2.0.93.jar
+  "libraries/net/forbric/forbric-kernel/$VERSION/forbric-kernel-$VERSION.jar"
+  .forbric-build/out/patched-mc-neoforge-26.2.jar .forbric-build/out/patched-mc-neoforge-26.2.jar.pins
+  .forbric-build/out/neoforge-runtime.jar .forbric-build/out/neoforge-runtime.jar.pins
+  .forbric-build/out/vanilla-reference-26.2.jar
+)
+# beta2 left its merge tools in tools/: this installer's checker replaces them when it is the merge tools, and the clean-up
+# removes them when it is not.
+[ -n "$CHECKER" ] && UP_CURRENT+=(".forbric-build/tools/$CHECKER")
+[ "$CHECKER" = forbric-merge-tools.jar ] || UP_GONE+=(.forbric-build/tools/forbric-merge-tools.jar)
+UP_PRESENT_BEFORE=0
+for rel in "${UP_GONE[@]}" "${UP_KEPT_OLD[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_PRESENT_BEFORE=$((UP_PRESENT_BEFORE+1)); done
+assert_eq "the old layout holds every file phase U judges" "$(( ${#UP_GONE[@]} + ${#UP_KEPT_OLD[@]} ))" "$UP_PRESENT_BEFORE"
+
+step "phase U, reverse control: the same installer with its clean-up off leaves every old file (must PASS)"
+java -Dforbric.installerCleanup=off -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade-off.log" 2>&1
+assert_eq "the install over the old one exited cleanly" "0" "$?"
+check_exactly "its clean-up said it was off" "^\[cleanup\] off \(-Dforbric\.installerCleanup=off\)" "$BUILD/gate-m17-upgrade-off.log" 1
+# The old stamps name MinecraftForge and the merge tools: nothing of the old build is served as current.
+check_absent "nothing of the old build was taken as up to date" "^\[(neoforge-runtime|neoform)\] up-to-date" \
+  "$BUILD/gate-m17-upgrade-off.log"
+UP_RED=0
+for rel in "${UP_GONE[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_RED=$((UP_RED+1)); done
+assert_eq "every one of phase U's ${#UP_GONE[@]} removal checks is red with the clean-up off" "${#UP_GONE[@]}" "$UP_RED"
+
+step "phase U: the profile the new installer wrote over the old one (must PASS)"
+UP_PROFILE="$DEST_UP/versions/26.2-forbric/26.2-forbric.json"
+UP_PROFILE_CHECKS=$(python3 - "$UP_PROFILE" <<'UPPROF'
+import json, sys
+text = open(sys.argv[1]).read()
+game = json.loads(text)["arguments"]["game"]
+def values(flag):
+    return [game[i + 1] for i, token in enumerate(game[:-1]) if token == flag]
+def say(ok, what):
+    print("[kernel] %s %s" % ("PASS" if ok else "FAIL", what))
+for flag, tail in (("--gameJar", "/patched-mc-neoforge-26.2-26.2.0.93.jar"),
+                   ("--runtimeJar", "/neoforge-runtime-26.2.0.93.jar"),
+                   ("--nativeReference", "/vanilla-reference-26.2-26.2.0.93.jar")):
+    got = values(flag)
+    say(len(got) == 1 and got[0].endswith(tail), "one %s, and it is %s (%s)" % (flag, tail.lstrip("/"), got))
+for old in ("patched-mc-merged", "/forge-runtime", ":forge-runtime", "forbric-loader", "forbricruntime"):
+    say(old not in text, "the profile no longer names %s" % old)
+UPPROF
+)
+echo "$UP_PROFILE_CHECKS"
+echo "$UP_PROFILE_CHECKS" | grep -q '^\[kernel\] PASS' || { echo "[kernel] FAIL the rewritten profile could not be read"; FAIL=1; }
+echo "$UP_PROFILE_CHECKS" | grep -q '^\[kernel\] FAIL' && FAIL=1
+step "phase U: the real install over the same directory cleans up (must PASS)"
+java -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade.log" 2>&1
+assert_eq "the install exited cleanly" "0" "$?"
+for rel in "${UP_GONE[@]}"; do
+  if [ -e "$DEST_UP/$rel" ]; then
+    echo "[kernel] FAIL still there, though nothing names it: $rel"; FAIL=1
+  elif ! grep -aqF "[cleanup] removed $DEST_UP/$rel " "$BUILD/gate-m17-upgrade.log"; then
+    echo "[kernel] FAIL gone, but the install's log does not name it: $rel"; FAIL=1
+  else
+    echo "[kernel] PASS removed, and named in the log: $rel"
+  fi
+done
+check_exactly "the clean-up removed exactly those ${#UP_GONE[@]} files" \
+  "^\[cleanup\] removed ${#UP_GONE[@]} file\(s\) an older Forbric left behind \([0-9.]+ MB\)$" "$BUILD/gate-m17-upgrade.log" 1
+check_absent "and none failed" "^\[cleanup\] could not" "$BUILD/gate-m17-upgrade.log"
+for rel in "${UP_KEPT_OLD[@]}"; do
+  [ -f "$DEST_UP/$rel" ] && echo "[kernel] PASS kept, the keep-old profile still names it: $rel" \
+    || { echo "[kernel] FAIL removed, though the keep-old profile names it: $rel"; FAIL=1; }
+done
+for rel in "${UP_CURRENT[@]}"; do
+  [ -f "$DEST_UP/$rel" ] && echo "[kernel] PASS this install's own file is there: $rel" \
+    || { echo "[kernel] FAIL this install's own file is missing: $rel"; FAIL=1; }
+done
+# Only .forbric-build's own level, out/ and tools/: NFRT's caches and work tree hold names of their own (an "ats" among
+# them) that are not an older installer's.
+LEFT=$(cd "$UB" && { ls -1; ls -1 out tools 2>/dev/null; } | grep -aE '^(patched-mc-merged|forge-runtime|patched-mc-forge|merge-conflicts\.txt$|server-main\.jar$|clean\.jar$|patched-(subset|full|at)\.jar$|joined\.lzma$|ats$)' | tr '\n' ' ')
+assert_eq ".forbric-build holds no MinecraftForge or merged product" "" "$LEFT"
+dl_files > "$BUILD/gate-m17-upgrade-dl-after.txt"
+DL_CHANGED=$(LC_ALL=C comm -23 "$BUILD/gate-m17-upgrade-dl-before.txt" "$BUILD/gate-m17-upgrade-dl-after.txt" | wc -l | tr -d ' ')
+assert_eq "dl/ is untouched: every file an older installer cached there is still there, unchanged ($(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') files)" "0" "$DL_CHANGED"
+# And nothing else is left under net/forbric: this install's four, and the two the keep-old profile names.
+FORBRIC_LEFT=$(cd "$DEST_UP/libraries" && find net/forbric -type f | LC_ALL=C sort | tr '\n' ' ')
+FORBRIC_WANT=$(for rel in "${UP_KEPT_OLD[@]}" "${UP_CURRENT[@]}"; do case "$rel" in (libraries/*) echo "${rel#libraries/}";; esac; done | LC_ALL=C sort | tr '\n' ' ')
+assert_eq "libraries/net/forbric holds exactly this install's files and the ones another profile names" "$FORBRIC_WANT" "$FORBRIC_LEFT"
+user_data > "$BUILD/gate-m17-upgrade-userdata-after.txt"
+if cmp -s "$BUILD/gate-m17-upgrade-userdata-before.txt" "$BUILD/gate-m17-upgrade-userdata-after.txt"; then
+  echo "[kernel] PASS the player's mods, saves, config and options are byte-identical ($(wc -l < "$BUILD/gate-m17-upgrade-userdata-after.txt" | tr -d ' ') files)"
+else
+  echo "[kernel] FAIL the player's files changed across the upgrade"; FAIL=1
+fi
+
+step "phase U: the upgraded directory boots into the world (must PASS)"
+UP_COPIED=$(copy_vanilla_libraries "$DEST_UP")
+echo "[kernel] copied $UP_COPIED vanilla librar(ies) into the upgraded install"
+UP_CMD="$BUILD/gate-m17-upgrade-command.txt"
+UP_CLOG="$BUILD/gate-m17-upgrade-client.log"
+resolve_profile "$DEST_UP" "$UP_CMD"
+UP_RC=$?
+assert_eq "the upgraded profile resolved like a launcher would" "0" "$UP_RC"
+check "and it runs this kernel, not beta2's" "/forbric-kernel-$VERSION\.jar" "$UP_CMD"
+[ "$UP_RC" -eq 0 ] && launch_resolved "$DEST_UP" "$UP_CMD" "$UP_CLOG"
+check "the kernel booted from the upgraded profile" "Forbric/Boot\] sovereign kernel — client" "$UP_CLOG"
+check "it opened the game base"                    "Forbric/Boot\] game base"                 "$UP_CLOG"
+check "it entered the world"                        "ClientSmoke\] client-ready after"         "$UP_CLOG"
+check "it left cleanly"                             "ClientSmoke\] clean disconnect observed"  "$UP_CLOG"
+check_absent "it was not refused as an old install" "installed by Forbric 0\.4 or earlier"     "$UP_CLOG"
+check_absent "no client crash"                      "Preparing crash report"                   "$UP_CLOG"
+check_absent "nothing the installer staged went missing" \
+  "(NoClassDefFoundError|ClassNotFoundException).*(net/forbric|net\\.forbric|net/minecraft|org/apache/logging|com/mojang|org/objectweb/asm|org/spongepowered)" "$UP_CLOG"
 
 step "M17 result"
 if [ "$FAIL" -eq 0 ]; then

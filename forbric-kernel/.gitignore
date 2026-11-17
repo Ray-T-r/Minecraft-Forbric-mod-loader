@@ -23,6 +23,8 @@
 # link/clone of the main checkout's), and 36dfef28 committed all three as symlinks into one worktree's own path because
 # `/run/installed/` never matched a link.
 /run/installed
+# gate-m17 phase U's upgrade directory (C6), likewise without a trailing slash.
+/run/installed-upgrade
 
 # Generated probe jars and hash manifests; their sources live in /canary/.
 /run/canary/
