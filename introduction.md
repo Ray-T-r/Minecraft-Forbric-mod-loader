@@ -309,10 +309,15 @@ Both sides run the same steps (comments in the source number them):
   A mod whose constructor, subscriber class or listener throws in any of these steps stops the boot as native
   NeoForge 26.2.0.93 stops it: `RegistrationStop` builds the `ModLoadingException` with NeoForge's own
   `ModLoader.waitForTask`, it leaves the redirected `ServerModLoader.load` / `ClientModLoader.begin` call, and the game's
-  own handlers write the crash report and exit (status 1 on a server; NeoForge's fatal-error window on a client). The
-  same holds for every later phase the kernel drives — setup, IMC, load complete, the network locks, the Fabric
-  entrypoints (`KernelNeoClientStop` is the client's end of a stop inside `Minecraft.<init>`). Nothing is contained and
-  no world is loaded after a stop.
+  own handlers write the crash report and exit (status 1 on a server; on a client, which has no game window yet,
+  NeoForge's fatal-error window). The same holds for every later phase the kernel drives — setup, IMC, load complete,
+  the network locks, the Fabric `main`/`client`/`server` entrypoints (`KernelNeoClientStop` is the client's end of a
+  stop inside `Minecraft.<init>`). Two things differ from native there: once the client has its game window, NeoForge
+  falls back to a message box where native draws the error in the game window, and a Fabric stage stop on a dedicated
+  server exits `1` where native Fabric exits `0` (§19). A Fabric stage stop writes no NeoForge crash file: a server's
+  Main logs it, and a client ends with Minecraft's crash report (§12.4). Except NeoForge's "Config loading" listeners, a Fabric `preLaunch` entrypoint (§5) and a throwing Fabric
+  injector at the moved freeze point (§3.5), which are still contained (§19), nothing is contained, and no world is
+  loaded after a stop.
 - **2b–2c2** on the client construct `ClientNeoForgeMod`; publish the NeoForge baseline in `ModList`; load
   STARTUP/COMMON (and on the client CLIENT) configs; wire the carrier's own `@EventBusSubscriber` classes.
 - **3a** declare datapack registries (`DataPackRegistryEvent.NewRegistry`, Fabric dynamic registries mirrored both
@@ -341,20 +346,23 @@ Fabric and NeoForge need opposite states in the constructor, so the kernel has t
 
 - `ClientEntrypointHookInjector` → `KernelLifecycle.onClientEntrypoints()`, before `Options` exists: reopen the
   registries, run Fabric `main` then `client` entrypoints (Fabric's `Hooks.startClient` order), re-close and
-  re-freeze, open late CLIENT configs, then declare datapack registries. A Fabric entrypoint that throws stops the
-  boot (`RegistrationStop.fabric`), as every other loading failure does (§3.4). Around that freeze is
+  re-freeze, open late CLIENT configs, then declare datapack registries. A Fabric `main` or `client` entrypoint that
+  throws stops the boot (`RegistrationStop.fabric`), as a NeoForge mod's loading failure does (§3.4). Around that freeze is
   Fabric's registry freeze point: where a Fabric mixin defers the freeze (recognised by the redirect of
   `Bootstrap`'s `bootStrap()` call that defers it, whoever declares it — fabric-registry-sync does), a Fabric mod's
   `@Inject` at the HEAD or TAIL of `BuiltInRegistries.freeze()`, or just before or after `bootStrap()`'s call of it, runs there
   (`FabricFreezeHookMixinAdapter`), where native Fabric freezes — after the entrypoints, with `Minecraft.getInstance()`
   set. LiquidBounce builds its creative tabs from such an injector; left in `Bootstrap` it found no client and died.
+  An injector that throws there is still contained: it is logged, the later ones on that hook are skipped, and the
+  boot goes on (§19).
 - `NeoClientSetupHookInjector` at the base's own `ClientModLoader.finish()` call →
   `KernelLifecycle.onNeoClientSetup()`, after `options` is assigned: `fireClientSetupLifecycle`: common setup, client
   setup, `RegistrationEvents.init()`, IMC, load complete — with the registries frozen, as on genuine NeoForge, and
   before the first resource reload, as natively (the merged base preloaded the client resources here for
   MinecraftForge mods; that preload is retired) — then `load-report.txt` and the end-of-loading decision
   (`requireClientContinuation`), then late configs, then close the payload registration phase. A stop in any of these
-  is handed to `KernelNeoClientStop`, which does what `ClientModLoader.finish`'s own handler does natively.
+  is handed to `KernelNeoClientStop`, which does what `ClientModLoader.finish`'s own handler does natively, except
+  that what shows is NeoForge's message-box fallback, where native draws the error in the game window (§19).
 
 ## 4. Discovery and arbitration
 
@@ -592,10 +600,11 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   implementation gives its classes, fields or mixins.
 - Entrypoints: `preLaunch` after Mixin (§3.2 step 19); `main` inside the registration window (server) or in
   `Minecraft.<init>` (client, default); `client` in `Minecraft.<init>`; `server` on the dedicated server. Each
-  mod's entrypoint is invoked as Fabric Loader's `invokeEntrypoints` does — every one runs even when an earlier one
-  threw, then the stage throws naming the first failure, and that stops the boot (§3.4) — with a NeoForge
-  `ModContainer` for that mod active (`KernelForeignShimContext`), because a Fabric mod may hold the NeoForge build
-  of a multi-loader library.
+  mod's `main`, `client` or `server` entrypoint is invoked as Fabric Loader's `invokeEntrypoints` does — every one
+  runs even when an earlier one threw, then the stage throws naming the first failure, and that stops the boot
+  (§3.4) — with a NeoForge `ModContainer` for that mod active (`KernelForeignShimContext`), because a Fabric mod may
+  hold the NeoForge build of a multi-loader library. A `preLaunch` entrypoint that throws is still contained: it is
+  logged, its mod is marked FAILED and the boot goes on (§19).
 - Fabric access wideners / class tweakers run in the `ACCESS` phase (`access.ClassTweakerTransformer`);
   `@Environment` stripping in `ENV_STRIP` (`EnvironmentStripTransformer`, only for classes from jars arbitrated to
   Fabric).
@@ -1579,7 +1588,7 @@ failure during world loading halts the server normally). A refusal throws `Compa
 `CompatibilityLaunchBoundary` turns it into exit code **78** and prints the report path; inside
 `Minecraft.<init>` it leaves through `SilentInitException`, so it is not reported as a crash. The policy decides
 compatibility findings only: a mod that throws while loading (its constructor, a registration or setup listener, a
-Fabric entrypoint) is not a finding and no policy lets the boot carry on past it — it stops the game as native NeoForge
+Fabric `main`/`client`/`server` entrypoint) is not a finding and no policy lets the boot carry on past it — it stops the game as native NeoForge
 does (§3.4), exit `1` on a dedicated server; on a client, NeoForge's error screen while the game has no window yet and
 a message box once it has one (§19), and for a Fabric entrypoint Minecraft's crash report alone. Findings that appear after boot never fork Swing or exit the JVM: on the server they are
 consumed at the completed-tick boundary (`LateServerCompatibility`), on the client on a render-thread tick by a
@@ -1766,8 +1775,9 @@ shell pipeline under `forbric-loader/run`. What is left:
   (`src/test/resources/merge/link-check-baseline.txt` and its `.provenance.json`; `LinkBaselineProvenanceTest` reads
   both, and CI's `build` job runs that test when it builds `forbric-loader`; `build.gradle`'s `mergeToolsJar` packs
   the baseline, and `run/build-merged-base.sh` and `run/check-merged-links.sh` take it as their default `LINK_BASELINE`, but
-  nothing runs those three any more: `mergeToolsJar` is not part of `assemble`, and no script, gate or CI step calls the
-  two scripts), and CI's `build` job, which still bootstraps and builds `forbric-loader`.
+  nothing runs those three any more: `mergeToolsJar` is not part of `assemble`, and no gate or CI step calls the two
+  scripts; only `run/test-link-check.sh` calls `check-merged-links.sh`, with its own baseline, and nothing runs it),
+  and CI's `build` job, which still bootstraps and builds `forbric-loader`.
 
 Its own boot path (Knot host, eight fabric-loader substrate patches applied by `bootstrap.sh`) is not used by the
 kernel. The weld's design is documented in `forbric-loader/README.md` and `forbric-loader/run/README.md`.
@@ -2102,7 +2112,8 @@ Break one and the failure usually surfaces far from the cause.
     template or a body hash. A mod is a sample and a test case, never the condition (§16.1).
 13. **A loading failure stops.** A NeoForge mod that throws while the game loads stops the boot with NeoForge's own
     error, as native NeoForge 26.2.0.93 does; no phase but NeoForge's "Config loading" contains it and carries on
-    (§3.4; Fabric's `preLaunch` is still contained too, the Stage 4 record's STOP open item 2). A Fabric `main`
+    (§3.4). A Fabric `preLaunch` entrypoint and a throwing Fabric injector at the moved freeze point are still
+    contained too (§19; the Stage 4 record's STOP open item 2). A Fabric `main`
     entrypoint that throws stops the run too, as native Fabric does, but a dedicated server exits `1` where native
     Fabric's exits `0` (neither starts a world; the Stage 4 record, D87(e)); that difference is open (§19).
 14. **MinecraftForge is refused, never loaded.** A jar is judged from its bytes by `LoaderHalfJudge` alone, a refused
@@ -2230,7 +2241,10 @@ Located, not yet fixed (no impossibility proof):
 - Stopping like native, open: a Fabric `main` entrypoint that throws now ends a dedicated server with exit `1`, where
   native Fabric's ends with exit `0` (neither starts a world; in the pure-Fabric A/B, Forbric's signature for the same four mods moved from `POLICY_STOP:78`
   to `EXIT:1`, verdicts unchanged; whether to keep that is an open owner question); a NeoForge mod whose required dependency failed still runs its later phases (natively the boot
-  has stopped); a stop inside the game shows a message box where native NeoForge draws the error in the game window;
+  has stopped); still contained, where every other loading failure stops: NeoForge's "Config loading" listeners, a
+  Fabric `preLaunch` entrypoint (its mod is marked FAILED) and a throwing Fabric injector at the moved freeze point
+  (logged, later ones on that hook skipped; the Stage 4 record's STOP open item 2, not measured there); a stop inside
+  the game shows a message box where native NeoForge draws the error in the game window;
   the crash report's mod list is empty and its "Complete loading of N" count short; datapack-registry declarations are
   processed after the freeze on a client whose Fabric mains run in `Minecraft.<init>`; and NeoForge's mod construction
   runs in three kernel-level passes, with registration on the caller's thread. Owner decisions, recorded in the Stage 4
