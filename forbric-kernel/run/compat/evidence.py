@@ -4,8 +4,8 @@
 This is provenance, not a test verdict. `verify` fails when ANY recorded input changes. A release
 capture additionally requires the complete build input/output set, a clean committed source tree, the
 pinned platform versions read out of the artifacts themselves, the jars the kernel build, its bytecode tests
-and the gates' launchers actually read being the attested ones, and the vanilla-reference sidecar having been
-measured against the attested base and vanilla jar.
+and the gates' launchers actually read being the attested ones, the staged base and carrier stamped as built from the
+pinned platform, and the vanilla-reference sidecar having been measured against the attested base and vanilla jar.
 `release-check` compares the manifests of one acceptance with each other and with the files to publish.
 No recorded command is executed when a manifest is read.
 """
@@ -46,6 +46,15 @@ SIDECAR_PROPERTIES = "META-INF/forbric/vanilla-reference.properties"
 STAGED_BUILD_INPUTS = {"neo-patched": "neoforge-patched/patched-mc-neoforge-26.2.jar",
                        "neo-runtime": "neoforge-runtime/neoforge-runtime.jar",
                        "sidecar": "vanilla-reference/vanilla-reference-26.2.jar"}
+
+# The staged inputs DevPrepare builds and stamps (<jar>.pins: the installer's Pins.stamp() then its tools digest). The
+# base declares no NeoForge version of its own (its version.json says only 26.2, and the patched game of another NeoForge
+# can be byte-identical), so the stamp is the one record of which NeoForge built it; a release requires both stamps to
+# name the pinned platform (check_staged_build_stamps).
+STAMPED_ROLES = ("neo-patched", "neo-runtime")
+# (pin, the stamp's key for it). Not a dict literal: tools/test_pins.py reads every '"<pin>": "<value>"' in this file
+# as a pin.
+STAMP_KEYS = (("minecraft", "mc"), ("neoforge", "neoforge"))
 
 # The gate aggregator's verdict lines. A release acceptance must not contain a gate that was not run, or that is
 # still red by declaration, however the aggregator's own exit code read.
@@ -233,6 +242,40 @@ def check_staged_build_inputs(staged, artifacts):
                          + ". Point FORBRIC_OLD at a staged root holding the attested candidate.")
 
 
+def build_stamp(path):
+    """A build stamp file as it reads: its path and its stripped text, or None for the text when there is no file."""
+    try:
+        stamp = Path(path).read_text(encoding="utf-8").strip()
+    except OSError:
+        stamp = None
+    return {"path": str(path), "stamp": stamp}
+
+
+def staged_build_stamps(staged):
+    """The build stamp beside each stamped staged input (STAMPED_ROLES): <jar>.pins next to the recorded jar."""
+    return {role: build_stamp(staged[role]["path"] + ".pins") for role in STAMPED_ROLES}
+
+
+def check_staged_build_stamps(stamps):
+    """A release's staged base and carrier were built from the pinned platform: each build stamp names
+    mc=<minecraft pin> and neoforge=<neoforge pin>. A stage nobody re-prepared (unstamped) or one built from another
+    NeoForge is not the candidate the release says it is, whatever its bytes hash to."""
+    wrong = []
+    for role in STAMPED_ROLES:
+        record = stamps.get(role) or {}
+        stamp = record.get("stamp")
+        values = dict(item.partition("=")[::2] for item in (stamp or "").split())
+        problems = [f"{key}={values.get(key, 'nothing')} (pinned {PINS[family]})" for family, key in STAMP_KEYS
+                    if values.get(key) != PINS[family]]
+        if stamp is None:
+            wrong.append(f"{role}: {record.get('path', 'its build stamp')} is missing")
+        elif problems:
+            wrong.append(f"{role}: {record['path']} says " + ", ".join(problems))
+    if wrong:
+        raise ValueError("the staged base and carrier were not built from the pinned platform: " + "; ".join(wrong)
+                         + ". Run tools/dev.py prepare, or point FORBRIC_OLD at a stage it prepared.")
+
+
 def sidecar_provenance(artifacts, release):
     """What the vanilla-reference sidecar records it was measured against (its base-sha1 and vanilla-sha1), and, for a
     release, that those are the attested neo-patched and vanilla jars. A sidecar measured against another base costs
@@ -289,15 +332,18 @@ def capture(root, artifacts, mods, output, release=False):
     artifact_records = {name: file_record(path) for name, path in sorted(artifacts.items())}
     platform = platform_record(artifacts, release)
     staged = staged_build_inputs(root)
+    stamps = staged_build_stamps(staged)
     if release:
         check_staged_build_inputs(staged, artifact_records)
+        check_staged_build_stamps(stamps)
     sidecar = sidecar_provenance(artifacts, release)
     mod_records = [mod_record(path) for path in mods]
     if before != source_record(root, excluded):
         raise ValueError("source changed while collecting evidence; retry on a stable build")
     result = {"schema": 1, "capturedAt": datetime.now(timezone.utc).isoformat(), "release": release,
               "source": before, "artifacts": artifact_records, "platform": platform,
-              "stagedBuildInputs": staged, "sidecarProvenance": sidecar, "mods": mod_records}
+              "stagedBuildInputs": staged, "stagedBuildStamps": stamps, "sidecarProvenance": sidecar,
+              "mods": mod_records}
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".tmp")
@@ -323,6 +369,9 @@ def verify(path):
     for role, expected in saved.get("stagedBuildInputs", {}).items():
         if not expected.get("missing") and file_record(expected["path"]) != expected:
             raise ValueError(f"staged build input changed since capture: {role}")
+    for role, expected in saved.get("stagedBuildStamps", {}).items():
+        if build_stamp(expected["path"]) != expected:
+            raise ValueError(f"staged build stamp changed since capture: {role}")
     if saved.get("release") and (RELEASE_ROLES - saved["artifacts"].keys() or not saved["mods"] or source["dirty"]):
         raise ValueError("incomplete release evidence")
     if saved.get("release"):
@@ -330,6 +379,9 @@ def verify(path):
         if "stagedBuildInputs" not in saved:
             raise ValueError("incomplete release evidence: the jars the build and its tests read are not recorded")
         check_staged_build_inputs(saved["stagedBuildInputs"], saved["artifacts"])
+        if "stagedBuildStamps" not in saved:
+            raise ValueError("incomplete release evidence: the build stamps of the staged base and carrier are not recorded")
+        check_staged_build_stamps(saved["stagedBuildStamps"])
         if not saved.get("sidecarProvenance"):
             raise ValueError("incomplete release evidence: the sidecar's base and vanilla jar are not recorded")
         sidecar_provenance({role: record["path"] for role, record in saved["artifacts"].items()}, True)

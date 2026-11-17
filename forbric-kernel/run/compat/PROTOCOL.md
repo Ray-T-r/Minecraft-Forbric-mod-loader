@@ -593,6 +593,10 @@ A release capture also fails unless:
   `build.gradle`'s does: `$FORBRIC_OLD/run`, else `forbric-kernel/.dev/staged/run` when it holds the base, else
   `forbric-loader/run` (the old loader's stage, which `tools/dev.py prepare` never writes a sidecar into; a release
   that falls back to it fails here);
+- the build stamps `tools/dev.py prepare` writes beside that staged base and carrier (`<jar>.pins`) name
+  `mc=26.2 neoforge=26.2.0.93`: the base declares no NeoForge version of its own, so the stamp is the one record of
+  which NeoForge built it (an unstamped stage, or one built from another NeoForge, fails; the manifest keeps both
+  stamps under `stagedBuildStamps`, and `verify` fails when one changes);
 - the sidecar's `META-INF/forbric/vanilla-reference.properties` records the attested `neo-patched` and `vanilla`
   jars (their SHA-1s) as what it was measured against.
 A release `run` refuses `--skip`, requires `gates-all.sh --release`, and records any `RESULT ... SKIP` or

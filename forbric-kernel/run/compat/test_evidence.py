@@ -145,9 +145,12 @@ class EvidenceTest(unittest.TestCase):
         return {"META-INF/MANIFEST.MF": f"Manifest-Version: 1.0\nImplementation-Title: {title}\n"
                                         f"Implementation-Version: {version}\n\nName: x/\nImplementation-Version: 0\n"}
 
+    STAMP = "mc=26.2 neoforge=26.2.0.93 nfrt=2.0.18 result=gameJarNoRecomp tools=0000"
+
     def release_artifacts(self, neo_version="26.2.0.93", sidecar_base=None, sidecar_vanilla=None, staged=True):
-        """A complete, consistent release set: pinned readings, staged build inputs, a sidecar measured against the
-        attested base and vanilla jar (or against the SHA-1s given)."""
+        """A complete, consistent release set: pinned readings, staged build inputs with DevPrepare's build stamps beside
+        the base and the carrier, a sidecar measured against the attested base and vanilla jar (or against the SHA-1s
+        given)."""
         game = {"version.json": json.dumps({"id": "26.2"})}
         artifacts = {name: self.jar(name + ".jar", dict(game, **{"marker": name})) for name in ("vanilla", "neo-patched")}
         artifacts["neo-runtime"] = self.jar("neo-runtime.jar", self.carrier("NeoForge", neo_version))
@@ -162,6 +165,8 @@ class EvidenceTest(unittest.TestCase):
                 target = self.staged / "run" / relative
                 target.parent.mkdir(parents=True, exist_ok=True)
                 target.write_bytes(artifacts[role].read_bytes())
+                if role in evidence.STAMPED_ROLES:
+                    target.with_name(target.name + ".pins").write_text(self.STAMP + "\n")
         return artifacts
 
     def test_release_requires_clean_source_including_new_files(self):
@@ -267,10 +272,59 @@ class EvidenceTest(unittest.TestCase):
         loose = evidence.capture(self.source, dict(self.release_artifacts(sidecar_base="2" * 40)), [self.mods], self.report)
         self.assertEqual("2" * 40, loose["sidecarProvenance"]["baseSha1"])
 
+    def test_release_requires_the_staged_base_and_carrier_built_from_the_pinned_platform(self):
+        """C6 REL review A F5: the base declares no NeoForge version (its version.json says only 26.2, and another
+        NeoForge's patched game can be byte-identical), so nothing tied a release's base to NeoForge 26.2.0.93. DevPrepare's
+        build stamps beside the staged base and carrier must name the pins."""
+        recorded = evidence.capture(self.source, self.release_artifacts(), [self.mods], self.report, release=True)
+        self.assertEqual({"neo-patched", "neo-runtime"}, recorded["stagedBuildStamps"].keys())
+        self.assertEqual(self.STAMP, recorded["stagedBuildStamps"]["neo-patched"]["stamp"])
+        evidence.verify(self.report)
+        for role in evidence.STAMPED_ROLES:
+            pins = self.staged / "run" / (evidence.STAGED_BUILD_INPUTS[role] + ".pins")
+            with self.subTest(role=role, stamp="missing"):
+                artifacts = self.release_artifacts()
+                pins.unlink()
+                with self.assertRaisesRegex(ValueError, "not built from the pinned platform: " + role + ": .*\\.pins is missing"):
+                    evidence.capture(self.source, artifacts, [self.mods], self.report, release=True)
+            with self.subTest(role=role, stamp="another NeoForge"):
+                artifacts = self.release_artifacts()
+                pins.write_text(self.STAMP.replace("26.2.0.93", "26.2.0.88"))
+                with self.assertRaisesRegex(ValueError, role + ": .* says neoforge=26.2.0.88 \\(pinned 26.2.0.93\\)"):
+                    evidence.capture(self.source, artifacts, [self.mods], self.report, release=True)
+        # An ordinary capture records what the stamps say and does not judge them; verify notices one rewritten mid-run.
+        artifacts = self.release_artifacts()
+        pins = self.staged / "run" / (evidence.STAGED_BUILD_INPUTS["neo-runtime"] + ".pins")
+        pins.unlink()
+        loose = evidence.capture(self.source, {"kernel": self.artifact}, [self.mods], self.report)
+        self.assertIsNone(loose["stagedBuildStamps"]["neo-runtime"]["stamp"])
+        pins.write_text(self.STAMP)
+        with self.assertRaisesRegex(ValueError, "staged build stamp changed since capture: neo-runtime"):
+            evidence.verify(self.report)
+
+    def test_verify_judges_a_release_manifests_sidecar_and_stamps_again(self):
+        """C6 REL review A F6 / B-4: verify re-checks a release manifest's sidecar and stamps itself, not only capture.
+        A manifest captured without --release over a sidecar measured against another base (or an unstamped carrier)
+        and then marked as a release must not verify."""
+        for change, message in (("sidecar", "the sidecar was not measured against the attested jars: it records neo-patched 0{40}"),
+                                ("stamp", "not built from the pinned platform: neo-runtime: .*is missing")):
+            with self.subTest(change=change):
+                artifacts = self.release_artifacts(sidecar_base="0" * 40 if change == "sidecar" else None)
+                if change == "stamp":
+                    (self.staged / "run" / (evidence.STAGED_BUILD_INPUTS["neo-runtime"] + ".pins")).unlink()
+                evidence.capture(self.source, artifacts, [self.mods], self.report)
+                evidence.verify(self.report)
+                saved = json.loads(self.report.read_text())
+                saved["release"] = True
+                self.report.write_text(json.dumps(saved))
+                with self.assertRaisesRegex(ValueError, message):
+                    evidence.verify(self.report)
+
     def test_a_release_manifest_without_the_new_bindings_does_not_verify(self):
         evidence.capture(self.source, self.release_artifacts(), [self.mods], self.report, release=True)
         saved = json.loads(self.report.read_text())
         for key, message in (("stagedBuildInputs", "jars the build and its tests read"),
+                             ("stagedBuildStamps", "the build stamps of the staged base and carrier are not recorded"),
                              ("sidecarProvenance", "the sidecar's base and vanilla jar are not recorded")):
             with self.subTest(key=key):
                 self.report.write_text(json.dumps({k: v for k, v in saved.items() if k != key}))
