@@ -232,7 +232,7 @@ change reaches the bundle; 3/3 the bundled jar refuses an empty input on its own
 
 | item | owner |
 |---|---|
-| Installer version (scout lists `installer-version-vs-old-install-message` in LINK): not bumped, per the brief | owner (question 4) |
+| Installer version (scout lists `installer-version-vs-old-install-message` in LINK): not bumped; owner answer 3 settled it (0.4.x, no bump; the "0.4 or earlier" texts go to a later lane) | closed |
 | gate-m17 re-points and the merge-tools tools-jar clean-up | INST |
 | build.yml and the TSV rows | CI |
 | RELEASE_ROLES `merge-tools`; push-and-run docstring | REL |
@@ -240,3 +240,121 @@ change reaches the bundle; 3/3 the bundled jar refuses an empty input on its own
 | The game check sees the first COREMOD pair only; the rest of the chain and Mixin are mod-dependent and unchecked statically. Helpers come from a dedicated-server capture with fabric-api only (client-only helpers are not captured) | design limit, recorded |
 | `forbric-loader/`'s MergedLinkChecker, test-link-check.sh and link baseline stay until Stage 5 deletes the tree; nothing outside it uses them once INST re-points m17 | Stage 5 |
 | Bootstrap reported `forbric-kernel/build/sweep100-mac` dangling (its target is missing in the main checkout too) | harness / orchestrator |
+
+## LINK review fixes
+
+Two reviews of the tip `666ad56b` (`c6/review-c6link-A.md`, `c6/review-c6link-B.md`). Every finding was checked;
+the confirmed ones are fixed in their own commits, nothing was refuted outright. Logs:
+`~/Forbric-backups/stage4-notes/c6/link/review-fixes/`.
+
+| sha | subject |
+|---|---|
+| `54e453ea` | Judge kind changes and nest membership in the link check, and give gate-m0 step 4 the launch's own class path |
+| `53f22b13` | Keep the player payload out of installerTest, fail on a *Test that cannot run, and refuse to bundle a stale checker |
+| `9228ea1d` | Add GameLinkStagedTest's three skips to the CI unstaged skip baseline, as D47 asks of the lane that adds them |
+| (this section) | the record |
+
+### Per finding
+
+| finding | verdict | what was done |
+|---|---|---|
+| A1: JVM link failures the check passed | confirmed (reviewer's 9 cases re-run, `reviewer-cases/cases-after.out`) | New `Check.KIND`: static instruction on an instance member and the reverse (fields and methods, instructions and method handles), class method reference to an interface and interface method reference to a class (JVMS 5.4.3.3/5.4.3.4 step 1), superclass that is an interface, interface that is a class (JVMS 5.3.5), `new` of an abstract class or interface. Violations `INCOMPATIBLE` / `INDY_INCOMPATIBLE`, counted in the verdict and in the breakdown line (`incompatible N`). Nest hosts are validated as the JVM does since JDK 15 (readable host, same package, host's `NestMembers` lists the member, else the class is its own host). After: fn1, fn2, fn3, fn4, fn6, fn7, fn9 flagged with the JVM's error; fp8 still agrees with the JVM; fn5 (a class missing from a package no judged input defines) stays out of scope by design (below). |
+| A1 follow-on: a false positive the nest rule exposed | found while re-measuring | The stage's game view had 4 `MEMBER_ACCESS`: fabric-api's Mixin-synthesised `ChiseledBookShelfBlockEntity$Anonymous$…` reads its target's private `lastInteractedSlot`/`updateState`. The capture's bytes of the target as the launch defined it list that helper in `NestMembers` (Mixin adds it); the view (the first COREMOD pair, not Mixin) does not. GameLinkCheck now takes exactly that attribute from the capture when the captured host lists the helper (`LinkCheck.nestMember`), and prints `[link-check] nest member from the capture: …`. Structural (any helper, any host), never by name. |
+| A2 / B1: installerTest built the player payload through a nested online kernel build | confirmed (`installer-dryrun-tip.log` before the fix lists only what follows) | The installer's tests compile in `compileInstallerTests` against `main.output.classesDirs` only; `-m installerTest -x buildLinkCheck` lists `bundleLinkCheck`, `compileJava`, `compileInstallerTests`, `installerTest` and nothing else; the kernel's `installerTest` run shows the nested build doing only those four (`unit-linkcheck-3.log`). The kernel's `installerTest` passes `--offline` to the nested installer build when it is itself offline. |
+| A3 / B2: step 4 read the host's whole launcher `libraries` folder | confirmed | Step 4 passes what the step-1b launch put on its class path: `--minecraft "$MC"` (new; the version JSON's exact libraries and jline 3.25.1, resolved as `launch-kernel-server.sh` does, `GameLinkCheck.launchLibraries`) and each entry of the kernel's boot class path as `--lib`. The 0 vs 56 explained: the 56 resolve through the kernel's boot dependencies (night-config, sponge-mixin, …; `probes/game-stage-json-depsonly.txt` 0, `…-kerneljaronly.txt` 56), which the host folder happened to hold from other installs, in several versions. With the launch's class path the count is 0 on any machine that can launch, and a new check asserts it. `GameLinkStagedTest` uses the same version-JSON list instead of the folder. |
+| A4: a stale checker was bundled without complaint | confirmed | `:linkCheckJar` writes `Forbric-LinkCheck-Sources` (SHA-256 of `linkcheck/*.java` and the ASM version) into its manifest; `:bundleLinkCheck` computes the same from the tree, refuses a mismatch, and has the sources as inputs so a source change re-runs it. `test-bundled-checker.sh` step 4/4: green on the tip, red with the comparison switched off (`test-bundled-checker-R4-mutation.log`). |
+| A5: `InstallerTests` passed over a `*Test` without a runnable main | confirmed | Reported as `[installer-test] NO MAIN <class>` and the run fails; the summary names them. `InstallerTestsRunnerTest` compiles a runnable, a JUnit-style and a package-private-main probe and runs the runner over them; with the old skip restored it fails (`installerTest-R5-mutation.log`). This also covers B7's "a test that loses its public main drops out". |
+| A6: the three `ci-unstaged.tsv` rows only in the record | confirmed (D47: the lane adds them) | Added to the file (`9228ea1d`), the rows measured earlier, unchanged. No new test skips in a CI profile: `LinkCheckTest`'s new test needs no fixture. |
+| B3: version item listed as open | confirmed | Closed: owner answer 3 (0.4.x, no bump). The "0.4 or earlier" wording belongs to a later lane. |
+| B4: REL hand-off stale | confirmed | REL removed `merge-tools` from `RELEASE_ROLES` and `MERGE_TOOL_SOURCES` in `283670d2`; only `push-and-run.py`'s "tools digest" docstring is left (line 205 at REL's `962ac3bd`). |
+| B5: m17, slim and mutations ran on an older checker | confirmed | Re-run on the fixed tree (below). The earlier record's "the install-time verdict lines are unchanged" meant their shape (`… ; dangling references: K`, which LinkCheckTool and m17 match); the text in parentheses did change. The slim proof uses the supplied-artifacts (`--artifacts`) path only; the built path is m17's. |
+| B6: "the same 76" inferred | confirmed | Re-measured at `9228ea1d` (below). |
+| B7: loose step-4/6 lines, no gate-level red | confirmed | The view regex needs at least one twin and at least one helper; red controls for every step-4 line and for step 6's controls-ran line (below). A lost public main is covered by A5. |
+| B8: files not named; Stage 5 list | confirmed | `e624156e` also changed one comment each in `JdkLocator.java` (the link-check JVM's purpose) and `VanillaReferenceTest.java` (a reference to the deleted merge tools), and added `VanillaMemberTwinInjector.rowCount()`. The plan's Stage 5 list still names `buildMergeTools`/`bundleTools`/`linkBaseline`, which LINK deleted: for the orchestrator (the plan is not in the tree). |
+| B9: "under a second each" | confirmed | Javadoc now "about one to two seconds each" (measured 0.8 s / 0.7 s here, 0.93 s / 1.92 s by review B). |
+
+### What is judged, corrected
+
+- Checks are now EXISTENCE, ACCESS (with nest validation), FINAL, KIND, INDY. "Not modelled" loses the
+  IncompatibleClassChangeError mismatches. Still not modelled: a class missing from a package no judged input defines
+  (fn5: counted out of scope, because the check cannot tell a library it was not given from a missing package); the
+  verifier's type assignability and its protected-receiver check; module exports of JDK packages; annotations.
+- The game view takes from Mixin only the nest membership of helpers it synthesised (from the capture). Other members
+  Mixin adds to a target are not in the view; a helper referring to one would be reported missing (none today).
+- The check JVM resolves JDK supertypes against its own JDK. The installer may run the check on any Java >= 21
+  (`JdkLocator.MINIMUM_FEATURE`) while the game's classes are Java 25: not measured (no JDK 21 here), recorded as review A
+  left it.
+
+### JVM agreement, the eleven new cases (`TEST-net.forbric.kernel.linkcheck.LinkCheckTest.xml`)
+
+| case | check says | JVM throws |
+|---|---|---|
+| private access from a class whose nest host does not list it | MEMBER_ACCESS | IllegalAccessError |
+| static read of an instance field | INCOMPATIBLE | IncompatibleClassChangeError: Expected static field |
+| instance read of a static field | INCOMPATIBLE | IncompatibleClassChangeError: Expected non-static field |
+| static call of an instance method | INCOMPATIBLE | IncompatibleClassChangeError: Expected static method |
+| instance call of a static method | INCOMPATIBLE | IncompatibleClassChangeError: Expecting non-static method |
+| class method reference whose owner is an interface | INCOMPATIBLE | IncompatibleClassChangeError (must be InterfaceMethodref) |
+| interface method reference whose owner is a class | INCOMPATIBLE | IncompatibleClassChangeError: Found class, but interface was expected |
+| new of an abstract class | INCOMPATIBLE | InstantiationError |
+| superclass that is an interface | INCOMPATIBLE | IncompatibleClassChangeError: has interface as super class |
+| implements a class | INCOMPATIBLE | IncompatibleClassChangeError: can not implement, because it is not an interface |
+| method handle constant calling an instance method as static | INDY_INCOMPATIBLE | IncompatibleClassChangeError: Expected static method |
+
+32 flagged cases in all, each reported alone and refused by the JVM as predicted; with KIND off exactly the KIND cases
+go unreported (`eachCheckIsTheOnlyOneThatSeesItsCases`). `aNestMemberTheDefinedHostListsIsANestmate`: a member the
+defined host lists is a nestmate for the check and runs in the JVM; one it does not list is still refused.
+
+### Red controls added
+
+| control | result |
+|---|---|
+| M9 nest host not validated | 3 LinkCheckTest tests red |
+| M10 owner kind unchecked | 2 red |
+| M11 field static-ness unchecked | 2 red |
+| M12 abstract `new` unchecked | 2 red |
+| M13 superclass kind unchecked | 2 red |
+| M14 GameLinkCheck ignores the capture's nest members | step 4 red: 4 MEMBER_ACCESS on the Mixin helper, verdict FAIL (`mutations/M14-step4.out`) |
+| R4 bundling without the stale-checker comparison | `test-bundled-checker.sh` 4/4 FAIL |
+| R5 runner skipping a `*Test` without main | `InstallerTestsRunnerTest` FAIL |
+| step 4, narrowed carrier (`NeoForge.EVENT_BUS` private) | 331 inaccessible, the verdict line FAIL, the rest PASS (`m0-step4/narrow.out`) |
+| step 4, boot class path left out of the libraries | 56 unresolvable, "every reference was judged" FAIL, the rest PASS (`m0-step4/nobootlibs.out`) |
+| step 4 view regex on `twins landed 0 of 0` and on `helpers scanned 0` | the new regex matches neither (the old one matched both), BSD grep (`m0-step4/view-regex.out`) |
+| step 6 "controls ran in step 2" on no linkcheck XML / on a skipped one | FAIL both, PASS on step 2's real XML (`m0-step6-controls.out`) |
+
+All step-4 controls run step 4's block extracted verbatim from gate-m0.sh (`m0-step4/harness.sh`) on the lane's step-1b
+capture.
+
+### Re-measured on the fixed tree (`9228ea1d`)
+
+| what | result | evidence |
+|---|---|---|
+| genuine pair, run judging the base / the carrier, every check incl. KIND | 1,243,939 and 106,993 judged, **0** and **0** (894 / 148 unresolvable without libraries, as before) | `probes/genuine-pair-judge-{base,carrier}.txt` |
+| game view on the stage, the launch's class path | 1,360,706 judged, 0 unresolvable, **0**, twins 9/9, 2 helpers, 1 nest member from the capture | `gate-m0-link.log` |
+| slim installer (`--artifacts`), new checker | exit 0, both verdict lines (0, 0) before `fetching manifest`; narrowed carrier exit 1, 330 violations, no profile | `slim/run.txt` |
+| gate-m17 (scratch copy, the same two re-points) | **GREEN 47 PASS / 0 FAIL**, CAUGHT none; install-time verdicts 0 and 0. NeoForm's game was rebuilt again (the seed is the stage's install, whose stamp still carries ` tools=`), fetching NeoForge build tools from maven.neoforged.net as in the first run | `gate-m17-scratch.out` |
+| gate-m0 (lane env, ports 46840+) | **18 PASS / 1 FAIL**: the FAIL is step 2's 3 LiquidBounce skips (D58), nothing else; step 4 four PASS incl. the new "every reference was judged"; step 6 controls ran (2 classes, 12 tests), installerTest 9 classes 0 failed, test-bundled-checker 4/4 green | `gate-m0.out` |
+| full suite (`-Pforbric.requireFixtures=all jar cleanTest test --continue`) | **5963 tests / 0 skipped / 5 failed**, name for name `c5/failures-w2d.txt`: 0 new, 0 gone. +1 = `aNestMemberTheDefinedHostListsIsANestmate` | `suite.log`, `suite-failures.txt` |
+| independence: archive of `9228ea1d` without forbric-loader/ and fabric-loader/ | kernel `check`: 76 failures, name for name the 76 at `495e48fc` (lib.sh's forbric-loader default, Stage 5); its installerTest 9 classes 0 failed; installer `jar` 0, `devToolsJar` 0 with the checker | `indep.out`, `indep-tip-failures.txt` |
+| installer tests | `installerTest` 9 classes (8 + InstallerTestsRunnerTest), 0 failed | `installerTest-1.log` |
+
+### For the other lanes (changes since the first record)
+
+- **INST.** `m17-scratch-repoints.diff` is unchanged and still enough. A new installer `*Test` must have
+  `public static void main(String[])` or `installerTest` fails (NO MAIN); the tests compile against main's classes,
+  not its resources. `-x buildLinkCheck` needs a `linkCheckJar` built from the same sources (the re-pointed m17 build
+  step builds it first).
+- **CI.** Unchanged: call `installerTest` instead of `linkGateTest` in build.yml. The ci-unstaged rows are in the file.
+- **REL.** Only push-and-run.py's "tools digest" docstring (line 205 at `962ac3bd`) is left.
+- **DOCS.** New names: `Check.KIND` / `INCOMPATIBLE`, `GameLinkCheck --minecraft`, the `Forbric-LinkCheck-Sources`
+  manifest attribute, `compileInstallerTests`, `InstallerTestsRunnerTest`; the breakdown line has `incompatible N`.
+- **Orchestrator.** The plan's Stage 5 list names `buildMergeTools`/`bundleTools`/`linkBaseline`, already deleted.
+
+### Not done / open after the review round
+
+| item | owner |
+|---|---|
+| fn5: a class missing from a package no judged input defines is out of scope, not judged | design limit, recorded |
+| Mixin's other additions to a target (beyond helpers' nest membership) are not in the game view | design limit, recorded |
+| A Java 21 link-check JVM against Java 25 classes: not measured | recorded (review A) |
+| Install time judges without the Minecraft libraries (894 + 148 unresolvable) | as in the first record |
