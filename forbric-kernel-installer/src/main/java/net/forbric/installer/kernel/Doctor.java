@@ -40,11 +40,15 @@ final class Doctor {
 	 * {@code .forbric-build} and in the libraries it stages (Forbric's own under {@code net/forbric}, the kernel's few
 	 * dependencies), not the vanilla game and libraries a launcher already keeps.
 	 *
-	 * <p>Measured on a cold NeoForge-only install (gate-m17's first install, sampled every second; Stage 4 C6, 2026-11-17):
-	 * nothing is deleted at the end of a build, so the peak is the resident size, give or take NFRT's work files. About
-	 * 470: NFRT's cache for one version (~250), the downloads (~71: the NeoForge userdev, universal and runtime libraries
-	 * and the 58 MB server jar), the three outputs in {@code out} (~66) and their staged copies in {@code libraries} (~70),
-	 * the tools (~6) and Forbric's jars (~9). Before Stage 4 the install also built MinecraftForge's game and runtime and
+	 * <p>Measured on a cold NeoForge-only install (gate-m17's first install, {@code du -sk} of {@code .forbric-build} and
+	 * {@code libraries/net/forbric} sampled every half second; Stage 4 C6, 2026-11-17): the size only grows during an
+	 * install and nothing is deleted at its end, so the highest sample is the last one, 476,904 KiB (a sampler that
+	 * slow misses only what lives under half a second; downloads are renamed into place, not copied). About 470 MiB
+	 * with the kernel's third-party libraries: NFRT's cache for one version (~249) and its work files (~3), the
+	 * downloads (~72: the NeoForge userdev, universal and runtime libraries and the 58 MB server jar), the three outputs
+	 * in {@code out} (~66), their staged copies and the kernel jar in {@code libraries/net/forbric} (~70), the tools
+	 * (~6), and the kernel's third-party libraries (~4). PEAK keeps a margin over that for those short-lived files.
+	 * Before Stage 4 the install also built MinecraftForge's game and runtime and
 	 * the merged base, and these numbers were 730 and 190 (estimated from earlier caches; what the 190 counted is not
 	 * recorded, and a NeoForge-only install alone keeps more than that, mostly NFRT's cache). An upgrade over such an install
 	 * holds the old files too until its last step, the clean-up of what nothing uses any more ({@link OldInstallCleanup}).
