@@ -7,8 +7,10 @@ line) carry their own copy. A bump that misses one of them does not fail anywher
 compare against the previous NeoForge, or the release check records the wrong build. This test is where a
 half-done bump stops.
 
-The installer builds nothing of MinecraftForge any more, so Pins.java has no MinecraftForge pin. The copies that remain
-serve native MinecraftForge as an oracle (native controls, evidence, breath-drown); they are held to one value.
+The installer builds nothing of MinecraftForge any more, so Pins.java has no MinecraftForge pin, and since C6 neither does
+the evidence recorder (a release is the genuine pair). The copies that remain serve native MinecraftForge as an oracle
+(native-controls' install path, kept by D32 as the C5c swap oracle, and breath-drown); native-controls.py's VERSIONS is
+their anchor, and every other copy is held to it.
 """
 import re
 import unittest
@@ -66,6 +68,8 @@ class PinAgreementTest(unittest.TestCase):
                        'native-controls.py installer URL')
         self.assertAll(found(compat / 'native-controls.py', r'minecraft-server-patched/([0-9][^/"]*)/'), neo,
                        'native-controls.py patched server')
+        self.assertAll(found(compat / 'native-controls.py', r'"net/neoforged/neoforge", "([^"]+)"'), neo,
+                       'native-controls.py native_command')
         self.assertAll(found(compat / 'fluid-parity-gate.py', r'net/neoforged/neoforge/([0-9][^/\'"]*)'), neo,
                        'fluid-parity-gate.py NATIVE')
         self.assertAll(found(compat / 'breath-drown.py', r"'net/neoforged/neoforge', '([^']+)'"), neo,
@@ -80,15 +84,21 @@ class PinAgreementTest(unittest.TestCase):
 
     def test_minecraftforge_oracle_pin_everywhere(self):
         compat = COMPAT
-        forge = found(compat / 'evidence.py', r'"forge": "([^"]+)"')[0]
-        self.assertRegex(forge, r'^' + re.escape(self.mc) + r'-[0-9.]+$', 'evidence.py PINS forge is <mc>-<fml>')
-        fml = forge.split('-', 1)[1]
-        self.assertAll(found(compat / 'evidence.py', r'"forge": "([^"]+)"'), forge, 'evidence.py PINS')
-        self.assertAll(found(compat / 'native-controls.py', r'"forge": "([0-9][^"]*)"'), fml, 'native-controls.py VERSIONS')
+        controls = compat / 'native-controls.py'
+        fml = found(controls, r'"forge": "([0-9][^"]*)"')[0]
+        self.assertRegex(fml, r'^[0-9][0-9.]*$', 'native-controls.py VERSIONS forge is the FML build alone')
+        forge = self.mc + '-' + fml
+        self.assertAll(found(controls, r'"forge": "([0-9][^"]*)"'), fml, 'native-controls.py VERSIONS')
+        self.assertAll(found(controls, r'net/minecraftforge/forge/([0-9][^/"]*)/'), forge, 'native-controls.py installer URL')
+        self.assertAll(found(controls, r'"net/minecraftforge/forge", "([^"]+)"'), forge, 'native-controls.py native_command')
         self.assertAll(found(compat / 'breath-drown.py', r"'net/minecraftforge/forge', '([^']+)'"), forge,
                        'breath-drown.py NATIVE_VERSIONS')
         self.assertAll(found(ROOT / 'forbric-loader/run/build-merged-base.sh', r'dl/forge-([0-9.-]+)-userdev\.jar'),
                        forge, 'build-merged-base.sh FORGE_USERDEV default')
+
+    def test_the_evidence_recorder_pins_no_minecraftforge(self):
+        text = (COMPAT / 'evidence.py').read_text(encoding='utf-8')
+        self.assertIsNone(re.search(r'"forge": "', text), 'evidence.py PINS: a release is the genuine pair (C6)')
 
     def test_minecraft_pin_in_evidence(self):
         self.assertAll(found(COMPAT / 'evidence.py', r'"minecraft": "([^"]+)"'), self.mc, 'evidence.py PINS')

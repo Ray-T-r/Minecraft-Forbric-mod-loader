@@ -3,8 +3,9 @@
 
 This is provenance, not a test verdict. `verify` fails when ANY recorded input changes. A release
 capture additionally requires the complete build input/output set, a clean committed source tree, the
-pinned platform versions read out of the artifacts themselves, the jars the kernel build and its
-bytecode tests actually read being the attested ones, and the merged base's own build provenance.
+pinned platform versions read out of the artifacts themselves, the jars the kernel build, its bytecode tests
+and the gates' launchers actually read being the attested ones, and the vanilla-reference sidecar having been
+measured against the attested base and vanilla jar.
 `release-check` compares the manifests of one acceptance with each other and with the files to publish.
 No recorded command is executed when a manifest is read.
 """
@@ -22,32 +23,38 @@ import time
 import tomllib
 import zipfile
 
-RELEASE_ROLES = frozenset({"vanilla", "forge-patched", "neo-patched", "merged", "forge-runtime",
-                           "neo-runtime", "forge-interop", "kernel", "kernel-runtime", "merge-tools"})
+# What a release ships and runs on (Stage 4 of dropping MinecraftForge): vanilla, NeoForge's patched game (the base),
+# its one carrier, the kernel and its runtime jar, and the vanilla-reference sidecar measured against the base. No
+# merged base, no MinecraftForge carrier or interop jar, no merge tools: a role outside this set is not a release role,
+# and release-check refuses to compare a published file against one.
+RELEASE_ROLES = frozenset({"vanilla", "neo-patched", "neo-runtime", "kernel", "kernel-runtime", "sidecar"})
 
 # The fixed platform (PLAN P0). A release reads each value out of the artifact it describes; a name, a path or a
 # stamp beside the file is not the version of the bytes being accepted.
-PINS = {"minecraft": "26.2", "forge": "26.2-65.0.1", "neoforge": "26.2.0.93"}
-# Which roles carry which reading: the game jars their own version.json, the carriers their manifest.
-MINECRAFT_ROLES = ("vanilla", "forge-patched", "neo-patched", "merged")
-FORGE_ROLES = ("forge-runtime", "forge-interop")
+PINS = {"minecraft": "26.2", "neoforge": "26.2.0.93"}
+# Which roles carry which reading: the game jars their own version.json, the carrier its manifest. The sidecar holds no
+# version; what it records is the base and the vanilla jar it was measured against (sidecar_provenance).
+MINECRAFT_ROLES = ("vanilla", "neo-patched")
 NEOFORGE_ROLES = ("neo-runtime",)
+# The installer's VanillaReference writes this beside the classes it measured; run/vanilla-reference-jar.sh reads it.
+SIDECAR_PROPERTIES = "META-INF/forbric/vanilla-reference.properties"
 
-# What forbric-kernel/build.gradle compiles kernel-runtime against and what its ~130 bytecode tests read: the
-# staged root is $FORBRIC_OLD/run, else <source>/forbric-loader/run -- the same resolution the build uses when no
-# -Pforbric.stagedRoot is given, and the build hands that root to its tests as FORBRIC_OLD.
-STAGED_BUILD_INPUTS = {"merged": "merged-base/patched-mc-merged-26.2.jar",
-                       "forge-runtime": "forge-runtime/forge-runtime.jar",
-                       "neo-runtime": "neoforge-runtime/neoforge-runtime.jar"}
+# What forbric-kernel/build.gradle compiles kernel-runtime against and what its bytecode tests read (the base and the
+# carrier), plus the sidecar the gates' launchers hand the kernel (run/vanilla-reference-jar.sh takes
+# <stage>/vanilla-reference/ first while it records the base). The staged root resolves as build.gradle's stagedRoot
+# does when no -Pforbric.stagedRoot is given (staged_root), and the build hands that root to its tests as FORBRIC_OLD.
+STAGED_BUILD_INPUTS = {"neo-patched": "neoforge-patched/patched-mc-neoforge-26.2.jar",
+                       "neo-runtime": "neoforge-runtime/neoforge-runtime.jar",
+                       "sidecar": "vanilla-reference/vanilla-reference-26.2.jar"}
 
 # The gate aggregator's verdict lines. A release acceptance must not contain a gate that was not run, or that is
 # still red by declaration, however the aggregator's own exit code read.
 UNPASSED_GATE = re.compile(r"^RESULT (\S+) (SKIP|EXPECTED_RED)\b.*$", re.M)
 
 
-def digest(path):
+def digest(path, algorithm="sha256"):
     with Path(path).open("rb") as stream:
-        return hashlib.file_digest(stream, "sha256").hexdigest()
+        return hashlib.file_digest(stream, algorithm).hexdigest()
 
 
 def file_record(path):
@@ -170,15 +177,12 @@ def platform_reading(role, path):
     except (zipfile.BadZipFile, KeyError, ValueError, OSError):
         return None
     version, title = main.get("Implementation-Version"), main.get("Implementation-Title")
-    if role in FORGE_ROLES:
-        # MinecraftForge numbers itself without the game version; its coordinate is <mc>-<forge>.
-        return f"{PINS['minecraft']}-{version}" if title == "MinecraftForge" and version else None
     return version if title == "NeoForge" else None
 
 
 def platform_record(artifacts, release):
-    readings = {"minecraft": {}, "forge": {}, "neoforge": {}}
-    for family, roles in (("minecraft", MINECRAFT_ROLES), ("forge", FORGE_ROLES), ("neoforge", NEOFORGE_ROLES)):
+    readings = {"minecraft": {}, "neoforge": {}}
+    for family, roles in (("minecraft", MINECRAFT_ROLES), ("neoforge", NEOFORGE_ROLES)):
         for role in roles:
             if role in artifacts:
                 readings[family][role] = platform_reading(role, artifacts[role])
@@ -190,10 +194,25 @@ def platform_record(artifacts, release):
     return {"pins": dict(PINS), "readings": readings}
 
 
-def staged_build_inputs(root, environment=None):
+def staged_root(root, environment=None):
+    """The staged root the kernel build reads, resolved in build.gradle's order (its stagedRoot, lines 31-34, without
+    -Pforbric.stagedRoot): $FORBRIC_OLD/run; else forbric-kernel/.dev/staged/run when it holds the base (what
+    `tools/dev.py prepare` stages); else forbric-loader/run, the build's last fallback, which Stage 5 removes there and
+    here together. A release run sets FORBRIC_OLD or prepares .dev/staged; nothing prepares a sidecar into the old
+    fallback (on this machine it also holds an unstamped 26.2.0.88 carrier), so a release that reaches it fails in
+    check_staged_build_inputs."""
     environment = os.environ if environment is None else environment
     old = environment.get("FORBRIC_OLD")
-    run = Path(old) / "run" if old else Path(root) / "forbric-loader" / "run"
+    if old:
+        return Path(old) / "run"
+    dev = Path(root) / "forbric-kernel" / ".dev" / "staged" / "run"
+    if (dev / STAGED_BUILD_INPUTS["neo-patched"]).is_file():
+        return dev
+    return Path(root) / "forbric-loader" / "run"
+
+
+def staged_build_inputs(root, environment=None):
+    run = staged_root(root, environment)
     out = {}
     for role, relative in STAGED_BUILD_INPUTS.items():
         path = (run / relative).absolute()
@@ -206,7 +225,7 @@ def check_staged_build_inputs(staged, artifacts):
     for role, record in staged.items():
         attested = artifacts.get(role)
         if record.get("missing") or attested is None or record["sha256"] != attested["sha256"]:
-            wrong.append(f"{role}: the kernel build and its bytecode tests read {record['path']}"
+            wrong.append(f"{role}: the kernel build, its bytecode tests and the gates read {record['path']}"
                          f" ({'missing' if record.get('missing') else record['sha256'][:12]}), attested"
                          f" {attested['sha256'][:12] if attested else 'nothing'}")
     if wrong:
@@ -214,67 +233,34 @@ def check_staged_build_inputs(staged, artifacts):
                          + ". Point FORBRIC_OLD at a staged root holding the attested candidate.")
 
 
-MERGE_TOOL_SOURCES = "forbric-loader/src/tools/java/net/forbric/tools/"
-PROVENANCE_INPUTS = {"vanilla": "vanilla", "forge-patched": "forge-patched", "neo-patched": "neo-patched",
-                     "forge-runtime": "forge-runtime", "neo-runtime": "neo-runtime"}
-
-
-def write_merge_provenance(root, output, inputs, produced, tools, link_check):
-    """What build-merged-base.sh records beside the merged base: inputs, tool sources, outputs, link-check mode.
-
-    `dirty` covers the tool sources only -- the merge is a function of them and of its inputs, and the release
-    capture compares each recorded tool source with the committed tree it attests.
-    """
-    root = Path(root).resolve(strict=True)
-    tools = [Path(tool).resolve(strict=True) for tool in tools]
-    status = git(root, "status", "--porcelain", "--", *(str(tool) for tool in tools)).decode().strip()
-    record = {"schema": 1, "tool": "forbric-loader/run/build-merged-base.sh", "linkCheck": link_check,
-              "source": {"commit": git(root, "rev-parse", "HEAD").decode().strip(), "dirty": bool(status)},
-              "toolSources": {tool.name: digest(tool) for tool in tools},
-              "inputs": {role: file_record(path) for role, path in sorted(inputs.items())},
-              "outputs": {role: file_record(path) for role, path in sorted(produced.items())}}
-    output = Path(output)
-    temporary = output.with_name(output.name + ".tmp")
-    temporary.write_text(json.dumps(record, indent=2) + "\n")
-    temporary.replace(output)
-    return record
-
-
-def merged_provenance(artifacts, records, source, release):
-    """build-merged-base.sh's record of how the merged base was made, checked against this capture."""
-    if "merged" not in artifacts:
+def sidecar_provenance(artifacts, release):
+    """What the vanilla-reference sidecar records it was measured against (its base-sha1 and vanilla-sha1), and, for a
+    release, that those are the attested neo-patched and vanilla jars. A sidecar measured against another base costs
+    every class the two bases disagree on its FABRIC reference without a word (run/vanilla-reference-jar.sh), so a
+    release must not pair one with a base it was not measured against."""
+    if "sidecar" not in artifacts:
         return None
-    path = Path(str(artifacts["merged"]) + ".provenance.json")
-    if not path.is_file():
-        if release:
-            raise ValueError(f"release evidence requires the merged base's build provenance: {path}"
-                             " (rebuild it with forbric-loader/run/build-merged-base.sh)")
-        return {"path": str(path), "missing": True}
-    record = file_record(path)
-    saved = json.loads(path.read_text())
+    recorded = {}
+    try:
+        with zipfile.ZipFile(artifacts["sidecar"]) as jar:
+            text = jar.read(SIDECAR_PROPERTIES).decode("utf-8", errors="replace")
+        for line in text.splitlines():
+            key, separator, value = line.strip().partition("=")
+            if separator:
+                recorded[key] = value
+    except (zipfile.BadZipFile, KeyError, OSError):
+        recorded = {}
+    result = {"baseSha1": recorded.get("base-sha1"), "vanillaSha1": recorded.get("vanilla-sha1")}
     if release:
         wrong = []
-        outputs, inputs = saved.get("outputs", {}), saved.get("inputs", {})
-        for role, produced in (("merged", "merged"), ("forge-interop", "forge-interop")):
-            if outputs.get(produced, {}).get("sha256") != records[role]["sha256"]:
-                wrong.append(f"{role} is not the jar this provenance's build wrote")
-        for role, used in PROVENANCE_INPUTS.items():
-            if inputs.get(used, {}).get("sha256") != records[role]["sha256"]:
-                wrong.append(f"{role} is not the {used} input the merge read")
-        if saved.get("linkCheck") != "enforce":
-            wrong.append(f"the build's link check was {saved.get('linkCheck')!r}, not enforced")
-        if saved.get("source", {}).get("dirty") is not False:
-            wrong.append("the merge tools were built from an uncommitted tree")
-        tools = saved.get("toolSources") or {}
-        if not tools:
-            wrong.append("no merge-tool sources recorded")
-        for name, sha in tools.items():
-            if source["files"].get(MERGE_TOOL_SOURCES + name) != sha:
-                wrong.append(f"{name} differs from the attested source")
+        for key, role in (("baseSha1", "neo-patched"), ("vanillaSha1", "vanilla")):
+            actual = digest(artifacts[role], "sha1") if role in artifacts else None
+            if result[key] is None or result[key] != actual:
+                wrong.append(f"it records {role} {result[key] or 'nothing'}, the attested {role} is {actual or 'absent'}")
         if wrong:
-            raise ValueError("merged base provenance does not match this release: " + "; ".join(wrong))
-    record["summary"] = {"commit": saved.get("source", {}).get("commit"), "linkCheck": saved.get("linkCheck")}
-    return record
+            raise ValueError("the sidecar was not measured against the attested jars: " + "; ".join(wrong)
+                             + f" ({SIDECAR_PROPERTIES})")
+    return result
 
 
 def mod_record(directory):
@@ -305,13 +291,13 @@ def capture(root, artifacts, mods, output, release=False):
     staged = staged_build_inputs(root)
     if release:
         check_staged_build_inputs(staged, artifact_records)
-    provenance = merged_provenance(artifacts, artifact_records, before, release)
+    sidecar = sidecar_provenance(artifacts, release)
     mod_records = [mod_record(path) for path in mods]
     if before != source_record(root, excluded):
         raise ValueError("source changed while collecting evidence; retry on a stable build")
     result = {"schema": 1, "capturedAt": datetime.now(timezone.utc).isoformat(), "release": release,
               "source": before, "artifacts": artifact_records, "platform": platform,
-              "stagedBuildInputs": staged, "mergedProvenance": provenance, "mods": mod_records}
+              "stagedBuildInputs": staged, "sidecarProvenance": sidecar, "mods": mod_records}
     output = Path(output)
     output.parent.mkdir(parents=True, exist_ok=True)
     temporary = output.with_name(output.name + ".tmp")
@@ -337,11 +323,6 @@ def verify(path):
     for role, expected in saved.get("stagedBuildInputs", {}).items():
         if not expected.get("missing") and file_record(expected["path"]) != expected:
             raise ValueError(f"staged build input changed since capture: {role}")
-    provenance = saved.get("mergedProvenance")
-    if provenance and not provenance.get("missing"):
-        current = file_record(provenance["path"])
-        if (current["size"], current["sha256"]) != (provenance["size"], provenance["sha256"]):
-            raise ValueError("merged base provenance changed since capture")
     if saved.get("release") and (RELEASE_ROLES - saved["artifacts"].keys() or not saved["mods"] or source["dirty"]):
         raise ValueError("incomplete release evidence")
     if saved.get("release"):
@@ -349,8 +330,9 @@ def verify(path):
         if "stagedBuildInputs" not in saved:
             raise ValueError("incomplete release evidence: the jars the build and its tests read are not recorded")
         check_staged_build_inputs(saved["stagedBuildInputs"], saved["artifacts"])
-        if not provenance or provenance.get("missing"):
-            raise ValueError("incomplete release evidence: no merged base provenance")
+        if not saved.get("sidecarProvenance"):
+            raise ValueError("incomplete release evidence: the sidecar's base and vanilla jar are not recorded")
+        sidecar_provenance({role: record["path"] for role, record in saved["artifacts"].items()}, True)
     return saved
 
 
@@ -416,7 +398,9 @@ def release_check(manifests, publish):
     problems += [f"role {role} has {len(hashes)} different hashes" for role, hashes in sorted(roles.items())
                  if len(hashes) != 1]
     for role, path in sorted(publish.items()):
-        if role not in roles:
+        if role not in RELEASE_ROLES:
+            problems.append(f"{role}: not a release role (the release roles are {', '.join(sorted(RELEASE_ROLES))})")
+        elif role not in roles:
             problems.append(f"{role}: no accepted artifact to compare {path} with")
         elif digest(path) not in roles[role]:
             problems.append(f"{role}: {path} is not the accepted {role}")
@@ -449,13 +433,6 @@ def main():
             create.add_argument("acceptance_command", nargs=argparse.REMAINDER)
     check = commands.add_parser("verify")
     check.add_argument("manifest", type=Path)
-    provenance = commands.add_parser("merge-provenance")
-    provenance.add_argument("--source", required=True, type=Path)
-    provenance.add_argument("--output", required=True, type=Path)
-    provenance.add_argument("--input", action="append", default=[], metavar="ROLE=PATH")
-    provenance.add_argument("--produced", action="append", default=[], metavar="ROLE=PATH")
-    provenance.add_argument("--tool", action="append", default=[], type=Path)
-    provenance.add_argument("--link-check", required=True, choices=("enforce", "warn"))
     released = commands.add_parser("release-check")
     released.add_argument("--manifest", action="append", default=[], type=Path)
     released.add_argument("--publish", action="append", default=[], metavar="ROLE=PATH")
@@ -464,11 +441,6 @@ def main():
         if args.command == "verify":
             verify(args.manifest)
             print("[evidence] source, artifacts and mod inventory unchanged")
-        elif args.command == "merge-provenance":
-            record = write_merge_provenance(args.source, args.output, role_paths(args.input),
-                                            role_paths(args.produced), args.tool, args.link_check)
-            print(f"[evidence] merge provenance -> {args.output} (tools {'DIRTY' if record['source']['dirty'] else 'clean'}"
-                  f" at {record['source']['commit'][:12]}, link check {args.link_check})")
         elif args.command == "release-check":
             accepted = release_check(args.manifest, role_paths(args.publish))
             print(f"[evidence] release check passed: {len(args.manifest)} manifest(s), {len(accepted)} role(s),"
