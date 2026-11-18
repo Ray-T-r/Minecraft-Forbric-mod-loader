@@ -1726,16 +1726,23 @@ Mods for both ecosystems go in `<mcDir>/mods` (or `versions/26.2-forbric/mods` u
 those whose libraries are kept; it never fails the install): in `.forbric-build`, a closed list of what older
 installers wrote and this one never reads (the merged base and its conflict list, MinecraftForge's runtime, interop
 runtime and patched game, MinecraftForge's work trees, the merge-tools jar, v0.1.0's `<mc>-<forge>/` tree) — never
-`out/`'s current outputs, `dl/` (the download cache) or NFRT's caches; in `libraries/net/forbric`, a library version
+`out/`'s current outputs or NFRT's caches; in `dl/` (the download cache), every file that is not one of this install's
+inputs (`ArtifactBuilder.downloadInputs`: the NeoForge userdev jar, what the NeoForge runtime is built from — the same
+names `NeoForgeRuntimeBuilder.inputFiles` gives the build to fetch — and the server jar), so an older installer's
+MinecraftForge downloads go, and so (owner ruling, C6) do cached downloads for another Minecraft version, which the
+install that needs them fetches again; an install given its game files (`--artifacts`) leaves `dl/` alone; in
+`libraries/net/forbric`, a library version
 directory only when no version profile names anything inside it or above it (every `versions/<id>/*.json` is read,
 following `inheritsFrom`, and every string naming a `net.forbric` coordinate or `net/forbric/` path counts, in any
 case and however it is joined), so a second profile that still uses an old base keeps it. Nothing outside
 `net/forbric` is touched; links and junctions are never followed or removed; what this install staged is never
 removed; a file that cannot be deleted (a game still holding it on Windows) is named and left. Every removal is
 logged, in the player's language. Measured by gate-m17 phase U on an install the real v0.3.1-beta2 installer laid out:
-22 removals, 258.5 MB, the new install boots into a world and leaves cleanly, `dl/` untouched. About 40 MiB of the old
-version's files stay: its downloads in `dl/` (27.3 MiB, 13.4 MiB of them MinecraftForge's jars) and NFRT's cache and
-work files for 26.2.0.88. `-Dforbric.installerCleanup=off` leaves
+63 removals, 285.8 MB (22 outside `dl/`, 258.5 MB; 41 of beta2's 56 cached downloads, 27.3 MiB, 13.3 MiB of them
+MinecraftForge's jars and tools), `dl/` left holding exactly this install's 17 inputs, unchanged, and the new install
+boots into a world and leaves cleanly; a second install over a fresh one leaves `dl/` byte-identical. About 16 MiB of
+the old version's files stay: NFRT's cache (12.5 MiB) and work files (3.1 MiB) for 26.2.0.88 (measured by INSTFIX on a real-player layout,
+not re-measured). `-Dforbric.installerCleanup=off` leaves
 everything (phase U's reverse control).
 
 ### 13.3 Where Forbric's own jars come from

@@ -139,6 +139,11 @@ product (dl/ and NFRT's caches are not judged here)". dl/ is judged separately a
 
 ## 6. dl/ (owner)
 
+> **2026-11-18, DLCLEAN C6:** the owner ruled "remove" (answer 6, the first of R-7's two ways: another Minecraft
+> version's cached downloads go too). Implemented with the inputs taken from the build's own names
+> (`ArtifactBuilder.downloadInputs`), phase U now removes 41 of beta2's 56 cached files; `stage4-c6-dlclean.md`. The
+> text below is left as written.
+
 `c6/owner-answers.md` has no dl/ section (re-read before (5) and again before this record). So beta2's MinecraftForge
 downloads stay in `dl/` (16 jars, 13.4 MiB, list in `player-extra-files.txt`), the record and the player draft say so, and
 C-7's line is narrowed instead of extended. If the owner later rules "remove", a structural rule that names no
@@ -225,6 +230,10 @@ then `java -cp oict net.forbric.installer.kernel.OldInstallCleanupTest C:\temp\o
 with no `NOT RUN` suffix.
 
 ## 8. Player-facing wording (drafts; README / README.zh-CN are not changed in this wave)
+
+> **2026-11-18, DLCLEAN C6:** the upgrade paragraph and the release-note figure below are out of date: an upgrade from
+> 0.3.1-beta2 now removes about 290 MB (64 files on a real player's layout) and about 16 MB stays. The current drafts are
+> in `stage4-c6-docs.md`.
 
 Disk requirement (unchanged from INST's draft, still true): "**An internet connection**, and about 480 MB of free disk. Almost
 all of it stays afterwards: it is what makes the next install fast." / "**网络连接**，以及约 480 MB 的可用磁盘空间。装完后这些几乎都会保留，下次安装因此会很快。"

@@ -83,6 +83,8 @@ The rules as they stand at the stage tip (with INSTFIX's additions marked):
   its name (letter case aside). A Minecraft directory under a linked folder is fine (each step is judged against its own
   resolved parent).
 - Never touched: what this install built or staged (a guard, besides the rules), `dl/`, NFRT's caches, other groups.
+  (**DLCLEAN C6, 2026-11-18**, owner answer 6: `dl/` is now cleared of every file that is not one of this install's
+  inputs, another Minecraft version's cached downloads included; `stage4-c6-dlclean.md`.)
   A delete that fails is named (`[cleanup] could not remove ...`), counted, and the install carries on. Anything
   unexpected stops the clean-up with its own line (`[cleanup] the clean-up stopped part-way (...)`, c27cc306, review B 3),
   leaves the rest, and is not counted as a failed file. `-Dforbric.installerCleanup=off` turns it off (phase U's reverse
@@ -120,7 +122,8 @@ stand-ins; it removed 23 files (134.1 MB) and booted. After the answer, phase U 
   224.2 MB from before 79cd0f6b and LINK), none failed, it did not stop part-way, the planted JSON skipped and named, the
   keep-old kernel kept, this install's 10 files there, no MinecraftForge or merged product in `.forbric-build`'s top level,
   `out/` and `tools/` (INSTFIX narrowed that PASS line to say exactly this: `dl/` still holds beta2's MinecraftForge
-  downloads, see below), `dl/` untouched (56 beta2 files byte-identical), `libraries/net/forbric` exactly this install's 4 +
+  downloads, see below), `dl/` untouched (56 beta2 files byte-identical; since DLCLEAN C6 phase U removes 41 of them,
+  27.3 MiB, 63 removals / 285.8 MB in all, and `dl/` ends as exactly this install's 17 inputs), `libraries/net/forbric` exactly this install's 4 +
   the keep-old 1, the player's 401 files byte-identical, the profile rewritten (one `--gameJar` patched-mc-neoforge, one `--runtimeJar`, one
   `--nativeReference`, no merged/forge-runtime/forbric-loader/forbricruntime), and the upgraded directory boots this kernel
   into the world and leaves cleanly, not refused: the refusal check keys on the kernel's `[Forbric/Install]` tag (79cd0f6b,
@@ -172,7 +175,10 @@ A NeoForge-only install alone keeps more than 190, mostly NFRT's cache. An upgra
 about 40 MiB larger than a cold install (INSTFIX, real-player layout: 438 896 vs 398 024 KiB; 58 files a cold install does
 not have, 42.9 MiB by size: `dl/` 27.3 MiB of beta2's downloads, 16 of them MinecraftForge's own jars, 13.4 MiB; NFRT's
 cache for 26.2.0.88, 12.5 MiB; beta2's NFRT work files, 3.1 MiB; `c6/instfix/player-extra-files.txt`). The clean-up never
-touches `dl/` or NFRT's caches (critic 19), and the owner has not ruled on `dl/` (open item).
+touches `dl/` or NFRT's caches (critic 19), and the owner has not ruled on `dl/` (open item). **DLCLEAN C6 (2026-11-18):**
+the owner ruled "remove"; on a clone of the same beta2 install with no keep-old profile the upgrade now removes 64 files,
+288.9 MB, and `.forbric-build` ends 15.6 MiB larger than this run's fresh install (17 files: NFRT's cache for 26.2.0.88
+12.5 MiB, beta2's NFRT work files 3.1 MiB; `dl/` holds nothing extra), `stage4-c6-dlclean.md`.
 
 ### neoforge-runtime-reproducible-bytes — done
 
@@ -249,7 +255,9 @@ red-controls-unit.log has the mutation runs (each: exit 1 and the first assertio
   files incl. beta2's merge tools), and LINK's `installerTest` ran 10 classes, 0 failed, these two among them
   (installerTest-linkpreview.log); then reverted (`git apply -R`, clean tree). LINK's `m17-scratch-repoints.diff` is not
   needed: its two re-points are in a6423cc5 in a form that works before and after the merge.
-- **Owner/orchestrator**: an upgraded install keeps beta2's downloads in `.forbric-build/dl/`, 16 of them (13.4 MiB)
+- ~~**Owner/orchestrator**: dl/~~ — done by DLCLEAN C6 on the owner's ruling (answer 6): an upgrade now removes the 41
+  cached files that are no input of the install, these among them (`stage4-c6-dlclean.md`). The original item:
+  an upgraded install keeps beta2's downloads in `.forbric-build/dl/`, 16 of them (13.4 MiB)
   MinecraftForge's own (forge-*-universal/userdev, fmlcore, fmlloader, its language providers, binarypatcher,
   installertools, mergetool), because critic 19 says dl/ is never touched. No owner ruling by the end of C6 wave 2
   (`c6/owner-answers.md` has no dl/ section), so they stay; a structural rule is drafted in INSTFIX's record.
@@ -260,6 +268,8 @@ red-controls-unit.log has the mutation runs (each: exit 1 and the first assertio
 
 ## Player-facing wording (drafts only; README is not changed in this wave)
 
+> **Superseded twice.** Since DLCLEAN C6 (2026-11-18) the current upgrade wording is in `stage4-c6-docs.md` (about 290 MB
+> removed, old downloads included, about 16 MB of build cache stays; another Minecraft version's cached downloads go too).
 > **Superseded.** The upgrade paragraphs and the release-note line below overclaim (an upgrade keeps about 40 MiB of the
 > older version's downloads, review A F4 / B 11) and the release-note size was the gate's artificial layout (review B 2).
 > The corrected drafts are in `stage4-c6-instfix.md`; the disk-requirement lines below still hold.

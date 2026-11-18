@@ -172,7 +172,7 @@ for the orchestrator/owner to delete; the first three are ignored by `/run/serve
 
 LINK's new names (`LinkCheck`, `GameLinkCheck`, `linkCheckJar`, `installerTest`, `forbric-link-check.jar`, `bundleLinkCheck`)
 are in §13/§16; INST/INSTFIX's player drafts are used as INSTFIX corrected them (about 260 MB freed, about 40 MB stays,
-480 MB disk); VER's upgrade sentence is used as VER corrected it; critic 5 lines (MergedBaseTool, `:mergeToolsJar`,
+480 MB disk; since DLCLEAN C6, 2026-11-18: about 290 MB freed, about 16 MB stays, see `stage4-c6-dlclean.md`); VER's upgrade sentence is used as VER corrected it; critic 5 lines (MergedBaseTool, `:mergeToolsJar`,
 `MergedLinkChecker` in the tool list, "packaged link gate", the CI counts) are gone; critic 6 (PROTOCOL.md) was met by
 REL and check-w1 C-5 found no further concrete line, so nothing here; the merger's CI results are in the record's C6
 section ("CI has not run").
@@ -191,7 +191,8 @@ All on the final text of both files (`c6docs/checks.txt`):
 - The scout's present-tense list (gate-m41, EventChainAudit, CreativeSearchTreesInjector, KernelCreativeSearch,
   openWindow, LIVING_BREATHE/DROWN rows, `<merged-base.jar>`, merge-loss ratchet, nightly): 0 present-tense hits.
 - Numbers: every figure written is copied from a record or log named in the text (suite 5,969/0/5 and the gate results:
-  `c6/merge-w2.md`; m52 29/0: the C5 merger's log; phase U 22 / 258.5 MB and ~40 MiB kept: stage4-c6-inst/instfix.md;
+  `c6/merge-w2.md`; m52 29/0: the C5 merger's log; phase U 22 / 258.5 MB and ~40 MiB kept: stage4-c6-inst/instfix.md, since DLCLEAN C6 63 / 285.8 MB (a real player's upgrade
+  64 / 288.9 MB) and ~16 MiB kept: stage4-c6-dlclean.md;
   Doctor 480/470 and 476,904 KiB: Doctor.java and stage4-c6-inst.md; 94/89/69/463/86/92 and the package counts:
   counted in the tree at eba8222c with the commands in `c6docs/counts.txt`; ForeignType's 49: counted under "DOCS review fixes" (the first commit wrote 46, which no command
   measured); 636/12: native-only-methods.txt's rows;
@@ -235,9 +236,11 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > the ghostly swim speed. In our tests, Forbric itself lost nothing else in that switch.
 >
 > **Disk space.** Installing needs about 480 MB of free disk; almost all of it stays, so the next install is fast.
-> Installing over an older Forbric now removes most of what the older version left behind (about 260 MB when upgrading
-> from 0.3.1-beta2). About 40 MB of old downloads stay in the `.forbric-build` folder; delete that folder if you want the
-> space back (the next install downloads what it needs again).
+> Installing over an older Forbric now removes what the older version left behind and no longer uses, its old downloads
+> included (about 290 MB when upgrading from 0.3.1-beta2). About 16 MB of the older version's build cache stays in the
+> `.forbric-build` folder; delete that folder if you want the space back (the next install downloads what it needs
+> again). If the same game folder also has Forbric for another Minecraft version, that version's cached downloads are
+> removed too, and its next install downloads them again.
 >
 > **Changed**
 > - A mod that crashes while the game is loading now usually stops the game, as NeoForge and Fabric do on their own,
@@ -271,8 +274,9 @@ answer 3). Only changes a v0.3.1-beta2 player will notice.
 > “沉默羁绊”效果会消失（NeoForge 版叫“超越坟墓的羁绊”），幽灵形态的游泳速度也会没有。在我们的测试中，除此之外 Forbric 在这次替换中没有多丢任何东西。
 >
 > **磁盘空间。** 安装需要约 480 MB 的可用磁盘空间；装完后这些几乎都会保留，下次安装因此会很快。在旧版 Forbric 上安装新版本时，
-> 安装器会自动删掉旧版留下、已经没有版本在用的大部分文件（从 0.3.1-beta2 升级约 260 MB）。旧版的约 40 MB 下载文件会留在
-> `.forbric-build` 文件夹里；想要回这部分空间，可以删掉这个文件夹（下次安装会重新下载需要的文件）。
+> 安装器会自动删掉旧版留下、已经用不到的文件，包括旧的下载文件（从 0.3.1-beta2 升级约 290 MB）。旧版约 16 MB 的构建缓存会留在
+> `.forbric-build` 文件夹里；想要回这部分空间，可以删掉这个文件夹（下次安装会重新下载需要的文件）。如果同一个游戏文件夹里还装着
+> 另一个 Minecraft 版本的 Forbric，那个版本缓存的下载文件也会被删掉，下次安装它时会重新下载。
 >
 > **改动**
 > - 游戏加载时崩溃的 mod，现在通常会让游戏停下（NeoForge 和 Fabric 单独使用时也是这样），而不是不带这个 mod 继续启动（或先问你
@@ -336,8 +340,9 @@ lines (README.zh-CN.md:7, :13, :29, :73, :110 per the scout).
   `mods` folder. Mods made only for Forge do not load: use their NeoForge or Fabric build." / zh "Fabric 和 NeoForge mod 都放进同一个
   `mods` 文件夹。只为 Forge 做的 mod 不会加载：请换用它们的 NeoForge 或 Fabric 版。"
 - :164-172 "Updating and uninstalling": the update paragraph → VER's upgrade sentence (draft above, "Upgrading from 0.3.x");
-  after the uninstall paragraph add INSTFIX §8's upgrade paragraph (about 260 MB removed, about 40 MB stays in
-  `.forbric-build`).
+  after the uninstall paragraph add the upgrade paragraph of the release-notes draft above as DLCLEAN C6 corrected it
+  (about 290 MB removed, old downloads included; about 16 MB of build cache stays in `.forbric-build`; another Minecraft
+  version's cached downloads go too).
 - :174 "What's new in 0.3.0" → "What's new in 0.4.x" with the release-notes draft above.
 - :240 "A known crash: the NeoForge build of Sodium …": check against the release (the fix e5dc5d86 is already in
   v0.3.1-beta2), and drop it if it no longer happens.

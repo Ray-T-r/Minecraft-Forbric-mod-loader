@@ -708,6 +708,7 @@ thread); downstream listeners of a failed dependency still run; datapack declara
 | 2 | CIPREP | build.yml without the merge-loss ratchet, the hidden-carrier job and `ci-prepared-noforge.tsv`; dev-tools runs `installerTest`; both skip TSVs re-measured locally (not yet from CI) | `stage4-c6-ciprep.md` |
 | 2 | merger | three lanes fast-forwarded; gate-m0's locale-rule red fixed (a5708f73) | `stage4-c6-merger-w2.md` |
 | 3 | DOCS | introduction.md / zh corrected for Stages 1-4, this record's C5/C6 sections, the release-notes draft, the B5 ruling proposal, the m49 ignore entry | `stage4-c6-docs.md` |
+| 3 | DLCLEAN | owner answer 6: the installer clears `.forbric-build/dl` of every file that is not one of the install's inputs (another Minecraft version's cached downloads too); phase U removes 63 files / 285.8 MB (41 of them beta2's downloads, 27.3 MiB), reverse control 63/63, `dl/` ends as exactly the 17 inputs | `stage4-c6-dlclean.md` |
 
 **Suite and gates at the C6 wave-2 tip (a5708f73, the merger):** 5,969 tests, 0 skipped, 5 failed, the D58 five by name and
 message; gate-m0 18 PASS / 1 FAIL (D58 only, no `[kernel] SKIP (C6` line left), gate-m10 24/0, gate-m17 119/0 (phase U's
@@ -718,7 +719,9 @@ reverse control 22/22), CAUGHT none, FORBRIC_GATE_CACHE=0, ports 46800-46806. Wa
 - CI has not run on the C6 tree: the push to `ci/remove-forge-stage2` was refused by the session's permission check before
   git ran, so there is no run, both skip TSVs are CIPREP's local pre-measure, and the first-run list (the `build` job, the
   Windows `OldInstallCleanupTest`) is unread [owner pushes; next CI runner].
-- `dl/` keeps 13.4 MiB of beta2's MinecraftForge jars after an upgrade [owner ruling].
+- ~~`dl/` keeps 13.4 MiB of beta2's MinecraftForge jars after an upgrade [owner ruling].~~ Ruled "remove" (owner answer 6)
+  and done by DLCLEAN (`stage4-c6-dlclean.md`); the Windows legs of its failed delete have not run (CI's windows-latest
+  `installerTest` is their first run).
 - ACCEPT: Windows PCL2 install (fresh `.minecraft` backup first), the release rehearsal stopped before any upload, the soak
   m34 at the final tip; `gates-all --release` cannot be green while D58 stands.
 - Three kernel `latest.log` lines VER changed stay English [orchestrator/owner].
