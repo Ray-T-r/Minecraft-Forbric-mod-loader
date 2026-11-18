@@ -2,10 +2,8 @@
 # Compared on the first three columns; the reason is for the reader.
 # Regenerate: ./gradlew check -Pforbric.skipBaseline=ci-prepared -Pforbric.writeSkipBaseline
 # or copy skips-actual-ci-prepared.tsv from the CI artifact.
-# Measured 2026-11-17 on a clean clone of the C6 tree with a stage laid out as tools/dev.py prepare --no-assets lays
-# it out (NeoForge 26.2.0.93 base, carrier, vanilla reference, canary built from this tree; MC libraries; API jars),
-# on macOS with JDK 25. Three Fabric Loader 0.19.3 rows are kept from the last CI artifact because this host's launcher
-# has that jar and a runner has not. The first CI run's skips-actual-ci-prepared.tsv replaces this file.
+# Copied unchanged from CI run 44286369477 (a3ced60b on ci/remove-forge-stage2, 2026-11-18), artifact
+# kernel-prepared-skips: job kernel-prepared, ubuntu-latest, JDK 25.0.5, game files from tools/dev.py prepare --no-assets.
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:third-party] staged pack or carriers absent
 test	net.forbric.kernel.boot.ArbitratedAwayDispatchersRealJarTest	aWinnerThatReadsTheSameDeclarationItsOwnWayLostNothing()	[fixture:third-party] sweep100 Sodium builds absent
 test	net.forbric.kernel.boot.ArbitratedAwayDispatchersRealJarTest	onlyWhenTheNeoForgeBuildWonIsTheKeyTheKernelsToDispatch()	[fixture:third-party] sweep100 mod fixture absent: build/sweep100-mac-network/mods/cherishedworlds-fabric-17.0.0+26.2.jar

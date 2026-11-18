@@ -2,11 +2,8 @@
 # Compared on the first three columns; the reason is for the reader.
 # Regenerate: ./gradlew check -Pforbric.skipBaseline=ci-unstaged -Pforbric.writeSkipBaseline
 # or copy skips-actual-ci-unstaged.tsv from the CI artifact.
-# Measured 2026-11-17 on a clean clone of the C6 tree laid out like the kernel job's runner (no staged files, no
-# launcher libraries, no fixtures), on macOS with JDK 25. Seven rows were kept from the last CI artifact: four
-# [fixture:java-25], which skip only on the kernel job's JDK 21 (a later run of the same layout on JDK 21.0.12 skipped
-# exactly these 4 more and nothing else), and three Fabric Loader 0.19.3 rows, which this host cannot reproduce (its
-# launcher has that jar, a runner has not). The first CI run's skips-actual-ci-unstaged.tsv replaces this file.
+# Copied unchanged from CI run 44286369477 (a3ced60b on ci/remove-forge-stage2, 2026-11-18), artifact
+# kernel-test-results: job kernel, ubuntu-latest, JDK 21.0.13, no game files.
 test	net.forbric.api.ForeignTypeCarrierTest	everyNeoForgeNameIsInTheStagedNeoForgeCarrier()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.access.RestoredAccessTransformerTest	actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/chunk/ChunkGenerator.class)
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:staged] staged pack or carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
@@ -1726,7 +1723,7 @@ test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	theReviewedSh
 test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	theRewrittenRefreshRebuildsTheSupplierFabricWrote()	[fixture:staged] NeoForge's staged base absent
 test	net.forbric.kernel.transform.FeaturesPerStepRefreshStagedTest	theRewrittenRefreshStillOnlyInvalidatesNeoForgesLazy()	[fixture:staged] NeoForge's staged base absent
 test	net.forbric.kernel.transform.FlowerPotRepairInjectorTest	onTheGenuineBaseTheConstructorEditLandsAloneAndLinks()	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
-test	net.forbric.kernel.transform.FlowerPotRepairInjectorTest	vanillasClassIsNotThisRepairs()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent (reading net/minecraft/wor
+test	net.forbric.kernel.transform.FlowerPotRepairInjectorTest	vanillasClassIsNotThisRepairs()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent (reading net/minecraft/world/level/block/FlowerPotBlock.class)
 test	net.forbric.kernel.transform.FmlContextLoaderRewriterTest	libJfsOwnMixinPluginIsRewrittenAtItsOneCast()	[fixture:third-party] the sweep90 pack (build/compat-inputs) is not linked into this checkout
 test	net.forbric.kernel.transform.ForbricBrandingInjectorTest	f3ShowsForbricsReleaseAndBrand()	[fixture:staged] base not staged: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.ForbricBrandingInjectorTest	theTitleScreenNamesForbricAndCountsEveryInstalledMod()	[fixture:staged] neoforge runtime not staged: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
@@ -1776,7 +1773,7 @@ test	net.forbric.kernel.transform.ItemUseOnInjectorTest	neoForgesUseOnKeepsItsOw
 test	net.forbric.kernel.transform.ItemUseOnInjectorTest	onTheGenuineBaseNeoForgesBodyIsRoutedOncePostedAndBothHalvesLink()	[fixture:staged] the genuine NeoForge base and its carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.ItemUseOnInjectorTest	theRoutedClaimIsReportedForTheEndStateAndOnlyForIt()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
 test	net.forbric.kernel.transform.ItemUseOnInjectorTest	theSwitchLeavesBothAlone()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
-test	net.forbric.kernel.transform.ItemUseOnInjectorTest	vanillasBodyKeepsItsCallAndOnlyGainsTheBridge()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent (reading net/minecraft/wor
+test	net.forbric.kernel.transform.ItemUseOnInjectorTest	vanillasBodyKeepsItsCallAndOnlyGainsTheBridge()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent (reading net/minecraft/world/item/ItemStack.class)
 test	net.forbric.kernel.transform.KeyModifierSplitStagedTest	everyGetKeyCallInTheBaseAndCarrierIsHandedANameWithoutItsModifier()	[fixture:staged] the base and the NeoForge carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.LambdaInvocationThunkInjectorTest	theActualHudReferencesAcquireExactSingleCallThunks()	[fixture:staged] actual staged game required
 test	net.forbric.kernel.transform.LifecycleHookInjectorTest	excisesServerModLoaderFromRealMain()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/server/Main.class)
@@ -1906,14 +1903,14 @@ test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFinalizeSpawnInNe
 test	net.forbric.kernel.transform.NativeCoremodParityTest	everyFlowerPotReadGoesThroughTheGetterExceptTheGetter()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/block/FlowerPotBlock.class)
 test	net.forbric.kernel.transform.NativeCoremodParityTest	theTargetListIsNeoForges()	[fixture:mc-libraries] NeoForge universal jar absent from ~/.minecraft/.forbric-build/dl
 test	net.forbric.kernel.transform.NativeCoremodParityTest	vanillasShapeAndTheSwitchesLeaveClassesAlone()	[fixture:mc-libraries] vanilla 26.2 absent
-test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	aNeoForgeModsMultipartEntityIsTrackedByTheBaseItself()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
-test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	controlANullPartArrayThrowsOutOfTheCallback()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
+test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	aNeoForgeModsMultipartEntityIsTrackedByTheBaseItself()	[fixture:java-25] the base is class-file 69, which only Java 25 links
+test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	controlANullPartArrayThrowsOutOfTheCallback()	[fixture:java-25] the base is class-file 69, which only Java 25 links
 test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	theBasesCallbackReadsOnlyNeoForgesParts()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/client/multiplayer/ClientLevel$EntityCallbacks.class)
-test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	theDragonsPartsAreTrackedByItsOwnCase()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
+test	net.forbric.kernel.transform.NeoForgeBaseClientPartTrackingStagedTest	theDragonsPartsAreTrackedByItsOwnCase()	[fixture:java-25] the base is class-file 69, which only Java 25 links
 test	net.forbric.kernel.transform.NeoForgeBaseCreativeSearchStagedTest	noClassInTheBaseOrTheCarrierJoinsAFutureItLookedUpWithGetOrDefault()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
 test	net.forbric.kernel.transform.NeoForgeBaseCreativeSearchStagedTest	sessionSearchTreesHasNoGetSearchTreeAndKeepsNeoForgesKeyedReaders()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/client/multiplayer/SessionSearchTrees.class)
 test	net.forbric.kernel.transform.NeoForgeBaseRecordOptionalsStagedTest	noRecordInTheBaseOrTheCarrierLeavesAnOptionalComponentNull()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
-test	net.forbric.kernel.transform.NeoForgeBaseRecordOptionalsStagedTest	serverStatusBuiltThroughEachConstructorHoldsNoNullOptional()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent
+test	net.forbric.kernel.transform.NeoForgeBaseRecordOptionalsStagedTest	serverStatusBuiltThroughEachConstructorHoldsNoNullOptional()	[fixture:java-25] the base is class-file 69, which only Java 25 links
 test	net.forbric.kernel.transform.NeoForgeBaseStructureCensusStagedTest	noClassHasTwoLambdasOfOneName()	[fixture:staged] the base and the NeoForge carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.NeoForgeBaseStructureCensusStagedTest	noLambdaHandleDisagreesWithItsTarget()	[fixture:staged] the base and the NeoForge carrier: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.NeoForgeBaseStructureCensusStagedTest	noVanillaBodyMovedBehindABuilderStub()	[fixture:mc-libraries] the vanilla client jar: ~/.minecraft/versions/26.2/26.2.jar
@@ -1946,13 +1943,13 @@ test	net.forbric.kernel.transform.RecipeSyncFailSoftInjectorTest	thePayloadIsFil
 test	net.forbric.kernel.transform.RegisterEventsSeamStagedTest	aWovenHandlerAfterTheDispatchStaysRightAfterIt()	[fixture:staged] NeoForge's carrier: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.transform.RegisterEventsSeamStagedTest	anUnknownShapeIsLeftAlone()	[fixture:staged] NeoForge's carrier: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.transform.RegisterEventsSeamStagedTest	theGenuineMethodIsRoutedAndStillVerifies()	[fixture:staged] NeoForge's carrier: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
-test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	aRegistriesThatTookFabricsModifierHandsFabricRegistriesVanillasDirectory()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes chec
-test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	everyOtherRegistryEndsWhereItsOwnLoaderPutsIt()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes chec
-test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	forceHandsFabricRegistriesVanillasDirectoryWithoutAsking()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes chec
+test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	aRegistriesThatTookFabricsModifierHandsFabricRegistriesVanillasDirectory()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes check
+test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	everyOtherRegistryEndsWhereItsOwnLoaderPutsIt()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes check
+test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	forceHandsFabricRegistriesVanillasDirectoryWithoutAsking()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes check
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	switchedOffRegistriesStaysAsMerged()	[fixture:staged] staged base absent
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	theMergedBodyIsNeoForgesAndTheEditHandsEveryAnswerToTheOwner()	[fixture:staged] staged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	withoutFabricsModifierInRegistriesEveryRegistryKeepsTheMergedDirectory()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent — skipping real-bytes check
-test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	woversRegistriesReadTheDirectoryWoverShipsAsOnNativeFabric()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes chec
+test	net.forbric.kernel.transform.RegistryDirectoryOwnerInjectorTest	woversRegistriesReadTheDirectoryWoverShipsAsOnNativeFabric()	[fixture:mc-libraries] ~/.minecraft/versions/26.2/26.2.jar absent — skipping real-bytes check
 test	net.forbric.kernel.transform.RegistryElementCallbackInjectorTest	theActualTwoInterfaceInitializerMatchesWithoutModNamesOrVersionHashes()	[fixture:third-party] Lithium fixture absent
 test	net.forbric.kernel.transform.RegistryRemapContractsTest	fabricApisRegistrySyncMixinCarriesOneRemapContract()	[fixture:staged] the pinned Fabric API $ROOT/forbric-kernel/run/client-merged-pack/mods/fabric-api-0.155.2+26.2.jar absent
 test	net.forbric.kernel.transform.RegistryRevertInjectorTest	aloneItRewritesTheRevertAndCapturesAtTheHeadOfApplySnapshot()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/registries/RegistryManager.class)
