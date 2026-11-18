@@ -111,8 +111,10 @@ public final class Installer {
 				StandardCharsets.UTF_8);
 		log.accept("wrote " + profile);
 		// After the profile, so the one just written counts among the profiles whose libraries are kept: what an older
-		// Forbric left behind and nothing uses any more goes now (OldInstallCleanup). It never fails the install.
-		new OldInstallCleanup(log).run(mcDir, artifacts.values(), libraryEntries);
+		// Forbric left behind and nothing uses any more goes now (OldInstallCleanup). It never fails the install. The
+		// download cache is judged only by an install that built its game files, the one that knows what it reads there.
+		new OldInstallCleanup(log).run(mcDir, artifacts.values(), libraryEntries,
+				artifactDir == null ? () -> ArtifactBuilder.downloadInputs(mcDir, mcVersion) : null);
 
 		Path mods = mcDir.resolve("mods");
 		Files.createDirectories(mods);

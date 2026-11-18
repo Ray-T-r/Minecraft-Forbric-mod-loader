@@ -39,7 +39,8 @@
 # run/.gate-downloads/m17 from a worktree that has it saves the fetch (the SHA-1 and the marker are checked either way).
 #
 # Rundir: M17_DEST (default run/installed, which the gate wipes). M17_SEED_CACHE=<an earlier install's directory> copies
-# that install's download caches (.forbric-build/dl and tools) and NeoForm's patched game (.forbric-build/out/
+# that install's download caches (.forbric-build/dl and tools, and NFRT's cache .forbric-build/nfrt when it has one, which
+# phase U's rebuild of NeoForm's game reads) and NeoForm's patched game (.forbric-build/out/
 # patched-mc-neoforge-*.jar and its stamp) into the fresh directory first: the first install then builds the NeoForge
 # runtime and the vanilla reference from local inputs and takes NeoForm's game from the cache, so it goes to the network
 # for nothing, so far as the installer's own fetches go. Measured with the network denied (C5, 2026-11-09): a directory
@@ -147,6 +148,10 @@ if [ -n "${M17_SEED_CACHE:-}" ]; then
     cp -cR "$M17_SEED_CACHE/.forbric-build/$cache" "$DEST/.forbric-build/" 2>/dev/null \
       || cp -R "$M17_SEED_CACHE/.forbric-build/$cache" "$DEST/.forbric-build/"
   done
+  if [ -d "$M17_SEED_CACHE/.forbric-build/nfrt" ]; then
+    cp -cR "$M17_SEED_CACHE/.forbric-build/nfrt" "$DEST/.forbric-build/" 2>/dev/null \
+      || cp -R "$M17_SEED_CACHE/.forbric-build/nfrt" "$DEST/.forbric-build/"
+  fi
   mkdir -p "$DEST/.forbric-build/out"
   SEEDED_BASE=$(ls "$M17_SEED_CACHE"/.forbric-build/out/patched-mc-neoforge-*.jar 2>/dev/null | head -1)
   [ -n "$SEEDED_BASE" ] && [ -f "$SEEDED_BASE.pins" ] || { echo "[kernel] SKIP-FATAL: M17_SEED_CACHE has no stamped NeoForm game in .forbric-build/out" >&2; exit 3; }
@@ -532,6 +537,10 @@ fi
 # These two phases run LAST on purpose: the second one rebuilds an artifact, and nothing downstream should be
 # resolved from a half-refreshed cache.
 step "a second install into the same directory reuses what is already built"
+# The download cache before and after: the clean-up keeps exactly this install's inputs there (OldInstallCleanup, owner
+# ruling 6 of C6), so a second install removes none of them and fetches none again -- the cache comes out identical.
+cache_files() { (cd "$1/.forbric-build/dl" 2>/dev/null && find . -type f | LC_ALL=C sort | xargs shasum -a 1); }
+cache_files "$DEST" > "$BUILD/gate-m17-install-2-dl-before.txt"
 java "${INSTALLER_LANG[@]}" -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
 # Two built artifacts since C1: the NeoForge runtime and NeoForm's patched game (six on the merged base).
 REUSED=$(grep -cE "^\[(neoforge-runtime|neoform)\] up-to-date" "$BUILD/gate-m17-install-2.log")
@@ -541,6 +550,12 @@ assert_eq "every artifact came from the cache" "2" "$REUSED"
 check "the vanilla reference came from the cache too" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-2.log"
 # The clean-up never takes this install's own files: its outputs and stamps, the download cache, its libraries.
 check_exactly "the clean-up removed none of this install's own files" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-2.log" 1
+cache_files "$DEST" > "$BUILD/gate-m17-install-2-dl-after.txt"
+if [ -s "$BUILD/gate-m17-install-2-dl-before.txt" ] && cmp -s "$BUILD/gate-m17-install-2-dl-before.txt" "$BUILD/gate-m17-install-2-dl-after.txt"; then
+  echo "[kernel] PASS the download cache is identical after the second install: nothing removed, nothing fetched again ($(wc -l < "$BUILD/gate-m17-install-2-dl-after.txt" | tr -d ' ') files)"
+else
+  echo "[kernel] FAIL the second install changed the download cache (or it is empty): $BUILD/gate-m17-install-2-dl-before.txt vs -after.txt"; FAIL=$((FAIL+1))
+fi
 
 step "and a pin that no longer matches is NOT served from it"
 # Only the NeoForge runtime's stamp is disturbed, because the stamp is the whole pin set: in real use both move
@@ -637,7 +652,9 @@ check_exactly "and the clean-up removed nothing" "^\[cleanup\] removed 0 file\(s
 # empty one: v0.3.1-beta2's profile, libraries and .forbric-build as that installer wrote them (cloned from the one laid out
 # above), plus a second profile the player still has. Two installs: first with -Dforbric.installerCleanup=off, the reverse
 # control (every removal check must be red), then the real one over the same directory, after which only what nothing
-# names is gone, every removal is in the log, dl/ and the player's files are untouched, and the game boots from the result.
+# names is gone, every removal is in the log, the download cache holds exactly this install's inputs (owner ruling 6 of C6:
+# every other file there goes, beta2's MinecraftForge downloads among them), the player's files are untouched, and the
+# game boots from the result.
 if [ -n "$BETA2_FAIL" ]; then
 step "phase U: lay out the install v0.3.1-beta2 left"
 echo "[kernel] FAIL phase U has no old install to upgrade: $BETA2_FAIL"; FAIL=1
@@ -661,9 +678,12 @@ grep -aq '"--gameJar"' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
   && grep -aq 'patched-mc-merged/26.2/' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
   && echo "[kernel] PASS the old profile is beta2's: it opens the merged base" \
   || { echo "[kernel] FAIL the old profile is not the one v0.3.1-beta2 writes"; FAIL=1; }
-# dl/ before: every file an older installer cached there must come out of the upgrade unchanged (critic 19).
+# dl/ before, as beta2 left it. Since the owner's ruling 6 (C6) the clean-up keeps exactly this install's inputs there and
+# removes the rest; what this install's inputs are is read from this run's own first install, whose cache holds exactly
+# what that install downloaded (it began empty, or seeded from such a cache, and removed nothing: checked above).
 dl_files() { (cd "$UB/dl" && find . -type f | LC_ALL=C sort | xargs shasum -a 1); }
 dl_files > "$BUILD/gate-m17-upgrade-dl-before.txt"
+(cd "$DEST/.forbric-build/dl" && find . -type f | LC_ALL=C sort) > "$BUILD/gate-m17-upgrade-dl-inputs.txt"
 # What this installer downloads that beta2's caches lack (NeoForge 26.2.0.93's userdev, universal and libraries, NFRT's
 # artifacts for it) is exactly what the first install above fetched in this run: copied in from there, never over a file
 # beta2 left, so phase U does not depend on the network a second time (two m17 runs on 2026-11-17 lost a cold download to a
@@ -677,6 +697,10 @@ for cache in dl nfrt; do
   done
 done
 
+# This install's inputs in phase U's cache now (beta2's same-named file, else the copy above): each must come through the
+# upgrade unchanged.
+(cd "$UB/dl" && xargs shasum -a 1 < "$BUILD/gate-m17-upgrade-dl-inputs.txt") > "$BUILD/gate-m17-upgrade-dl-inputs-before.txt" 2>/dev/null
+
 # The player's files, as in the first install, and their digests before anything runs.
 cp -cR "$SRC_RUNDIR/saves" "$DEST_UP/saves" 2>/dev/null || cp -R "$SRC_RUNDIR/saves" "$DEST_UP/saves"
 cp -R "$SRC_RUNDIR/config" "$DEST_UP/config" 2>/dev/null || true
@@ -687,8 +711,8 @@ cp "$SRC_RUNDIR/mods"/*.jar "$DEST_UP/mods/" 2>/dev/null || true
 user_data() { (cd "$DEST_UP" && find mods saves config defaultconfigs options.txt -type f 2>/dev/null | LC_ALL=C sort | xargs shasum -a 1); }
 user_data > "$BUILD/gate-m17-upgrade-userdata-before.txt"
 
-# What must go (relative to $DEST_UP) and what must stay: everything of beta2's that no profile names, and every
-# MinecraftForge or merged product in .forbric-build -- not dl/ (critic 19: the download cache is never touched).
+# What must go (relative to $DEST_UP) and what must stay: everything of beta2's that no profile names, every
+# MinecraftForge or merged product in .forbric-build, and every file beta2 cached in dl/ that is no input of this install.
 UP_GONE=(
   libraries/net/forbric/patched-mc-merged/26.2/patched-mc-merged-26.2.jar
   libraries/net/forbric/forge-runtime/26.2/forge-runtime-26.2.jar
@@ -719,6 +743,22 @@ UP_CURRENT=(
 # beta2 left its merge tools in tools/; this installer carries the kernel's checker instead, and the clean-up removes them.
 [ -n "$CHECKER" ] && UP_CURRENT+=(".forbric-build/tools/$CHECKER")
 UP_GONE+=(.forbric-build/tools/forbric-merge-tools.jar)
+# dl/: beta2's downloads no input of this install names -- MinecraftForge's own jars, beta2's fixed-name userdev jars,
+# NeoForge 26.2.0.88's universal jar, libraries the runtime no longer takes. Same-named inputs (the server jar, libraries
+# NeoForge 26.2.0.93 still lists) stay.
+UP_DL_GONE=0
+UP_DL_GONE_BYTES=0
+while read -r _ f; do
+  grep -qxF "$f" "$BUILD/gate-m17-upgrade-dl-inputs.txt" && continue
+  UP_GONE+=(".forbric-build/dl/${f#./}")
+  UP_DL_GONE=$((UP_DL_GONE+1))
+  UP_DL_GONE_BYTES=$((UP_DL_GONE_BYTES + $(wc -c < "$UB/dl/${f#./}")))
+done < "$BUILD/gate-m17-upgrade-dl-before.txt"
+UP_DL_FORGE=$(sed 's/^[0-9a-f]* *//' "$BUILD/gate-m17-upgrade-dl-before.txt" | grep -acE '^\./(forge-|fml(core|loader|earlydisplay)-|(javafml|lowcode|mc)language-|forgespi-)')
+echo "[kernel] dl/: $UP_DL_GONE of beta2's $(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') cached files are no input of this install ($(awk "BEGIN{printf \"%.1f\", $UP_DL_GONE_BYTES/1048576}") MiB; $UP_DL_FORGE of them named as MinecraftForge's); $(wc -l < "$BUILD/gate-m17-upgrade-dl-inputs.txt" | tr -d ' ') inputs"
+[ "$UP_DL_GONE" -gt 0 ] && [ "$UP_DL_FORGE" -gt 0 ] \
+  && echo "[kernel] PASS beta2's download cache holds files this install does not read, MinecraftForge's among them" \
+  || { echo "[kernel] FAIL beta2's download cache holds nothing for the clean-up to remove ($UP_DL_GONE, $UP_DL_FORGE MinecraftForge): the premise of the dl/ checks is gone"; FAIL=1; }
 UP_PRESENT_BEFORE=0
 for rel in "${UP_GONE[@]}" "${UP_KEPT_OLD[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_PRESENT_BEFORE=$((UP_PRESENT_BEFORE+1)); done
 assert_eq "the old layout holds every file phase U judges" "$(( ${#UP_GONE[@]} + ${#UP_KEPT_OLD[@]} ))" "$UP_PRESENT_BEFORE"
@@ -772,6 +812,9 @@ check_exactly "the clean-up removed exactly those ${#UP_GONE[@]} files" \
   "^\[cleanup\] removed ${#UP_GONE[@]} file\(s\) an older Forbric left behind \([0-9.]+ MB\)$" "$BUILD/gate-m17-upgrade.log" 1
 check_absent "and none failed" "^\[cleanup\] could not" "$BUILD/gate-m17-upgrade.log"
 check_absent "and it did not stop part-way" "^\[cleanup\] the clean-up stopped" "$BUILD/gate-m17-upgrade.log"
+check_exactly "the download cache's clean-up said that other versions' downloads go too" \
+  "^\[cleanup\] clearing the download cache $UB/dl of every file this install does not use, cached downloads for another Minecraft version included;" \
+  "$BUILD/gate-m17-upgrade.log" 1
 check_exactly "the game's unparsable JSON beside a profile was skipped, and named" \
   "^\[cleanup\] skipped $DEST_UP/versions/keep-old/usercache\.json " "$BUILD/gate-m17-upgrade.log" 1
 for rel in "${UP_KEPT_OLD[@]}"; do
@@ -782,14 +825,18 @@ for rel in "${UP_CURRENT[@]}"; do
   [ -f "$DEST_UP/$rel" ] && echo "[kernel] PASS this install's own file is there: $rel" \
     || { echo "[kernel] FAIL this install's own file is missing: $rel"; FAIL=1; }
 done
-# Only .forbric-build's own level, out/ and tools/: NFRT's caches and work tree hold names of their own (an "ats" among
-# them) that are not an older installer's, and dl/ is the download cache, which the clean-up never touches (critic 19) --
-# it still holds beta2's MinecraftForge downloads (about 14 MiB) and is judged below only as unchanged. The line says so.
+# .forbric-build's own level, out/, tools/ and dl/ (owner ruling 6 of C6: the download cache keeps only this install's
+# inputs, so beta2's MinecraftForge downloads go too). NFRT's caches and work tree hold names of their own (an "ats" among
+# them) that are not an older installer's, and are not judged here. The line says so.
 LEFT=$(cd "$UB" && { ls -1; ls -1 out tools 2>/dev/null; } | grep -aE '^(patched-mc-merged|forge-runtime|patched-mc-forge|merge-conflicts\.txt$|server-main\.jar$|clean\.jar$|patched-(subset|full|at)\.jar$|joined\.lzma$|ats$)' | tr '\n' ' ')
-assert_eq ".forbric-build's top level, out/ and tools/ hold no MinecraftForge or merged product (dl/ and NFRT's caches are not judged here)" "" "$LEFT"
+LEFT+=$(cd "$UB" && ls -1 dl 2>/dev/null | grep -aE '^(forge-|fml(core|loader|earlydisplay)-|(javafml|lowcode|mc)language-|forgespi-)' | sed 's|^|dl/|' | tr '\n' ' ')
+assert_eq ".forbric-build's top level, out/, tools/ and dl/ hold no MinecraftForge or merged product (NFRT's caches are not judged here)" "" "$LEFT"
 dl_files > "$BUILD/gate-m17-upgrade-dl-after.txt"
-DL_CHANGED=$(LC_ALL=C comm -23 "$BUILD/gate-m17-upgrade-dl-before.txt" "$BUILD/gate-m17-upgrade-dl-after.txt" | wc -l | tr -d ' ')
-assert_eq "dl/ is untouched: every file an older installer cached there is still there, unchanged ($(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') files)" "0" "$DL_CHANGED"
+if [ -s "$BUILD/gate-m17-upgrade-dl-inputs-before.txt" ] && cmp -s "$BUILD/gate-m17-upgrade-dl-inputs-before.txt" "$BUILD/gate-m17-upgrade-dl-after.txt"; then
+  echo "[kernel] PASS dl/ holds exactly this install's inputs, each unchanged ($(wc -l < "$BUILD/gate-m17-upgrade-dl-after.txt" | tr -d ' ') files)"
+else
+  echo "[kernel] FAIL dl/ does not hold exactly this install's inputs, unchanged: $BUILD/gate-m17-upgrade-dl-inputs-before.txt vs $BUILD/gate-m17-upgrade-dl-after.txt"; FAIL=1
+fi
 # And nothing else is left under net/forbric: this install's four, and the one the keep-old profile names.
 FORBRIC_LEFT=$(cd "$DEST_UP/libraries" && find net/forbric -type f | LC_ALL=C sort | tr '\n' ' ')
 FORBRIC_WANT=$(for rel in "${UP_KEPT_OLD[@]}" "${UP_CURRENT[@]}"; do case "$rel" in (libraries/*) echo "${rel#libraries/}";; esac; done | LC_ALL=C sort | tr '\n' ' ')

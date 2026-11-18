@@ -98,6 +98,23 @@ final class InstallerText {
 				: "[cleanup] removed " + file + " (an older Forbric's file that no installed version uses)";
 	}
 
+	/**
+	 * The download cache is about to lose what no input of this install names. Said once, before the files, because it
+	 * takes more than an older Forbric's downloads: another Minecraft version's go too (the owner's ruling).
+	 */
+	static String cleanupDownloads(Path dl) {
+		return chinese() ? "[cleanup] 清理下载缓存 " + dl + "：本次安装用不到的文件都会删除，其中也包括为其他 Minecraft 版本缓存的下载；"
+				+ "以后哪次安装需要，会重新下载"
+				: "[cleanup] clearing the download cache " + dl + " of every file this install does not use, cached downloads"
+						+ " for another Minecraft version included; an install that needs one again downloads it again";
+	}
+
+	/** A file removed from the download cache: no input of this install names it. */
+	static String cleanupRemovedDownload(Path file) {
+		return chinese() ? "[cleanup] 已删除 " + file + "（缓存的下载文件，本次安装用不到）"
+				: "[cleanup] removed " + file + " (a cached download this install does not use)";
+	}
+
 	/** A link the clean-up met and left alone: a symbolic link or a junction, or a directory reached through one. */
 	static String cleanupLeftLink(Path link) {
 		return chinese() ? "[cleanup] 保留 " + link + "：它是链接（符号链接或目录联接），或经由链接到达；清理从不跟随或删除链接"

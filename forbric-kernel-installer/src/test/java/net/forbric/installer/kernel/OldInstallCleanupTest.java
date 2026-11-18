@@ -29,6 +29,13 @@ import java.util.TreeMap;
  * carries on; an unexpected failure stops the clean-up and says so. Every way a profile may spell a library keeps it.
  * The lines are checked in Chinese too, forced (D88b); the English ones are pinned to English (and the caller's language
  * restored after), so the class passes on a machine whose language is Chinese.
+ *
+ * <p>The download cache ({@code .forbric-build/dl}, owner ruling 6 of Stage 4 C6): an install that built its game files
+ * keeps exactly what {@link ArtifactBuilder#downloadInputs} names -- read here from a synthetic NeoForge userdev jar, and
+ * checked against the file names the build fetches by, written out below ({@link #DL_INPUTS}) -- and removes the rest:
+ * MinecraftForge's downloads, an older NeoForge's, another Minecraft version's, a broken download's {@code .part}. An
+ * install given its game files leaves the cache alone. The controls: inputs ignored with the guard off (red: a current
+ * input removed), and a clean-up that does not judge the cache (red: an orphan kept).
  */
 public final class OldInstallCleanupTest {
 	private static final String KERNEL_NOW = "net/forbric/forbric-kernel/0.4.0-dev/forbric-kernel-0.4.0-dev.jar";
@@ -63,12 +70,32 @@ public final class OldInstallCleanupTest {
 			// v0.1.0's work tree, .forbric-build/<mc>-<forge>/, with its own download cache and work files.
 			"26.2-65.0.1/dl/forge-userdev.jar", "26.2-65.0.1/dl/server.jar", "26.2-65.0.1/patched-full.jar",
 			"26.2-65.0.1/ats/accesstransformer.cfg");
-	/** This install's own build outputs and their stamps, the download cache and NFRT's: never touched. */
+	/** This install's own build outputs and their stamps, and NFRT's caches: never touched. */
 	private static final List<String> CURRENT_BUILD = List.of(
 			"out/patched-mc-neoforge-26.2.jar", "out/patched-mc-neoforge-26.2.jar.pins", "out/neoforge-runtime.jar",
-			"out/neoforge-runtime.jar.pins", "out/vanilla-reference-26.2.jar", "dl/forge-userdev.jar",
-			"dl/neoforge-26.2.0.93-userdev.jar", "dl/server.jar", "nfrt/cache/entry.bin", "nfrt-work/state.json",
+			"out/neoforge-runtime.jar.pins", "out/vanilla-reference-26.2.jar", "nfrt/cache/entry.bin", "nfrt-work/state.json",
 			"tools/neoform-runtime-2.0.18-all.jar");
+	/**
+	 * The libraries the synthetic userdev jar's config lists: three NeoForge runs on, and one ({@code org.ow2.asm}) the
+	 * kernel supplies, so the runtime is not built from it and its cached copy is no input.
+	 */
+	private static final List<String> USERDEV_LIBRARIES = List.of("net.neoforged:bus:8.0.5",
+			"net.neoforged.fancymodloader:loader:11.0.16", "cpw.mods:securejarhandler:3.0.8@jar", "org.ow2.asm:asm:9.9.1");
+	/**
+	 * What this install's build reads in {@code dl/}, by the names the build fetches by (ArtifactBuilder.build,
+	 * NeoForgeRuntimeBuilder.build, NfrtRunner's server jar), written out here rather than asked of the code under test.
+	 */
+	private static final List<String> DL_INPUTS = List.of("neoforge-" + Pins.NEOFORGE + "-userdev.jar",
+			"neoforge-" + Pins.NEOFORGE + "-universal.jar", "bus-8.0.5.jar", "loader-11.0.16.jar",
+			"securejarhandler-3.0.8.jar", "server.jar");
+	/**
+	 * What an older installer, or an install for another Minecraft version, cached in {@code dl/} and this install never
+	 * reads: v0.3.1-beta2's MinecraftForge downloads and fixed-name userdev jars, an older NeoForge's universal jar, a
+	 * library the kernel supplies, another version's userdev, an interrupted download, a file in a sub-directory.
+	 */
+	private static final List<String> DL_OLD = List.of("forge-userdev.jar", "forge-26.2-65.0.1-universal.jar",
+			"fmlcore-26.2-65.0.1.jar", "neoforge-userdev.jar", "neoforge-26.2.0.88-universal.jar", "asm-9.9.1.jar",
+			"neoforge-26.1.0.5-userdev.jar", "server.jar.part", "sub/deeper/old-1.jar");
 	private static final List<String> USER_DATA = List.of(
 			"saves/World/level.dat", "mods/some-mod.jar", "config/some.toml", "options.txt");
 
@@ -87,6 +114,8 @@ public final class OldInstallCleanupTest {
 		System.clearProperty(OldInstallCleanup.SWITCH);
 		try {
 			theRulesHold(work.resolve("tip"));
+			theDownloadCacheKeepsExactlyThisInstallsInputs(work.resolve("downloads"));
+			aDownloadThatCannotBeRemovedIsNamed(work.resolve("downloads-locked"));
 			everySpellingOfALibraryKeepsIt(work.resolve("spellings"));
 			aLinkOrJunctionAtAnyStepIsRedirected(work.resolve("redirected"));
 			onlyAProfileThatCannotBeReadStopsTheLibraries(work.resolve("json"));
@@ -97,6 +126,8 @@ public final class OldInstallCleanupTest {
 			theSwitchLeavesEverything(work.resolve("off"));
 			ignoringTheProfilesTurnsItRed(work.resolve("control-profiles"));
 			reachingThisInstallsOutputsTurnsItRedWithoutTheGuard(work.resolve("control-guard"));
+			ignoringTheDownloadInputsTurnsItRedWithoutTheGuard(work.resolve("control-downloads"));
+			notJudgingTheDownloadCacheKeepsItsOrphans(work.resolve("control-downloads-kept"));
 			theLinesExistInChinese(work.resolve("zh"));
 		} finally {
 			restore(LANGUAGE, language);
@@ -117,11 +148,11 @@ public final class OldInstallCleanupTest {
 		Layout layout = layout(mc);
 		List<String> log = new ArrayList<>();
 		OldInstallCleanup.Result result = new OldInstallCleanup(log::add, OldInstallCleanup.RETIRED_BUILD_FILES, true,
-				true, true).run(mc, layout.built, layout.staged);
-		List<String> problems = verify(mc, layout, log);
+				true, true).run(mc, layout.built, layout.staged, layout.downloads);
+		List<String> problems = verify(mc, layout, log, true);
 		require(problems.isEmpty(), "the clean-up broke its rules:\n  " + String.join("\n  ", problems) + "\n" + log);
 		require(result.failed() == 0, "nothing failed: " + result);
-		require(result.removed() == ORPHANS.size() + RETIRED_BUILD.size(), "every removal counted: " + result);
+		require(result.removed() == ORPHANS.size() + RETIRED_BUILD.size() + DL_OLD.size(), "every removal counted: " + result);
 		require(log.stream().filter(l -> l.startsWith("[cleanup] removed /") || l.startsWith("[cleanup] removed " + mc))
 				.count() == result.removed(), "one line per removed file: " + log);
 		require(log.get(log.size() - 1).matches("\\[cleanup\\] removed " + result.removed()
@@ -135,10 +166,91 @@ public final class OldInstallCleanupTest {
 		require(Files.isRegularFile(layout.outside.resolve("victim.jar"))
 				&& Files.isRegularFile(layout.outside.resolve("dir/old/1/old-1.jar")), "no link was followed");
 		// A second run over the result finds nothing left to do.
+		Map<String, String> after = manifest(mc);
 		List<String> again = new ArrayList<>();
 		OldInstallCleanup.Result second = new OldInstallCleanup(again::add, OldInstallCleanup.RETIRED_BUILD_FILES, true,
-				true, true).run(mc, layout.built, layout.staged);
+				true, true).run(mc, layout.built, layout.staged, layout.downloads);
 		require(second.removed() == 0 && second.failed() == 0, "a second run removes nothing: " + again);
+		require(after.equals(manifest(mc)), "and changes nothing, in the download cache least of all: " + again);
+		require(again.stream().noneMatch(l -> l.startsWith("[cleanup] clearing the download cache")),
+				"nor announces a clean-up of the download cache it has nothing to do in: " + again);
+	}
+
+	/**
+	 * The download cache on its own (owner ruling 6): exactly the inputs stay, byte for byte; every other file goes,
+	 * named, after one line that says another Minecraft version's downloads go too; a sub-directory it empties goes; a
+	 * link is left. An install given its game files (no inputs) leaves the cache as it is.
+	 */
+	private static void theDownloadCacheKeepsExactlyThisInstallsInputs(Path mc) throws Exception {
+		Layout layout = layout(mc);
+		Path dl = mc.resolve(".forbric-build/dl");
+		List<String> inputs = new ArrayList<>();
+		for (Path input : layout.downloads.get()) inputs.add(dl.relativize(input).toString());
+		require(inputs.equals(DL_INPUTS), "the inputs are the files the build fetches, by the same names: " + inputs);
+		Map<String, String> before = manifest(dl);
+		List<String> log = new ArrayList<>();
+		new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged, layout.downloads);
+		List<String> problems = verify(mc, layout, log, true);
+		require(problems.isEmpty(), "the download cache broke its rule:\n  " + String.join("\n  ", problems) + "\n" + log);
+		Map<String, String> kept = new TreeMap<>(before);
+		kept.keySet().removeIf(name -> !DL_INPUTS.contains(name) && !name.equals("linked.jar"));
+		require(kept.equals(new TreeMap<>(manifest(dl))), "what stays is the inputs, unchanged, and the link: " + manifest(dl));
+		require(log.stream().filter(l -> l.equals("[cleanup] clearing the download cache " + dl + " of every file this"
+				+ " install does not use, cached downloads for another Minecraft version included; an install that needs"
+				+ " one again downloads it again")).count() == 1, "one line says what goes, other versions' too: " + log);
+		require(!Files.exists(dl.resolve("sub")), "a sub-directory the clean-up emptied goes: " + log);
+		require(Files.isDirectory(dl), "the cache itself stays");
+		require(log.stream().anyMatch(l -> l.startsWith("[cleanup] left " + dl.resolve("linked.jar") + " ")),
+				"a link in the cache is left, named: " + log);
+
+		// Given its game files, an install read nothing there: the cache is not judged.
+		Layout given = layout(mc.resolveSibling(mc.getFileName() + "-given"));
+		Path givenDl = given.mc.resolve(".forbric-build/dl");
+		Map<String, String> givenBefore = manifest(givenDl);
+		List<String> givenLog = new ArrayList<>();
+		new OldInstallCleanup(givenLog::add).run(given.mc, given.built, given.staged, null);
+		require(givenBefore.equals(manifest(givenDl)), "an install given its game files leaves the cache alone: " + givenLog);
+		require(verify(given.mc, given, givenLog).isEmpty(), "and the rest of the rules hold: " + verify(given.mc, given, givenLog));
+	}
+
+	/** A cached download that cannot be deleted is named and left; the rest of the cache is still cleared. */
+	private static void aDownloadThatCannotBeRemovedIsNamed(Path mc) throws Exception {
+		Layout layout = layout(mc);
+		Path lockedDir = mc.resolve(".forbric-build/dl/sub/deeper");
+		Path locked = lockedDir.resolve("old-1.jar");
+		List<String> log = new ArrayList<>();
+		OldInstallCleanup.Result result;
+		if (System.getProperty("os.name", "").startsWith("Windows")) {
+			try (java.io.FileInputStream held = new java.io.FileInputStream(locked.toFile())) {
+				result = new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged, layout.downloads);
+			}
+		} else if (java.nio.file.FileSystems.getDefault().supportedFileAttributeViews().contains("posix")) {
+			Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("r-xr-xr-x"));
+			try {
+				Files.delete(Files.createFile(lockedDir.resolve("probe")));
+				Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x"));
+				NOT_RUN.add("the failed-download-delete case (this user writes into a read-only directory)");
+				System.out.println("OldInstallCleanupTest: SKIP the failed-download-delete case: this user writes into a"
+						+ " read-only directory");
+				return;
+			} catch (IOException refused) {
+				// As intended: nothing may be written, or deleted, in it.
+			}
+			try {
+				result = new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged, layout.downloads);
+			} finally {
+				Files.setPosixFilePermissions(lockedDir, PosixFilePermissions.fromString("rwxr-xr-x"));
+			}
+		} else {
+			NOT_RUN.add("the failed-download-delete case (neither Windows nor POSIX permissions)");
+			return;
+		}
+		require(Files.isRegularFile(locked), "the download that could not be deleted is still there");
+		require(result.failed() == 1, "one failure counted: " + result + " " + log);
+		require(log.stream().anyMatch(l -> l.startsWith("[cleanup] could not remove " + locked)
+				&& l.endsWith("it is left in place and the install carries on")), "named: " + log);
+		require(!Files.exists(mc.resolve(".forbric-build/dl/forge-userdev.jar")), "the rest of the cache still went: " + log);
+		require(log.get(log.size() - 1).endsWith("; 1 could not be removed and were left in place"), "summed up: " + log);
 	}
 
 	private static void theMergeToolsGoOnlyWhenThisInstallerCarriesNone(Path mc) throws Exception {
@@ -439,6 +551,40 @@ public final class OldInstallCleanupTest {
 		}
 	}
 
+	/**
+	 * Control (a): a clean-up that takes none of the inputs as named, with its guard off, removes this install's own
+	 * downloads -- the checks must see each one go. With the guard on the same rule removes none of them.
+	 */
+	private static void ignoringTheDownloadInputsTurnsItRedWithoutTheGuard(Path mc) throws Exception {
+		Layout guarded = layout(mc.resolve("guarded"));
+		List<String> log = new ArrayList<>();
+		new OldInstallCleanup(log::add, OldInstallCleanup.RETIRED_BUILD_FILES, true, true, true, false)
+				.run(guarded.mc, guarded.built, guarded.staged, guarded.downloads);
+		require(verify(guarded.mc, guarded, log, true).isEmpty(), "with the guard on, inputs ignored by the rule are still"
+				+ " kept: " + verify(guarded.mc, guarded, log, true));
+		Layout open = layout(mc.resolve("unguarded"));
+		log.clear();
+		new OldInstallCleanup(log::add, OldInstallCleanup.RETIRED_BUILD_FILES, true, true, false, false)
+				.run(open.mc, open.built, open.staged, open.downloads);
+		List<String> problems = verify(open.mc, open, log, true);
+		for (String input : DL_INPUTS) {
+			require(problems.contains("a download this install reads was removed: " + input),
+					"control (inputs ignored, guard off) red on " + input + ": " + problems);
+		}
+	}
+
+	/** Control (b): a clean-up that does not judge the download cache keeps every orphan there -- the checks see each. */
+	private static void notJudgingTheDownloadCacheKeepsItsOrphans(Path mc) throws Exception {
+		Layout layout = layout(mc);
+		List<String> log = new ArrayList<>();
+		new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged, null);
+		List<String> problems = verify(mc, layout, log, true);
+		for (String old : DL_OLD) {
+			require(problems.contains("a cached download this install does not read was kept: " + old),
+					"control (cache not judged) red on " + old + ": " + problems);
+		}
+	}
+
 	// --- Chinese ------------------------------------------------------------------------------------------------
 
 	private static void theLinesExistInChinese(Path mc) throws Exception {
@@ -446,9 +592,14 @@ public final class OldInstallCleanupTest {
 		List<String> log = new ArrayList<>();
 		System.setProperty(LANGUAGE, "zh");
 		try {
-			new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged);
+			new OldInstallCleanup(log::add).run(mc, layout.built, layout.staged, layout.downloads);
 			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] 已删除 ") && l.endsWith("（旧版 Forbric 留下的文件，已没有任何版本使用）")),
 					"removals in Chinese: " + log);
+			Path dl = mc.resolve(".forbric-build/dl");
+			require(log.contains("[cleanup] 清理下载缓存 " + dl + "：本次安装用不到的文件都会删除，其中也包括为其他 Minecraft 版本缓存的下载；"
+					+ "以后哪次安装需要，会重新下载"), "the download cache's line in Chinese: " + log);
+			require(log.contains("[cleanup] 已删除 " + dl.resolve("forge-userdev.jar") + "（缓存的下载文件，本次安装用不到）"),
+					"a removed download in Chinese: " + log);
 			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] 保留 ")
 					&& l.endsWith("：它是链接（符号链接或目录联接），或经由链接到达；清理从不跟随或删除链接")), "links in Chinese: " + log);
 			require(log.get(log.size() - 1).matches("\\[cleanup\\] 已删除旧版 Forbric 留下的 [0-9]+ 个文件（[0-9.]+ MB）"),
@@ -479,6 +630,8 @@ public final class OldInstallCleanupTest {
 		List<Path> built = new ArrayList<>();
 		List<Map<String, Object>> staged = new ArrayList<>();
 		Map<String, String> userData = new TreeMap<>();
+		/** What the installer passes: the build's inputs, read from the userdev jar in the cache. */
+		OldInstallCleanup.DownloadInputs downloads;
 	}
 
 	private static Layout layout(Path mc) throws IOException {
@@ -505,6 +658,14 @@ public final class OldInstallCleanupTest {
 		for (String retired : RETIRED_BUILD) write(build.resolve(retired), "retired " + retired);
 		for (String current : CURRENT_BUILD) write(build.resolve(current), "current " + current);
 		write(build.resolve(OldInstallCleanup.MERGE_TOOLS), "the link checker");
+		// The download cache: this install's inputs (a userdev jar whose config lists the runtime's libraries), and what
+		// older installs and other versions left beside them, and a link.
+		Path dl = build.resolve("dl");
+		writeUserdev(dl.resolve(DL_INPUTS.get(0)), USERDEV_LIBRARIES);
+		for (String input : DL_INPUTS.subList(1, DL_INPUTS.size())) write(dl.resolve(input), "input " + input);
+		for (String old : DL_OLD) write(dl.resolve(old), "cached " + old);
+		Files.createSymbolicLink(dl.resolve("linked.jar"), layout.outside.resolve("victim.jar"));
+		layout.downloads = () -> ArtifactBuilder.downloadInputs(mc, "26.2");
 		Files.createSymbolicLink(build.resolve("clean.jar"), layout.outside.resolve("victim.jar"));
 		for (String output : List.of("out/patched-mc-neoforge-26.2.jar", "out/neoforge-runtime.jar",
 				"out/vanilla-reference-26.2.jar")) {
@@ -538,7 +699,30 @@ public final class OldInstallCleanupTest {
 
 	/** Every rule the clean-up must hold, as a list of what it broke; empty when it held them all. */
 	private static List<String> verify(Path mc, Layout layout, List<String> log) throws IOException {
+		return verify(mc, layout, log, false);
+	}
+
+	/**
+	 * @param downloadsJudged whether the run was told this install's download inputs: then exactly they stay in
+	 *                        {@code dl/} and every old file there goes, named; otherwise every file there stays
+	 */
+	private static List<String> verify(Path mc, Layout layout, List<String> log, boolean downloadsJudged) throws IOException {
 		List<String> problems = new ArrayList<>();
+		Path dl = mc.resolve(".forbric-build/dl");
+		for (String input : DL_INPUTS) {
+			if (!Files.isRegularFile(dl.resolve(input))) problems.add("a download this install reads was removed: " + input);
+		}
+		for (String old : DL_OLD) {
+			Path file = dl.resolve(old);
+			if (!downloadsJudged) {
+				if (!Files.isRegularFile(file)) problems.add("a cached download was removed by a run told no inputs: " + old);
+			} else if (Files.exists(file, LinkOption.NOFOLLOW_LINKS)) {
+				problems.add("a cached download this install does not read was kept: " + old);
+			} else if (!log.contains("[cleanup] removed " + file + " (a cached download this install does not use)")) {
+				problems.add("a removal the log does not name: dl/" + old);
+			}
+		}
+		if (!Files.isSymbolicLink(dl.resolve("linked.jar"))) problems.add("the link in the download cache was removed");
 		Path libraries = mc.resolve("libraries");
 		Path build = mc.resolve(".forbric-build");
 		for (String now : List.of(KERNEL_NOW, BASE_NOW, RUNTIME_NOW, REFERENCE_NOW)) {
@@ -606,6 +790,19 @@ public final class OldInstallCleanupTest {
 			return hex.toString();
 		} catch (java.security.NoSuchAlgorithmException impossible) {
 			throw new IllegalStateException(impossible);
+		}
+	}
+
+	/** A NeoForge userdev jar as far as the installer reads one: a {@code config.json} listing the runtime's libraries. */
+	private static void writeUserdev(Path jar, List<String> libraries) throws IOException {
+		Files.createDirectories(jar.getParent());
+		StringBuilder json = new StringBuilder("{\"libraries\":[");
+		for (int i = 0; i < libraries.size(); i++) json.append(i == 0 ? "" : ",").append('"').append(libraries.get(i)).append('"');
+		json.append("]}");
+		try (java.util.zip.ZipOutputStream zip = new java.util.zip.ZipOutputStream(Files.newOutputStream(jar))) {
+			zip.putNextEntry(new java.util.zip.ZipEntry("config.json"));
+			zip.write(json.toString().getBytes(StandardCharsets.UTF_8));
+			zip.closeEntry();
 		}
 	}
 

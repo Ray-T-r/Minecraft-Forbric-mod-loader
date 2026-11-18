@@ -23,6 +23,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.function.Consumer;
 
 /**
@@ -75,21 +76,13 @@ final class NeoForgeRuntimeBuilder {
 		Files.createDirectories(dlDir);
 		Files.createDirectories(outJar.getParent());
 
-		// The universal jar first, then the surviving libraries in the config's own order. Merging is last-wins
-		// on collisions, so the order is part of the contract even though the class sets are disjoint today.
-		List<String> inputs = new ArrayList<>();
-		inputs.add(nfa.universalCoordinate());
-		for (String lib : configLibraries) {
-			if (!isProvidedElsewhere(lib)) inputs.add(lib);
-		}
-
+		Map<String, Path> inputs = inputFiles(nfa, dlDir, configLibraries);
 		log.accept("[neoforge-runtime] fetching " + inputs.size() + " NeoForge runtime artifacts …");
 		List<Path> jars = new ArrayList<>();
-		for (String coord : inputs) {
-			String rel = Util.coordinateToPath(NeoForgeArtifacts.stripExtension(coord));
-			Path dest = dlDir.resolve(rel.substring(rel.lastIndexOf('/') + 1)); // flat cache, like the script's dl/
-			http.ensureWithFallback(nfa.neoforgedUrl(coord), nfa.centralUrl(coord), dest);
-			jars.add(dest);
+		for (Map.Entry<String, Path> input : inputs.entrySet()) {
+			String coord = input.getKey();
+			http.ensureWithFallback(nfa.neoforgedUrl(coord), nfa.centralUrl(coord), input.getValue());
+			jars.add(input.getValue());
 		}
 
 		log.accept("[neoforge-runtime] merging universal + " + (jars.size() - 1) + " libs → " + outJar.getFileName());
@@ -100,6 +93,29 @@ final class NeoForgeRuntimeBuilder {
 		log.accept("[neoforge-runtime] wrote " + outJar.getFileName() + " (" + (size / (1024 * 1024)) + " MB)");
 		BuildStamp.write(outJar);
 		return new ArtifactResult(coordinate, outJar, sha1, size);
+	}
+
+	/**
+	 * What the runtime is built from, coordinate to its file in the flat download cache {@code dlDir}: the universal jar
+	 * first, then the surviving libraries in the config's own order. Merging is last-wins on collisions, so the order is
+	 * part of the contract even though the class sets are disjoint today.
+	 *
+	 * <p>The one place these file names are made: {@link #build} fetches exactly these, and the clean-up of an older
+	 * install keeps exactly these in the cache ({@link ArtifactBuilder#downloadInputs}), whether or not this install
+	 * fetched them (a reinstall served from the cache fetches none).
+	 */
+	static Map<String, Path> inputFiles(NeoForgeArtifacts nfa, Path dlDir, List<String> configLibraries) {
+		List<String> coordinates = new ArrayList<>();
+		coordinates.add(nfa.universalCoordinate());
+		for (String lib : configLibraries) {
+			if (!isProvidedElsewhere(lib)) coordinates.add(lib);
+		}
+		Map<String, Path> inputs = new LinkedHashMap<>();
+		for (String coord : coordinates) {
+			String rel = Util.coordinateToPath(NeoForgeArtifacts.stripExtension(coord));
+			inputs.put(coord, dlDir.resolve(rel.substring(rel.lastIndexOf('/') + 1))); // flat cache, like the script's dl/
+		}
+		return inputs;
 	}
 
 	/**

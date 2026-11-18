@@ -30,6 +30,7 @@ import java.nio.file.attribute.BasicFileAttributes;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.Collections;
 import java.util.Deque;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -39,6 +40,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.function.Consumer;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -54,11 +56,18 @@ import java.util.regex.Pattern;
  *   <li><strong>{@code .forbric-build}</strong> is the installer's own work directory. What goes there is a closed list,
  *       {@link #RETIRED_BUILD_FILES}: the names an older installer wrote and this one never writes or reads (the merged
  *       base and its conflict list, MinecraftForge's runtime, its interop runtime and its patched game, and the
- *       MinecraftForge build's work trees). Nothing else is a candidate: not {@code out/}'s current outputs or their
- *       stamps, not {@code dl/} (the download cache), not NFRT's caches. The merge-tools jar in {@code tools/} goes
+ *       MinecraftForge build's work trees). Nothing else is a candidate by this rule: not {@code out/}'s current outputs
+ *       or their stamps, not {@code dl/} (the next item), not NFRT's caches. The merge-tools jar in {@code tools/} goes
  *       only once this installer carries none, since until then it is the link checker this very install just ran.
  *       v0.1.0's MinecraftForge work tree, {@code .forbric-build/<mc>-<forge>/}, goes whole: no profile ever read it
  *       (its outputs were copied into {@code libraries} and the profile's {@code mods}).</li>
+ *   <li><strong>{@code .forbric-build/dl}</strong>, the download cache, keeps exactly the files this install's build
+ *       reads ({@link ArtifactBuilder#downloadInputs}: the NeoForge userdev jar, what the NeoForge runtime is built from,
+ *       the server jar), whether or not this install fetched them; every other file there goes. That is what an older
+ *       installer downloaded for MinecraftForge, the merge and an older NeoForge, and also (owner ruling, Stage 4 C6) what
+ *       an install for another Minecraft version cached there: the install that needs it again downloads it again. Only
+ *       an install that built its game files knows its inputs; one given them ({@code --artifacts}) read nothing there
+ *       and leaves the cache alone.</li>
  *   <li><strong>{@code libraries/net/forbric}</strong> is shared with the launcher. A Forbric library directory there
  *       (one {@code <artifact>/<version>/}) is removed only when no version profile names anything inside it, or a
  *       directory above it: every {@code versions/<id>/*.json} is read, with the profile each one {@code inheritsFrom},
@@ -137,34 +146,55 @@ final class OldInstallCleanup {
 	private final boolean carriesMergeTools;
 	private final boolean honourProfiles;
 	private final boolean guardCurrent;
+	private final boolean honourDownloads;
 
 	OldInstallCleanup(Consumer<String> log) {
 		this(log, RETIRED_BUILD_FILES, OldInstallCleanup.class.getResource(MERGE_TOOLS_RESOURCE) != null, true, true);
 	}
 
-	/**
-	 * The rules spelled out, for the test's controls: a clean-up that ignores the profiles, or one with its guard off
-	 * and a rule that reaches a current output, must turn the test red.
-	 */
 	OldInstallCleanup(Consumer<String> log, List<String> retiredBuildFiles, boolean carriesMergeTools,
 			boolean honourProfiles, boolean guardCurrent) {
+		this(log, retiredBuildFiles, carriesMergeTools, honourProfiles, guardCurrent, true);
+	}
+
+	/**
+	 * The rules spelled out, for the test's controls: a clean-up that ignores the profiles, or one with its guard off
+	 * and a rule that reaches a current output, or one that ignores this install's download inputs with its guard off,
+	 * must turn the test red.
+	 */
+	OldInstallCleanup(Consumer<String> log, List<String> retiredBuildFiles, boolean carriesMergeTools,
+			boolean honourProfiles, boolean guardCurrent, boolean honourDownloads) {
 		this.log = log;
 		this.retiredBuildFiles = retiredBuildFiles;
 		this.carriesMergeTools = carriesMergeTools;
 		this.honourProfiles = honourProfiles;
 		this.guardCurrent = guardCurrent;
+		this.honourDownloads = honourDownloads;
+	}
+
+	/** This install's inputs in the download cache, asked for only when the clean-up gets there. */
+	@FunctionalInterface
+	interface DownloadInputs {
+		Collection<Path> get() throws IOException;
 	}
 
 	/** What one run removed, and what it could not. */
 	record Result(int removed, long bytes, int failed) {
 	}
 
+	/** The clean-up of an install that read nothing in the download cache: {@code dl/} is left as it is. */
+	Result run(Path mcDir, Collection<Path> built, List<Map<String, Object>> staged) {
+		return run(mcDir, built, staged, null);
+	}
+
 	/**
 	 * @param mcDir     the Minecraft directory just installed into
 	 * @param built     the game artifacts this install built or was given (their stamps are kept with them)
 	 * @param staged    the library entries this install wrote into the profile ({@code downloads.artifact.path})
+	 * @param downloads every file in {@code .forbric-build/dl} this install's build reads, or null when it built
+	 *                  nothing (its game files were given): then the download cache is not judged
 	 */
-	Result run(Path mcDir, Collection<Path> built, List<Map<String, Object>> staged) {
+	Result run(Path mcDir, Collection<Path> built, List<Map<String, Object>> staged, DownloadInputs downloads) {
 		if ("off".equalsIgnoreCase(System.getProperty(SWITCH, "").trim())) {
 			log.accept(InstallerText.cleanupOff());
 			return new Result(0, 0, 0);
@@ -174,6 +204,8 @@ final class OldInstallCleanup {
 			Set<Path> current = currentFiles(mcDir, built, staged);
 			cleanBuildDirectory(mcDir.resolve(".forbric-build"), current, count);
 			cleanLibraries(mcDir, current, count);
+			// Last: the inputs are read from the userdev jar's config, and if that fails the other two halves are done.
+			if (downloads != null) cleanDownloads(mcDir.resolve(".forbric-build"), current, downloads.get(), count);
 		} catch (IOException | RuntimeException unexpected) {
 			// The clean-up is a courtesy; the install it follows has already succeeded. Not a file that could not be
 			// removed: the clean-up itself stopped, and what it had not reached yet stays.
@@ -251,7 +283,7 @@ final class OldInstallCleanup {
 			} else if (Files.isDirectory(old, LinkOption.NOFOLLOW_LINKS)) {
 				removeTree(old, current, count);
 			} else {
-				removeFile(old, current, count);
+				removeFile(old, current, count, InstallerText::cleanupRemoved);
 			}
 		}
 	}
@@ -270,7 +302,7 @@ final class OldInstallCleanup {
 		Files.walkFileTree(dir, new SimpleFileVisitor<>() {
 			@Override
 			public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
-				removeFile(file, current, count);
+				removeFile(file, current, count, InstallerText::cleanupRemoved);
 				return FileVisitResult.CONTINUE;
 			}
 
@@ -341,7 +373,7 @@ final class OldInstallCleanup {
 					if (isLink(file)) {
 						log.accept(InstallerText.cleanupLeftLink(file));
 					} else if (Files.isRegularFile(file, LinkOption.NOFOLLOW_LINKS)) {
-						removeFile(file, current, count);
+						removeFile(file, current, count, InstallerText::cleanupRemoved);
 					}
 				}
 			}
@@ -470,6 +502,66 @@ final class OldInstallCleanup {
 		}
 	}
 
+	// --- .forbric-build/dl --------------------------------------------------------------------------------------
+
+	/**
+	 * Every file in the download cache that none of this install's inputs names goes: an older installer's downloads,
+	 * and another Minecraft version's (the owner's ruling: the install that needs one again downloads it again). The
+	 * inputs are compared without regard to letter case, as library names are; links are left, as everywhere.
+	 */
+	private void cleanDownloads(Path build, Set<Path> current, Collection<Path> inputs, Counter count) throws IOException {
+		Path dl = build.resolve(ArtifactBuilder.DOWNLOADS);
+		for (Path step : List.of(build, dl)) {
+			if (Files.exists(step, LinkOption.NOFOLLOW_LINKS) && (isLink(step) || redirected(step))) {
+				log.accept(InstallerText.cleanupLeftLink(step));
+				return;
+			}
+		}
+		if (!Files.isDirectory(dl, LinkOption.NOFOLLOW_LINKS)) return;
+		// The guard holds every input whatever the rule says; the rule is what the inputs name.
+		Set<Path> guarded = new HashSet<>(current);
+		Set<String> named = new HashSet<>();
+		for (Path input : inputs) {
+			Path normal = input.toAbsolutePath().normalize();
+			guarded.add(normal);
+			if (honourDownloads) named.add(normal.toString().toLowerCase(Locale.ROOT));
+		}
+		List<Path> orphans = new ArrayList<>();
+		Files.walkFileTree(dl, new SimpleFileVisitor<>() {
+			@Override
+			public FileVisitResult preVisitDirectory(Path dir, BasicFileAttributes attributes) {
+				// A junction is a directory to the walk: it never follows symbolic links, but it descends into these.
+				if (!dir.equals(dl) && (attributes.isOther() || attributes.isSymbolicLink())) {
+					log.accept(InstallerText.cleanupLeftLink(dir));
+					return FileVisitResult.SKIP_SUBTREE;
+				}
+				return FileVisitResult.CONTINUE;
+			}
+
+			@Override
+			public FileVisitResult visitFile(Path file, BasicFileAttributes attributes) {
+				if (attributes.isSymbolicLink() || attributes.isOther()) {
+					log.accept(InstallerText.cleanupLeftLink(file));
+				} else if (attributes.isRegularFile()
+						&& !named.contains(file.toAbsolutePath().normalize().toString().toLowerCase(Locale.ROOT))) {
+					orphans.add(file);
+				}
+				return FileVisitResult.CONTINUE;
+			}
+		});
+		if (orphans.isEmpty()) return;
+		log.accept(InstallerText.cleanupDownloads(dl));
+		Collections.sort(orphans);
+		for (Path orphan : orphans) removeFile(orphan, guarded, count, InstallerText::cleanupRemovedDownload);
+		// A sub-directory those removals emptied, and its parents up to the cache (never the cache itself).
+		for (Path orphan : orphans) {
+			for (Path dir = orphan.getParent(); dir != null && dir.startsWith(dl) && !dir.equals(dl); dir = dir.getParent()) {
+				if (!isEmptyDirectory(dir)) break;
+				removeEmptyDirectory(dir, count);
+			}
+		}
+	}
+
 	// --- links --------------------------------------------------------------------------------------------------
 
 	/**
@@ -509,7 +601,7 @@ final class OldInstallCleanup {
 
 	// --- removing ----------------------------------------------------------------------------------------------
 
-	private void removeFile(Path file, Set<Path> current, Counter count) {
+	private void removeFile(Path file, Set<Path> current, Counter count, Function<Path, String> line) {
 		if (isCurrent(current, file)) return;
 		long size = 0;
 		try {
@@ -517,7 +609,7 @@ final class OldInstallCleanup {
 			Files.delete(file);
 			count.removed++;
 			count.bytes += size;
-			log.accept(InstallerText.cleanupRemoved(file));
+			log.accept(line.apply(file));
 		} catch (IOException couldNot) {
 			count.failed++;
 			log.accept(InstallerText.cleanupFailed(file, String.valueOf(couldNot)));

@@ -20,7 +20,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.Map;
+import java.util.Set;
 import java.util.function.Consumer;
 
 /**
@@ -53,6 +55,11 @@ final class ArtifactBuilder {
 	/** Not a game jar: the resources-only vanilla reference the kernel reads beside the base; see {@link VanillaReference}. */
 	static final String VANILLA_REFERENCE = VanillaReference.COORDINATE;
 
+	/** The download cache under {@code .forbric-build}: flat, one file per input, kept between installs. */
+	static final String DOWNLOADS = "dl";
+	/** The name the server jar NFRT is handed is cached under in {@link #DOWNLOADS}. */
+	static final String SERVER_JAR = "server.jar";
+
 	private final Consumer<String> log;
 
 	ArtifactBuilder(Consumer<String> log) {
@@ -69,7 +76,7 @@ final class ArtifactBuilder {
 	 */
 	Map<String, Path> build(Path mcDir, String mcVersion, JdkLocator.Jvm jvm) throws IOException {
 		Path build = mcDir.resolve(".forbric-build");
-		Path dl = build.resolve("dl");
+		Path dl = build.resolve(DOWNLOADS);
 		Path tools = build.resolve("tools");
 		Path out = build.resolve("out");
 		Files.createDirectories(dl);
@@ -99,7 +106,7 @@ final class ArtifactBuilder {
 		// The server jar is fetched by NfrtRunner itself, and only when NFRT is about to run (see NfrtRunner.run).
 		ArtifactResult base = new NfrtRunner(http, tools, build.resolve("nfrt"), build.resolve("nfrt-work"), log)
 				.run(jvm, mcDir, out.resolve("patched-mc-neoforge-" + mcVersion + ".jar"),
-						nfa.patchedMcCoordinate(), mcVersion, dl.resolve("server.jar"));
+						nfa.patchedMcCoordinate(), mcVersion, dl.resolve(SERVER_JAR));
 
 		log.accept("");
 		log.accept("== checking ==");
@@ -119,6 +126,26 @@ final class ArtifactBuilder {
 					+ " (" + (Files.size(e.getValue()) / (1024 * 1024)) + " MB)");
 		}
 		return result;
+	}
+
+	/**
+	 * Every file in {@code .forbric-build/dl} that {@link #build} reads for {@code mcVersion} at this installer's pins: the
+	 * NeoForge userdev jar, the files the NeoForge runtime is built from ({@link NeoForgeRuntimeBuilder#inputFiles}, the
+	 * same names the build fetches by) and the server jar NFRT is handed. Named whether or not this install fetched them:
+	 * a reinstall served from the cache fetches none, and the next rebuild at the same pins reads every one.
+	 *
+	 * <p>What {@link OldInstallCleanup} keeps in the download cache; anything else there is no input of this install.
+	 * Read after {@link #build}, which has just fetched the userdev jar whose {@code config.json} lists the libraries.
+	 */
+	static Set<Path> downloadInputs(Path mcDir, String mcVersion) throws IOException {
+		Path dl = mcDir.resolve(".forbric-build").resolve(DOWNLOADS);
+		NeoForgeArtifacts nfa = new NeoForgeArtifacts(mcVersion, Pins.NEOFORGE);
+		Path neoUserdev = dl.resolve(userdevFile("neoforge", Pins.NEOFORGE));
+		Set<Path> inputs = new LinkedHashSet<>();
+		inputs.add(neoUserdev);
+		inputs.addAll(NeoForgeRuntimeBuilder.inputFiles(nfa, dl, NeoForgeArtifacts.readLibraries(neoUserdev)).values());
+		inputs.add(dl.resolve(SERVER_JAR));
+		return inputs;
 	}
 
 	/**
