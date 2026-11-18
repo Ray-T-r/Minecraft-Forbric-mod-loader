@@ -538,8 +538,20 @@ fi
 # resolved from a half-refreshed cache.
 step "a second install into the same directory reuses what is already built"
 # The download cache before and after: the clean-up keeps exactly this install's inputs there (OldInstallCleanup, owner
-# ruling 6 of C6), so a second install removes none of them and fetches none again -- the cache comes out identical.
-cache_files() { (cd "$1/.forbric-build/dl" 2>/dev/null && find . -type f | LC_ALL=C sort | xargs shasum -a 1); }
+# ruling 6 of C6), so a second install removes none of them and fetches none again -- the cache comes out identical, file
+# for file: same names, sizes, inodes and modification times (a download is renamed into place, so a file fetched again
+# has a new inode even when its bytes are the same).
+cache_files() {
+  python3 - "$1/.forbric-build/dl" <<'CACHE'
+import os, sys
+root = sys.argv[1]
+for dirpath, _, files in sorted(os.walk(root)):
+    for name in sorted(files):
+        path = os.path.join(dirpath, name)
+        st = os.lstat(path)
+        print("%s %d %d %d" % (os.path.relpath(path, root), st.st_size, st.st_ino, st.st_mtime_ns))
+CACHE
+}
 cache_files "$DEST" > "$BUILD/gate-m17-install-2-dl-before.txt"
 java "${INSTALLER_LANG[@]}" -jar "$JAR" --dir "$DEST" --mc 26.2 > "$BUILD/gate-m17-install-2.log" 2>&1
 # Two built artifacts since C1: the NeoForge runtime and NeoForm's patched game (six on the merged base).
@@ -552,7 +564,7 @@ check "the vanilla reference came from the cache too" "^\[vanilla-reference\] up
 check_exactly "the clean-up removed none of this install's own files" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-2.log" 1
 cache_files "$DEST" > "$BUILD/gate-m17-install-2-dl-after.txt"
 if [ -s "$BUILD/gate-m17-install-2-dl-before.txt" ] && cmp -s "$BUILD/gate-m17-install-2-dl-before.txt" "$BUILD/gate-m17-install-2-dl-after.txt"; then
-  echo "[kernel] PASS the download cache is identical after the second install: nothing removed, nothing fetched again ($(wc -l < "$BUILD/gate-m17-install-2-dl-after.txt" | tr -d ' ') files)"
+  echo "[kernel] PASS the download cache is identical after the second install (names, sizes, inodes, times): nothing removed, nothing fetched again ($(wc -l < "$BUILD/gate-m17-install-2-dl-after.txt" | tr -d ' ') files)"
 else
   echo "[kernel] FAIL the second install changed the download cache (or it is empty): $BUILD/gate-m17-install-2-dl-before.txt vs -after.txt"; FAIL=$((FAIL+1))
 fi
