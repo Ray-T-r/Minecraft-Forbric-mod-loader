@@ -47,7 +47,10 @@
 # seeded this way from this gate's install, installed behind a proxy on a port nothing listens on, exits 0 having built
 # the NeoForge runtime and the vanilla reference and passed both link checks, while an empty directory behind the same
 # proxy fails at once ("could not reach maven.neoforged.net"). Unset, the first install builds everything and downloads
-# its inputs, as a player's does.
+# its inputs, as a player's does. The seed must come from an install by this installer at the same pins: since C6 the
+# clean-up removes every file in dl/ this install does not read, so a seed holding anything else (another installer's
+# or another NeoForge's downloads) turns the first install's "found nothing old" and its pinned download-cache check red
+# with no installer fault -- the note printed after them says so.
 # M17_UPGRADE_DEST: phase U's directory (default run/installed-upgrade, wiped too).
 # GATE-PARALLEL: rundirs=installed,installed-upgrade mem=3000
 set -uo pipefail
@@ -183,6 +186,20 @@ check "it built the vanilla reference" "^\[vanilla-reference\] wrote vanilla-ref
 # Every install ends with the clean-up of what an older Forbric left (OldInstallCleanup, D6); an empty directory holds none
 # of it, so it ran and removed nothing. Phase U, at the end, is the install where it has something to do.
 check_exactly "the clean-up ran, and found nothing old in an empty directory" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind or this install does not use \(0\.0 MB\)$" "$LOG" 1
+# The download cache after the first install holds exactly what this installer's build reads at its pins: NeoForge
+# 26.2.0.93's userdev and universal jars, the libraries its runtime is built from (its userdev config lists them; the ones
+# the kernel supplies are not inputs) and the server jar. Written out here, not asked of the installer (review of lane
+# DLCLEAN, F4): phase U below takes its list of inputs from this directory, so a clean-up that wrongly keeps a file (a
+# seed's leftover) must turn red here instead of being counted as an input there. A NeoForge pin change changes the list.
+DL_PINNED=$(printf '%s\n' JarJarMetadata-0.5.1.jar JarJarSelector-0.5.1.jar accesstransformers-11.0.2.jar \
+  at-parser-11.0.2.jar bus-8.0.5.jar earlydisplay-11.0.16.jar loader-11.0.16.jar jspecify-1.0.0.jar maven-artifact-3.9.16.jar \
+  mergetool-2.0.7-api.jar neoforge-26.2.0.93-universal.jar neoforge-26.2.0.93-userdev.jar plexus-utils-3.6.1.jar server.jar \
+  srgutils-1.0.10.jar terminalconsoleappender-1.3.0.jar typetools-0.6.3.jar | LC_ALL=C sort | tr '\n' ' ')
+DL_FIRST=$( (cd "$DEST/.forbric-build/dl" 2>/dev/null && find . -type f | sed 's|^\./||') | LC_ALL=C sort | tr '\n' ' ')
+assert_eq "the first install's download cache holds exactly the 17 files this installer's build reads (pinned here)" "$DL_PINNED" "$DL_FIRST"
+if [ -n "${M17_SEED_CACHE:-}" ] && ! grep -aq '^\[cleanup\] removed 0 file' "$LOG"; then
+  echo "[kernel] note: this install was seeded from $M17_SEED_CACHE; a seed from another installer or other pins holds files this install removes, which turns the two checks above red with no installer fault"
+fi
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
   || { echo "[kernel] FAIL the profile exists"; FAIL=1; }
 
@@ -692,7 +709,8 @@ grep -aq '"--gameJar"' "$DEST_UP/versions/26.2-forbric/26.2-forbric.json" \
   || { echo "[kernel] FAIL the old profile is not the one v0.3.1-beta2 writes"; FAIL=1; }
 # dl/ before, as beta2 left it. Since the owner's ruling 6 (C6) the clean-up keeps exactly this install's inputs there and
 # removes the rest; what this install's inputs are is read from this run's own first install, whose cache holds exactly
-# what that install downloaded (it began empty, or seeded from such a cache, and removed nothing: checked above).
+# what that install downloaded (it began empty, or seeded from such a cache, and removed nothing: checked above, and the
+# list itself against the 17 names pinned there).
 dl_files() { (cd "$UB/dl" && find . -type f | LC_ALL=C sort | xargs shasum -a 1); }
 dl_files > "$BUILD/gate-m17-upgrade-dl-before.txt"
 (cd "$DEST/.forbric-build/dl" && find . -type f | LC_ALL=C sort) > "$BUILD/gate-m17-upgrade-dl-inputs.txt"
