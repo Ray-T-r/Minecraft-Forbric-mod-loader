@@ -449,7 +449,7 @@ class ControlFamilies(unittest.TestCase):
             self._image(base, "fabric")
             with mock.patch.object(nc, "BASE", base), mock.patch.object(nc, "fapi_source", lambda: fapi), \
                     mock.patch.object(nc, "run_logged", self._fake_javac(seen)), \
-                    self.assertRaisesRegex(RuntimeError, "full Fabric API jar, and .*absent/fabric-api-0.155.2.26.2.jar is not there"):
+                    self.assertRaisesRegex(RuntimeError, r"full Fabric API jar, and .*absent[/\\]fabric-api-0.155.2.26.2.jar is not there"):
                 nc.compile_canaries(("fabric",))
 
     def test_a_later_build_keeps_another_familys_entry_only_while_it_still_describes_the_files(self):

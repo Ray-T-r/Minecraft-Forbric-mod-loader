@@ -3,6 +3,8 @@
 A kept arm stands in for a boot, so the risks are the cache's own: an arm reused for inputs it was not measured on, an
 arm reused when the run asked for a fresh measurement, and a half-written arm read as whole.
 """
+import os
+import shutil
 import subprocess
 import tempfile
 import unittest
@@ -18,6 +20,8 @@ def bash(script, env):
     return r.returncode, r.stdout.strip(), r.stderr
 
 
+# lib.sh is a bash harness for macOS and Linux only; on Windows `bash` is WSL's launcher (as test_lib_guards).
+@unittest.skipIf(os.name == 'nt' or not shutil.which('bash'), 'runs lib.sh, a POSIX gate harness')
 class ControlArmTest(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()

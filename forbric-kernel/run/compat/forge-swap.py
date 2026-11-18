@@ -1050,7 +1050,7 @@ def world_files(old_world, new_world, ws=None):
     old_world, new_world = Path(old_world), Path(new_world)
 
     def files(root):
-        return sorted(str(p.relative_to(root)) for p in root.rglob("*") if p.is_file()
+        return sorted(p.relative_to(root).as_posix() for p in root.rglob("*") if p.is_file()
                       and p.relative_to(root).parts[0] not in WORLD_SKIP)
     rows = []
     old_files, new_files = files(old_world), files(new_world)

@@ -26,6 +26,9 @@ D46_FIXTURES = {'client-merged-pack', 'client-popular', 'client-kernel', 'client
                 'neoforge-builds', 'forge-swap'}
 
 
+# The gates and lib.sh are bash scripts that run on macOS and Linux only; on Windows `bash` is WSL's launcher (no
+# distribution on CI's windows-latest), so there is nothing to test there (as test_dev's POSIX-launcher test).
+@unittest.skipIf(os.name == 'nt' or not shutil.which('bash'), 'runs lib.sh, a POSIX gate harness')
 class RefuseSharedRundirTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

@@ -8,6 +8,7 @@ gate stages from build/ is in a root the key hashes.
 import importlib.util
 import os
 import re
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -182,6 +183,7 @@ class KeyTest(unittest.TestCase):
                                                      'FORBRIC_PREBUILT_STAMP': '1:2'}))
         self.assertNotEqual(self.base, self.t.key(env={**ENV, 'FORBRIC_JVM': '-Duser.language=zh'}))
 
+    @unittest.skipIf(os.name == 'nt', 'the stub JDKs are POSIX shell scripts, and the launchers they stand for are too')
     def test_the_jvm_the_launchers_start_counts_and_forbric_java_does_not(self):
         # The launchers `exec java` from PATH; the key must follow that java, and nothing they do not read.
         bins = {}
@@ -232,11 +234,14 @@ class KeyTest(unittest.TestCase):
         self.assertNotEqual(before, self.t.key(env=env), 'build-neolive-canary.sh compiles this into a canary gates stage')
 
     def test_this_trees_own_path_does_not_count(self):
-        here = str(self.t.root)
-        self.assertEqual(gate_cache.env_digest({'FORBRIC_OLD': f'{here}/x'}, self.t.root),
-                         gate_cache.env_digest({'FORBRIC_OLD': '/other/tree/x'}, Path('/other/tree')))
+        # Both spelled through Path, as the cache spells its repository (Path(git's toplevel)); on Windows that is `\`.
+        other = Path('/other/tree')
+        self.assertEqual(gate_cache.env_digest({'FORBRIC_OLD': str(self.t.root / 'x')}, self.t.root),
+                         gate_cache.env_digest({'FORBRIC_OLD': str(other / 'x')}, other))
 
 
+# gates-parallel.py starts every gate as `bash gate-*.sh`; the gates and lib.sh run on macOS and Linux only.
+@unittest.skipIf(os.name == 'nt' or not shutil.which('bash'), 'runs the bash gate sweep')
 class SweepTest(unittest.TestCase):
     """gates-parallel.py end to end against stub gates that record each run."""
 
