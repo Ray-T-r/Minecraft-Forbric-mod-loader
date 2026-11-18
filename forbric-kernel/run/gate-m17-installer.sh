@@ -754,8 +754,14 @@ while read -r _ f; do
   UP_DL_GONE=$((UP_DL_GONE+1))
   UP_DL_GONE_BYTES=$((UP_DL_GONE_BYTES + $(wc -c < "$UB/dl/${f#./}")))
 done < "$BUILD/gate-m17-upgrade-dl-before.txt"
-UP_DL_FORGE=$(sed 's/^[0-9a-f]* *//' "$BUILD/gate-m17-upgrade-dl-before.txt" | grep -acE '^\./(forge-|fml(core|loader|earlydisplay)-|(javafml|lowcode|mc)language-|forgespi-)')
-echo "[kernel] dl/: $UP_DL_GONE of beta2's $(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') cached files are no input of this install ($(awk "BEGIN{printf \"%.1f\", $UP_DL_GONE_BYTES/1048576}") MiB; $UP_DL_FORGE of them named as MinecraftForge's); $(wc -l < "$BUILD/gate-m17-upgrade-dl-inputs.txt" | tr -d ' ') inputs"
+UP_DL_FORGE=0
+UP_DL_FORGE_BYTES=0
+for f in $(sed 's/^[0-9a-f]* *//' "$BUILD/gate-m17-upgrade-dl-before.txt" | grep -aE '^\./(forge-|fml(core|loader|earlydisplay)-|(javafml|lowcode|mc)language-|forgespi-)'); do
+  UP_DL_FORGE=$((UP_DL_FORGE+1))
+  UP_DL_FORGE_BYTES=$((UP_DL_FORGE_BYTES + $(wc -c < "$UB/dl/${f#./}")))
+done
+mib() { awk -v b="$1" 'BEGIN { printf "%.1f", b / 1048576 }'; }
+echo "[kernel] dl/: $UP_DL_GONE of beta2's $(wc -l < "$BUILD/gate-m17-upgrade-dl-before.txt" | tr -d ' ') cached files are no input of this install ($(mib "$UP_DL_GONE_BYTES") MiB), $UP_DL_FORGE of them named as MinecraftForge's (forge-*, fml*, its language providers, forgespi: $(mib "$UP_DL_FORGE_BYTES") MiB); $(wc -l < "$BUILD/gate-m17-upgrade-dl-inputs.txt" | tr -d ' ') inputs"
 [ "$UP_DL_GONE" -gt 0 ] && [ "$UP_DL_FORGE" -gt 0 ] \
   && echo "[kernel] PASS beta2's download cache holds files this install does not read, MinecraftForge's among them" \
   || { echo "[kernel] FAIL beta2's download cache holds nothing for the clean-up to remove ($UP_DL_GONE, $UP_DL_FORGE MinecraftForge): the premise of the dl/ checks is gone"; FAIL=1; }
