@@ -155,14 +155,19 @@ final class InstallerText {
 				: "[cleanup] off (-D" + OldInstallCleanup.SWITCH + "=off): an older Forbric's files are left in place";
 	}
 
-	/** The last clean-up line: how much went, and how much could not. */
+	/**
+	 * The last clean-up line: how much went, and how much could not. Not every file counted is an older Forbric's: the
+	 * download cache also loses another Minecraft version's cached downloads (owner ruling 6 of Stage 4 C6), which this
+	 * install does not use.
+	 */
 	static String cleanupSummary(int removed, long bytes, int failed) {
 		String megabytes = String.format(Locale.ROOT, "%.1f", bytes / (1024.0 * 1024.0));
 		if (chinese()) {
-			return "[cleanup] 已删除旧版 Forbric 留下的 " + removed + " 个文件（" + megabytes + " MB）"
+			return "[cleanup] 已删除 " + removed + " 个旧版 Forbric 留下或本次安装用不到的文件（" + megabytes + " MB）"
 					+ (failed > 0 ? "；" + failed + " 个无法删除，已保留" : "");
 		}
-		return "[cleanup] removed " + removed + " file(s) an older Forbric left behind (" + megabytes + " MB)"
+		return "[cleanup] removed " + removed + " file(s) an older Forbric left behind or this install does not use ("
+				+ megabytes + " MB)"
 				+ (failed > 0 ? "; " + failed + " could not be removed and were left in place" : "");
 	}
 }

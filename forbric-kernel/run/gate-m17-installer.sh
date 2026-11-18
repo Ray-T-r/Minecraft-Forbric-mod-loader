@@ -182,7 +182,7 @@ check "it says Fabric and NeoForge mods go in the mods folder" "Fabric and NeoFo
 check "it built the vanilla reference" "^\[vanilla-reference\] wrote vanilla-reference-26.2.jar: [1-9][0-9]* vanilla classes" "$LOG"
 # Every install ends with the clean-up of what an older Forbric left (OldInstallCleanup, D6); an empty directory holds none
 # of it, so it ran and removed nothing. Phase U, at the end, is the install where it has something to do.
-check_exactly "the clean-up ran, and found nothing old in an empty directory" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$LOG" 1
+check_exactly "the clean-up ran, and found nothing old in an empty directory" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind or this install does not use \(0\.0 MB\)$" "$LOG" 1
 [ -f "$DEST/versions/26.2-forbric/26.2-forbric.json" ] && echo "[kernel] PASS the profile exists" \
   || { echo "[kernel] FAIL the profile exists"; FAIL=1; }
 
@@ -561,7 +561,7 @@ assert_eq "every artifact came from the cache" "2" "$REUSED"
 # input changed, and neither did.
 check "the vanilla reference came from the cache too" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-2.log"
 # The clean-up never takes this install's own files: its outputs and stamps, the download cache, its libraries.
-check_exactly "the clean-up removed none of this install's own files" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-2.log" 1
+check_exactly "the clean-up removed none of this install's own files" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind or this install does not use \(0\.0 MB\)$" "$BUILD/gate-m17-install-2.log" 1
 cache_files "$DEST" > "$BUILD/gate-m17-install-2-dl-after.txt"
 if [ -s "$BUILD/gate-m17-install-2-dl-before.txt" ] && cmp -s "$BUILD/gate-m17-install-2-dl-before.txt" "$BUILD/gate-m17-install-2-dl-after.txt"; then
   echo "[kernel] PASS the download cache is identical after the second install (names, sizes, inodes, times): nothing removed, nothing fetched again ($(wc -l < "$BUILD/gate-m17-install-2-dl-after.txt" | tr -d ' ') files)"
@@ -632,7 +632,7 @@ else
     || { echo "[kernel] FAIL an older installer's merge-tools jar survived an installer that carries none"; FAIL=$((FAIL+1)); }
   check_exactly "and the install's log names it, and nothing else" \
     "^\[cleanup\] removed .*/\.forbric-build/tools/forbric-merge-tools\.jar " "$BUILD/gate-m17-install-4.log" 1
-  check_exactly "one file removed in all" "^\[cleanup\] removed 1 file\(s\) an older Forbric left behind" \
+  check_exactly "one file removed in all" "^\[cleanup\] removed 1 file\(s\) an older Forbric left behind or this install does not use" \
     "$BUILD/gate-m17-install-4.log" 1
 fi
 
@@ -657,7 +657,7 @@ assert_eq "every built artifact came from the cache" "2" "$REUSED"
 check "and it measured no new vanilla reference" "^\[vanilla-reference\] up-to-date" "$BUILD/gate-m17-install-5.log"
 check_exactly "the link check ran offline, in both orders" \
   "^\[link-check\] loaded [0-9]+ classes .*; dangling references: 0$" "$BUILD/gate-m17-install-5.log" 2
-check_exactly "and the clean-up removed nothing" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind \(0\.0 MB\)$" "$BUILD/gate-m17-install-5.log" 1
+check_exactly "and the clean-up removed nothing" "^\[cleanup\] removed 0 file\(s\) an older Forbric left behind or this install does not use \(0\.0 MB\)$" "$BUILD/gate-m17-install-5.log" 1
 
 # ---------------------------------------------------------------------------------------------------------
 # Phase U: the new installer over the install the last public release left (D6, D32, D44). A player's directory, not an
@@ -827,7 +827,7 @@ for rel in "${UP_GONE[@]}"; do
   fi
 done
 check_exactly "the clean-up removed exactly those ${#UP_GONE[@]} files" \
-  "^\[cleanup\] removed ${#UP_GONE[@]} file\(s\) an older Forbric left behind \([0-9.]+ MB\)$" "$BUILD/gate-m17-upgrade.log" 1
+  "^\[cleanup\] removed ${#UP_GONE[@]} file\(s\) an older Forbric left behind or this install does not use \([0-9.]+ MB\)$" "$BUILD/gate-m17-upgrade.log" 1
 check_absent "and none failed" "^\[cleanup\] could not" "$BUILD/gate-m17-upgrade.log"
 check_absent "and it did not stop part-way" "^\[cleanup\] the clean-up stopped" "$BUILD/gate-m17-upgrade.log"
 check_exactly "the download cache's clean-up said that other versions' downloads go too" \

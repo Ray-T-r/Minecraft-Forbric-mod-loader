@@ -118,6 +118,7 @@ public final class OldInstallCleanupTest {
 			aDownloadThatCannotBeRemovedIsNamed(work.resolve("downloads-locked"));
 			everySpellingOfALibraryKeepsIt(work.resolve("spellings"));
 			aLinkOrJunctionAtAnyStepIsRedirected(work.resolve("redirected"));
+			aLinkedBuildOrDownloadCacheIsLeftWhole(work.resolve("dl-linked"));
 			onlyAProfileThatCannotBeReadStopsTheLibraries(work.resolve("json"));
 			anUnexpectedFailureStopsAndSaysSo(work.resolve("stopped"));
 			theMergeToolsGoOnlyWhenThisInstallerCarriesNone(work.resolve("tools"));
@@ -156,7 +157,8 @@ public final class OldInstallCleanupTest {
 		require(log.stream().filter(l -> l.startsWith("[cleanup] removed /") || l.startsWith("[cleanup] removed " + mc))
 				.count() == result.removed(), "one line per removed file: " + log);
 		require(log.get(log.size() - 1).matches("\\[cleanup\\] removed " + result.removed()
-				+ " file\\(s\\) an older Forbric left behind \\([0-9.]+ MB\\)"), "the summary closes it: " + log);
+				+ " file\\(s\\) an older Forbric left behind or this install does not use \\([0-9.]+ MB\\)"),
+				"the summary closes it: " + log);
 		// The symbolic links: left, and what they point at untouched.
 		require(Files.isSymbolicLink(mc.resolve(".forbric-build/clean.jar")), "a retired name that is a link is left");
 		require(Files.isSymbolicLink(mc.resolve("libraries/net/forbric/linkdir")), "a linked directory is left");
@@ -431,6 +433,77 @@ public final class OldInstallCleanupTest {
 	}
 
 	/**
+	 * The download cache reached through a link (review of lane DLCLEAN, F1): a {@code .forbric-build} that is a link
+	 * to another directory, a {@code dl} that is one, and on Windows a {@code dl} that is a directory junction. In each
+	 * the cache is someone else's too: an orphan there and every input stay, nothing at all is removed, and the link is
+	 * named once. What holds each: the {@code .forbric-build} step of the guard in {@code cleanDownloads} (the path
+	 * through a symbolic link resolves, so nothing else stops the walk); for a symbolic {@code dl}, the guard's {@code dl}
+	 * step and, behind it, the walk's own refusal to follow links; for a junctioned {@code dl}, the guard's {@code dl}
+	 * step alone (the walk treats a junction as a directory and descends).
+	 */
+	private static void aLinkedBuildOrDownloadCacheIsLeftWhole(Path base) throws Exception {
+		// A .forbric-build that is a symbolic link to another directory's build, whose dl/ holds the inputs and an orphan.
+		Path mc = Files.createDirectories(base.resolve("build-linked/mc"));
+		Path otherBuild = base.resolve("build-linked/other-build");
+		writeCache(otherBuild.resolve("dl"));
+		Path build = Files.createSymbolicLink(mc.resolve(".forbric-build"), otherBuild);
+		requireCacheLeftWhole(mc, otherBuild.resolve("dl"), build);
+
+		// A dl/ that is a symbolic link, inside a .forbric-build that is not.
+		mc = Files.createDirectories(base.resolve("dl-linked/mc"));
+		Path otherDl = base.resolve("dl-linked/other-dl");
+		writeCache(otherDl);
+		Files.createDirectories(mc.resolve(".forbric-build"));
+		Path dl = Files.createSymbolicLink(mc.resolve(".forbric-build/dl"), otherDl);
+		requireCacheLeftWhole(mc, otherDl, dl);
+
+		if (System.getProperty("os.name", "").startsWith("Windows")) aJunctionedDownloadCacheIsLeftWhole(base);
+	}
+
+	/** On Windows, a {@code dl} made with {@code mklink /J}, as {@link #aJunctionedLibrariesIsLeftWhole} does for libraries. */
+	private static void aJunctionedDownloadCacheIsLeftWhole(Path base) throws Exception {
+		Path target = base.resolve("dl-junction/other-dl");
+		writeCache(target);
+		Path mc = Files.createDirectories(base.resolve("dl-junction/mc"));
+		Path junction = Files.createDirectories(mc.resolve(".forbric-build")).resolve("dl");
+		Process mklink = new ProcessBuilder("cmd", "/c", "mklink", "/J", junction.toString(), target.toString())
+				.redirectErrorStream(true).start();
+		String output = new String(mklink.getInputStream().readAllBytes(), StandardCharsets.UTF_8).trim();
+		if (mklink.waitFor() != 0 || !Files.isDirectory(junction)) {
+			NOT_RUN.add("the junctioned download cache case (mklink /J failed: " + output + ")");
+			System.out.println("OldInstallCleanupTest: SKIP the junctioned download cache case: mklink /J failed: " + output);
+			return;
+		}
+		try {
+			requireCacheLeftWhole(mc, target, junction);
+		} finally {
+			// rmdir on a junction removes the junction only, never what it points at.
+			new ProcessBuilder("cmd", "/c", "rmdir", junction.toString()).inheritIO().start().waitFor();
+		}
+	}
+
+	/** A download cache as an install leaves it: this install's inputs, and an orphan beside them. */
+	private static void writeCache(Path dl) throws IOException {
+		writeUserdev(dl.resolve(DL_INPUTS.get(0)), USERDEV_LIBRARIES);
+		for (String input : DL_INPUTS.subList(1, DL_INPUTS.size())) write(dl.resolve(input), "input " + input);
+		write(dl.resolve("orphan.jar"), "another directory's cached download");
+	}
+
+	private static void requireCacheLeftWhole(Path mc, Path cache, Path link) throws IOException {
+		Map<String, String> before = manifest(cache);
+		require(before.containsKey("orphan.jar") && before.keySet().containsAll(DL_INPUTS), "the premise: " + before);
+		List<String> log = new ArrayList<>();
+		OldInstallCleanup.Result result = new OldInstallCleanup(log::add)
+				.run(mc, List.of(), List.of(), () -> ArtifactBuilder.downloadInputs(mc, "26.2"));
+		require(before.equals(manifest(cache)), "a download cache reached through " + link + " is left whole: " + log);
+		require(result.removed() == 0 && result.failed() == 0, "nothing removed: " + result + " " + log);
+		require(log.stream().noneMatch(l -> l.startsWith("[cleanup] clearing the download cache")),
+				"nor a clean-up of it announced: " + log);
+		require(log.stream().filter(l -> l.startsWith("[cleanup] left " + link + " ")).count() == 1,
+				"and the link named, once: " + log);
+	}
+
+	/**
 	 * The same on Windows with a real directory junction (C6 wave 2, review of lane INSTFIX, R-4): {@code mklink /J}
 	 * needs no privilege, so CI's Windows job runs this. The junction's target holds a library no profile of the
 	 * junctioned install names; the clean-up must leave it, and name the junction.
@@ -602,7 +675,7 @@ public final class OldInstallCleanupTest {
 					"a removed download in Chinese: " + log);
 			require(log.stream().anyMatch(l -> l.startsWith("[cleanup] 保留 ")
 					&& l.endsWith("：它是链接（符号链接或目录联接），或经由链接到达；清理从不跟随或删除链接")), "links in Chinese: " + log);
-			require(log.get(log.size() - 1).matches("\\[cleanup\\] 已删除旧版 Forbric 留下的 [0-9]+ 个文件（[0-9.]+ MB）"),
+			require(log.get(log.size() - 1).matches("\\[cleanup\\] 已删除 [0-9]+ 个旧版 Forbric 留下或本次安装用不到的文件（[0-9.]+ MB）"),
 					"the summary in Chinese: " + log);
 			Path any = mc.resolve("x");
 			require(InstallerText.cleanupFailed(any, "r").equals("[cleanup] 无法删除 " + any + "（r），已保留；安装照常完成"),

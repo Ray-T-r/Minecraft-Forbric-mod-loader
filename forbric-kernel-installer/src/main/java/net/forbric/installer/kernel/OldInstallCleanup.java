@@ -45,12 +45,13 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * Removes what an older Forbric install left behind and this one never reads again, after the new profile is written.
+ * Removes what an older Forbric install left behind and this one never reads again, and the cached downloads this
+ * install does not read (an older installer's, or another Minecraft version's), after the new profile is written.
  *
  * <p>Before Stage 4 of dropping MinecraftForge an install built MinecraftForge's patched game and runtime and merged
  * them with NeoForge's into one base; since then it builds NeoForge's patched game and runtime only. Nothing removed
  * the old products, so an upgraded install kept several hundred megabytes nobody reads, and the README told players to
- * delete {@code .forbric-build} and {@code libraries/net/forbric} by hand. Two places, two rules:
+ * delete {@code .forbric-build} and {@code libraries/net/forbric} by hand. Three places, three rules:
  *
  * <ul>
  *   <li><strong>{@code .forbric-build}</strong> is the installer's own work directory. What goes there is a closed list,
@@ -511,11 +512,14 @@ final class OldInstallCleanup {
 	 */
 	private void cleanDownloads(Path build, Set<Path> current, Collection<Path> inputs, Counter count) throws IOException {
 		Path dl = build.resolve(ArtifactBuilder.DOWNLOADS);
-		for (Path step : List.of(build, dl)) {
-			if (Files.exists(step, LinkOption.NOFOLLOW_LINKS) && (isLink(step) || redirected(step))) {
-				log.accept(InstallerText.cleanupLeftLink(step));
-				return;
-			}
+		// A .forbric-build reached through a link is someone else's cache too: left whole. The build half, which ran
+		// first and refused the same step on the same test, has already named it; it is not named twice.
+		if (Files.exists(build, LinkOption.NOFOLLOW_LINKS) && (isLink(build) || redirected(build))) return;
+		// A dl/ that is a link, or (a Windows junction: a directory the walk below would descend into) resolves
+		// elsewhere: left whole, and named.
+		if (Files.exists(dl, LinkOption.NOFOLLOW_LINKS) && (isLink(dl) || redirected(dl))) {
+			log.accept(InstallerText.cleanupLeftLink(dl));
+			return;
 		}
 		if (!Files.isDirectory(dl, LinkOption.NOFOLLOW_LINKS)) return;
 		// The guard holds every input whatever the rule says; the rule is what the inputs name.
