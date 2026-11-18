@@ -1740,10 +1740,10 @@ removed; a file that cannot be deleted (a game still holding it on Windows) is n
 logged, in the player's language. Measured by gate-m17 phase U on an install the real v0.3.1-beta2 installer laid out:
 63 removals, 285.8 MB (22 outside `dl/`, 258.5 MB; 41 of beta2's 56 cached downloads, 27.3 MiB, 13.3 MiB of them
 MinecraftForge's jars and tools), `dl/` left holding exactly this install's 17 inputs, unchanged, and the new install
-boots into a world and leaves cleanly; a second install over a fresh one leaves `dl/` byte-identical. About 16 MiB of
-the old version's files stay: NFRT's cache (12.5 MiB) and work files (3.1 MiB) for 26.2.0.88 (measured by INSTFIX on a real-player layout,
-not re-measured). `-Dforbric.installerCleanup=off` leaves
-everything (phase U's reverse control).
+boots into a world and leaves cleanly; a second install over a fresh one leaves `dl/` untouched (every file's name,
+size, inode and time the same). About 16 MiB of the old version's files stay: NFRT's cache (12.5 MiB) and work files
+(3.1 MiB) for 26.2.0.88 (re-measured by DLCLEAN on a real-player layout: 17 files, 15.6 MiB).
+`-Dforbric.installerCleanup=off` leaves everything (phase U's reverse control).
 
 ### 13.3 Where Forbric's own jars come from
 
