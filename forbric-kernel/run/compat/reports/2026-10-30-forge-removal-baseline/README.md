@@ -709,6 +709,12 @@ thread); downstream listeners of a failed dependency still run; datapack declara
 | 2 | merger | three lanes fast-forwarded; gate-m0's locale-rule red fixed (a5708f73) | `stage4-c6-merger-w2.md` |
 | 3 | DOCS | introduction.md / zh corrected for Stages 1-4, this record's C5/C6 sections, the release-notes draft, the B5 ruling proposal, the m49 ignore entry | `stage4-c6-docs.md` |
 | 3 | DLCLEAN | owner answer 6: the installer clears `.forbric-build/dl` of every file that is not one of the install's inputs (another Minecraft version's cached downloads too); phase U removes 63 files / 285.8 MB (41 of them beta2's downloads, 27.3 MiB), reverse control 63/63, `dl/` ends as exactly the 17 inputs; review fixes: a test for the cache's link guard, the summary line no longer calls other versions' downloads an older Forbric's, gate-m17 checks dl/ against 17 pinned names (164/0) | `stage4-c6-dlclean.md` |
+| 3 | CIWATCH | read CI run 44286369477 at a3ced60b, the first on the C6 tree: five jobs green, development-tools windows-latest red on 28 run/compat tool tests that had never run on Windows (gate-harness tests now skip there; three path spellings fixed, one of them in `forge-swap.py`); both skip TSVs replaced by the run's artifacts (keys unchanged, 2,010 / 732 rows) | `stage4-c6-ciwatch.md` |
+| 3 | merger | CIWATCH and DLCLEAN fast-forwarded (a3ced60b -> 662fdafb) | `stage4-c6-merger-w3.md` |
+
+**Suite and gates at 662fdafb (merger of CIWATCH and DLCLEAN):** 5,969 tests, 0 skipped, 5 failed, the D58 five; gate-m0
+18 PASS / 1 FAIL (D58 only), gate-m17 164/0 (seeded, phase U 63 removals, reverse control 63/63), CAUGHT none,
+FORBRIC_GATE_CACHE=0.
 
 **Suite and gates at the C6 wave-2 tip (a5708f73, the merger):** 5,969 tests, 0 skipped, 5 failed, the D58 five by name and
 message; gate-m0 18 PASS / 1 FAIL (D58 only, no `[kernel] SKIP (C6` line left), gate-m10 24/0, gate-m17 119/0 (phase U's
@@ -716,9 +722,10 @@ reverse control 22/22), CAUGHT none, FORBRIC_GATE_CACHE=0, ports 46800-46806. Wa
 19/0, m9 163/0, m17 119/0, m36 6/0, m59 30/0.
 
 **Open after C6** (owners in brackets):
-- CI has not run on the C6 tree: the push to `ci/remove-forge-stage2` was refused by the session's permission check before
-  git ran, so there is no run, both skip TSVs are CIPREP's local pre-measure, and the first-run list (the `build` job, the
-  Windows `OldInstallCleanupTest`) is unread [owner pushes; next CI runner].
+- ~~CI has not run on the C6 tree.~~ Run 44286369477 at a3ced60b (CIWATCH, `stage4-c6-ciwatch.md`): five jobs green,
+  windows-latest red and fixed (0399cb20), both TSVs taken from the run (dca0a0a8). Still owed: a green run of the merged
+  tip, whose windows-latest `installerTest` must print `OldInstallCleanupTest: OK` with no NOT RUN (the first run anywhere
+  of the junction and held-open legs) [orchestrator pushes].
 - ~~`dl/` keeps 13.4 MiB of beta2's MinecraftForge jars after an upgrade [owner ruling].~~ Ruled "remove" (owner answer 6)
   and done by DLCLEAN (`stage4-c6-dlclean.md`); the Windows legs of its failed delete have not run (CI's windows-latest
   `installerTest` is their first run).
@@ -739,6 +746,8 @@ reverse control 22/22), CAUGHT none, FORBRIC_GATE_CACHE=0, ports 46800-46806. Wa
   introductions, canary READMEs that still describe the merged game, `ForeignType` to plain constants.
 
 ### Ruling owed: unit tests for KernelFluidReactions and KernelMobShears (C3 critic B5)
+
+Ruled 2026-11-18 (owner answer 7): B5 is closed on the existing coverage below, with no new test class.
 
 Proposal (the owner decides): close B5 on the existing coverage, with no new test class. Each class is reached only
 through its mixin adapter, and that path is tested three ways: the weave tests run synthetic mods through the real Mixin
