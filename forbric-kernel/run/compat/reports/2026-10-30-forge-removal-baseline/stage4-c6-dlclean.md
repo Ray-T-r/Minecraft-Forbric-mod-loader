@@ -60,7 +60,7 @@ open (`stage4-c6-instfix.md` §6).
   `artifactDir == null`). An install given them (`--artifacts`) read nothing in `dl/`, so it passes none and the cache is
   left as it is. `DevPrepare` runs the builder but not the clean-up, so `.dev/minecraft/.forbric-build/dl` (read by
   NativeCoremodParityTest) is not touched.
-- **Summary line unchanged**: the count in `[cleanup] removed N file(s) an older Forbric left behind (X MB)` now includes
+- **Summary line unchanged** (superseded by "DLCLEAN review fixes", F3: the line was reworded): the count in `[cleanup] removed N file(s) an older Forbric left behind (X MB)` now includes
   the cache's files. For another Minecraft version's downloads "an older Forbric" is loose wording; the cache's own line
   says what goes. Left as is so the gate's existing exact matches stay (recorded, not changed).
 
@@ -121,6 +121,63 @@ dated notes; their older drafts are marked superseded. The 480 MB disk line is u
   windows-latest `installerTest` log must show `OldInstallCleanupTest: OK` with no `NOT RUN` suffix.
 - **ACCEPT (Windows PCL2 install, owner answer 4)**: the real `.minecraft`'s `dl/` loses every file that is not one of this
   install's inputs, also cached downloads of a Forbric install for another Minecraft version if the player has one.
-- **Wording**: the summary line still says "an older Forbric left behind" for cache files of another Minecraft version
+- ~~**Wording**~~ (closed by "DLCLEAN review fixes", F3): the summary line still said "an older Forbric left behind" for cache files of another Minecraft version
   (kept for the gate's exact matches); a later wording pass may change it with the gate.
 - **DOCS / release commit**: README's upgrade paragraph from `stage4-c6-docs.md`'s corrected draft.
+
+## DLCLEAN review fixes (2026-11-18)
+
+Review: `c6/review-c6dlclean.md` (F1–F4 and four nits). Commits on `s4-c5-c6dlclean` after f22fe62b: bfb9f19f (F1, F3, two
+nits), a40e295a (F4), 3cc5bdbc (F2, one nit), and this record. Logs: `~/Forbric-backups/stage4-notes/c6/dlclean-rf/`
+(paths below are relative to it). Same harness as above: D68 pinned `--offline` build from `.stage4/props.txt`, Gradle and
+the gate through `.stage/heavy.sh` (the gate as `.stage/client.sh .stage/heavy.sh`), lane-env ports 46880–46886,
+FORBRIC_GATE_CACHE=0, MC_DIR unset, `M17_SEED_CACHE` = a new APFS clone of the stage worktree's
+`run/installed/.forbric-build` (dl, tools, nfrt, NeoForm's stamped game; 17 files in dl). Nothing was downloaded: the
+installer printed no fetch line, and the second-install check found dl/ identical by name, size, inode and time.
+
+| finding | verdict | what changed |
+|---|---|---|
+| F1: the download half's link guard had no red control | **confirmed, fixed** (bfb9f19f) | new case `aLinkedBuildOrDownloadCacheIsLeftWhole`: the download half run with `.forbric-build` a symbolic link to another build, with `dl` a symbolic link, and on Windows with `dl` a `mklink /J` junction (NOT_RUN fallback like `aJunctionedLibrariesIsLeftWhole`). In each: inputs and an orphan stay, 0 removed, no "clearing the download cache" line, the link named exactly once |
+| F2: both introductions said the ~16 MiB left over was not re-measured | **confirmed, fixed** (3cc5bdbc) | both now say DLCLEAN re-measured it on a real-player layout: 17 files, 15.6 MiB (`c6/dlclean/player-before-du.txt` 410 860 KiB − `player-after-du.txt` 394 884 KiB) |
+| F3: the summary counted another version's downloads as "an older Forbric left behind" | **confirmed, fixed** (bfb9f19f) | en `[cleanup] removed N file(s) an older Forbric left behind or this install does not use (X MB)`, zh `[cleanup] 已删除 N 个旧版 Forbric 留下或本次安装用不到的文件（X MB）`; the unit test (en, forced zh) and gate-m17's five exact matches follow it. The "Summary line unchanged" note and the "Wording" open item above are superseded |
+| F4: phase U took its input list from the cache it judges | **confirmed, fixed** (a40e295a) | gate-m17 now compares the first install's dl/ with the 17 names NeoForge 26.2.0.93's build reads, written out in the gate like its other 26.2.0.93 pins; the header says the seed must come from this installer at the same pins, and a note after the two first-install checks says when a seed can turn them red |
+| nit: class javadoc "Two places, two rules" | fixed (bfb9f19f) | "Three places, three rules"; the first sentence covers the download cache |
+| nit: "left …/.forbric-build" printed twice | fixed (bfb9f19f) | the download half's `.forbric-build` step returns without a line (the build half, which runs first on the same test, has named it); held by the new case's "named exactly once" |
+| nit: a FIFO in dl/ is reported as "a link" | not changed | the wording is `cleanupLeftLink`, shared with the build and library halves since INST; not this lane's, and a FIFO is still left untouched, which is what the line's rule promises |
+| nit: "a looser count of the same files" | fixed (3cc5bdbc) | "a looser count, not re-derived; 16 and 14 cannot be the same files" |
+
+**Red controls.** Source mutations on a plain class path (`mutations/`, runner `run-f1.sh` / `run-s.sh`, the earlier nine
+re-run with the lane's `run-mutations.sh` on the new tree):
+
+| mutation | OldInstallCleanupTest |
+|---|---|
+| f1a: the download half's `.forbric-build` step removed | **red** (exit 1): the orphan in the link's target is removed |
+| f1c: both steps removed (the reviewer's `List.<Path>of()` mutation on the new shape) | **red** (exit 1), same |
+| f1d: the `.forbric-build` step names the link again | **red**: "named, once" sees two lines |
+| f1b: the `dl` step removed | red on POSIX only by its log (the link is no longer named; the cache stays whole). The safety half is not reachable on POSIX: `Files.isDirectory(dl, NOFOLLOW_LINKS)` and the walk's refusal to follow a symbolic-link start both stop it |
+| f1e: the `dl` step removed and the directory test made to follow links | **green** on POSIX: the walk still does not follow a symbolic-link start (it reports `dl` as a link, once). So on macOS/Linux a symbolic `dl` is held three times over; the `dl` step is the only stop for a Windows junction, which the new Windows leg exercises and which has not run yet (CI windows-latest) |
+| s1 / s2: the old en / zh summary text | **red** each |
+| the lane's a1–a3, b1–b4, c1–c2 on the new tree | **red** each (exit 1), as before |
+
+gate-m17's new pinned check, D34 control (`m17-control-f4.diff`, uncommitted, reverted after): the rule judges only
+top-level files in dl/ (the lane's b2 mutation) and the seed holds one extra file, `dl/sub/old-1.jar`. Result **RED,
+163 PASS / 1 FAIL**: the only FAIL is the new "first install's download cache holds exactly the 17 files" check. In the
+same run phase U's "dl/ holds exactly this install's inputs, each unchanged (18 files)" PASSES, the hole F4 described:
+without the new check this mutation was GREEN.
+
+**Results.**
+
+| what | environment | result | log |
+|---|---|---|---|
+| OldInstallCleanupTest, plain class path | en; `-Duser.language=zh -Dforbric.dialogLanguage=zh` | OK; OK | (console) |
+| kernel `installerTest` | heavy.sh, pinned `--offline` | **11 classes ran, 0 failed** | installerTest.log |
+| **gate-m17 at a40e295a** | as above, clean tree | **GREEN 164 PASS / 0 FAIL, CAUGHT none** (163 + the pinned check); phase U removes 63 files, 285.8 MB, its reverse control 63/63; dl/ ends with the 17 inputs | m17-tip.out, m17-tip-env.txt |
+| gate-m17 F4 control | same, mutation + extra seed file | RED 163 / 1, the new check only | m17-control-f4.out, -env.txt |
+| run/compat test_gate_locale, test_gate_ports, test_gate_cache; tools/test_ci_contract | at a40e295a | 53 OK; 4 OK | python-checks.log |
+| **full kernel suite at 3cc5bdbc** (`-Pforbric.requireFixtures=all jar cleanTest test --continue`) | heavy.sh, pinned `--offline`, clean tree | **5969 tests / 0 skipped / 5 failed** = `c6/failures-w2.txt`'s five by name (D58), 0 new, 0 gone | suite.log, suite-env.txt, suite-failures.txt |
+
+**Still open** (unchanged by these fixes): the Windows legs of `OldInstallCleanupTest` (the held-open download and now the
+junctioned `dl`) first run on CI's windows-latest `installerTest`, whose log must show `OldInstallCleanupTest: OK` with no
+`NOT RUN`; the ACCEPT note above (a player's other-version downloads go too); a5dd56ed's "16 of them" (history not
+rewritten); the reviewer's notes on two concurrent installs into one `.minecraft` and on `--artifacts` installs, which are
+not defects of this lane.
