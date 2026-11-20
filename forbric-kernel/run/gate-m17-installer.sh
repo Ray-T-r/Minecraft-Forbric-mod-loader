@@ -72,6 +72,13 @@ MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 WORLD="${M17_WORLD:-ForbricTest}"
 SRC_RUNDIR="${M17_SRC_RUNDIR:-$KERNEL/run/client-merged-pack}"
 mkdir -p "$BUILD"
+# Only this run's files. Every check below reads a file this gate writes under $BUILD by a fixed name (each install's
+# log, the resolved command, the client's log, ...), and a step that does not run writes none: whatever an earlier run
+# left is removed here, before anything is written, so such a check fails with "no log to read" instead of passing on the
+# last run's file (lib.sh discard_earlier_run says what happened; run/compat/test_gate_own_files.py holds every $BUILD
+# name in this gate to the prefix). Kept: the log of phase U's old install, which is laid out once and reused -- it is
+# that install's record, and nothing reads it after the step that writes it.
+discard_earlier_run gate-m17- gate-m17-beta2-install.log
 
 [ -d "$MC/assets" ] || { echo "[kernel] SKIP-FATAL: no Minecraft assets at $MC/assets" >&2; exit 3; }
 [ -d "$SRC_RUNDIR/saves/$WORLD" ] || { echo "[kernel] SKIP-FATAL: no world at $SRC_RUNDIR/saves/$WORLD" >&2; exit 3; }
@@ -218,7 +225,11 @@ fi
 # Exactly ONE answer. A second coordinate does not say "all three" to a first-match chain; it makes the answer
 # depend on which branch a given launcher tests first, so two launchers disagree about one file.
 for other in 'net\.neoforge' 'minecraftforge'; do
-  if grep -q "$other" "$PROFILE"; then
+  # No profile, no answer: grep fails on a missing file as it does on a missing word, and "does not also name" used to
+  # pass on a profile the install never wrote.
+  if [ ! -s "$PROFILE" ]; then
+    echo "[kernel] FAIL the profile does not also name $other (no profile to read: $PROFILE)"; FAIL=1
+  elif grep -q "$other" "$PROFILE"; then
     echo "[kernel] FAIL the profile also names $other — the detection chain now has two answers"; FAIL=1
   else
     echo "[kernel] PASS the profile does not also name $other"

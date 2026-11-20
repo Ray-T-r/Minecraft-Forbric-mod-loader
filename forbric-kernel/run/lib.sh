@@ -212,6 +212,47 @@ readable() {
   [ -s "$1" ]
 }
 
+# discard_earlier_run <name-prefix> [keep-name ...] — remove every $BUILD/<name-prefix>* an earlier run of this gate left.
+#
+# readable() tells "no log" from "nothing in the log", but not this run's log from the last run's. A gate writes its logs
+# under fixed names in $BUILD, and a step that does not run leaves the earlier run's file where its checks look:
+# gate-m17 printed eighteen PASS lines in a run whose first install had failed (2026-11-20, a download: no profile, so
+# no resolved command and no client, and sixteen checks read the command and the client log of the run before). A gate
+# that calls this before it writes anything can only read what it wrote itself, and a check whose input this run did
+# not produce fails with "no log to read".
+# Two kinds of file stay: each <keep-name> (one the gate keeps across runs on purpose, and that no check reads), and
+# whatever this run's own output is going to (a caller's `bash run/gate-mX.sh > build/gate-mX.out`): that one is this
+# run's already, and unlinking it would lose the run's output. It is told by fstat of this shell's stdout and stderr,
+# not by `-ef /dev/stdout`: macOS answers stat(/dev/fd/1) with the descriptor file system's own node.
+discard_earlier_run() {
+  local prefix="${1:-}"
+  [ -n "$prefix" ] || { echo "[kernel] FATAL: discard_earlier_run needs the name prefix of the gate's files" >&2; exit 3; }
+  shift
+  [ -d "$BUILD" ] || return 0
+  python3 - "$BUILD" "$prefix" "$@" <<'DISCARD' || { echo "[kernel] FATAL: could not remove an earlier run's $prefix* files from $BUILD" >&2; exit 3; }
+import os, shutil, sys
+build, prefix, keep = sys.argv[1], sys.argv[2], set(sys.argv[3:])
+own = set()
+for descriptor in (1, 2):
+    try:
+        status = os.fstat(descriptor)
+        own.add((status.st_dev, status.st_ino))
+    except OSError:
+        pass
+for name in sorted(os.listdir(build)):
+    if not name.startswith(prefix) or name in keep:
+        continue
+    path = os.path.join(build, name)
+    status = os.lstat(path)
+    if (status.st_dev, status.st_ino) in own:
+        continue
+    if os.path.isdir(path) and not os.path.islink(path):
+        shutil.rmtree(path)
+    else:
+        os.unlink(path)
+DISCARD
+}
+
 # -a on every grep below, and it is not cosmetic. A single NUL byte anywhere in a log makes grep treat the whole
 # file as binary: `grep -c` then prints NOTHING rather than a count, `${got:-0}` turns that into 0, and every
 # absence check silently passes while every positive one silently fails. Mod output puts NUL bytes in these logs
