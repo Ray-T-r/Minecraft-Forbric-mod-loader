@@ -52,9 +52,16 @@ def arm_inputs(engine,token,mods,carriers,sources,command,image):
  return inputs
 
 
+# The signals that end the measurement from outside: SIGTERM and SIGHUP where both exist (macOS and Linux, where this runs),
+# SIGTERM and SIGBREAK on Windows, which has no SIGHUP to name (soak-run.py's stop_signals() is the same list and says
+# why; test_soak holds the two together). The measurement itself is POSIX-only all the same: its Forbric arm is a bash
+# launcher and native-controls.py stops a server through its process group.
+STOP_SIGNALS=tuple(getattr(signal,name) for name in ('SIGTERM','SIGHUP','SIGBREAK') if hasattr(signal,name))
+
+
 def stopped_by_signal(number,frame):
- """SIGTERM/SIGHUP end the measurement through the same path as Ctrl-C, so the server it started is stopped too: each
- server runs in a session of its own, and a signal to this script's group never reaches it."""
+ """A stop signal (STOP_SIGNALS) ends the measurement through the same path as Ctrl-C, so the server it started is
+ stopped too: each server runs in a session of its own, and a signal to this script's group never reaches it."""
  raise KeyboardInterrupt(f'signal {number}')
 
 
@@ -68,7 +75,7 @@ def main():
  image=c.BASE/'native/neo';upstream=K/MOD
  problem=prerequisite_problem(image,upstream,c.VERSIONS['neo'])
  if problem:sys.exit(f'[retention-control] FAIL {problem}; nothing was run')
- for number in (signal.SIGTERM,signal.SIGHUP):signal.signal(number,stopped_by_signal)
+ for number in STOP_SIGNALS:signal.signal(number,stopped_by_signal)
  canary_sources=list((K/'canary/retention/src').rglob('*.java'))
  classes=BASE/'classes';classes.mkdir(exist_ok=True)
  subprocess.run(['javac','-proc:none','--release','21','-cp',os.pathsep.join(map(str,c.jars(image))),'-d',str(classes),*map(str,canary_sources)],check=True)

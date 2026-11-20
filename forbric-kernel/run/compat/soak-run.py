@@ -32,10 +32,21 @@ SOAK_GAME_TYPE = 'survival'
 NATIVE_RETENTION = Path(__file__).with_name('native-retention.json')
 
 
+def stop_signals():
+    """The signals that stop a running soak from outside, on this system: SIGTERM and SIGHUP where both exist (macOS and
+    Linux, where the soak runs), SIGTERM and SIGBREAK on Windows.
+
+    Windows has no SIGHUP at all, so naming it there is an AttributeError before anything is installed. What it has
+    instead is SIGBREAK (Ctrl-Break, and CTRL_BREAK_EVENT sent to a process group) and a SIGTERM that only the process
+    itself can raise: nothing outside can deliver one, because os.kill there is TerminateProcess. Each name is taken
+    only where the signal module has it, so the POSIX pair is exactly what it was."""
+    return tuple(getattr(signal, name) for name in ('SIGTERM', 'SIGHUP', 'SIGBREAK') if hasattr(signal, name))
+
+
 @contextlib.contextmanager
 def stop_signals_interrupt():
-    """While the block runs, SIGTERM and SIGHUP are the interruption Ctrl-C is (KeyboardInterrupt), and the handlers in
-    force before are back afterwards.
+    """While the block runs, the stop signals (stop_signals: SIGTERM and SIGHUP) are the interruption Ctrl-C is
+    (KeyboardInterrupt), and the handlers in force before are back afterwards.
 
     Everything the soak starts runs in a session of its own (the client, and through the reproduction its servers), so
     a signal to the soak's process group reaches none of it, and Python's default for SIGTERM ends the soak on the spot:
@@ -46,7 +57,7 @@ def stop_signals_interrupt():
         raise KeyboardInterrupt(f'signal {number}')
     previous = {}
     try:
-        for number in (signal.SIGTERM, signal.SIGHUP):
+        for number in stop_signals():
             previous[number] = signal.signal(number, interrupted)
     except ValueError:
         pass  # not the main thread: signals are the main thread's to turn into an interruption
@@ -57,10 +68,21 @@ def stop_signals_interrupt():
             signal.signal(number, handler)
 
 
-def signal_owned_group(process, value):
+def signal_owned_group(process, force=False):
+    """Stop the client the soak started, and everything it started: told to (SIGTERM), or killed when `force`.
+
+    The client runs in a session of its own, so its process group is exactly what the soak owns: os.killpg reaches all
+    of it and nothing else. Windows has no process groups to signal and no SIGTERM or SIGKILL to send (os.killpg is not
+    there to call), so the tree is ended there with `taskkill /F /T`, as tools/nightly/run_nightly.py's stop() and
+    run/compat/win/common.py's finish() end theirs; there is no asking first on that system, so both calls do the same.
+    Which path is taken is decided by whether this Python has os.killpg, not by the system's name."""
+    killpg = getattr(os, 'killpg', None)
+    if killpg is None:
+        subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], capture_output=True)
+        return
     # The owned child may exit between poll() and signaling. Preserve its real exit status.
     try:
-        os.killpg(process.pid, value)
+        killpg(process.pid, signal.SIGKILL if force else signal.SIGTERM)
     except ProcessLookupError:
         pass
 
@@ -75,9 +97,9 @@ def wait_for_client(process, log, timeout):
             stream.seek(offset); tail = (tail + stream.read())[-8192:]; offset = stream.tell()
         if crash_seen is None and '#@!@# Game crashed!' in tail:
             crash_seen = time.monotonic()
-            signal_owned_group(process, signal.SIGTERM)
+            signal_owned_group(process)
         if (crash_seen is not None and time.monotonic() - crash_seen > 5) or time.monotonic() - began > timeout:
-            signal_owned_group(process, signal.SIGKILL)
+            signal_owned_group(process, force=True)
             process.wait()
             return process.returncode
         time.sleep(.5)
@@ -768,9 +790,9 @@ def launch(args):
             except KeyboardInterrupt:
                 # Ctrl-C, or SIGTERM/SIGHUP (main's stop_signals_interrupt): the client is in its own session and is
                 # stopped here; the run is then recorded as the failed run it is.
-                signal_owned_group(process, signal.SIGTERM)
+                signal_owned_group(process)
                 try: process.wait(timeout=30)
-                except subprocess.TimeoutExpired: signal_owned_group(process, signal.SIGKILL); process.wait()
+                except subprocess.TimeoutExpired: signal_owned_group(process, force=True); process.wait()
                 code = -1
     finally:
         caught_record = forward_caught(caught, outer_caught)

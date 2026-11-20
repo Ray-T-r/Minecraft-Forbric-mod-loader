@@ -21,6 +21,15 @@ def load(name):
     """A sibling script by file name (they are named with hyphens, so not importable by name)."""
     found=importlib.util.spec_from_file_location(name.replace('-','_').removesuffix('.py'),Path(__file__).with_name(name))
     module=importlib.util.module_from_spec(found);found.loader.exec_module(module);return module
+def deliver(number):
+    """A stop signal, delivered to this process the way its system delivers one to a running soak.
+
+    macOS and Linux: kill(2) on the process, which is what `kill <pid>` and a closing terminal do. Windows has no such
+    delivery: os.kill there is TerminateProcess for everything but the two console events, so it would end this test
+    runner on the spot. What Windows has is the C runtime raising the signal inside the process (its console handler
+    does that for Ctrl-Break), and that is signal.raise_signal."""
+    if os.name=='nt':signal.raise_signal(number)
+    else:os.kill(os.getpid(),number)
 
 # What the controller's occupied rows say of the player and the weather (ClientSoakController.worldView/clientView).
 PLAYER=dict(gameType='survival',clientGameType='survival',clientInWorld=True,flying=True,health=20.0,raining=False,thundering=False,rainingAtPlayer=False)
@@ -316,6 +325,36 @@ class SoakVerifierTest(unittest.TestCase):
             self.assertEqual(str(Path(temporary)/'native-retention-0.caught.tsv'),record['measurement']['caught']['file'])
             self.assertIn('[Forbric/Probe] in the measurement',gate.read_text(),'the gate reports every kernel JVM it started')
             self.assertTrue(any("measurement's Forbric server caught 1 failure site(s)" in call.args[0] for call in said.call_args_list))
+    def test_an_interrupted_reproduction_is_stopped_and_waited_for_before_the_interruption_goes_on(self):
+        # What holds on every system, with the measurement's process modelled: an interruption in the wait makes
+        # run_reproduction tell the command to stop (terminate, not kill), wait thirty seconds for it, kill it only
+        # when those run out, and let the interruption through afterwards. While the command runs every stop signal
+        # of this system is the soak's interruption, and the handlers in force before are back afterwards.
+        before={number:signal.getsignal(number) for number in soak.stop_signals()}
+        self.assertIn(signal.SIGTERM,before)
+        for stops_in_time in (True,False):
+            events=[];during={}
+            class Measurement:
+                def __init__(self,command,**kwargs):
+                    during.update({number:signal.getsignal(number) for number in soak.stop_signals()})
+                def wait(self,timeout=None):
+                    events.append(('wait',timeout))
+                    if len(events)==1:raise KeyboardInterrupt('signal 15')
+                    if timeout is not None and not stops_in_time:raise soak.subprocess.TimeoutExpired('measure',timeout)
+                    return -15
+                def terminate(self):events.append('terminate')
+                def kill(self):events.append('kill')
+            with tempfile.TemporaryDirectory() as temporary,patch.object(soak.subprocess,'Popen',Measurement):
+                with self.assertRaises(KeyboardInterrupt) as stopped:
+                    soak.run_reproduction(Path(temporary),dict(reproduce='python3 run/compat/retention-control.py'),Path(temporary)/'r.log')
+            self.assertIn('signal 15',str(stopped.exception))
+            self.assertEqual([('wait',None),'terminate',('wait',30)]+([] if stops_in_time else ['kill',('wait',None)]),events)
+            for number in soak.stop_signals():
+                self.assertIsNot(before[number],during[number],f'signal {int(number)} is the soak\'s interruption while it measures')
+                self.assertIs(before[number],signal.getsignal(number),f'the handler of signal {int(number)} in force before the measurement is restored')
+    @unittest.skipIf(os.name=='nt','needs a SIGTERM delivered to a process, which Windows does not have: os.kill there is TerminateProcess (it would end this '
+                     'test runner), and Popen.terminate() ends the measurement without running its handler. What holds on every system is in '
+                     'test_an_interrupted_reproduction_is_stopped_and_waited_for_before_the_interruption_goes_on')
     def test_an_interrupted_reproduction_is_told_to_stop_and_given_time_to_stop_its_server(self):
         # The reproduction's servers run in sessions of their own, so only the reproduction can stop them. SIGTERM to
         # the soak while it measures: the reproduction gets SIGTERM (not SIGKILL) and has finished its clean-up before
@@ -338,15 +377,18 @@ class SoakVerifierTest(unittest.TestCase):
             self.assertEqual('stopped',marker.read_text(),'the reproduction was told to stop and waited for')
             self.assertIs(before,signal.getsignal(signal.SIGTERM),'the handler in force before the measurement is restored')
     def test_a_stopped_soak_is_interrupted_like_ctrl_c_and_stops_its_client(self):
-        # SIGTERM while the soak runs is the interruption Ctrl-C is, for the whole run: main() turns it into one, and
-        # the handler in force before is back when main() returns.
-        before=signal.getsignal(signal.SIGTERM);seen=[]
-        def launch(args):
-            seen.append(signal.getsignal(signal.SIGTERM));os.kill(os.getpid(),signal.SIGTERM);threading.Event().wait(5);return 0
+        # A stop signal while the soak runs is the interruption Ctrl-C is, for the whole run: main() turns it into one,
+        # and the handler in force before is back when main() returns. SIGTERM and SIGHUP where the soak runs; Windows
+        # has no SIGHUP to name, and the two it has are SIGTERM and SIGBREAK (deliver says how each system delivers one).
+        self.assertEqual(['SIGTERM','SIGBREAK'] if os.name=='nt' else ['SIGTERM','SIGHUP'],[signal.Signals(number).name for number in soak.stop_signals()])
         argv=['soak-run.py','--kernel','k','--staged','s','--fixture','f','--boot-classpath','c','--control']
-        with patch.object(soak,'launch',side_effect=launch),patch.object(sys,'argv',argv):
-            with self.assertRaises(KeyboardInterrupt) as stopped:soak.main()
-        self.assertIn('signal 15',str(stopped.exception));self.assertIsNot(before,seen[0]);self.assertIs(before,signal.getsignal(signal.SIGTERM))
+        for number in soak.stop_signals():
+            before=signal.getsignal(number);seen=[]
+            def launch(args):
+                seen.append(signal.getsignal(number));deliver(number);threading.Event().wait(5);return 0
+            with patch.object(soak,'launch',side_effect=launch),patch.object(sys,'argv',argv):
+                with self.assertRaises(KeyboardInterrupt) as stopped:soak.main()
+            self.assertEqual(f'signal {int(number)}',str(stopped.exception));self.assertIsNot(before,seen[0]);self.assertIs(before,signal.getsignal(number))
         # In the client's wait that interruption stops the client's own process group (it is in a session of its own:
         # nothing else would) and the run is recorded as a failed run, not left without a verdict.
         with tempfile.TemporaryDirectory() as temporary:
@@ -366,6 +408,8 @@ class SoakVerifierTest(unittest.TestCase):
             cp=put(root/'boot-classpath.txt',str(put(root/'dependency.jar')).encode())
             args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,base=None,neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java',native_reference=None)
             source={'root':str(root),'commit':'test','sha256':'source-content','files':{},'dirty':False}
+            # The group API is modelled (create=True), as in the crash tests below: Windows has no os.killpg, and
+            # signal_owned_group takes the path this Python has one for.
             signals=[]
             class Child:
                 pid=4242;returncode=None
@@ -374,7 +418,7 @@ class SoakVerifierTest(unittest.TestCase):
                 def poll(self):return self.returncode
             def stopped(process,log,timeout):raise KeyboardInterrupt('signal 15')
             reference=put(root/'reference/vanilla-reference.jar',b'sidecar')
-            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',side_effect=stopped),patch.object(soak.os,'killpg',side_effect=lambda pid,value:signals.append((pid,value))),patch('builtins.print'):
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',side_effect=stopped),patch.object(soak.os,'killpg',side_effect=lambda pid,value:signals.append((pid,value)),create=True),patch('builtins.print'):
                 self.assertEqual(1,soak.launch(args))
             self.assertEqual([(4242,signal.SIGTERM)],signals,'the client\'s own process group is told to stop')
             acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
@@ -383,6 +427,8 @@ class SoakVerifierTest(unittest.TestCase):
         # retention-control.py's own pieces (it runs nothing at import): the refusal that names the missing native image
         # and its one command, and an arm's record, which is what soak-run.py's freshness check reads.
         control=load('retention-control.py')
+        # The measurement is stopped by the signals the soak is stopped by (soak-run.py stop_signals, test above).
+        self.assertEqual(soak.stop_signals(),control.STOP_SIGNALS)
         with tempfile.TemporaryDirectory() as temporary:
             root=Path(temporary);image=root/'native/neo';mod=root/'mods/unlitcampfire.jar';mod.parent.mkdir();mod.write_bytes(b'mod')
             problem=control.prerequisite_problem(image,mod,'26.2.0.93')
@@ -405,7 +451,7 @@ class SoakVerifierTest(unittest.TestCase):
         self.assertEqual({(kernel/name).resolve() for name in control.BOOTED_BY}|{Path(control.__file__).resolve()},recorded)
         self.assertLessEqual({'run/compat/native-controls.py','run/launch-kernel-server.sh','build.gradle'},set(control.BOOTED_BY))
         # The launcher's own helpers are the ones recorded: every run/*.sh it calls by "$HERE/".
-        called=set(re.findall(r'"\$HERE/([A-Za-z0-9_-]+\.sh)"',(kernel/'run/launch-kernel-server.sh').read_text()))
+        called=set(re.findall(r'"\$HERE/([A-Za-z0-9_-]+\.sh)"',(kernel/'run/launch-kernel-server.sh').read_text(encoding='utf-8')))
         self.assertEqual(called,{Path(name).name for name in control.BOOTED_BY if name.startswith('run/') and name.endswith('.sh')}-{'launch-kernel-server.sh'})
     def test_the_first_joins_weather_is_read_from_the_copied_world(self):
         snapshot=load('world-snapshot.py')
@@ -564,6 +610,18 @@ class SoakVerifierTest(unittest.TestCase):
                 self.assertEqual(-9,soak.wait_for_client(child,log,7200))
                 self.assertEqual([(321,soak.signal.SIGTERM),(321,soak.signal.SIGKILL)],[call.args for call in kill.call_args_list])
                 self.assertLess(clock[0],7)
+    def test_the_owned_client_is_stopped_through_its_group_and_where_there_are_no_groups_as_a_tree(self):
+        class Child:pid=321
+        # Where this Python has process groups (the systems the soak runs on): the client's group is told to stop, or
+        # killed when forced, and nothing else is run.
+        with patch.object(soak.os,'killpg',create=True) as kill,patch.object(soak.signal,'SIGKILL',9,create=True),patch.object(soak.subprocess,'run') as run:
+            soak.signal_owned_group(Child());soak.signal_owned_group(Child(),force=True)
+            self.assertEqual([(321,soak.signal.SIGTERM),(321,soak.signal.SIGKILL)],[call.args for call in kill.call_args_list]);run.assert_not_called()
+        # Where it has none (Windows: no os.killpg, and neither signal to send): the client's tree is ended, both times,
+        # the way the nightly runner and the Windows drivers end theirs.
+        with patch.object(soak.os,'killpg',None,create=True),patch.object(soak.subprocess,'run') as run:
+            soak.signal_owned_group(Child());soak.signal_owned_group(Child(),force=True)
+            self.assertEqual([['taskkill','/F','/T','/PID','321']]*2,[call.args[0] for call in run.call_args_list])
     def test_all_loaded_forever_does_not_prove_chunk_unload(self):
         rows,result=fixture()
         for row in rows:

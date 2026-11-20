@@ -4,6 +4,9 @@
 # or copy skips-actual-ci-unstaged.tsv from the CI artifact.
 # Copied unchanged from CI run 44286369477 (a3ced60b on ci/remove-forge-stage2, 2026-11-18), artifact
 # kernel-test-results: job kernel, ubuntu-latest, JDK 21.0.13, no game files.
+# Except the 7 SoakPlayerPreparationTest rows, which no CI run has measured yet: taken from this file's own recipe
+# on a clean clone of 7d87e4b7 with no stage and no launcher libraries (macOS, JDK 21.0.12, 2026-11-21). Replace
+# them with the first CI run's artifact.
 test	net.forbric.api.ForeignTypeCarrierTest	everyNeoForgeNameIsInTheStagedNeoForgeCarrier()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.access.RestoredAccessTransformerTest	actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/chunk/ChunkGenerator.class)
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:staged] staged pack or carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
@@ -1621,6 +1624,13 @@ test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aNewRegistryEventLis
 test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aPhaseNobodyFailsReturnsAndRunsItsDeferredWork()	[fixture:staged] the staged game is absent
 test	net.forbric.kernel.runtime.NeoSetupPhaseStopStagedTest	aSetupListenerThatThrowsStopsTheBootOnceEveryModHadThePhase()	[fixture:staged] the staged game is absent
 test	net.forbric.kernel.runtime.ScanDataEnumShapeTest	neoForgeGetsEnumHolderOfDescriptorAndConstantName()	[fixture:staged] staged NeoForge carrier absent
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	askingWhetherItRainsOnThePlayerLoadsNoChunk()	[fixture:game-side] the game-side classes are not compiled
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	everyRowIsHeldToTheSoakPlayerRuleAsItIsWritten()	[fixture:game-side] the game-side classes are not compiled
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	onlyAJoiningSessionSetsTheGameTypeAndAMoveFailsOnADriftedOne()	[fixture:game-side] the game-side classes are not compiled
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	theEntityItselfIsInvulnerableAndWithoutGravity()	[fixture:game-side] the game-side classes are not compiled
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	theGameTypeIsSetBeforeTheAbilitiesAndTheClientIsToldAfterThem()	[fixture:game-side] the game-side classes are not compiled
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	theSoakPlayerIsASurvivalPlayerAndCreativeIsNamedNowhere()	[fixture:game-side] the game-side classes are not compiled
+test	net.forbric.kernel.soak.SoakPlayerPreparationTest	theTelemetryCarriesEveryKeyTheVerifierReads()	[fixture:game-side] the game-side classes are not compiled
 test	net.forbric.kernel.transform.AnchorAuditStagedTest	theClientEntrypointAnchorIsStillThereAndTheLedgerSaysSo()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.AnchorAuditStagedTest	whenTheAnchorMovesTheInjectorGoesSilentAndTheLedgerCatchesIt()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/client/Minecraft.class)
 test	net.forbric.kernel.transform.AxeStripCallbacksInjectorTest	neoForgesCarrierRoutesOnlyTheStrippingDecision()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar absent (reading net/neoforged/neoforge/common/extensions/IBlockExtension.class)

@@ -687,7 +687,9 @@ to the gate's file. Everything the soak starts runs in a session of its own, so 
 `soak-run.py` takes SIGTERM and SIGHUP as the interruption Ctrl-C is, for the whole run (a gate started in the
 background ignores Ctrl-C, so SIGTERM is the way to stop one). While it measures it tells the measurement to stop
 (SIGTERM, thirty seconds) and the measurement stops the server it started; while the client runs it stops the client's
-process group and records the run as the failed run it is. The
+process group and records the run as the failed run it is. The soak and its measurement run on macOS and Linux only
+(bash launchers, process groups); their self-tests also run on Windows, where the same code names the signals that
+system has (SIGTERM and SIGBREAK; it has no SIGHUP) and ends the client's tree with `taskkill /F /T`. The
 native image is not installed that way (the official installer downloads): without `build/native-controls/native/neo`
 `retention-control.py` stops before compiling anything and names `native-controls.py prepare --family neo`.
 
