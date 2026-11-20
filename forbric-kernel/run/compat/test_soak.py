@@ -197,6 +197,9 @@ class SoakVerifierTest(unittest.TestCase):
                 self.rewrite(temporary,**change)
                 problem=soak.native_evidence_problem(temporary,self.ENTRY,launched)
                 self.assertIsNotNone(problem,name);self.assertTrue(problem.startswith('unreadable: '),f'{name}: {problem}')
+                # The file that cannot be read is the one named: the comparison, or the arm's own record.
+                kernel=Path(temporary).resolve();expected=kernel/'build/retention-control/native-run/inputs.json' if 'change_record' in change else kernel/self.ENTRY['nativeEvidence']
+                self.assertIn(f'unreadable: {expected} is not a record',problem.replace(str(Path(temporary)),str(kernel)),name)
                 with self.assertRaises(ValueError) as refused:soak.verify_native_evidence(temporary,self.ENTRY,launched)
                 self.assertIn('unreadable',str(refused.exception))
                 runs=[]
@@ -334,6 +337,48 @@ class SoakVerifierTest(unittest.TestCase):
                 soak.run_reproduction(root,dict(reproduce=f'python3 {script}'),root/'r.log')
             self.assertEqual('stopped',marker.read_text(),'the reproduction was told to stop and waited for')
             self.assertIs(before,signal.getsignal(signal.SIGTERM),'the handler in force before the measurement is restored')
+    def test_a_stopped_soak_is_interrupted_like_ctrl_c_and_stops_its_client(self):
+        # SIGTERM while the soak runs is the interruption Ctrl-C is, for the whole run: main() turns it into one, and
+        # the handler in force before is back when main() returns.
+        before=signal.getsignal(signal.SIGTERM);seen=[]
+        def launch(args):
+            seen.append(signal.getsignal(signal.SIGTERM));os.kill(os.getpid(),signal.SIGTERM);threading.Event().wait(5);return 0
+        argv=['soak-run.py','--kernel','k','--staged','s','--fixture','f','--boot-classpath','c','--control']
+        with patch.object(soak,'launch',side_effect=launch),patch.object(sys,'argv',argv):
+            with self.assertRaises(KeyboardInterrupt) as stopped:soak.main()
+        self.assertIn('signal 15',str(stopped.exception));self.assertIsNot(before,seen[0]);self.assertIs(before,signal.getsignal(signal.SIGTERM))
+        # In the client's wait that interruption stops the client's own process group (it is in a session of its own:
+        # nothing else would) and the run is recorded as a failed run, not left without a verdict.
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);kernel=root/'kernel';staged=root/'staged';pack=root/'pack';mc=root/'minecraft'
+            def put(path,data=b'fixture'):
+                path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data);return path
+            def jar(path,entries):
+                path.parent.mkdir(parents=True,exist_ok=True)
+                with zipfile.ZipFile(path,'w') as output:
+                    for key,value in entries.items():output.writestr(key,value)
+                return path
+            runtime=put(kernel/'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar')
+            jar(kernel/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar',{'bundled/forbric-kernel-runtime.jar':runtime.read_bytes()})
+            jar(staged/'neoforge-patched/patched-mc-neoforge-26.2.jar',{'version.json':'{}'});put(staged/'neoforge-runtime/neoforge-runtime.jar')
+            put(pack/'saves/ForbricTest/level.dat');put(pack/'mods/probe.jar')
+            put(mc/'versions/26.2/26.2.json',json.dumps({'id':'26.2','assetIndex':{'id':'test'},'libraries':[]}).encode());put(mc/'assets/indexes/test.json',b'{}');put(mc/'versions/26.2/26.2-natives/probe.dylib')
+            cp=put(root/'boot-classpath.txt',str(put(root/'dependency.jar')).encode())
+            args=argparse.Namespace(kernel=str(kernel),staged=str(staged),fixture=str(pack),minecraft=str(mc),world_source=None,base=None,neo=None,natives=None,boot_classpath=str(cp),seconds=1,control=True,sessions=2,dwell_ticks=20,between_seconds=0,settle_seconds=0,timeout=60,policy='strict',heap='1G',java='unused-test-java',native_reference=None)
+            source={'root':str(root),'commit':'test','sha256':'source-content','files':{},'dirty':False}
+            signals=[]
+            class Child:
+                pid=4242;returncode=None
+                def __init__(self,command,cwd,**kwargs):pass
+                def wait(self,timeout=None):self.returncode=-15;return -15
+                def poll(self):return self.returncode
+            def stopped(process,log,timeout):raise KeyboardInterrupt('signal 15')
+            reference=put(root/'reference/vanilla-reference.jar',b'sidecar')
+            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',side_effect=stopped),patch.object(soak.os,'killpg',side_effect=lambda pid,value:signals.append((pid,value))),patch('builtins.print'):
+                self.assertEqual(1,soak.launch(args))
+            self.assertEqual([(4242,signal.SIGTERM)],signals,'the client\'s own process group is told to stop')
+            acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
+            self.assertEqual(('FAIL',-1),(acceptance['status'],acceptance['exitCode']));self.assertIn('client exited abnormally: -1',acceptance['detail'])
     def test_the_reproduction_names_what_it_lacks_and_records_what_it_was_measured_on(self):
         # retention-control.py's own pieces (it runs nothing at import): the refusal that names the missing native image
         # and its one command, and an arm's record, which is what soak-run.py's freshness check reads.

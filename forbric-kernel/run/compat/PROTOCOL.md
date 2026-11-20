@@ -683,8 +683,11 @@ is measured again like absent evidence. Each arm records, besides its jars, the 
 boot classpath jars and vanilla reference are resolved by the launcher and not recorded themselves. The measurement's
 Forbric server takes the caller's `FORBRIC_JVM` first, like every server a gate starts, and writes what its kernel
 caught to `native-retention-N.caught.tsv` in the run's evidence, which the manifest records and `soak-run.py` appends
-to the gate's file. A soak that is stopped while it measures tells the measurement to stop (SIGTERM, thirty seconds),
-and the measurement stops the server it started, which runs in a session of its own. The
+to the gate's file. Everything the soak starts runs in a session of its own, so a stopped soak has to stop it:
+`soak-run.py` takes SIGTERM and SIGHUP as the interruption Ctrl-C is, for the whole run (a gate started in the
+background ignores Ctrl-C, so SIGTERM is the way to stop one). While it measures it tells the measurement to stop
+(SIGTERM, thirty seconds) and the measurement stops the server it started; while the client runs it stops the client's
+process group and records the run as the failed run it is. The
 native image is not installed that way (the official installer downloads): without `build/native-controls/native/neo`
 `retention-control.py` stops before compiling anything and names `native-controls.py prepare --family neo`.
 

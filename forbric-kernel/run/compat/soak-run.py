@@ -5,6 +5,7 @@ Does not build or mutate a source world. Only the gate wrapper builds, before th
 A CONTROL_PASS is deliberately not a release soak. Reachable retired servers require review.
 """
 import argparse
+import contextlib
 import hashlib
 import importlib.util
 import json
@@ -29,6 +30,31 @@ MIN_SECONDS = 7200
 # (net.forbric.kernel.soak.SoakPlayer, whose GAME_TYPE is this word; SoakPlayerTest keeps the two together).
 SOAK_GAME_TYPE = 'survival'
 NATIVE_RETENTION = Path(__file__).with_name('native-retention.json')
+
+
+@contextlib.contextmanager
+def stop_signals_interrupt():
+    """While the block runs, SIGTERM and SIGHUP are the interruption Ctrl-C is (KeyboardInterrupt), and the handlers in
+    force before are back afterwards.
+
+    Everything the soak starts runs in a session of its own (the client, and through the reproduction its servers), so
+    a signal to the soak's process group reaches none of it, and Python's default for SIGTERM ends the soak on the spot:
+    the client then plays on for its two hours with nobody waiting for it, outside the locks the soak was started
+    under. A gate started in the background cannot be stopped with Ctrl-C either (a non-interactive shell starts its
+    background jobs with SIGINT ignored), so SIGTERM is the one way to stop it, and it has to stop what was started."""
+    def interrupted(number, frame):
+        raise KeyboardInterrupt(f'signal {number}')
+    previous = {}
+    try:
+        for number in (signal.SIGTERM, signal.SIGHUP):
+            previous[number] = signal.signal(number, interrupted)
+    except ValueError:
+        pass  # not the main thread: signals are the main thread's to turn into an interruption
+    try:
+        yield
+    finally:
+        for number, handler in previous.items():
+            signal.signal(number, handler)
 
 
 def signal_owned_group(process, value):
@@ -267,35 +293,23 @@ def run_reproduction(kernel, entry, log):
     record. It gets reproduction_caught(log); ensure_native_evidence() records that file and forwards it to the gate's.
 
     The command starts servers in sessions of their own, so it has to be told to stop, not killed: when this is
-    interrupted (Ctrl-C, or SIGTERM/SIGHUP, which are turned into the same interruption while it runs) the command gets
-    SIGTERM and thirty seconds to stop its server before it is killed."""
+    interrupted (Ctrl-C, or SIGTERM/SIGHUP: stop_signals_interrupt) the command gets SIGTERM and thirty seconds to stop
+    its server before it is killed."""
     command = shlex.split(entry['reproduce'])
     if command[0] in ('python3', 'python'):
         command[0] = sys.executable
     caught = reproduction_caught(log)
     caught.write_text('')
     environment = {**os.environ, 'FORBRIC_CAUGHT_FILE': str(caught)}
-    def interrupted(number, frame):
-        raise KeyboardInterrupt(f'signal {number}')
-    previous = {}
-    try:
-        for number in (signal.SIGTERM, signal.SIGHUP):
-            previous[number] = signal.signal(number, interrupted)
-    except ValueError:
-        pass  # not the main thread: signals are the main thread's to turn into an interruption
-    try:
-        with Path(log).open('w') as stream:
-            process = subprocess.Popen(command, cwd=kernel, stdout=stream, stderr=subprocess.STDOUT, env=environment)
-            try:
-                return process.wait()
-            except BaseException:
-                process.terminate()
-                try: process.wait(timeout=30)
-                except subprocess.TimeoutExpired: process.kill(); process.wait()
-                raise
-    finally:
-        for number, handler in previous.items():
-            signal.signal(number, handler)
+    with stop_signals_interrupt(), Path(log).open('w') as stream:
+        process = subprocess.Popen(command, cwd=kernel, stdout=stream, stderr=subprocess.STDOUT, env=environment)
+        try:
+            return process.wait()
+        except BaseException:
+            process.terminate()
+            try: process.wait(timeout=30)
+            except subprocess.TimeoutExpired: process.kill(); process.wait()
+            raise
 
 
 def ensure_native_evidence(kernel, entry, launched, log, reproduce=run_reproduction):
@@ -748,10 +762,12 @@ def launch(args):
         with (evidence / 'client.log').open('w') as log:
             process = subprocess.Popen(command, cwd=run, stdout=log, stderr=subprocess.STDOUT, start_new_session=True,
                                        env=client_environment(caught))
-            dump(evidence / 'process.json', {'pid': process.pid, 'nonce': nonce})
             try:
+                dump(evidence / 'process.json', {'pid': process.pid, 'nonce': nonce})
                 code = wait_for_client(process, evidence / 'client.log', args.timeout or max(args.seconds * 2, args.seconds + 1800))
             except KeyboardInterrupt:
+                # Ctrl-C, or SIGTERM/SIGHUP (main's stop_signals_interrupt): the client is in its own session and is
+                # stopped here; the run is then recorded as the failed run it is.
                 signal_owned_group(process, signal.SIGTERM)
                 try: process.wait(timeout=30)
                 except subprocess.TimeoutExpired: signal_owned_group(process, signal.SIGKILL); process.wait()
@@ -827,15 +843,18 @@ def main():
     parser.add_argument('--heap-dump-on-retention', action='store_true',
                         help='write a live heap dump after the native cut when a retired server is still reachable')
     parser.add_argument('--java', default='java')
-    return launch(parser.parse_args())
+    args = parser.parse_args()
+    with stop_signals_interrupt():
+        return launch(args)
 
 
 if __name__ == '__main__':
     try: sys.exit(main())
     except KeyboardInterrupt as stopped:
-        # Outside the client's own wait (which records the interruption as a failed run): while freezing inputs or
-        # measuring the native evidence. Said in the gate's words instead of a traceback; 130 as a shell reports it.
-        print(f'[M34] FAIL stopped before the client was started ({stopped or "interrupted"}); nothing was accepted', file=sys.stderr)
+        # Outside the client's own wait (which stops the client and records the interruption as a failed run): while
+        # freezing inputs, measuring the native evidence, or validating. Said in the gate's words instead of a
+        # traceback; 130 as a shell reports it.
+        print(f'[M34] FAIL stopped outside the client\'s run ({stopped or "interrupted"}); nothing was accepted', file=sys.stderr)
         sys.exit(130)
     except Exception as failure:
         print('[M34] FAIL ' + str(failure), file=sys.stderr)

@@ -219,7 +219,7 @@ class SoakPlayerPreparationTest {
 	@Test
 	void askingWhetherItRainsOnThePlayerLoadsNoChunk() throws Exception {
 		MethodNode view = controller().methods.stream().filter(method -> method.name.equals("worldView")).findFirst().orElseThrow();
-		int present = -1, branch = -1, rains = -1;
+		int present = -1, rains = -1;
 		for (AbstractInsnNode instruction : view.instructions) {
 			int at = view.instructions.indexOf(instruction);
 			if (instruction instanceof MethodInsnNode call) {
@@ -228,10 +228,17 @@ class SoakPlayerPreparationTest {
 				assertFalse(call.name.equals("getChunk") || call.name.equals("getChunkAt") || call.name.equals("getHeight")
 						|| call.name.equals("getHeightmapPos"), "the telemetry itself loads no chunk: " + call.name);
 			}
-			if (present >= 0 && branch < 0 && instruction instanceof JumpInsnNode) branch = at;
 		}
-		assertTrue(present >= 0 && branch > present && rains > branch,
-				"getChunkNow, a branch on it, and only then isRainingAt: " + List.of(present, branch, rains));
+		assertTrue(present >= 0 && rains > present, "getChunkNow, and only then isRainingAt: " + List.of(present, rains));
+		// Asked only when the chunk is there: between the two a conditional jump leads past isRainingAt. A getChunkNow
+		// whose answer is computed and then not used has jumps too, but none of them skips the question.
+		List<Integer> skips = new ArrayList<>();
+		for (AbstractInsnNode instruction : view.instructions) {
+			int at = view.instructions.indexOf(instruction);
+			if (at > present && at < rains && instruction instanceof JumpInsnNode jump && jump.getOpcode() != Opcodes.GOTO
+					&& view.instructions.indexOf(jump.label) > rains) skips.add(at);
+		}
+		assertEquals(1, skips.size(), "one conditional jump after getChunkNow that skips isRainingAt: " + skips);
 	}
 
 	/** Whether the value on top of the stack at {@code instruction} is the constant {@code true}. */
