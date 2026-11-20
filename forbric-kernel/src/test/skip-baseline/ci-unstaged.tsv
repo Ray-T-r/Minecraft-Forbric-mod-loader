@@ -4,9 +4,9 @@
 # or copy skips-actual-ci-unstaged.tsv from the CI artifact.
 # Copied unchanged from CI run 44286369477 (a3ced60b on ci/remove-forge-stage2, 2026-11-18), artifact
 # kernel-test-results: job kernel, ubuntu-latest, JDK 21.0.13, no game files.
-# Except the 7 SoakPlayerPreparationTest rows, which no CI run has measured yet: taken from this file's own recipe
-# on a clean clone of 7d87e4b7 with no stage and no launcher libraries (macOS, JDK 21.0.12, 2026-11-21). Replace
-# them with the first CI run's artifact.
+# The 7 SoakPlayerPreparationTest rows came later, first from this file's own recipe on a clean clone of 7d87e4b7
+# (macOS, JDK 21.0.12, 2026-11-21). CI run 44790216820 (43efbd92 on ci/remove-forge-stage2, the same job) has
+# measured them since: its skips-actual-ci-unstaged.tsv holds exactly the 2017 rows below, byte for byte.
 test	net.forbric.api.ForeignTypeCarrierTest	everyNeoForgeNameIsInTheStagedNeoForgeCarrier()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.access.RestoredAccessTransformerTest	actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/chunk/ChunkGenerator.class)
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:staged] staged pack or carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar

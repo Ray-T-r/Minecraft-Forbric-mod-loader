@@ -545,8 +545,15 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
   decides wherever both stay, two jars in `mods/` or a nested mod kept back.
 - `ModConstructionOrder` orders NeoForge construction topologically — a mod after everything it requires or
   declares `AFTER`; ties alphabetical; cycles named, not broken silently (`-Dforbric.modOrder=name` restores
-  file-name order). Fabric mods initialise in Fabric Loader's own order, by mod id (`FabricLoadOrder`;
-  `-Dforbric.fabricOrder=off` puts them back on the topological order).
+  file-name order). The boot log gives the verdict every time the order was applied, not only when a class moved: a
+  line that begins `[Forbric/Order] construction order is dependency order`, whether the classes had to move or were
+  found in that order already (gate-m9 and `run/compat/assert.sh` look for exactly that sentence;
+  `ConstructionOrderVerdictTest`); with ordering switched off, or when the order names none of the classes being
+  constructed, another line says so. One case is still silent: an empty order writes no line, and
+  `-Dforbric.crossEcosystemPresence=off` empties the lists the order is built from, so that switch also puts NeoForge
+  construction back on the order the mods were found in without a word (open, §19). Fabric mods initialise in Fabric
+  Loader's own order, by mod id (`FabricLoadOrder`; `-Dforbric.fabricOrder=off` puts them back on the topological
+  order).
 
 ## 5. The three ecosystems, driven by the kernel
 
@@ -1649,7 +1656,12 @@ shutdown hooks, and SIGKILL for what is left after a grace (`LibStopTreeTest`). 
 recorded pid and its direct children — the form `kill_tree` had already replaced for servers. Where the launcher execs
 java that was the JVM; gate-m17 runs the resolved command as `tr … | xargs -0 env … java` in a subshell, and on a
 loaded run its client lived on re-parented to launchd after the gate had printed `CAUGHT none` and exited, then wrote
-two failures into the gate's file.
+two failures into the gate's file. The soak starts its client in a session of its own, so a stopped soak has to stop
+it: `soak-run.py` takes SIGTERM and SIGHUP as the interruption Ctrl-C is, tells the client's process group to stop
+(TERM, thirty seconds, then KILL) and records the run as the failed run it is. It is interrupted once: a second stop
+signal used to interrupt the stopping itself and leave the client running with no record, so later ones are counted
+and change nothing (`test_soak.py`). The soak runs on macOS and Linux only; its self-tests also run on Windows, where
+the code names SIGTERM and SIGBREAK and would end the client's tree with `taskkill /F /T` (§19).
 
 ## 13. The installer — `forbric-kernel-installer/`
 
@@ -1807,7 +1819,7 @@ Forbric/
 │   ├── src/main/java/net/forbric/api/          the unified API (18 files)
 │   ├── src/main/java/net/forbric/kernel/       boot (93), transform (105), mixin (166), fabric (15),
 │   │                                           metadata (12), access (7), classloading (8), discovery (7),
-│   │                                           interop (21), ui (6), util (13), mapping (2), soak (2),
+│   │                                           interop (21), ui (6), util (13), mapping (2), soak (3),
 │   │                                           linkcheck (2: the link checker, §13.1)
 │   ├── src/main/java/net/fabricmc/             vendored Fabric API surface (47 files)
 │   ├── src/main/resources/                     Mixin service registrations; mixin census tables
@@ -1865,7 +1877,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 - **Unit tests.** How many run and skip depends on the staged root and the fixtures present (some tests generate one
   case per fixture), so each count names its root. The full run of the tree Stage 4 C6 merged
   (`-Pforbric.requireFixtures=all jar cleanTest test --continue`, no daemon, JDK 25, on a `.stage4` root prepared from
-  NeoForge 26.2.0.93) reported 5,969 tests in its JUnit XML, 0 skipped and 5 failed. The five are fixtures this machine
+  NeoForge 26.2.0.93) reported 5,993 tests in its JUnit XML, 0 skipped and 5 failed. The five are fixtures this machine
   no longer has: three LiquidBounce tests (its two jars are lost and cannot be fetched again) and two opt-in
   shared-final tests; `-Pforbric.requireFixtures=all` turns a missing fixture into a failure rather than a skip. Many
   tests read the staged jars; gate-m0 fails on *any* skipped test, because a skip there means the tests did not look at
@@ -1894,7 +1906,12 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   gate from a loaded parallel run says nothing about the kernel until the boot times in its logs have been read. The
   clock can also bite by date: the game's log4j configuration rolls `logs/latest.log` at midnight, eleven gates read
   that file, and m9 went red once because its session crossed midnight and the reload line it looks for went to the
-  rolled archive.
+  rolled archive. A gate also has to read only what its own run wrote: its logs have fixed names under `build/`, a
+  step that does not run writes none, and `check` cannot tell this run's log from the last run's — gate-m17 printed
+  eighteen PASS lines in a run whose first install had failed on a download. `lib.sh`'s `discard_earlier_run` removes
+  an earlier run's `build/<prefix>*` files before the gate writes anything, and gate-m17's phase U, whose directory
+  is a copy of an older install on purpose, counts one of this install's files only when it differs from the old one
+  or carries a `.pins` stamp this run wrote (`run/compat/test_gate_own_files.py`). Only gate-m17 calls it (§19).
 
 | Gate | Asserts |
 | --- | --- |
@@ -1915,7 +1932,7 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
 | m24d | the same stops on a client, on each of its three paths, ending in NeoForge's own error report (it opens client windows on the desktop) |
 | m25, m31, m32 | NeoForge's biome and structure modifiers; zero-mod worldgen parity with a pure vanilla server; a save opens with a mod removed |
 | m33, m39, m40, m52 | item/fluid/energy transfer between Fabric and NeoForge; hoppers into Fabric storages |
-| m34 | ≥ 7200 s occupied simulation soak with retention checks |
+| m34 | ≥ 7200 s occupied simulation soak with retention checks, in one client JVM that saves, leaves and re-enters its world. The player is a survival player that the controller makes invulnerable and flying; every telemetry row carries the server's and the client's game type and is held to `survival` as it is written (`SoakPlayer`) and again by `soak-run.py`, and carries the overworld's weather, whether it rains on the player, and the player's health and food. The gate obtains the native reproduction of each reviewed retention root itself (`retention-control.py`, measured again when the evidence is absent, stale or unreadable). `M34_FIXTURE` names another pack than the default 97-jar one. Its standing is in §19 |
 | m35–m38, m42–m46, m50, m51, m53 | per-surface behaviour: mixin outcome, entity callbacks, enchantments, coremod parity, block break and loot, interaction, everyday actions, stub rebind, load predicates, tooltips, widened `NEW` anchors |
 | m54 | a NeoForge mod's play-phase packet reaches the server: Carry On, with fabric-api installed, carries a chest and a pig through real key and mouse input; the same run with the repair off must pick nothing up (third-party jars: `M54_CARRYON`, `M54_FABRIC_API`) |
 | m55 | the creative inventory's search finds items after a Fabric mod refreshed the search trees the vanilla way, judged from the screen's own grid |
@@ -2153,6 +2170,22 @@ Break one and the failure usually surfaces far from the cause.
   native NeoForge A/B 3 of 3; worlds the old kernel wrote open whole (gate-m58), a mod swapped from its MinecraftForge
   build to its NeoForge build loses only what the native swap loses (gate-m59), zero-mod worldgen matches vanilla
   (gate-m31), hoppers into Fabric storages pass (gate-m52).
+- **The two-hour soak, gate-m34, has no pass on its default fixture** (records `stage4-c6-accept-mac.md`,
+  `-ev-native.md`, `-accept-rerun.md`, `-m34-nojm.md` in that directory). On the default 97-jar pack no release pass has
+  ever been recorded: JourneyMap 6.0.1's own `MapRenderer` takes two locks in opposite orders and deadlocks the client —
+  598 s into the survival soak at `ce423a9d`; measured on native NeoForge 26.2.0.88 on 2026-09-24 with JourneyMap and a
+  teleport driver as the only mods, not measured again on 26.2.0.93. The one pass is on that pack without the JourneyMap
+  jar (96 jars, `M34_FIXTURE`) at `43efbd92`: RELEASE_PASS, 7,241.8 s of occupied simulation in 19 sessions, a survival
+  player on server and client in all 7,124 rows, nothing caught by the kernel, one rain of about 12.7 minutes (on the
+  player's position in 122 rows) without a crash, and 3 of 19 stopped servers still held once the natively reproduced
+  Unlit Campfire root is cut, each through state mods keep. The acceptance soak before those (`df1e5a13`, a creative
+  player, the default pack) ended at 4,610 s, when its first rain began: EnhancedVisuals' rain effect draws from texture
+  variants its client never loaded (below), native NeoForge 26.2.0.93 crashes the same way, and that is why the soak's
+  player is a survival player. What the pass does not show: the rain is the server's reading (nothing records what the
+  client drew); there was no thunder and no join into rain on the player, which with EnhancedVisuals crashes natively
+  too; the player is invulnerable, so nothing about damage or hunger; it is one run, on macOS only; whether native
+  NeoForge keeps the same three servers with this pack was not measured; and the heap peaked at 3.76 of 4 GiB, its floor
+  after each session's GC rising about 0.07 GiB per session, so a longer soak is not shown to fit.
 - **Native comparison, last round on the merged base.** Before Stage 4, 27 mods were measured against their native
   loaders by the method of §16.1 (instruction-level landing, liveness, in-game probes, rename experiment): Carpet,
   Create Fly, C2ME, Lithium (Fabric and NeoForge builds), Physics Mod, Sodium (NeoForge), Continuity, Iris, Corpse,
@@ -2238,9 +2271,16 @@ Located, not yet fixed (no impossibility proof):
 
 - `System.out`/`err` are wrapped as vanilla and Fabric wrap them; native NeoForge does not.
 - A hopper follows NeoForge's semantics; into a Fabric storage it goes through the transfer bridge (gate-m52).
-- With the client resource preload gone, as natively, EnhancedVisuals logs 20 "Could not find any resources" lines and
-  CreativeCore "Could not load default style" during client setup; native NeoForge also runs client setup before the
-  first reload (inferred from bytecode order, not observed natively).
+- With the client resource preload gone, as natively, EnhancedVisuals logs 21 "Could not find any resources" lines
+  (its 20 visual types, one of them twice) and CreativeCore "Could not load default style" during client setup, before
+  the first resource reload; native NeoForge 26.2.0.93 logs the same lines at the same point (a native A/B on
+  2026-11-20: EnhancedVisuals 1.8.29 and CreativeCore alone, 20 runs, native and Forbric alike in all 12 arms). The
+  lines are not harmless. EnhancedVisuals loads the textures again only on a HUD frame it draws for the player, which
+  it never does for a creative player under the pack's `doEffectsInCreative=false`, and its rain effect then ends the
+  client with `IllegalArgumentException: bound must be positive` the first time it fires in rain on the player; a
+  join into rain did so for every game type measured, ticks in rain coming before the first HUD frame. That is the
+  mod's own behaviour on NeoForge and the kernel repairs nothing there; the merged-base builds, which preloaded the
+  resources before mod setup, did not log those lines.
 - Known gaps the merged base had too: better-nether's placement-only `bn_shouldSpreadLiquid` (its handler captures
   locals inside the method, so the neighbour-change wrap cannot serve it); a Fabric TAIL `@Inject` on `ItemStack.useOn`
   most likely never runs server-side, because NeoForge's server path returns from `CommonHooks.onPlaceItemIntoWorld`
@@ -2256,6 +2296,30 @@ Located, not yet fixed (no impossibility proof):
   processed after the freeze on a client whose Fabric mains run in `Minecraft.<init>`; and NeoForge's mod construction
   runs in three kernel-level passes, with registration on the caller's thread. Owner decisions, recorded in the Stage 4
   record.
+- Open from the Stage 4 C6 acceptance, in the kernel: with Better Nether 26.201.2 (the Windows acceptance runs) every
+  client boot logged a `Caught` WARN that NeoForge's `GameData.freezeData()` threw on an intrusive holder nobody
+  registered (`entity.betternether.naga_projectile`), so NeoForge's own freeze stops part-way — the mod's
+  `NetherEntities` class initialises inside NeoForge's registration window and registers that holder only from its
+  Fabric main entrypoint, after the kernel's freeze; what initialises the class that early is not traced, the world
+  still loaded, and the old kernel on the merged base logged the same throw. On the Windows acceptance machine every
+  client boot logged a `Caught` WARN, `[Forbric/Frames] cannot prove a frame repair for
+  com.mojang.text2speech.Narrator` (the class names a macOS-only type): the original bytes are kept, but the old
+  kernel's run on the same machine has no such line, which change brought it is not traced, and no macOS gate can
+  see it. `-Dforbric.crossEcosystemPresence=off` also switches
+  dependency-ordered construction off without a log line (§4.4): gate-m18's and gate-m19's control boots each
+  construct two NeoForge mods and write no order line. With fabric-api 0.161.0 on the player's Windows pack the load
+  report still names fabric-loot-api-v3 as not having finished loading once a world is entered, although the loot
+  bridge delivered its events in that run (3,087 tables offered): `ReloadableServerRegistries` was defined so that the
+  repair superseding the left-out mixin "can no longer be proved" (§7.5); why was not looked into, and the old
+  kernel's run on that pack reported the mod the same way.
+- Open from the same acceptance, in the installer and the gate harness: under a Chinese locale the installer's
+  command-line output mixes English lines with its Chinese ones (only `InstallerText` is localised; the window a
+  player double-clicks was not checked). Nothing bounds a gate's whole run: a download that trickled held one sweep
+  for 49 minutes, until the gate was ended by hand. A stop signal that reaches the soak between its client's start
+  and the guarded wait still leaves the client running (a window of milliseconds; read from the code, not measured).
+  Only gate-m17 has been read for checks that can pass on an earlier run's files; the other 60 gates have not. The
+  Windows branch of the soak's stop path (`taskkill /F /T`) has run only with `subprocess.run` modelled in its test,
+  never on a real Windows.
 - An old world from an older install logs one `Missing data pack` warning for the carrier's old pack id when it is
   first opened (the selection is migrated, §6); expected, once.
 - **Versions.** `forbric-kernel/build.gradle` says `0.1.0-SNAPSHOT`; the installer is `0.4.0-dev`, the line whose first
