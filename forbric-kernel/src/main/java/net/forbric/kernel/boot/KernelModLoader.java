@@ -644,7 +644,14 @@ public final class KernelModLoader {
 	 * So:
 	 * <ul>
 	 * <li>ordering applied, classes moved or not: a line that begins {@value #ORDER_APPLIED} — the one sentence the
-	 *     gates look for, true in both cases;</li>
+	 *     gates look for, true in both cases. It is true of the classes the order names, so the line counts them: when
+	 *     the order names every class it says so of all of them, and when it names only some it says "the K the order
+	 *     names, of N" and lists the mods it does not name, which are constructed after the ordered ones in the order they were found
+	 *     (a class whose annotation names no mod of any jar's manifest: nothing is known of what it needs);</li>
+	 * <li>the order names none of the classes: a warning that says so and does not begin that way. Nothing moves then,
+	 *     exactly as when the classes were found in dependency order already, and for the opposite reason: no
+	 *     dependency of these classes was consulted. Comparing the sorted list with the found one cannot tell the two
+	 *     apart, so the named classes are counted;</li>
 	 * <li>ordering switched off ({@code -Dforbric.modOrder=name}): a line that says so and does not begin that way;</li>
 	 * <li>ordering failed: the warning below, and no verdict;</li>
 	 * <li>nothing to construct, or no order to apply because discovery published nothing: no line, as nothing was
@@ -666,16 +673,38 @@ public final class KernelModLoader {
 			}
 			if (order.isEmpty()) return claimed;
 
+			// What the order can speak of. A class it does not name has no place in it: the sort leaves such classes
+			// after the named ones, as found, and that is no statement about what they need.
+			Set<String> known = new java.util.HashSet<>(order);
+			List<ModAnnotationScanner.ModClassInfo> unnamed = claimed.stream()
+					.filter(info -> info == null || info.modId == null || !known.contains(info.modId)).toList();
+			int named = claimed.size() - unnamed.size();
+			if (named == 0) {
+				ForbricLog.warn("[Forbric/Order] construction order is the order the mods were found in: the dependency "
+						+ "order (%d mod(s)) names none of the %d @Mod class(es) being constructed, so no dependency of "
+						+ "theirs was consulted and a mod may be constructed before one it needs: %s", order.size(),
+						claimed.size(), unnamed.stream().map(KernelModLoader::safeId).distinct().toList());
+				return claimed;
+			}
+
 			List<ModAnnotationScanner.ModClassInfo> sorted =
 					ModConstructionOrder.sort(claimed, info -> info.modId, order);
 
+			// Every class, or "the K the order names, of N" with the rest listed: the sentence is true of those only.
+			String which = unnamed.isEmpty() ? "the " + claimed.size() + " @Mod class(es)"
+					: "the " + named + " @Mod class(es) the order names, of " + claimed.size();
+			String rest = unnamed.isEmpty() ? "" : "; the other " + unnamed.size() + " belong to no mod the order names "
+					+ "and are constructed after them, in the order found: "
+					+ unnamed.stream().map(KernelModLoader::safeId).distinct().toList();
 			if (!sorted.equals(claimed)) {
 				ForbricLog.info(ORDER_APPLIED + ", not jar-file order — a mod "
-						+ "that needs another to have run now does (-Dforbric.modOrder=name to go back): %s",
-						sorted.stream().map(KernelModLoader::safeId).distinct().toList());
+						+ "that needs another to have run now does (-Dforbric.modOrder=name to go back), for %s: %s%s",
+						which, sorted.stream().filter(info -> !unnamed.contains(info)).map(KernelModLoader::safeId)
+								.distinct().toList(), rest);
 			} else {
-				ForbricLog.info(ORDER_APPLIED + ": the %d @Mod class(es) were found in it already, so "
-						+ "none moved (-Dforbric.modOrder=name to switch ordering off)", claimed.size());
+				ForbricLog.info(ORDER_APPLIED + ": %s%s were found in it already, so "
+						+ "none moved (-Dforbric.modOrder=name to switch ordering off)%s", which, unnamed.isEmpty() ? "" : ",",
+						rest);
 			}
 			return sorted;
 		} catch (Throwable t) {

@@ -18,7 +18,9 @@ So these are rules, read from the gates as text through gates-parallel.py's own 
     the JVM keeps the last -D of a name; a gate's -D written before the caller's is one a sweep can override). The same holds for an --env "FORBRIC_JVM=..." handed to a driver, and for
     JAVA_TOOL_OPTIONS, which is how a gate reaches a JVM it starts from a resolved command line instead of a
     launcher (gate-m17's installed profile). Unsetting it, `env -u FORBRIC_JVM` and `env -i` drop it outright.
-  * Python that a gate runs -- its heredocs, and every run/compat/*.py it names (and the ones those name) -- sets
+  * Python that a gate runs -- its heredocs, and every run/compat/*.py it names (and the ones those name, in their own
+    text or in a run/compat/*.json registry they name: soak-run.py runs the command native-retention.json gives it, and
+    the script that command starts a Forbric server with was held by nothing) -- sets
     FORBRIC_JVM only from an expression that starts with the caller's: os.environ.get('FORBRIC_JVM', '') or
     env['FORBRIC_JVM'] of an environment copied from it, as the left of a +, the first of a ' '.join, the first field of
     an f-string. Popping or deleting it drops it.
@@ -68,6 +70,7 @@ READS_CALLER_SH = re.compile(r'\$\{FORBRIC_JVM\b|\$FORBRIC_JVM\b')
 LEADS_WITH_CALLER_SH = re.compile(r'''["']*\$(?:\{FORBRIC_JVM\b|FORBRIC_JVM\b)''')
 LANGUAGE_PIN = re.compile(r'''-D(user\.language|forbric\.dialogLanguage)=([^\s"'$]*)''')
 DRIVER = re.compile(r'\b([A-Za-z0-9_-]+\.py)\b')
+REGISTRY = re.compile(r'\b([A-Za-z0-9_-]+\.json)\b')
 NAME = 'FORBRIC_JVM'
 
 
@@ -222,8 +225,18 @@ def gates(run_dir=None):
     return scheduler.discover(run_dir if run_dir is not None else RUN)
 
 
+def driver_text(compat, name):
+    """A driver's own text, and the text of every run/compat/*.json it names. A driver that runs a command it reads from
+    a registry beside it names what it runs there and nowhere in its own text."""
+    text = (compat / name).read_text(encoding='utf-8', errors='replace')
+    for registry in sorted(set(REGISTRY.findall(text))):
+        if (compat / registry).is_file():
+            text += '\n' + (compat / registry).read_text(encoding='utf-8', errors='replace')
+    return text
+
+
 def drivers(run_dir=None):
-    """Every run/compat/*.py a gate names, closed over the ones those name; test files are not drivers."""
+    """Every run/compat/*.py a gate names, closed over the ones those name (driver_text); test files are not drivers."""
     run = run_dir if run_dir is not None else RUN
     compat = run / 'compat'
     exists = {p.name for p in compat.glob('*.py') if not p.name.startswith('test_')}
@@ -232,8 +245,7 @@ def drivers(run_dir=None):
     while todo:
         name = todo.pop()
         seen.add(name)
-        todo |= {n for n in DRIVER.findall((compat / name).read_text(encoding='utf-8', errors='replace'))
-                 if n in exists and n not in seen}
+        todo |= {n for n in DRIVER.findall(driver_text(compat, name)) if n in exists and n not in seen}
     return sorted(seen)
 
 
@@ -326,6 +338,10 @@ class GateLocaleTest(unittest.TestCase):
         found = drivers()
         for name in ('regress-gate.py', 'fluid-head-gate.py', 'carpet-gate.py', 'forge-swap.py', 'native-controls.py'):
             self.assertIn(name, found)
+        # gate-m34 names soak-run.py, which names no other script: the one it starts a Forbric server through is the
+        # reproduce command of native-retention.json.
+        for name in ('soak-run.py', 'retention-control.py'):
+            self.assertIn(name, found)
         self.assertGreater(writes_seen(), 60)
         self.assertTrue({'en', 'zh_cn', 'zh_tw'} <= dialog_tags())
 
@@ -416,6 +432,22 @@ class ControlTest(unittest.TestCase):
                 helper.write_text(source, encoding='utf-8')
                 self.assertEqual(['drive.py', 'helper.py'], drivers(run))
                 self.assertEqual(['compat/helper.py'] if bad else [], sorted(violations(run)))
+
+    def test_a_driver_a_registry_names_is_held(self):
+        # The driver runs whatever command its registry gives it; the script that command starts is a driver too.
+        run = self.scratch()
+        self.gate(run, 'gate-m90-probe.sh', 'python3 "$KERNEL/run/compat/drive.py" --port "$GATE_PORT"\n')
+        (run / 'compat' / 'drive.py').write_text("REGISTRY = HERE / 'roots.json'\ncommand = entry['reproduce']\n", encoding='utf-8')
+        (run / 'compat' / 'roots.json').write_text('{"roots": [{"reproduce": "python3 run/compat/measure.py"}]}\n', encoding='utf-8')
+        (run / 'compat' / 'other.json').write_text('{"reproduce": "python3 run/compat/unnamed.py"}\n', encoding='utf-8')
+        (run / 'compat' / 'unnamed.py').write_text("env['FORBRIC_JVM'] = '-Xmx2G'\n", encoding='utf-8')
+        measure = run / 'compat' / 'measure.py'
+        measure.write_text("import os\nenv = os.environ.copy()\nenv.update(RUNDIR='r', FORBRIC_JVM=' '.join(args))\n", encoding='utf-8')
+        self.assertEqual(['drive.py', 'measure.py'], drivers(run))
+        self.assertEqual({'compat/measure.py': ["3: FORBRIC_JVM=... drops the caller's value"]}, violations(run))
+        measure.write_text("import os\nenv = os.environ.copy()\n"
+                           "env.update(RUNDIR='r', FORBRIC_JVM=' '.join([os.environ.get('FORBRIC_JVM', ''), *args]).strip())\n", encoding='utf-8')
+        self.assertEqual({}, violations(run))
 
     def test_a_language_pin_is_found_per_launch(self):
         run = self.scratch()

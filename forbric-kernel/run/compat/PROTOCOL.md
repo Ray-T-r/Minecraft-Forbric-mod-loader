@@ -675,7 +675,16 @@ and exact jar hash it proved; a release M34 run re-reads that evidence before la
 still describes what it was measured on (every file each arm's `inputs.json` records has the recorded bytes, the
 kernel jar among them, and the Forbric arm booted the kernel jar, base and carrier the soak has just frozen), and
 runs `retention-control.py` itself when the evidence is absent or stale, printing why, the command and the seconds
-it took; a measurement that fails, or leaves evidence that still does not describe the run, stops the soak. The
+it took; a measurement that fails, or leaves evidence that still does not describe the run, stops the soak. Evidence
+that cannot be read (JSON of another shape, a record without its keys), whose native arm does not name the installed
+image it booted, or whose arm records do not lie beside the comparison (a comparison copied in from another checkout)
+is measured again like absent evidence. Each arm records, besides its jars, the scripts that decide how it is booted
+(`native-controls.py`, `launch-kernel-server.sh` and the two scripts it calls) and `build.gradle`; the Forbric arm's
+boot classpath jars and vanilla reference are resolved by the launcher and not recorded themselves. The measurement's
+Forbric server takes the caller's `FORBRIC_JVM` first, like every server a gate starts, and writes what its kernel
+caught to `native-retention-N.caught.tsv` in the run's evidence, which the manifest records and `soak-run.py` appends
+to the gate's file. A soak that is stopped while it measures tells the measurement to stop (SIGTERM, thirty seconds),
+and the measurement stops the server it started, which runs in a session of its own. The
 native image is not installed that way (the official installer downloads): without `build/native-controls/native/neo`
 `retention-control.py` stops before compiling anything and names `native-controls.py prepare --family neo`.
 
@@ -742,16 +751,30 @@ The client gets the base's vanilla-reference sidecar (`--nativeReference`, from 
 NeoForge's patched game embeds no vanilla index and a client without the sidecar has no FABRIC references at all.
 
 The soak's player is a survival player: a soak drives the game as a survival player's client does, with the whole
-HUD drawn, not as a creative one whose client leaves those paths out. The controller makes it one before a session's
-first row and before every move, with the entity itself invulnerable and without gravity and with `mayfly`/`flying`
-set after the game type (which resets them), so it neither dies nor falls nor is hunted at the six y=160 probes. Every
+HUD drawn, not as a creative one whose client leaves those paths out. The controller makes it one while a session
+joins, with the entity itself invulnerable and without gravity and with `mayfly`/`flying` set after the game type
+(which resets them), so it neither dies nor falls nor is hunted at the six y=160 probes; it writes the `join` once the
+client holds a live survival player too. From the join on nothing in the soak sets the game type: a row whose server
+or client game type is not `survival`, or a move that finds another type, fails the soak at once (a command, a data
+pack's function or a listener changed it, and the session is no longer the soak's). The invulnerable flag is one layer
+(NeoForge's invulnerability event or a data pack's `bypasses_invulnerability` tag can pass it; a player that dies
+fails the soak, since a respawn is asked for only while joining), and a survival player is subject to explosion
+knockback, the "moved wrongly" correction and food exhaustion, none of which hurts it. Every
 `join`/`sample` row carries what the server reports (`gameType`, `flying`, `mayfly`, `invulnerable`, `health`, `food`,
-`y`; the overworld's `raining`/`thundering` and `rainingAtPlayer`) and what the client holds (`clientGameType`,
-`clientFlying`, `hudHidden`). `soak-run.py` refuses a run with an occupied row whose `gameType` is not `survival`, and
+`y`; the overworld's `raining`/`thundering` and `rainingAtPlayer`, which is null while the player's chunk is not loaded
+yet, since the controller does not load a chunk to answer it) and what the client holds (`clientInWorld`,
+`clientGameType`, `clientFlying`, `hudHidden`). `soak-run.py` applies the same rule to the evidence: it refuses a run
+with an occupied row whose `gameType` or `clientGameType` is not `survival` (a `sample` whose client had already left
+the world has no client game type to hold), and
 writes a `conditions` summary of those rows into `acceptance.json` for every run that wrote telemetry, a crashed one
-included: the game types seen, how many rows had rain and rain on the player, the first of each, the joins into rain,
-the lowest health and the last row. The weather itself is not touched: it is the copied world's
-(`data/minecraft/weather.dat`), advancing as the game advances it.
+included: the game types seen, how many rows had rain and rain on the player (and in how many that was not known), the
+first of each, the joins into rain, the lowest health and the last row. `hudHidden` is recorded and not checked. The
+weather itself is not touched: it is the copied world's (`data/minecraft/weather.dat`), advancing as the game advances
+it. So the first session joins into whatever weather the source world was saved with, and the soak takes that world as
+it is (the fixture's save is shared and not tracked by git): `soak-run.py` prints it before the client starts and
+records it as the manifest's `sourceWorldWeather`. A world saved in rain makes the first join a join into rain, which
+is another run than one that joins into clear weather and meets rain later, for anything that reacts to rain; later
+sessions join where the previous one ended, at the End probe, where it does not rain on the player.
 
 Use `--control --seconds 30 --sessions 2 --dwell-ticks 20 --settle-seconds 10` only to test the controller;
 CONTROL_PASS is never release acceptance. `python3 run/compat/test_soak.py` verifies rejection of stale or

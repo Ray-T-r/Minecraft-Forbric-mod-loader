@@ -141,6 +141,56 @@ class ConstructionOrderVerdictTest {
 		assertFalse(matchesGates(run.log()));
 	}
 
+	/**
+	 * The order handed over names none of the classes being constructed: other mods, another spelling of the same
+	 * ids, or classes whose annotation gave no id. Nothing can move, exactly as when the classes were found in
+	 * dependency order already; the verdict is the opposite, because no dependency of these classes was consulted. The
+	 * sentence the gates look for was written here (C6 m34fix review, harness finding 1): a boot that published the
+	 * wrong mods to the order went green on the one check that exists to notice it.
+	 */
+	@Test
+	void anOrderThatNamesNoneOfTheClassesIsNotDependencyOrderAndDoesNotSatisfyTheGates() throws Exception {
+		List<ModClassInfo> found = List.of(mod("architectury"), mod("zzzlib"));
+		List<ModClassInfo> unnamed = List.of(new ModClassInfo("mods.a.Main", null, Ecosystem.NEOFORGE),
+				new ModClassInfo("mods.b.Main", null, Ecosystem.NEOFORGE));
+
+		for (Run run : List.of(order(found, List.of("fabric-api", "sodium")),
+				order(found, List.of("ZZZLib", "Architectury")), order(unnamed, List.of("zzzlib", "architectury")))) {
+			assertEquals(1, run.lines().size(), run.log());
+			assertFalse(run.log().contains(KernelModLoader.ORDER_APPLIED), run.log());
+			assertTrue(run.log().contains("names none of the 2 @Mod class(es)"), run.log());
+			assertFalse(matchesGates(run.log()), "an order that knows none of these classes was not applied to them:\n"
+					+ run.log());
+		}
+		assertEquals(found, order(found, List.of("fabric-api", "sodium")).sorted(), "and they stay as they were found");
+	}
+
+	/**
+	 * The order names some of the classes. Those are in dependency order; the others belong to no mod discovery
+	 * published, so nothing is known of what they need and they are constructed after the ordered ones, as found. The
+	 * verdict is given for the classes it is true of, with the count and the rest named, so the line cannot be read as
+	 * "all of them".
+	 */
+	@Test
+	void anOrderThatNamesSomeOfTheClassesSaysHowManyAndWhichItDoesNot() throws Exception {
+		List<ModClassInfo> found = List.of(mod("architectury"), mod("stray"), mod("zzzlib"));
+
+		Run moved = order(found, List.of("zzzlib", "architectury"));
+		assertEquals(List.of("zzzlib", "architectury", "stray"), ids(moved.sorted()));
+		assertEquals(1, moved.lines().size(), moved.log());
+		assertTrue(moved.log().contains("for the 2 @Mod class(es) the order names, of 3: [zzzlib, architectury]; the other 1 "), moved.log());
+		assertTrue(moved.log().contains("[stray]"), moved.log());
+		assertTrue(matchesGates(moved.log()), moved.log());
+
+		Run still = order(List.of(mod("architectury"), mod("zzzlib")), List.of("architectury"));
+		assertEquals(List.of("architectury", "zzzlib"), ids(still.sorted()));
+		assertEquals(1, still.lines().size(), still.log());
+		assertTrue(still.log().contains(": the 1 @Mod class(es) the order names, of 2, were found in it already"), still.log());
+		assertTrue(still.log().contains("[zzzlib]"), still.log());
+		assertFalse(still.log().contains(": the 2 @Mod class(es) were found in it already"),
+				"it must not say both were found in dependency order when the order knows one:\n" + still.log());
+	}
+
 	/** The two scripts ask the same question in the same words, and those words are the constant the kernel writes. */
 	@Test
 	void bothGatesLookForTheSentenceTheKernelWrites() throws Exception {
@@ -162,13 +212,17 @@ class ConstructionOrderVerdictTest {
 
 	private static Run order(List<ModClassInfo> found, List<String> order) {
 		ByteArrayOutputStream log = new ByteArrayOutputStream();
-		PrintStream out = System.out;
+		PrintStream out = System.out, err = System.err;
 		List<ModClassInfo> sorted;
 		try {
-			System.setOut(new PrintStream(log, true, StandardCharsets.UTF_8));
+			// Both streams, as a boot log holds both: off-game the kernel's warnings go to the error stream.
+			PrintStream both = new PrintStream(log, true, StandardCharsets.UTF_8);
+			System.setOut(both);
+			System.setErr(both);
 			sorted = KernelModLoader.orderByDependency(found, order);
 		} finally {
 			System.setOut(out);
+			System.setErr(err);
 		}
 		return new Run(sorted, log.toString(StandardCharsets.UTF_8));
 	}

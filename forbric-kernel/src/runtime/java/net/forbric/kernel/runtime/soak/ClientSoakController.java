@@ -20,6 +20,7 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 
 import net.forbric.kernel.soak.SoakJson;
+import net.forbric.kernel.soak.SoakPlayer;
 import net.forbric.kernel.soak.SoakStateMachine;
 import net.forbric.kernel.soak.SoakStateMachine.Action;
 import net.forbric.kernel.soak.SoakStateMachine.Config;
@@ -28,6 +29,7 @@ import net.forbric.kernel.soak.SoakStateMachine.State;
 import net.forbric.kernel.util.Caught;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.server.IntegratedServer;
+import net.minecraft.core.BlockPos;
 import net.minecraft.server.MinecraftServer;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
@@ -116,18 +118,28 @@ public final class ClientSoakController {
 					"point", sample.playerPoint(), "loaded", booleans(sample.loaded()), "chunks", observation.chunks(),
 					"dimension", observation.dimension(), "x", observation.x(), "z", observation.z());
 			// What the server said of the player and the weather in that sample, then what this client holds now.
-			// Telemetry only: nothing in the controller decides by it (soak-run.py reads gameType, to refuse a soak
-			// whose player was not a survival player).
+			// The weather, flight, health and food are telemetry only. The two game types are what makes the player
+			// the soak's (SoakPlayer): a session is joined once both sides say so, and a later row that says
+			// otherwise fails the soak when it is written, as soak-run.py would refuse it when the run is over.
+			Map<String, Object> client = clientView(minecraft);
 			payload.putAll(observation.world());
-			payload.putAll(clientView(minecraft));
+			payload.putAll(client);
+			String serverType = (String) observation.world().get("gameType"), clientType = (String) client.get("clientGameType");
 			if (joining) {
-				// A saved test player can arrive dead or drown while the client is still loading. Such time
-				// is preparation, not occupied gameplay; wait for the native respawn handshake to complete.
-				if (sample.player() && minecraft.player != null && !minecraft.player.isDeadOrDying()) {
+				// A saved test player can arrive dead or drown while the client is still loading, and a client told
+				// its game type a moment after the server changed it still holds the old one. Such time is
+				// preparation, not occupied gameplay; wait for the native respawn and game-type handshakes.
+				if (SoakPlayer.joined(sample.player(), serverType, minecraft.player != null && !minecraft.player.isDeadOrDying(), clientType)) {
 					machine.joined(sample); joining = false; write("join", payload);
 				} else write("waiting-for-live-player", payload);
 			}
-			else { Action action = machine.observe(sample); write("sample", payload); apply(minecraft, action); }
+			else {
+				Action action = machine.observe(sample); write("sample", payload);
+				// After the row, so the evidence holds the row that says it.
+				String drifted = SoakPlayer.problem(sample.player(), serverType, minecraft.player != null, clientType);
+				if (drifted != null) throw new IllegalStateException(drifted + " (telemetry row " + sequence + "); such a run is not a soak");
+				apply(minecraft, action);
+			}
 		}
 		if (machine.state() == State.WAIT_WORLD && current == null && minecraft.player != null && minecraft.level != null) {
 			IntegratedServer server = minecraft.getSingleplayerServer();
@@ -174,7 +186,7 @@ public final class ClientSoakController {
 		List<ServerPlayer> players = server.getPlayerList().getPlayers();
 		ServerPlayer player = players.size() == 1 ? players.get(0) : null;
 		boolean alive = player != null && !player.isDeadOrDying();
-		if (preparing && alive) preparePlayer(player);
+		if (preparing && alive) preparePlayer(player, true);
 		boolean[] loaded = new boolean[6]; List<Integer> chunks = new ArrayList<>();
 		for (int dimension = 0; dimension < 3; dimension++) {
 			ServerLevel level = level(server, dimension);
@@ -195,12 +207,21 @@ public final class ClientSoakController {
 	 * The weather is the overworld's, the one dimension whose weather advances, plus whether it rains on the block the
 	 * player is in, wherever that is. A verdict has to be explainable from the evidence: a client that dies when rain
 	 * begins can be told from one that dies for another reason only if the rows say when it rained.
+	 *
+	 * <p><b>Reading must not change what is measured.</b> {@code Level.isRainingAt} asks for the height of the column,
+	 * and {@code Level.getHeight} takes the chunk with a required {@code getChunk} once {@code hasChunk} says it is
+	 * there; on the server {@code hasChunk} goes by the chunk's ticket level, which a teleport raises before the chunk
+	 * is loaded, so in the seconds after a move the question would make the server thread wait for the load (or the
+	 * generation) of the player's chunk. {@code rainingAtPlayer} is therefore asked only when the chunk is already
+	 * loaded ({@code getChunkNow}, which never loads), and is null in the rows where it is not.
 	 */
 	private static Map<String, Object> worldView(IntegratedServer server, ServerPlayer player) {
 		ServerLevel overworld = server.overworld();
 		Map<String, Object> view = fields("raining", overworld.isRaining(), "thundering", overworld.isThundering());
 		if (player == null) return view;
-		view.put("rainingAtPlayer", player.level().isRainingAt(player.blockPosition()));
+		ServerLevel level = player.level(); BlockPos at = player.blockPosition();
+		boolean chunkLoaded = level.getChunkSource().getChunkNow(at.getX() >> 4, at.getZ() >> 4) != null;
+		view.put("rainingAtPlayer", chunkLoaded ? (Object) level.isRainingAt(at) : null);
 		view.put("gameType", player.gameMode().getName());
 		view.put("flying", player.getAbilities().flying); view.put("mayfly", player.getAbilities().mayfly);
 		view.put("invulnerable", player.isInvulnerable());
@@ -208,9 +229,12 @@ public final class ClientSoakController {
 		view.put("y", player.getY());
 		return view;
 	}
-	/** The client's side when the row is written: the game type and flight it was told, and whether it hides the HUD. */
+	/**
+	 * The client's side when the row is written: whether it holds a player at all (a sample taken just before a
+	 * disconnect can be written just after it), the game type and flight it was told, and whether it hides the HUD.
+	 */
 	private static Map<String, Object> clientView(Minecraft minecraft) {
-		Map<String, Object> view = fields("hudHidden", minecraft.gui.hud.isHidden());
+		Map<String, Object> view = fields("clientInWorld", minecraft.player != null, "hudHidden", minecraft.gui.hud.isHidden());
 		if (minecraft.gameMode != null) view.put("clientGameType", minecraft.gameMode.getPlayerMode().getName());
 		if (minecraft.player != null) view.put("clientFlying", minecraft.player.getAbilities().flying);
 		return view;
@@ -230,25 +254,52 @@ public final class ClientSoakController {
 	 * <ul>
 	 * <li>not hurt by anything a world does to a player: the entity's own invulnerable flag, which
 	 *     {@code Entity.isInvulnerableToBase} tests before any damage is applied. Starving and drowning are damage like
-	 *     any other; only the two {@code bypasses_invulnerability} types pass it, the void and {@code /kill}, and y=160
-	 *     is above the void in all three dimensions. A creative player had the same from its abilities;</li>
+	 *     any other; of the game's own damage types only the two {@code bypasses_invulnerability} ones pass it, the void
+	 *     and {@code /kill}, and y=160 is above the void in all three dimensions. This is one layer where a creative
+	 *     player had two: {@code isInvulnerableToBase} ends by asking NeoForge
+	 *     ({@code CommonHooks.isEntityInvulnerableTo}, the {@code EntityInvulnerabilityCheckEvent}), so a listener
+	 *     can take the flag back for a damage source, and a data pack can add damage types to the bypass tag; a
+	 *     creative player's abilities were tested again in {@code Player.hurtServer}, beyond the event's reach. If
+	 *     either happens and the player dies, the soak fails: a respawn is asked for only while a session is joining,
+	 *     so a dead player ends the occupied time and the session times out;</li>
 	 * <li>not hunted: {@code LivingEntity.canBeSeenAsEnemy} is false for an invulnerable entity, so no mob targets it;</li>
 	 * <li>not falling: no gravity, which does not depend on flight, and {@code mayfly} + {@code flying} so that the
 	 *     client treats the hover as flight. The server does not kick it for floating ({@code MinecraftServer.allowFlight}
 	 *     is true, and an entity without gravity has no flying-tick limit).</li>
 	 * </ul>
 	 *
+	 * <p><b>What a survival player is still subject to</b>, and a creative one was not. Three of the server's own paths
+	 * exempt by game type, not by these flags: an explosion's knockback ({@code ServerExplosion} spares only a flying
+	 * creative player), the "moved wrongly" position correction ({@code ServerGamePacketListenerImpl} spares a creative
+	 * player), and food exhaustion ({@code Player.causeFoodExhaustion} goes by the abilities' invulnerable flag, which
+	 * survival leaves off; hunger then runs, and its damage is refused like any other). None of them hurts the player.
+	 * One that moved it off a probe before the arrival sample would fail the soak ("probe N was not reached"), not
+	 * pass it.
+	 *
+	 * <p><b>At a join the player is made a survival player; after it the player is required to be one.</b> A saved
+	 * player may be anything, so a joining session sets the type. From the join on nothing in the soak changes it, so a
+	 * type that differs before a move was changed by the world (a command, a data pack's function, a listener), and the
+	 * session is no longer the soak's: the move fails the soak instead of putting the type right and going on, which
+	 * left a run the verifier refused only when it was over. The rows between moves are held to the same rule as they
+	 * are written ({@link SoakPlayer}).
+	 *
 	 * <p><b>Order, and why it is safe to repeat.</b> {@code setGameMode} gives the abilities the game type's values
 	 * ({@code GameType.updatePlayerAbilities}: for survival, no {@code mayfly}, not {@code flying}), and loading a saved
 	 * player does the same at every session's join, before this has run. So the game type goes first, the abilities
 	 * after it, and {@code onUpdateAbilities} last, which is what tells the client. This runs once a second while a
-	 * session is joining and before every move: {@code setGameMode} is asked only when the type differs, and the rest
-	 * sets values to what they already are. A game type that will not change (a listener may veto or replace it) fails
-	 * the soak here rather than being soaked as something else.
+	 * session is joining and before every move: {@code setGameMode} is asked only while joining and only when the type
+	 * differs, and the rest sets values to what they already are. A game type that will not change (a listener may veto
+	 * or replace it) fails the soak here rather than being soaked as something else.
+	 *
+	 * @param joining whether the session is still joining, the only time the game type may be set
 	 */
-	private static void preparePlayer(ServerPlayer player) {
-		if (player.gameMode() != GameType.SURVIVAL && (!player.setGameMode(GameType.SURVIVAL) || player.gameMode() != GameType.SURVIVAL))
-			throw new IllegalStateException("the soak player could not be made a survival player; it is " + player.gameMode().getName());
+	private static void preparePlayer(ServerPlayer player, boolean joining) {
+		if (player.gameMode() != GameType.SURVIVAL) {
+			if (!joining) throw new IllegalStateException("the soak player stopped being a survival player during the session; it is a "
+					+ player.gameMode().getName() + " player now, and such a run is not a soak");
+			if (!player.setGameMode(GameType.SURVIVAL) || player.gameMode() != GameType.SURVIVAL)
+				throw new IllegalStateException("the soak player could not be made a survival player; it is " + player.gameMode().getName());
+		}
 		player.setInvulnerable(true); player.setNoGravity(true);
 		player.getAbilities().mayfly = true; player.getAbilities().flying = true; player.onUpdateAbilities();
 	}
@@ -266,7 +317,7 @@ public final class ClientSoakController {
 						List<ServerPlayer> players = server.getPlayerList().getPlayers();
 						if (players.size() != 1) throw new IllegalStateException("soak requires exactly one actual connected player");
 						ServerPlayer player = players.get(0);
-						preparePlayer(player);
+						preparePlayer(player, false);
 						if (!player.teleportTo(level(server, point / 2), COORDINATES[point] + .5, 160, COORDINATES[point] + .5,
 								Set.of(), 0, 0, true)) throw new IllegalStateException("native dimension teleport refused point " + point);
 					} catch (Throwable failure) {

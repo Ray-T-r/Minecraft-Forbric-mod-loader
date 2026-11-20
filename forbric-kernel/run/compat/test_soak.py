@@ -6,14 +6,24 @@ from pathlib import Path
 import unittest
 import argparse
 import json
+import gzip
+import os
+import re
+import signal
+import sys
 import tempfile
+import threading
 import zipfile
 from unittest.mock import patch
 spec=importlib.util.spec_from_file_location('soak_run',Path(__file__).with_name('soak-run.py'))
 soak=importlib.util.module_from_spec(spec);spec.loader.exec_module(soak)
+def load(name):
+    """A sibling script by file name (they are named with hyphens, so not importable by name)."""
+    found=importlib.util.spec_from_file_location(name.replace('-','_').removesuffix('.py'),Path(__file__).with_name(name))
+    module=importlib.util.module_from_spec(found);found.loader.exec_module(module);return module
 
 # What the controller's occupied rows say of the player and the weather (ClientSoakController.worldView/clientView).
-PLAYER=dict(gameType='survival',clientGameType='survival',flying=True,health=20.0,raining=False,thundering=False,rainingAtPlayer=False)
+PLAYER=dict(gameType='survival',clientGameType='survival',clientInWorld=True,flying=True,health=20.0,raining=False,thundering=False,rainingAtPlayer=False)
 def fixture(sessions=2):
     rows=[];nonce='test-nonce';nano=0
     def add(kind,**fields):
@@ -114,7 +124,9 @@ class SoakVerifierTest(unittest.TestCase):
             carriers=[put(f'{engine}/{name}',name.encode()) for name in ('kernel.jar','base.jar','carrier.jar')]
             record=dict(engine=engine,modSet=[mod],carriers=carriers,sources=[source])
             if engine=='native':record['image']=put('native/installation.json',b'{}')
-            inputs=kernel/f'{engine}/inputs.json';inputs.write_text(json.dumps(record));files[f'{engine}/inputs.json']=inputs
+            # Where retention-control.py writes an arm's record: in the arm's run directory, beside the comparison.
+            inputs=kernel/f'build/retention-control/{engine}-run/inputs.json';inputs.parent.mkdir(exist_ok=True)
+            inputs.write_text(json.dumps(record));files[f'{engine}/inputs.json']=inputs
             arms.append(dict(engine=engine,nativeRetentionReproduced=True,proof=dict(root=self.ROOT),inputs=dict(path=str(inputs),sha256=soak.digest(inputs))))
         (kernel/self.ENTRY['nativeEvidence']).write_text(json.dumps(dict(sameModHashes=True,arms=arms)))
         return files,arms
@@ -153,6 +165,67 @@ class SoakVerifierTest(unittest.TestCase):
                     self.assertIsNotNone(problem,f'{name} {"removed" if removed else "changed"} must make the evidence stale')
                     self.assertTrue(problem.startswith('stale: '),problem)
                     with self.assertRaises(ValueError):soak.verify_native_evidence(temporary,self.ENTRY)
+    def rewrite(self,kernel,change_comparison=None,change_record=None,engine='native'):
+        """Change the comparison, or one arm's record (the comparison's digest of it is kept true)."""
+        kernel=Path(kernel);comparison=kernel/self.ENTRY['nativeEvidence'];data=json.loads(comparison.read_text())
+        if change_record:
+            inputs=kernel/f'build/retention-control/{engine}-run/inputs.json';record=json.loads(inputs.read_text())
+            inputs.write_text(json.dumps(change_record(record)))
+            for arm in data['arms']:
+                if arm['engine']==engine:arm['inputs']['sha256']=soak.digest(inputs)
+        comparison.write_text(json.dumps(change_comparison(data) if change_comparison else data))
+    def test_evidence_of_a_shape_that_cannot_be_read_is_unreadable_and_measured_again(self):
+        # JSON, but not a comparison: a list, an arm without its record, a record that is a list or lacks its mod set,
+        # a file entry without its digest. Each used to end the soak with a bare KeyError/AttributeError ("[M34] FAIL
+        # 'inputs'") and no measurement; each is evidence that cannot be used, so it is named and measured again.
+        def without(key):
+            def change(value):
+                value=dict(value);del value[key];return value
+            return change
+        def arm_without_record(data):
+            data['arms'][0]=without('inputs')(data['arms'][0]);return data
+        def source_without_digest(record):
+            record['sources']=[without('sha256')(record['sources'][0])];return record
+        cases=[('a list',dict(change_comparison=lambda data:[])),('arms of another shape',dict(change_comparison=lambda data:dict(data,arms=['native','forbric']))),
+               ('an arm without its record',dict(change_comparison=arm_without_record)),
+               ('a record that is a list',dict(change_record=lambda record:[])),('a record without its mod set',dict(change_record=without('modSet'))),
+               ('a file entry without its digest',dict(change_record=source_without_digest))]
+        for name,change in cases:
+            with tempfile.TemporaryDirectory() as temporary,self.modded(),patch('builtins.print'):
+                files,_=self.evidence(temporary);launched=self.launched(files)
+                self.assertIsNone(soak.native_evidence_problem(temporary,self.ENTRY,launched),'fresh as written')
+                self.rewrite(temporary,**change)
+                problem=soak.native_evidence_problem(temporary,self.ENTRY,launched)
+                self.assertIsNotNone(problem,name);self.assertTrue(problem.startswith('unreadable: '),f'{name}: {problem}')
+                with self.assertRaises(ValueError) as refused:soak.verify_native_evidence(temporary,self.ENTRY,launched)
+                self.assertIn('unreadable',str(refused.exception))
+                runs=[]
+                def reproduce(kernel,entry,log):
+                    runs.append(name);self.evidence(kernel);return 0
+                record=soak.ensure_native_evidence(temporary,self.ENTRY,launched,Path(temporary)/'r.log',reproduce=reproduce)
+                self.assertEqual([name],runs,'unreadable evidence is measured again, once');self.assertTrue(record['measuredForThisRun'])
+    def test_a_native_arm_that_does_not_name_its_installed_image_is_stale(self):
+        # What the script wrote before it recorded the image: nothing says which installation the native arm booted.
+        def no_image(record):
+            del record['image'];return record
+        with tempfile.TemporaryDirectory() as temporary,self.modded():
+            self.evidence(temporary);self.rewrite(temporary,change_record=no_image)
+            problem=soak.native_evidence_problem(temporary,self.ENTRY)
+            self.assertIn('does not name the installed image it booted',problem);self.assertTrue(problem.startswith('stale: '),problem)
+        # The Forbric arm boots no installed image, so it has none to name.
+        with tempfile.TemporaryDirectory() as temporary,self.modded():
+            self.evidence(temporary);self.rewrite(temporary,change_record=lambda record:record,engine='forbric')
+            self.assertIsNone(soak.native_evidence_problem(temporary,self.ENTRY))
+    def test_a_comparison_measured_in_another_checkout_is_not_this_ones_evidence(self):
+        # comparison.json copied from another tree: its arms' records, and every file they name, are that tree's, and
+        # all of them are unchanged there. It says nothing of this checkout.
+        with tempfile.TemporaryDirectory() as temporary,self.modded():
+            other=Path(temporary)/'other';here=Path(temporary)/'here'
+            self.evidence(other);self.assertIsNone(soak.native_evidence_problem(other,self.ENTRY))
+            (here/'build/retention-control').mkdir(parents=True)
+            (here/self.ENTRY['nativeEvidence']).write_bytes((other/self.ENTRY['nativeEvidence']).read_bytes())
+            problem=soak.native_evidence_problem(here,self.ENTRY)
+            self.assertIn('was not measured in this checkout',problem);self.assertTrue(problem.startswith('stale: '),problem)
     def test_evidence_measured_on_other_jars_than_the_soak_launches_is_stale(self):
         with tempfile.TemporaryDirectory() as temporary,self.modded():
             files,_=self.evidence(temporary);launched=self.launched(files)
@@ -191,7 +264,7 @@ class SoakVerifierTest(unittest.TestCase):
                 self.assertIn(start,lines[0]);self.assertIn('measuring it now',lines[1]);self.assertRegex(lines[2],r'took \d+ s and exited 0')
     def rerecord(self,kernel):
         """Write the Forbric arm's record again over the files as they are now, as a real reproduction would."""
-        kernel=Path(kernel);inputs=kernel/'forbric/inputs.json';record=json.loads(inputs.read_text())
+        kernel=Path(kernel);inputs=kernel/'build/retention-control/forbric-run/inputs.json';record=json.loads(inputs.read_text())
         for item in record['carriers']:item['sha256']=soak.digest(item['path'])
         inputs.write_text(json.dumps(record));comparison=kernel/self.ENTRY['nativeEvidence'];data=json.loads(comparison.read_text())
         for arm in data['arms']:
@@ -217,12 +290,98 @@ class SoakVerifierTest(unittest.TestCase):
     def test_the_reproduction_is_the_registrys_own_command_run_in_the_kernel_directory(self):
         with tempfile.TemporaryDirectory() as temporary:
             log=Path(temporary)/'r.log'
-            class Done:returncode=7
-            with patch.object(soak.subprocess,'run',return_value=Done()) as run:
+            class Done:
+                def wait(self,timeout=None):return 7
+            with patch.object(soak.subprocess,'Popen',return_value=Done()) as run,patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':'/gate/file.tsv','GATE_PORT':'46999','FORBRIC_JVM':'-Duser.language=zh'}):
                 self.assertEqual(7,soak.run_reproduction(Path(temporary),dict(reproduce='python3 run/compat/retention-control.py'),log))
             command=run.call_args.args[0]
             self.assertEqual([soak.sys.executable,'run/compat/retention-control.py'],command,'the interpreter running the soak, not whichever python3 is on PATH')
             self.assertEqual(Path(temporary),run.call_args.kwargs['cwd']);self.assertTrue(log.is_file())
+            # The caller's environment, except where the kernel writes what it caught: a file of the measurement's own.
+            given=run.call_args.kwargs['env']
+            self.assertEqual(('46999','-Duser.language=zh'),(given['GATE_PORT'],given['FORBRIC_JVM']))
+            self.assertEqual(str(Path(temporary)/'r.caught.tsv'),given['FORBRIC_CAUGHT_FILE']);self.assertTrue(Path(given['FORBRIC_CAUGHT_FILE']).is_file())
+    def test_what_the_measurements_server_caught_is_recorded_and_reaches_the_gates_file(self):
+        with tempfile.TemporaryDirectory() as temporary,self.modded(),patch('builtins.print') as said:
+            gate=Path(temporary)/'gate-m34-soak.1.tsv';gate.write_text('');log=Path(temporary)/'native-retention-0.log'
+            def reproduce(kernel,entry,log):
+                soak.reproduction_caught(log).write_text('FAILURE\tWARN\tnet.forbric.Probe.site:1\t[Forbric/Probe] in the measurement\tjava.lang.IllegalStateException\n')
+                self.evidence(kernel);return 0
+            with patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
+                record=soak.ensure_native_evidence(temporary,self.ENTRY,None,log,reproduce=reproduce)
+            self.assertEqual(['net.forbric.Probe.site:1'],record['measurement']['caught']['failureSites'])
+            self.assertEqual(str(Path(temporary)/'native-retention-0.caught.tsv'),record['measurement']['caught']['file'])
+            self.assertIn('[Forbric/Probe] in the measurement',gate.read_text(),'the gate reports every kernel JVM it started')
+            self.assertTrue(any("measurement's Forbric server caught 1 failure site(s)" in call.args[0] for call in said.call_args_list))
+    def test_an_interrupted_reproduction_is_told_to_stop_and_given_time_to_stop_its_server(self):
+        # The reproduction's servers run in sessions of their own, so only the reproduction can stop them. SIGTERM to
+        # the soak while it measures: the reproduction gets SIGTERM (not SIGKILL) and has finished its clean-up before
+        # run_reproduction lets the interruption through; the soak's own handler is back afterwards.
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);marker=root/'server-stopped';ready=root/'ready'
+            script=root/'measure.py'
+            script.write_text('import signal,sys,time\nfrom pathlib import Path\n'
+                              f'def stop(*_):\n time.sleep(.3);Path({str(marker)!r}).write_text("stopped");sys.exit(1)\n'
+                              f'signal.signal(signal.SIGTERM,stop);Path({str(ready)!r}).write_text("up");time.sleep(60)\n')
+            before=signal.getsignal(signal.SIGTERM)
+            def interrupt():
+                for _ in range(200):
+                    if ready.is_file():break
+                    threading.Event().wait(.05)
+                os.kill(os.getpid(),signal.SIGTERM)
+            threading.Thread(target=interrupt,daemon=True).start()
+            with self.assertRaises(KeyboardInterrupt):
+                soak.run_reproduction(root,dict(reproduce=f'python3 {script}'),root/'r.log')
+            self.assertEqual('stopped',marker.read_text(),'the reproduction was told to stop and waited for')
+            self.assertIs(before,signal.getsignal(signal.SIGTERM),'the handler in force before the measurement is restored')
+    def test_the_reproduction_names_what_it_lacks_and_records_what_it_was_measured_on(self):
+        # retention-control.py's own pieces (it runs nothing at import): the refusal that names the missing native image
+        # and its one command, and an arm's record, which is what soak-run.py's freshness check reads.
+        control=load('retention-control.py')
+        with tempfile.TemporaryDirectory() as temporary:
+            root=Path(temporary);image=root/'native/neo';mod=root/'mods/unlitcampfire.jar';mod.parent.mkdir();mod.write_bytes(b'mod')
+            problem=control.prerequisite_problem(image,mod,'26.2.0.93')
+            self.assertIn(f'no native NeoForge 26.2.0.93 server image at {image}',problem)
+            self.assertIn('python3 run/compat/native-controls.py prepare --family neo',problem)
+            image.mkdir(parents=True);(image/'installation.json').write_text('{}')
+            self.assertIsNone(control.prerequisite_problem(image,mod,'26.2.0.93'))
+            mod.unlink();self.assertIn(f'the mod whose root this reproduces is not at {mod}',control.prerequisite_problem(image,mod,'26.2.0.93'))
+            mod.write_bytes(b'mod');source=root/'Retention.java';source.write_text('class Retention {}')
+            native=control.arm_inputs('native','t',[mod],[],[control.c.record(source)],['java'],image)
+            self.assertEqual(control.c.record(image/'installation.json'),native['image'])
+            self.assertEqual([control.c.record(mod)],native['modSet'])
+            self.assertNotIn('image',control.arm_inputs('forbric','t',[mod],[],[],['launch'],image))
+            # What soak-run.py walks is what the arm records, the image included.
+            self.assertIn(native['image'],soak.recorded_files(native))
+        # The sources of a measurement: the canary, the script, and everything that decides how an arm is booted. Each
+        # is a file of this tree (a renamed launcher must not silently leave the record).
+        kernel=Path(__file__).resolve().parents[2]
+        recorded={Path(item['path']) for item in control.measured_sources(kernel,[])}
+        self.assertEqual({(kernel/name).resolve() for name in control.BOOTED_BY}|{Path(control.__file__).resolve()},recorded)
+        self.assertLessEqual({'run/compat/native-controls.py','run/launch-kernel-server.sh','build.gradle'},set(control.BOOTED_BY))
+        # The launcher's own helpers are the ones recorded: every run/*.sh it calls by "$HERE/".
+        called=set(re.findall(r'"\$HERE/([A-Za-z0-9_-]+\.sh)"',(kernel/'run/launch-kernel-server.sh').read_text()))
+        self.assertEqual(called,{Path(name).name for name in control.BOOTED_BY if name.startswith('run/') and name.endswith('.sh')}-{'launch-kernel-server.sh'})
+    def test_the_first_joins_weather_is_read_from_the_copied_world(self):
+        snapshot=load('world-snapshot.py')
+        def world(root,**data):
+            path=Path(root)/'data/minecraft/weather.dat';path.parent.mkdir(parents=True,exist_ok=True)
+            path.write_bytes(gzip.compress(snapshot.encode_root(['compound',{'DataVersion':['int',4903],'data':['compound',{name:list(value) for name,value in data.items()}]}])))
+            return Path(root)
+        with tempfile.TemporaryDirectory() as temporary:
+            clear=soak.saved_weather(world(Path(temporary)/'clear',raining=('byte',0),thundering=('byte',0),rain_time=('int',88032),thunder_time=('int',70658),clear_weather_time=('int',0)))
+            self.assertEqual((False,False,88032,70658,0),tuple(clear[k] for k in ('raining','thundering','rainTime','thunderTime','clearWeatherTime')))
+            self.assertIn('saved in clear weather; its rain timer stands at 88032 tick(s), so the first session joins into clear weather',soak.describe_saved_weather(clear))
+            rain=soak.saved_weather(world(Path(temporary)/'rain',raining=('byte',1),thundering=('byte',0),rain_time=('int',4000)))
+            self.assertTrue(rain['raining']);self.assertIsNone(rain['thunderTime'])
+            self.assertIn('saved in rain weather',soak.describe_saved_weather(rain));self.assertIn('the first session joins into rain',soak.describe_saved_weather(rain))
+            storm=soak.saved_weather(world(Path(temporary)/'storm',raining=('byte',1),thundering=('byte',1),rain_time=('int',10)))
+            self.assertIn('saved in thunder weather',soak.describe_saved_weather(storm))
+            # A world that keeps no such file, or a file that is not NBT: said, never an error (it is not a check).
+            (Path(temporary)/'none').mkdir();absent=soak.saved_weather(Path(temporary)/'none')
+            self.assertIn('no such file',absent['problem']);self.assertIn('is not known',soak.describe_saved_weather(absent))
+            broken=Path(temporary)/'broken/data/minecraft/weather.dat';broken.parent.mkdir(parents=True);broken.write_bytes(b'not nbt')
+            self.assertIn('not readable as saved weather',soak.saved_weather(Path(temporary)/'broken')['problem'])
     def test_a_player_that_is_not_a_survival_player_is_not_a_soak(self):
         # The server's report in every occupied row: creative (what the controller made the player until 2026-11-20),
         # any other type, and no report at all (an older controller's telemetry). One such row refuses the run.
@@ -235,6 +394,33 @@ class SoakVerifierTest(unittest.TestCase):
                 self.assertNotIsInstance(refused.exception,soak.RetentionReview)
                 self.assertIn('was not a survival player',str(refused.exception));self.assertIn(f"row {row['sequence']}",str(refused.exception))
         self.assertEqual('CONTROL_PASS',self.check(*fixture())['status'])
+    def test_the_client_has_to_hold_a_survival_player_too(self):
+        # The client's game type decides what the client draws and runs for the player, which is what the soak is for.
+        for kind in ('join','sample'):
+            for told in ('creative','adventure','spectator',None):
+                rows,result=fixture();row=next(r for r in rows if r['type']==kind and r['server']==2)
+                if told is None:del row['clientGameType']
+                else:row['clientGameType']=told
+                with self.assertRaises(ValueError) as refused:self.check(rows,result)
+                self.assertNotIsInstance(refused.exception,soak.RetentionReview)
+                self.assertIn('was not a survival player on the client',str(refused.exception));self.assertIn(f"row {row['sequence']}",str(refused.exception))
+        # A sample written just after a disconnect: the client has left the world and holds no game type. Not a drift.
+        rows,result=fixture();row=[r for r in rows if r['type']=='sample' and r['server']==2][-1]
+        row['clientInWorld']=False;del row['clientGameType']
+        self.assertEqual('CONTROL_PASS',self.check(rows,result)['status'])
+        # A join is written only once the client holds a live player, so the exception is not a join's.
+        rows,result=fixture();row=next(r for r in rows if r['type']=='join' and r['server']==2)
+        row['clientInWorld']=False;del row['clientGameType']
+        with self.assertRaises(ValueError):self.check(rows,result)
+        # Rows of the controller before it wrote clientInWorld (they carry clientGameType) are read as before.
+        rows,result=fixture()
+        for row in rows:row.pop('clientInWorld',None)
+        self.assertEqual('CONTROL_PASS',self.check(rows,result)['status'])
+        # An unoccupied row has no player to hold to anything.
+        rows,result=fixture(sessions=3);row=[r for r in rows if r['type']=='sample' and r['server']==2][3]
+        row['occupied']=False;del row['gameType'];del row['clientGameType']
+        try:self.check(rows,result,min_sessions=2)
+        except ValueError as other:self.assertNotIn('survival player',str(other))
     def test_the_conditions_summary_says_when_it_rained_on_the_player_and_never_fails_a_run(self):
         rows,_=fixture()
         samples=[r for r in rows if r['type']=='sample'];joins=[r for r in rows if r['type']=='join']
@@ -248,6 +434,12 @@ class SoakVerifierTest(unittest.TestCase):
         self.assertEqual((samples[7]['sequence'],'2026-11-20T18:21:15Z',163081),tuple(told['firstRainingAtPlayer'][k] for k in ('sequence','utc','gameTime')))
         self.assertEqual([joins[1]['sequence']],[row['sequence'] for row in told['joinsInRain']])
         self.assertEqual(17.5,told['lowestHealth']);self.assertEqual(samples[-1]['sequence'],told['last']['sequence'])
+        # A row whose player stood in a chunk not loaded yet says null, not false: unknown, counted apart, never rain.
+        self.assertEqual(0,told['rainingAtPlayerUnknownRows'])
+        samples[2]['rainingAtPlayer']=None;samples[3]['rainingAtPlayer']=None
+        told=soak.conditions(rows)
+        self.assertEqual((2,2),(told['rainingAtPlayerUnknownRows'],told['rainingAtPlayerRows']))
+        self.assertEqual(samples[7]['sequence'],told['firstRainingAtPlayer']['sequence'])
         # Telemetry of a controller that recorded none of it, and no telemetry: a summary of nothing, not an error.
         for old in ([{k:v for k,v in row.items() if k not in PLAYER} for row in rows],[]):
             told=soak.conditions(old)
@@ -422,6 +614,8 @@ class SoakVerifierTest(unittest.TestCase):
             with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',return_value=0),patch.object(soak.time,'monotonic',side_effect=[0,24]),patch.dict(soak.os.environ,{'FORBRIC_CAUGHT_FILE':str(gate)}):
                 self.assertEqual(0,soak.launch(args))
             self.assertEqual(source,manifests[0]['source'])
+            # What the copied world's save says of the weather the first session joins into (here: it keeps no such file).
+            self.assertIn('no such file',manifests[0]['sourceWorldWeather']['problem'])
             # NeoForge's patched game, frozen, and its one carrier: no MinecraftForge carrier is owned any more.
             command=commands[0]
             self.assertEqual(1,command.count('--gameJar'));self.assertEqual(1,command.count('--runtimeJar'))
