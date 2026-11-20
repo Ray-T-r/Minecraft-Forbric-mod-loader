@@ -140,9 +140,14 @@ to soak (attempt 2). Not a kernel defect; not fixed here.
 - **Symptom.** EnhancedVisuals' rain overlay calls `random.nextInt(ct.getVariantAmount())` and the drop visual has 0
   variants, so the first rain the soak walks into kills the client (crash report `m34/crash-2026-11-20_02.21.17-client.txt`,
   client.log from line 7670 at 02:21:16, where NeoForge's event bus logs the exception and its cause chain, one second before the crash report).
-- **Why 0 variants.** EnhancedVisuals loads its textures in exactly one place: `EVClient.init()` (its client setup) calls
-  `VisualTypeClient.loadResources(Minecraft.getInstance().getResourceManager())` for every visual type; its reload listener
-  (`EVClient$1`) only calls `clearEverything()` and never loads them again (javap of the fixture jar, sha1 2f55bcf5…). In
+- **Why 0 variants.** *(Corrected after check A-1 and the native A/B, `stage4-c6-ev-native.md`.)* EnhancedVisuals loads its
+  textures in two places: `EVClient.init()` (its client setup) calls
+  `VisualTypeClient.loadResources(Minecraft.getInstance().getResourceManager())` for every visual type, and `EVRenderer.render`
+  (a `RenderGuiEvent.Post` listener through CreativeCore) reloads them when `EVRenderer.reloadResources` is set, which its reload
+  listener `EVClient$1.apply` does at every resource reload. That HUD-frame reload is gated by `EVClient.shouldRender()`, false
+  for spectators and for creative players unless `doEffectsInCreative=true`; the soak player is creative and the fixture has
+  `doEffectsInCreative=false`, while `RainHandler.tick` ignores game mode, so the variants stay at 0 (javap of the fixture jar,
+  sha1 2f55bcf5…). The native client A/B since run (20 runs) reproduces the crash on native NeoForge 26.2.0.93 identically. In
   the soak's client.log the kernel posts common setup and client setup at 01:05:18-01:05:20 ("HELLO FROM CLIENT SETUP"),
   EnhancedVisuals logs `Could not find any resources for '<type>'!` 21 times (all 20 types, `drop` among them) on
   modloading-worker-0 at 01:05:18, and the first `Reloading ResourceManager: vanilla, …, forbric/EnhancedVisuals…` comes at
