@@ -1,6 +1,19 @@
 #!/usr/bin/env bash
 # M34: >=7200 seconds of occupied simulation, dimensions/chunks, same-JVM save/reentry and retention checks.
 # --control explicitly produces non-release evidence. Inputs are copied and frozen before launch.
+#
+# What a release soak needs besides this tree and its stage, and where it comes from:
+#   - the native reproduction of every reviewed retention root in the pack (run/compat/native-retention.json, today
+#     build/retention-control/comparison.json for Unlit Campfire). soak-run.py obtains it: evidence that describes the
+#     files on disk and the jars just frozen is used as it is; absent or stale evidence is measured again there
+#     (run/compat/retention-control.py: one native NeoForge server, then one Forbric server; 18 s when measured) and its
+#     "[M34] ... took N s" lines are in this gate's output. It used to come only from a hand-run of that script, so the
+#     gate failed in 4 s in every fresh worktree (C6 ACCEPT finding F1).
+#   - the native NeoForge server image that measurement boots (build/native-controls/native/neo). Nothing here installs
+#     it, because the official installer downloads: without it retention-control.py stops at once and names the one
+#     command, `python3 run/compat/native-controls.py prepare --family neo`.
+# The soak's player is a survival player (ClientSoakController.preparePlayer says why); soak-run.py refuses a run whose
+# telemetry says otherwise, and puts what the rows say of the player and the weather into acceptance.json.
 set -euo pipefail
 . "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 # MERGED and FORGE_RT are retired with the merged base and the MinecraftForge carrier: refused here as the launchers

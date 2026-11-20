@@ -1,0 +1,150 @@
+package net.forbric.kernel.soak;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
+
+import org.junit.jupiter.api.Test;
+import org.objectweb.asm.ClassReader;
+import org.objectweb.asm.Opcodes;
+import org.objectweb.asm.tree.AbstractInsnNode;
+import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.LdcInsnNode;
+import org.objectweb.asm.tree.MethodInsnNode;
+import org.objectweb.asm.tree.MethodNode;
+
+import net.forbric.kernel.TestFixtures;
+import net.forbric.kernel.TestFixtures.Fixture;
+
+/**
+ * The soak's player, read out of the compiled controller: a survival player, prepared in the one order that works, and
+ * a telemetry row that carries what {@code run/compat/soak-run.py} reads.
+ *
+ * <p>The controller links the game, so it cannot run off-game; what it does to the player is a short straight-line
+ * method, and its three invariants are visible in its bytecode:
+ * <ol>
+ * <li>the game type it asks for is SURVIVAL, and CREATIVE is named nowhere in the class (it was creative until the C6
+ *     acceptance soak, whose client skipped every path that belongs to a player who can be hurt);</li>
+ * <li>the game type is set BEFORE the abilities and the client is told AFTER them: {@code ServerPlayer.setGameMode}
+ *     overwrites {@code mayfly} and {@code flying} with the game type's values, so abilities written first would be
+ *     lost, and abilities written after {@code onUpdateAbilities} would never reach the client;</li>
+ * <li>invulnerability and no-gravity are on the entity, not left to the game type, since survival gives neither.</li>
+ * </ol>
+ * The real client run that shows the outcome (the server reporting survival, flight kept, no damage) is the control
+ * soak; this test is what keeps the order from being rearranged between such runs.
+ */
+class SoakPlayerPreparationTest {
+	private static final Path CONTROLLER =
+			Path.of("build/classes/java/runtime/net/forbric/kernel/runtime/soak/ClientSoakController.class");
+	private static final String GAME_TYPE = "net/minecraft/world/level/GameType";
+	private static final String ABILITIES = "net/minecraft/world/entity/player/Abilities";
+
+	private static ClassNode controller() throws Exception {
+		TestFixtures.require(Fixture.GAME_SIDE, Files.isRegularFile(CONTROLLER), "the game-side classes are not compiled");
+		ClassNode node = new ClassNode();
+		new ClassReader(Files.readAllBytes(CONTROLLER)).accept(node, 0);
+		return node;
+	}
+
+	private static MethodNode preparePlayer(ClassNode node) {
+		return node.methods.stream().filter(method -> method.name.equals("preparePlayer")).findFirst().orElseThrow();
+	}
+
+	@Test
+	void theSoakPlayerIsASurvivalPlayerAndCreativeIsNamedNowhere() throws Exception {
+		ClassNode node = controller();
+		Set<String> inPrepare = new LinkedHashSet<>(), anywhere = new LinkedHashSet<>();
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.GETSTATIC
+						&& field.owner.equals(GAME_TYPE)) {
+					anywhere.add(field.name);
+					if (method.name.equals("preparePlayer")) inPrepare.add(field.name);
+				}
+			}
+		}
+		assertEquals(Set.of("SURVIVAL"), inPrepare, "preparePlayer asks for exactly one game type");
+		assertEquals(Set.of("SURVIVAL"), anywhere, "no other method of the controller names a game type");
+	}
+
+	@Test
+	void theGameTypeIsSetBeforeTheAbilitiesAndTheClientIsToldAfterThem() throws Exception {
+		MethodNode method = preparePlayer(controller());
+		int setGameMode = -1, mayfly = -1, flying = -1, told = -1;
+		for (AbstractInsnNode instruction : method.instructions) {
+			int at = method.instructions.indexOf(instruction);
+			if (instruction instanceof MethodInsnNode call && call.name.equals("setGameMode")) {
+				assertEquals(-1, setGameMode, "one setGameMode call");
+				setGameMode = at;
+			}
+			if (instruction instanceof MethodInsnNode call && call.name.equals("onUpdateAbilities")) told = at;
+			if (instruction instanceof FieldInsnNode field && field.getOpcode() == Opcodes.PUTFIELD && field.owner.equals(ABILITIES)) {
+				assertTrue(wroteTrue(instruction), "the soak only ever switches an ability on: " + field.name);
+				if (field.name.equals("mayfly")) mayfly = at;
+				if (field.name.equals("flying")) flying = at;
+			}
+		}
+		assertTrue(setGameMode >= 0 && mayfly >= 0 && flying >= 0 && told >= 0,
+				"setGameMode, mayfly, flying and onUpdateAbilities are all there: " + List.of(setGameMode, mayfly, flying, told));
+		assertTrue(setGameMode < mayfly && setGameMode < flying,
+				"setGameMode resets the abilities to the game type's, so it comes first: " + List.of(setGameMode, mayfly, flying));
+		assertTrue(told > mayfly && told > flying,
+				"onUpdateAbilities is what tells the client, so it comes after both: " + List.of(mayfly, flying, told));
+	}
+
+	@Test
+	void theEntityItselfIsInvulnerableAndWithoutGravity() throws Exception {
+		MethodNode method = preparePlayer(controller());
+		List<String> switchedOn = new ArrayList<>();
+		for (AbstractInsnNode instruction : method.instructions) {
+			if (instruction instanceof MethodInsnNode call && (call.name.equals("setInvulnerable") || call.name.equals("setNoGravity"))) {
+				assertTrue(wroteTrue(instruction), call.name + " is called with true");
+				switchedOn.add(call.name);
+			}
+		}
+		assertEquals(List.of("setInvulnerable", "setNoGravity"), switchedOn);
+	}
+
+	/**
+	 * What soak-run.py reads from an occupied row is what the controller writes: every key of its CONDITION_KEYS is a
+	 * string constant of the controller. A key renamed on one side only would turn "the player was not a survival
+	 * player" into the verdict of every run, or empty the weather summary without a word.
+	 */
+	@Test
+	void theTelemetryCarriesEveryKeyTheVerifierReads() throws Exception {
+		ClassNode node = controller();
+		Set<String> constants = new LinkedHashSet<>();
+		for (MethodNode method : node.methods) {
+			for (AbstractInsnNode instruction : method.instructions) {
+				if (instruction instanceof LdcInsnNode constant && constant.cst instanceof String text) constants.add(text);
+			}
+		}
+		String verifier = Files.readString(Path.of("run/compat/soak-run.py"));
+		Matcher keys = Pattern.compile("CONDITION_KEYS = \\(([^)]*)\\)").matcher(verifier);
+		assertTrue(keys.find(), "soak-run.py declares CONDITION_KEYS");
+		List<String> read = new ArrayList<>();
+		Matcher key = Pattern.compile("'([A-Za-z]+)'").matcher(keys.group(1));
+		while (key.find()) read.add(key.group(1));
+		assertTrue(read.containsAll(List.of("gameType", "raining", "thundering", "rainingAtPlayer")), read.toString());
+		List<String> unwritten = read.stream().filter(name -> !constants.contains(name)).toList();
+		assertEquals(List.of(), unwritten, "keys soak-run.py reads and the controller never writes");
+		assertFalse(constants.contains("creative"), "the controller writes the game type the server reports, not a literal");
+	}
+
+	/** Whether the value on top of the stack at {@code instruction} is the constant {@code true}. */
+	private static boolean wroteTrue(AbstractInsnNode instruction) {
+		AbstractInsnNode before = instruction.getPrevious();
+		while (before != null && before.getOpcode() < 0) before = before.getPrevious();
+		return before != null && before.getOpcode() == Opcodes.ICONST_1;
+	}
+}

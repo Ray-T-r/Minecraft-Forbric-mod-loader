@@ -10,6 +10,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shlex
 import shutil
 import signal
 import subprocess
@@ -21,6 +22,9 @@ sys.dont_write_bytecode = True
 from evidence import source_record
 
 MIN_SECONDS = 7200
+# The game type the soak's player has, as the server reports it in every occupied row (ClientSoakController.preparePlayer
+# says why: a soak drives the game as a survival player's client does). A run whose player was anything else is refused.
+SOAK_GAME_TYPE = 'survival'
 NATIVE_RETENTION = Path(__file__).with_name('native-retention.json')
 
 
@@ -155,24 +159,115 @@ def native_retention_roots(frozen_mod_hashes, registry=NATIVE_RETENTION):
     return [entry for entry in entries if entry['modJarSha256'] in present]
 
 
-def verify_native_evidence(kernel, entry):
-    """The registry is a claim; release acceptance re-reads the native reproduction it names."""
+def recorded_files(inputs):
+    """Every file an arm's inputs.json names with the bytes it had: its mods, what booted them, its sources and, for the
+    native arm, the installed image's record."""
+    return [*inputs.get('modSet', []), *inputs.get('carriers', []), *inputs.get('sources', []),
+            *([inputs['image']] if 'image' in inputs else [])]
+
+
+def native_evidence_problem(kernel, entry, launched=None):
+    """Why the native reproduction `entry` names cannot back a release soak now, or None when it can.
+
+    The evidence is a build output, so it is only as good as what it was measured on. It backs this soak when
+      - it exists and says what the registry claims: identical mods on both loaders, the root reproduced by both arms,
+        the registered jar in both mod sets;
+      - nothing it was measured on has changed since: every file an arm recorded (recorded_files) is still there with
+        the recorded bytes, the kernel jar at build/libs among them, so a rebuilt kernel makes it stale; and
+      - its Forbric arm booted what this soak launches: `launched` maps a name to the SHA-256 of the soak's kernel jar,
+        game base and carrier, and each must be among that arm's carriers.
+    Anything else is absent or stale evidence, which ensure_native_evidence() replaces by measuring again and
+    verify_native_evidence() refuses."""
     path = Path(kernel) / entry['nativeEvidence']
     if not path.is_file():
-        raise ValueError(f"native retention evidence missing for {entry['root']}: run {entry['reproduce']}")
-    comparison = json.loads(path.read_text())
+        return f'absent: there is no {path}'
+    try:
+        comparison = json.loads(path.read_text())
+    except ValueError as failure:
+        return f'unreadable: {path}: {failure}'
     arms = comparison.get('arms', [])
     if not comparison.get('sameModHashes') or {arm.get('engine') for arm in arms} != {'native', 'forbric'}:
-        raise ValueError('native retention evidence does not compare identical mods on both loaders')
+        return 'it does not compare identical mods on both loaders'
     for arm in arms:
+        engine = arm.get('engine')
         if not arm.get('nativeRetentionReproduced') or arm.get('proof', {}).get('root') != entry['root']:
-            raise ValueError(f"native retention of {entry['root']} is not reproduced by arm {arm.get('engine')}")
-        inputs = json.loads(Path(arm['inputs']['path']).read_text())
-        if digest(arm['inputs']['path']) != arm['inputs']['sha256']:
-            raise ValueError('native retention evidence inputs changed after the comparison')
+            return f"native retention of {entry['root']} is not reproduced by arm {engine}"
+        recorded = Path(arm['inputs']['path'])
+        if not recorded.is_file():
+            return f'stale: the record of what arm {engine} ran is gone ({recorded})'
+        if digest(recorded) != arm['inputs']['sha256']:
+            return f'stale: the record of what arm {engine} ran changed after the comparison ({recorded})'
+        inputs = json.loads(recorded.read_text())
         if entry['modJarSha256'] not in {mod['sha256'] for mod in inputs['modSet']}:
-            raise ValueError(f"native retention evidence did not use the registered {entry['mod']}")
+            return f"it did not use the registered {entry['mod']}"
+        for item in recorded_files(inputs):
+            file = Path(item['path'])
+            if not file.is_file():
+                return f'stale: arm {engine} was measured on {file}, which is gone'
+            if digest(file) != item['sha256']:
+                return f'stale: arm {engine} was measured on {file}, which has other bytes now'
+        if engine == 'forbric' and launched:
+            ran = {item['sha256'] for item in inputs.get('carriers', [])}
+            for name, value in launched.items():
+                if value not in ran:
+                    return f'stale: its Forbric arm did not boot the {name} this soak launches (sha256 {value[:12]})'
+    return None
+
+
+def verify_native_evidence(kernel, entry, launched=None):
+    """The registry is a claim; release acceptance re-reads the native reproduction it names, and refuses one that is
+    absent or stale for this run (native_evidence_problem)."""
+    problem = native_evidence_problem(kernel, entry, launched)
+    if problem:
+        raise ValueError(f"native retention evidence for {entry['root']} cannot be used: {problem} "
+                         f"(it comes from: {entry['reproduce']})")
+    path = Path(kernel) / entry['nativeEvidence']
     return {'root': entry['root'], 'evidence': str(path), 'sha256': digest(path)}
+
+
+def run_reproduction(kernel, entry, log):
+    """Run the registry entry's own reproduction command in the kernel directory, its output kept in `log`."""
+    command = shlex.split(entry['reproduce'])
+    if command[0] in ('python3', 'python'):
+        command[0] = sys.executable
+    with Path(log).open('w') as stream:
+        return subprocess.run(command, cwd=kernel, stdout=stream, stderr=subprocess.STDOUT).returncode
+
+
+def ensure_native_evidence(kernel, entry, launched, log, reproduce=run_reproduction):
+    """The native reproduction a release soak re-reads, measured now when there is none that describes this run.
+
+    The evidence lives in gitignored build/, and nothing but a hand-run of the reproduction used to write it, so a fresh
+    worktree or a cleaned build failed the soak in its first seconds (C6 ACCEPT finding F1). The soak now obtains its
+    own prerequisite: current evidence is used as it is, absent or stale evidence is measured again with the registry's
+    own command, and the result goes through the same check either way. Nothing is skipped and nothing stale is
+    accepted: when the reproduction fails, or what it wrote still does not describe this run, the soak stops. Every
+    step is printed, with the seconds the measurement cost."""
+    root = entry['root']
+    problem = native_evidence_problem(kernel, entry, launched)
+    produced = None
+    if problem is None:
+        print(f"[M34] native retention evidence for {root} is current: {Path(kernel) / entry['nativeEvidence']}", flush=True)
+    else:
+        print(f'[M34] native retention evidence for {root} cannot be used as it is: {problem}', flush=True)
+        print(f"[M34] measuring it now: {entry['reproduce']} (one native NeoForge server, then one Forbric server; "
+              f'output in {log})', flush=True)
+        began = time.monotonic()
+        code = reproduce(kernel, entry, log)
+        seconds = time.monotonic() - began
+        print(f"[M34] {entry['reproduce']} took {seconds:.0f} s and exited {code}", flush=True)
+        problem = native_evidence_problem(kernel, entry, launched)
+        if code != 0 or problem:
+            said = [line for line in Path(log).read_text(errors='replace').splitlines() if line.strip()] if Path(log).is_file() else []
+            raise ValueError(f'native retention evidence for {root} could not be produced: the reproduction exited {code}'
+                             + (f', and what it left cannot be used: {problem}' if problem else '')
+                             + (f'; its last line: {said[-1][:600]}' if said else '') + f' (output: {log})')
+        produced = {'command': entry['reproduce'], 'seconds': round(seconds, 1), 'exitCode': code, 'log': str(log)}
+    record = verify_native_evidence(kernel, entry, launched)
+    record['measuredForThisRun'] = produced is not None
+    if produced:
+        record['measurement'] = produced
+    return record
 
 
 def validate_native_release(result, roots, serial):
@@ -213,6 +308,55 @@ def mod_owned_retention(java, dump, mods, game_jars, output):
             'unreachable': sum(v[1] == 'UNREACHABLE' for v in verdicts), 'analysis': str(output), 'sha256': digest(output)}
 
 
+def require_soak_player(row):
+    """An occupied row must come from the soak's own kind of player. The controller makes the player a survival player
+    before the first row of a session and before every move; a row that says otherwise (another game type, or none
+    because an older controller wrote it) is a run that did not drive the game the way the soak is defined, whatever
+    else it measured."""
+    if row['occupied'] and row.get('gameType') != SOAK_GAME_TYPE:
+        raise ValueError(f"the soak player was not a {SOAK_GAME_TYPE} player in telemetry row {row['sequence']} "
+                         f"(gameType {row.get('gameType')!r}); such a run is not a soak")
+
+
+CONDITION_KEYS = ('sequence', 'utc', 'server', 'gameTime', 'dimension', 'gameType', 'clientGameType', 'flying',
+                  'health', 'raining', 'thundering', 'rainingAtPlayer')
+
+
+def conditions(rows):
+    """What the telemetry says about the player and the weather, for whoever has to explain a verdict.
+
+    Not a check: it never fails a run. It goes into acceptance.json for every run that wrote telemetry, a crashed one
+    included, so that "when did it start to rain, and was the player under it" is answered by the evidence. The m34 run
+    of 2026-11-20 died 4610 s in, in the second rain reached the player, and nothing in its evidence said so."""
+    seen = [row for row in rows if row.get('type') in ('join', 'sample') and 'raining' in row]
+    def brief(row):
+        return {key: row.get(key) for key in CONDITION_KEYS}
+    def first(key):
+        return next((brief(row) for row in seen if row.get(key)), None)
+    health = [row['health'] for row in seen if isinstance(row.get('health'), (int, float))]
+    return {'rows': len(seen),
+            'gameTypes': sorted({str(row.get('gameType')) for row in seen if row.get('occupied')}),
+            'rainingRows': sum(bool(row.get('raining')) for row in seen),
+            'rainingAtPlayerRows': sum(bool(row.get('rainingAtPlayer')) for row in seen),
+            'thunderingRows': sum(bool(row.get('thundering')) for row in seen),
+            'firstRaining': first('raining'), 'firstRainingAtPlayer': first('rainingAtPlayer'),
+            'joinsInRain': [brief(row) for row in seen if row['type'] == 'join' and row.get('rainingAtPlayer')],
+            'lowestHealth': min(health) if health else None,
+            'last': brief(seen[-1]) if seen else None}
+
+
+def read_telemetry(path):
+    """The telemetry rows that are whole. A client that died mid-write leaves a cut last line; it is dropped here and
+    only here: release validation reads the file strictly."""
+    rows = []
+    for line in Path(path).read_text(errors='replace').splitlines():
+        try:
+            rows.append(json.loads(line))
+        except ValueError:
+            break
+    return rows
+
+
 def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_sessions=3, native_roots=(), mod_owned=None):
     if not control and seconds < MIN_SECONDS:
         raise ValueError('release acceptance requires at least 7200 seconds')
@@ -240,6 +384,7 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
         elif kind == 'join':
             if previous is not None or row['server'] != serial + 1 or not row['occupied']:
                 raise ValueError('invalid integrated-server join')
+            require_soak_player(row)
             serial += 1
             previous = row
             seen, loaded, unloaded = [False] * 6, [False] * 6, [False] * 6
@@ -253,6 +398,7 @@ def validate_trace(rows, result, nonce, seconds, control, process_seconds, min_s
         elif kind == 'sample':
             if previous is None or row['server'] != serial:
                 raise ValueError('sample outside joined server')
+            require_soak_player(row)
             dt = row['tick'] - previous['tick']
             dw = row['gameTime'] - previous['gameTime']
             dn = row['sampleNano'] - previous['sampleNano']
@@ -389,7 +535,6 @@ def launch(args):
         if path.is_file() and path.suffix == '.jar': copy_frozen(path, run / 'mods' / path.name, records)
     if not any((run / 'mods').iterdir()): raise ValueError('soak requires the actual mod pack, not an empty client')
     native_roots = native_retention_roots([record['sha256'] for record in records])
-    native_evidence = [verify_native_evidence(kernel, entry) for entry in native_roots] if not args.control else []
     boot = copy_frozen(kernel / 'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar', frozen / 'boot.jar', records)
     runtime = copy_frozen(kernel / 'build/libs/forbric-kernel-runtime-0.1.0-SNAPSHOT.jar', frozen / 'runtime.jar', records)
     with zipfile.ZipFile(boot) as jar:
@@ -400,6 +545,12 @@ def launch(args):
     base_source = Path(args.base) if args.base else staged / 'neoforge-patched/patched-mc-neoforge-26.2.jar'
     base = copy_frozen(base_source, frozen / 'base.jar', records)
     neo = copy_frozen(Path(args.neo) if args.neo else staged / 'neoforge-runtime/neoforge-runtime.jar', frozen / 'neo.jar', records)
+    # The native reproduction of every reviewed root in this pack, which only a release soak leans on: used when it
+    # describes the jars just frozen, measured again here when it is absent or stale (ensure_native_evidence).
+    launched = {'kernel jar': digest(boot), 'game base': digest(base), 'NeoForge carrier': digest(neo)}
+    native_evidence = [] if args.control else [
+        ensure_native_evidence(kernel, entry, launched, evidence / f'native-retention-{index}.log')
+        for index, entry in enumerate(native_roots)]
     # The kernel's FABRIC native references (--nativeReference), handed over as on every other launch path and frozen
     # with the rest: the sidecar recording this base. The base embeds no index, so there is no soak without one
     # (vanilla_reference stops the run when it can provide none).
@@ -518,6 +669,13 @@ def launch(args):
     validation['finalWorld'] = inventory(world)
     validation['artifactHashesAfter'] = {item['snapshot']: digest(item['snapshot']) for item in records}
     validation['telemetrySha256'] = digest(evidence / 'telemetry.jsonl') if (evidence / 'telemetry.jsonl').is_file() else None
+    # Whatever the verdict: what the rows say of the player and the weather (conditions), so a FAIL can be explained.
+    validation['conditions'] = conditions(read_telemetry(evidence / 'telemetry.jsonl')) if (evidence / 'telemetry.jsonl').is_file() else None
+    if validation['conditions']:
+        told = validation['conditions']
+        print(f"[M34] player {'/'.join(told['gameTypes']) or 'never present'}; rain in {told['rainingRows']} of {told['rows']} "
+              f"row(s), on the player in {told['rainingAtPlayerRows']}, first on the player at "
+              f"{(told['firstRainingAtPlayer'] or {}).get('utc', 'no row')}; {len(told['joinsInRain'])} join(s) into rain", flush=True)
     dump(evidence / 'acceptance.json', validation)
     latest = kernel / 'build/verification/m34-soak'
     latest.mkdir(parents=True, exist_ok=True)

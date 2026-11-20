@@ -636,19 +636,46 @@ public final class KernelModLoader {
 	 * <p>The order comes from what discovery already parsed out of every mod's own metadata — its requirements
 	 * and its explicit load-order declarations — through {@link ModConstructionOrder}. Mods the registry has not
 	 * heard of keep their place rather than being moved to either end.
+	 *
+	 * <p><b>The log states the verdict every time</b>, not only when something moved. It used to speak only when the
+	 * sorted list differed from the found one, so a pack whose jars already came in dependency order logged nothing —
+	 * the same silence as ordering that never ran, or was switched off, or failed. A reader, and every check that
+	 * reads the log, could not tell a healthy run from a broken one (a two-mod pack failed a compatibility run on it).
+	 * So:
+	 * <ul>
+	 * <li>ordering applied, classes moved or not: a line that begins {@value #ORDER_APPLIED} — the one sentence the
+	 *     gates look for, true in both cases;</li>
+	 * <li>ordering switched off ({@code -Dforbric.modOrder=name}): a line that says so and does not begin that way;</li>
+	 * <li>ordering failed: the warning below, and no verdict;</li>
+	 * <li>nothing to construct, or no order to apply because discovery published nothing: no line, as nothing was
+	 *     ordered.</li>
+	 * </ul>
 	 */
-	private static List<ModAnnotationScanner.ModClassInfo> orderByDependency(
+	static List<ModAnnotationScanner.ModClassInfo> orderByDependency(
 			List<ModAnnotationScanner.ModClassInfo> claimed, List<String> order) {
 		try {
+			// No @Mod class is constructed here, so there is no construction order to give a verdict on.
+			if (claimed.isEmpty()) return claimed;
+			// Before the sort, and not by comparing its result: with ordering off the sort returns the list as it came,
+			// which would read as "already in dependency order" — the opposite of the truth.
+			if (!ModConstructionOrder.enabled()) {
+				ForbricLog.info("[Forbric/Order] construction order is the order the mods were found in: dependency "
+						+ "ordering is off (-D%s=name), so a mod may be constructed before one it needs",
+						ModConstructionOrder.SWITCH);
+				return claimed;
+			}
 			if (order.isEmpty()) return claimed;
 
 			List<ModAnnotationScanner.ModClassInfo> sorted =
 					ModConstructionOrder.sort(claimed, info -> info.modId, order);
 
 			if (!sorted.equals(claimed)) {
-				ForbricLog.info("[Forbric/Order] construction order is dependency order, not jar-file order — a mod "
+				ForbricLog.info(ORDER_APPLIED + ", not jar-file order — a mod "
 						+ "that needs another to have run now does (-Dforbric.modOrder=name to go back): %s",
 						sorted.stream().map(KernelModLoader::safeId).distinct().toList());
+			} else {
+				ForbricLog.info(ORDER_APPLIED + ": the %d @Mod class(es) were found in it already, so "
+						+ "none moved (-Dforbric.modOrder=name to switch ordering off)", claimed.size());
 			}
 			return sorted;
 		} catch (Throwable t) {
@@ -657,6 +684,13 @@ public final class KernelModLoader {
 			return claimed;
 		}
 	}
+
+	/**
+	 * How the construction-order line begins whenever the dependency order was applied. gate-m9 and
+	 * {@code run/compat/assert.sh} grep for exactly this, so it is written only where it is true
+	 * ({@code ConstructionOrderVerdictTest} runs their patterns over each case).
+	 */
+	static final String ORDER_APPLIED = "[Forbric/Order] construction order is dependency order";
 
 	/**
 	 * Every mod discovery published, in dependency order ({@link ModConstructionOrder#of}); empty when nothing was

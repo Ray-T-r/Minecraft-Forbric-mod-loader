@@ -671,7 +671,13 @@ the copied mixed pack. It compiles an independent canary, saves a real campfire 
 mod's static cache after normal shutdown on native NeoForge and Forbric. Both arms and their exact mod
 hashes must agree. This attributes one observed native retention issue; it does not clear another retained
 root by itself. Evidence stays under `build/retention-control/`, and `native-retention.json` names the root
-and exact jar hash it proved; a release M34 run re-reads that evidence before launching.
+and exact jar hash it proved; a release M34 run re-reads that evidence before launching. It uses evidence that
+still describes what it was measured on (every file each arm's `inputs.json` records has the recorded bytes, the
+kernel jar among them, and the Forbric arm booted the kernel jar, base and carrier the soak has just frozen), and
+runs `retention-control.py` itself when the evidence is absent or stale, printing why, the command and the seconds
+it took; a measurement that fails, or leaves evidence that still does not describe the run, stops the soak. The
+native image is not installed that way (the official installer downloads): without `build/native-controls/native/neo`
+`retention-control.py` stops before compiling anything and names `native-controls.py prepare --family neo`.
 
 `ui-control.py` requires the built kernel, `FORBRIC_OLD` and `NEO_RT` (`BASE` optional, as for the launchers). It
 creates a nonce-owned copy of the full mixed pack/world under `build/compat-ui/`, publishes late necessary findings,
@@ -734,6 +740,18 @@ confirmed necessary losses and no unclassified failed initialization.
 The client gets the base's vanilla-reference sidecar (`--nativeReference`, from `run/vanilla-reference-jar.sh` or
 `--native-reference`), frozen with the other inputs; when none can be had the soak stops instead of launching, since
 NeoForge's patched game embeds no vanilla index and a client without the sidecar has no FABRIC references at all.
+
+The soak's player is a survival player: a soak drives the game as a survival player's client does, with the whole
+HUD drawn, not as a creative one whose client leaves those paths out. The controller makes it one before a session's
+first row and before every move, with the entity itself invulnerable and without gravity and with `mayfly`/`flying`
+set after the game type (which resets them), so it neither dies nor falls nor is hunted at the six y=160 probes. Every
+`join`/`sample` row carries what the server reports (`gameType`, `flying`, `mayfly`, `invulnerable`, `health`, `food`,
+`y`; the overworld's `raining`/`thundering` and `rainingAtPlayer`) and what the client holds (`clientGameType`,
+`clientFlying`, `hudHidden`). `soak-run.py` refuses a run with an occupied row whose `gameType` is not `survival`, and
+writes a `conditions` summary of those rows into `acceptance.json` for every run that wrote telemetry, a crashed one
+included: the game types seen, how many rows had rain and rain on the player, the first of each, the joins into rain,
+the lowest health and the last row. The weather itself is not touched: it is the copied world's
+(`data/minecraft/weather.dat`), advancing as the game advances it.
 
 Use `--control --seconds 30 --sessions 2 --dwell-ticks 20 --settle-seconds 10` only to test the controller;
 CONTROL_PASS is never release acceptance. `python3 run/compat/test_soak.py` verifies rejection of stale or

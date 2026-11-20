@@ -59,7 +59,7 @@ public final class ClientSoakController {
 	private long lastRespawnRequest;
 	private boolean joining, ownershipChecked;
 	private volatile boolean finished, resultWritten;
-	private record Observation(Sample sample, List<Integer> chunks, String dimension, double x, double z) { }
+	private record Observation(Sample sample, List<Integer> chunks, String dimension, double x, double z, Map<String, Object> world) { }
 	private record Retired(int serial, long at, WeakReference<IntegratedServer> reference) { }
 	private static final int[] COORDINATES = { 2048, 8192, 2048, 8192, 2048, 8192 };
 
@@ -115,6 +115,11 @@ public final class ClientSoakController {
 					"gameTime", sample.gameTime(), "paused", sample.paused(), "occupied", sample.player(),
 					"point", sample.playerPoint(), "loaded", booleans(sample.loaded()), "chunks", observation.chunks(),
 					"dimension", observation.dimension(), "x", observation.x(), "z", observation.z());
+			// What the server said of the player and the weather in that sample, then what this client holds now.
+			// Telemetry only: nothing in the controller decides by it (soak-run.py reads gameType, to refuse a soak
+			// whose player was not a survival player).
+			payload.putAll(observation.world());
+			payload.putAll(clientView(minecraft));
 			if (joining) {
 				// A saved test player can arrive dead or drown while the client is still loading. Such time
 				// is preparation, not occupied gameplay; wait for the native respawn handshake to complete.
@@ -183,10 +188,68 @@ public final class ClientSoakController {
 			for (int i = 0; i < 6; i++) if (player.level() == level(server, i / 2) && Math.abs(x - COORDINATES[i] - .5) < 2 && Math.abs(z - COORDINATES[i] - .5) < 2) point = i;
 		}
 		return new Observation(new Sample(System.nanoTime(), id, server.getTickCount(), server.overworld().getGameTime(),
-				server.isPaused(), alive, point, loaded), List.copyOf(chunks), dimension, x, z);
+				server.isPaused(), alive, point, loaded), List.copyOf(chunks), dimension, x, z, worldView(server, player));
 	}
+	/**
+	 * The server's side of a sample, for the telemetry: the weather, and the player's game type, flight, health and food.
+	 * The weather is the overworld's, the one dimension whose weather advances, plus whether it rains on the block the
+	 * player is in, wherever that is. A verdict has to be explainable from the evidence: a client that dies when rain
+	 * begins can be told from one that dies for another reason only if the rows say when it rained.
+	 */
+	private static Map<String, Object> worldView(IntegratedServer server, ServerPlayer player) {
+		ServerLevel overworld = server.overworld();
+		Map<String, Object> view = fields("raining", overworld.isRaining(), "thundering", overworld.isThundering());
+		if (player == null) return view;
+		view.put("rainingAtPlayer", player.level().isRainingAt(player.blockPosition()));
+		view.put("gameType", player.gameMode().getName());
+		view.put("flying", player.getAbilities().flying); view.put("mayfly", player.getAbilities().mayfly);
+		view.put("invulnerable", player.isInvulnerable());
+		view.put("health", player.getHealth()); view.put("food", player.getFoodData().getFoodLevel());
+		view.put("y", player.getY());
+		return view;
+	}
+	/** The client's side when the row is written: the game type and flight it was told, and whether it hides the HUD. */
+	private static Map<String, Object> clientView(Minecraft minecraft) {
+		Map<String, Object> view = fields("hudHidden", minecraft.gui.hud.isHidden());
+		if (minecraft.gameMode != null) view.put("clientGameType", minecraft.gameMode.getPlayerMode().getName());
+		if (minecraft.player != null) view.put("clientFlying", minecraft.player.getAbilities().flying);
+		return view;
+	}
+	/**
+	 * Makes the one connected player the soak's player: a SURVIVAL player that cannot be hurt and stays where it is put.
+	 *
+	 * <p><b>Why survival.</b> The soak measures what a play session keeps alive, so its client has to run what a
+	 * player's client runs. A survival player's client draws the whole in-game HUD every frame (health, food, air,
+	 * experience) and is the one the game, and anything listening to it, treats as a player who can be hurt. A creative
+	 * player's client leaves those paths out, so a soak driven as one never runs them and its verdict says nothing about
+	 * them. The game type is therefore the ordinary one, and what the soak needs from the player comes from flags that do
+	 * not depend on the game type.
+	 *
+	 * <p><b>What the soak needs, and what gives it.</b> Six probes at y=160 in three dimensions, for two hours, with the
+	 * player alive at each:
+	 * <ul>
+	 * <li>not hurt by anything a world does to a player: the entity's own invulnerable flag, which
+	 *     {@code Entity.isInvulnerableToBase} tests before any damage is applied. Starving and drowning are damage like
+	 *     any other; only the two {@code bypasses_invulnerability} types pass it, the void and {@code /kill}, and y=160
+	 *     is above the void in all three dimensions. A creative player had the same from its abilities;</li>
+	 * <li>not hunted: {@code LivingEntity.canBeSeenAsEnemy} is false for an invulnerable entity, so no mob targets it;</li>
+	 * <li>not falling: no gravity, which does not depend on flight, and {@code mayfly} + {@code flying} so that the
+	 *     client treats the hover as flight. The server does not kick it for floating ({@code MinecraftServer.allowFlight}
+	 *     is true, and an entity without gravity has no flying-tick limit).</li>
+	 * </ul>
+	 *
+	 * <p><b>Order, and why it is safe to repeat.</b> {@code setGameMode} gives the abilities the game type's values
+	 * ({@code GameType.updatePlayerAbilities}: for survival, no {@code mayfly}, not {@code flying}), and loading a saved
+	 * player does the same at every session's join, before this has run. So the game type goes first, the abilities
+	 * after it, and {@code onUpdateAbilities} last, which is what tells the client. This runs once a second while a
+	 * session is joining and before every move: {@code setGameMode} is asked only when the type differs, and the rest
+	 * sets values to what they already are. A game type that will not change (a listener may veto or replace it) fails
+	 * the soak here rather than being soaked as something else.
+	 */
 	private static void preparePlayer(ServerPlayer player) {
-		player.setGameMode(GameType.CREATIVE); player.setInvulnerable(true); player.setNoGravity(true);
+		if (player.gameMode() != GameType.SURVIVAL && (!player.setGameMode(GameType.SURVIVAL) || player.gameMode() != GameType.SURVIVAL))
+			throw new IllegalStateException("the soak player could not be made a survival player; it is " + player.gameMode().getName());
+		player.setInvulnerable(true); player.setNoGravity(true);
 		player.getAbilities().mayfly = true; player.getAbilities().flying = true; player.onUpdateAbilities();
 	}
 	private static ServerLevel level(IntegratedServer server, int dimension) {

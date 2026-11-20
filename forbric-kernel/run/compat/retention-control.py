@@ -2,6 +2,11 @@
 """Reproduce the observed Unlit Campfire cache root on native NeoForge and Forbric.
 Does not patch, clear or weakly replace the mod's cache. A reproduction is evidence of a native mod issue,
 not a blanket waiver for other roots or permission to call an unreviewed soak a pass.
+
+A release m34 soak runs this itself when build/retention-control/comparison.json is absent or no longer describes the
+files on disk and the jars the soak launches (soak-run.py ensure_native_evidence). Each arm's inputs.json is what that
+freshness is read from, so it records every file the arm was measured on: its mods, what booted them, the sources and,
+for the native arm, the installed image's installation.json.
 """
 import importlib.util,json,os,shutil,subprocess,sys,time,uuid,zipfile
 from pathlib import Path
@@ -15,6 +20,13 @@ K=c.KERNEL;BASE=K/'build/retention-control';BASE.mkdir(parents=True,exist_ok=Tru
 # forbric-loader/'s unstamped 26.2.0.88 carrier.
 STAGE=c.forbric_stage()
 image=c.BASE/'native/neo';upstream=K/'run/client-merged-pack/mods/unlitcampfire-neoforge-26.2-4.1.0.0.jar'
+# The two things this cannot make for itself, named before anything is compiled or run. Without the image javac used to
+# fail on an empty classpath, which says nothing about what is missing. It is not installed from here: the official
+# installer downloads NeoForge's libraries, and a measurement does not go to the network on its own.
+if not (image/'installation.json').is_file():
+ sys.exit(f'[retention-control] FAIL no native NeoForge {c.VERSIONS["neo"]} server image at {image}: run `python3 run/compat/native-controls.py prepare --family neo` once in this checkout (it downloads the official installer and installs a server there); nothing was run')
+if not upstream.is_file():
+ sys.exit(f'[retention-control] FAIL the mod whose root this reproduces is not at {upstream}; nothing was run')
 sources=list((K/'canary/retention/src').rglob('*.java'))
 classes=BASE/'classes';classes.mkdir(exist_ok=True)
 subprocess.run(['javac','-proc:none','--release','21','-cp',os.pathsep.join(map(str,c.jars(image))),'-d',str(classes),*map(str,sources)],check=True)
@@ -42,6 +54,7 @@ for engine in ('native','forbric'):
   for key,default in (('BASE',c.STAGED_BASE),('NEO_RT',c.STAGED_CARRIER)):env.setdefault(key,str(old/default))
   carriers=[c.record(Path(env[key])) for key in ('BASE','NEO_RT')]+[c.record(K/'build/libs/forbric-kernel-0.1.0-SNAPSHOT.jar')]
  inputs={'engine':engine,'token':token,'modSet':[c.record(p) for p in sorted((run/'mods').glob('*.jar'))],'carriers':carriers,'sources':[c.record(p) for p in sources]+[c.record(__file__)],'command':command}
+ if engine=='native':inputs['image']=c.record(image/'installation.json')
  c.write_json(run/'inputs.json',inputs);began=time.monotonic();sent=False
  with (run/'server.log').open('w') as log:
   process=subprocess.Popen(command,cwd=run,env=env,stdin=subprocess.PIPE,stdout=log,stderr=subprocess.STDOUT,text=True,start_new_session=True)

@@ -271,6 +271,8 @@ check "construct phase posted"        "posted FML construct to [1-9][0-9]* NeoFo
 # it requires ran first and called that library before it had initialised — the error then comes out of the
 # library, blamed on the library. Two real dependency pairs from this pack, each with the library's name sorting
 # AFTER its user, so alphabetical order gets both of them wrong.
+# The sentence is the kernel's verdict that the dependency order was applied, written whether or not a class moved
+# (ConstructionOrderVerdictTest); that it moved the right ones in THIS pack is what the two pairs below measure.
 check "construction is in dependency order" \
   "Forbric/Order\] construction order is dependency order" "$LOG"
 # Fabric mods are NOT in dependency order, because Fabric Loader has none: it sorts its resolved set by mod id and

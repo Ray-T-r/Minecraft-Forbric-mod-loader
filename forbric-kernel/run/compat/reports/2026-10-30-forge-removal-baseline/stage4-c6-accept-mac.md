@@ -152,15 +152,15 @@ to soak (attempt 2). Not a kernel defect; not fixed here.
   EnhancedVisuals logs `Could not find any resources for '<type>'!` 21 times (all 20 types, `drop` among them) on
   modloading-worker-0 at 01:05:18, and the first `Reloading ResourceManager: vanilla, …, forbric/EnhancedVisuals…` comes at
   01:05:20, after setup. CreativeCore's "Could not load default style" is the same mechanism.
-- **Native comparison (by bytecode, not by a native run).** Genuine NeoForge 26.2.0.93 does the same: in the stage's
+- **Native comparison (by bytecode here; measured since, `stage4-c6-ev-native.md`).** Genuine NeoForge 26.2.0.93 does the same: in the stage's
   patched `Minecraft.<init>` `ClientModLoader.finish()` is at insn 3081 and the first `ReloadableResourceManager.createReload`
   at 3155; `finish()` calls `CommonModLoader.load`, which dispatches the setup events (`ModLoader.dispatchParallelEvent`)
   — so on native NeoForge client setup also runs before any pack is in the resource manager. This is the measurement C3
   recorded when it deleted the client resource preload (b7dd2f64, D16; stage2-measurements.md "preloadClientResources",
   stage4-c3-runtime-injectors.md row 30: "the only new lines are EnhancedVisuals' 20 'Could not find any resources' …
   native NeoForge behaviour"). What C3 did not record: those 20 warnings are not harmless — the first rain crashes the
-  client. I did **not** run a native NeoForge client with EnhancedVisuals (no native client image exists here), so "native
-  crashes the same way" is an inference from the bytecode above, not a measurement.
+  client. This lane did not run a native NeoForge client; the native A/B run afterwards did (`stage4-c6-ev-native.md`: 20
+  runs, native and Forbric agree in all 12 arms), so "native crashes the same way" is now a measurement.
 - **Consequence for acceptance.** Under the guiding rule this is native behaviour, not a Forbric defect, but it is a
   player-visible regression against the merged-base builds, whose preload gave the resource manager its packs before mod
   setup (8c58428d), so EnhancedVisuals found its textures there (C3: the 20 warnings are new after b7dd2f64). And m34 cannot pass at this tip whenever the overworld rains on the
@@ -175,7 +175,7 @@ INSTFIX R-5 (m17 phase U client stall) did not recur. The release flow refuses t
 ## Not done by this lane
 
 - No full `gates-all.sh --release` with m34 inside (it would have re-run step 2's 59 gates and m34; R2 shows the verdict
-  it must give while D58 stands). No native client A/B for F2. No re-run of m34 (2 h, and its outcome is decided by F2).
+  it must give while D58 stands). No native client A/B for F2 in this lane (run afterwards: `stage4-c6-ev-native.md`). No re-run of m34 (2 h, and its outcome is decided by F2).
 - The Windows half of ACCEPT (lane WIN) is not in this record.
 
 ## Clean-up

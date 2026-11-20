@@ -23,6 +23,10 @@ ck  "common setup inside Minecraft ctor" "\[Render thread/INFO\]: \[Forbric/Life
 abs "…not from the pre-Minecraft window" "\[main/INFO\]: \[Forbric/Lifecycle\] posted FML common setup"
 ck  "registration events ran"           "ran NeoForge.s registration events.* [1-9][0-9]* data map type"
 ck  "load complete posted"              "posted FML load complete to [1-9][0-9]* NeoForge mod"
+# The kernel writes this sentence whenever it applied the dependency order to construction, whether a class had to move
+# or the classes were found in that order already; with ordering switched off or failed it writes another line or a
+# warning, and never this one (KernelModLoader.orderByDependency, ConstructionOrderVerdictTest). It used to be written
+# only when something moved, so a small pack with nothing to reorder failed here while healthy (C6 ACCEPT W-2).
 ck  "construction is dependency order"  "Forbric/Order\] construction order is dependency order"
 ck  "Fabric init is Fabric Loader order" "Forbric/Order\] [1-9][0-9]* Fabric mod\(s\) initialise in Fabric Loader.s order, by mod id"
 ck  "Fabric mains in Minecraft.<init>" "\[Render thread/INFO\]: \[Forbric/Fabric\] invoked [1-9][0-9]* Fabric main entrypoint\(s\) in the Minecraft.<init> window"
