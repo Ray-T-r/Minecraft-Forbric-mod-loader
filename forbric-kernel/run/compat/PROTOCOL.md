@@ -532,11 +532,22 @@ A gate's checks must read only files its own run wrote. A gate writes its logs u
 `build/`, and a step that does not run writes none, so the file of the run before stays where that
 step's checks look: `check` fails on a missing or empty log but cannot tell this run's log from the
 last run's. `lib.sh`'s `discard_earlier_run <prefix> [keep-name ...]` removes every `build/<prefix>*`
-an earlier run left (not the names it is told to keep, and not the file this run's own output goes
-to); a gate calls it before it writes anything. gate-m17 does, for `gate-m17-`: a run whose first
-install failed used to print PASS for the command and the client log of the run before. `python3
-run/compat/test_gate_own_files.py` runs the real `lib.sh` over planted files, with the unguarded state
-as its control, and holds every `build/` name in gate-m17 to that prefix. No other gate calls it yet.
+an earlier run left (not the names it is told to keep, and not the file this run's own output is
+redirected to); a gate calls it before it writes anything. It covers `build/` and nothing else, and
+it knows the run's own output file only by a direct redirection: output piped into a
+`build/<prefix>*` file (`| tee build/gate-mX.out`) is removed as an earlier run's, so such output
+goes to a name outside the prefix. gate-m17 calls it, for `gate-m17-`: a run whose first install
+failed used to print PASS for the command and the client log of the run before. Its phase U has a
+second source of files no install of the run wrote, on purpose: the directory it upgrades is a copy
+of the released v0.3.1-beta2 install, which holds files under names this install writes too. There
+"this install's own file is there" needs a file that differs from the old install's or carries a
+`.pins` stamp this run wrote (NeoForge 26.2.0.93's patched game is byte for byte 26.2.0.88's, so that
+jar legitimately comes through unchanged, with a new stamp), and a profile that is still the old
+install's is neither resolved nor launched. The checks of what the old install holds read beta2's
+files, as they are meant to. `python3 run/compat/test_gate_own_files.py` runs the real `lib.sh` over
+planted files, with the unguarded state as its control, holds every `build/` name in gate-m17 to
+that prefix (written as `$BUILD/name`, the one spelling it reads), and reads phase U's two rules and
+the hashing of the player's files as text. No other gate calls `discard_earlier_run` yet.
 
 The script's output is exactly the RESULT lines, byte for byte the same as `summary.txt`.
 The running commentary — what started when, on which slot and port, what each gate cost, and
@@ -697,9 +708,13 @@ to the gate's file. Everything the soak starts runs in a session of its own, so 
 `soak-run.py` takes SIGTERM and SIGHUP as the interruption Ctrl-C is, for the whole run (a gate started in the
 background ignores Ctrl-C, so SIGTERM is the way to stop one). While it measures it tells the measurement to stop
 (SIGTERM, thirty seconds) and the measurement stops the server it started; while the client runs it stops the client's
-process group and records the run as the failed run it is. The soak and its measurement run on macOS and Linux only
-(bash launchers, process groups); their self-tests also run on Windows, where the same code names the signals that
-system has (SIGTERM and SIGBREAK; it has no SIGHUP) and ends the client's tree with `taskkill /F /T`. The
+process group and records the run as the failed run it is. It is interrupted once: a second stop signal, or Ctrl-C
+after one, used to interrupt the stopping itself and leave the client running with no record, so later ones are
+counted and change nothing (the stopping ends within its thirty seconds either way). The soak and its measurement
+run on macOS and Linux only (bash launchers, process groups). Their self-tests are also discovered on Windows, which
+has no SIGHUP and no process groups: there the code names SIGTERM and SIGBREAK and would end the client's tree with
+`taskkill /F /T`. Those Windows branches have not been run on Windows (the `taskkill` line only with `subprocess.run`
+modelled); CI's windows-latest leg is where they are first measured. The
 native image is not installed that way (the official installer downloads): without `build/native-controls/native/neo`
 `retention-control.py` stops before compiling anything and names `native-controls.py prepare --family neo`.
 

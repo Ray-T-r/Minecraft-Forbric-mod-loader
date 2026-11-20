@@ -43,27 +43,59 @@ def stop_signals():
     return tuple(getattr(signal, name) for name in ('SIGTERM', 'SIGHUP', 'SIGBREAK') if hasattr(signal, name))
 
 
+# The stop signals the running stop_signals_interrupt block has seen so far; None while no such block runs.
+STOPS_SEEN = None
+
+
 @contextlib.contextmanager
 def stop_signals_interrupt():
     """While the block runs, the stop signals (stop_signals: SIGTERM and SIGHUP) are the interruption Ctrl-C is
-    (KeyboardInterrupt), and the handlers in force before are back afterwards.
+    (KeyboardInterrupt), once, and the handlers in force before are back afterwards.
 
     Everything the soak starts runs in a session of its own (the client, and through the reproduction its servers), so
     a signal to the soak's process group reaches none of it, and Python's default for SIGTERM ends the soak on the spot:
     the client then plays on for its two hours with nobody waiting for it, outside the locks the soak was started
     under. A gate started in the background cannot be stopped with Ctrl-C either (a non-interactive shell starts its
-    background jobs with SIGINT ignored), so SIGTERM is the one way to stop it, and it has to stop what was started."""
+    background jobs with SIGINT ignored), so SIGTERM is the one way to stop it, and it has to stop what was started.
+
+    Once: the interruption starts the stopping (the client's group told to stop, thirty seconds, killed; the
+    measurement likewise), and a second signal used to interrupt the stopping itself. The soak then left with exit 130
+    and no record while the client it had started was still running -- a second `kill`, a second Ctrl-C, or the two
+    SIGHUPs of a closing terminal, against a client that had not gone yet. So only the first stop raises; later ones
+    are counted and change nothing, since what they ask for is already under way and ends within its thirty seconds.
+    Ctrl-C is in the same count where it would raise at all (Python's own handler in force; the ignored SIGINT of a
+    background job stays ignored), and a block inside another (the measurement inside main's) is part of the outer
+    one, so no mix of the three signals and no nesting gets a second interruption through."""
+    global STOPS_SEEN
+    if STOPS_SEEN is not None:
+        yield
+        return
+    stops = []
     def interrupted(number, frame):
-        raise KeyboardInterrupt(f'signal {number}')
+        # Whether this is the first is settled before it is counted, not read back from the count: two signals a few
+        # microseconds apart run this handler inside itself (Python runs a handler between any two instructions of
+        # the main thread, another handler's included), and a first call that found two entries after its own
+        # append raised nothing at all -- the soak then carried on as if nobody had stopped it (measured: SIGHUP,
+        # SIGTERM and SIGINT sent together). A call that starts before anything is counted is a first call; when a
+        # second one starts inside it at that point, its interruption goes out through both.
+        first = not stops
+        stops.append(number)
+        if first:
+            raise KeyboardInterrupt(f'signal {number}')
     previous = {}
     try:
-        for number in stop_signals():
+        taken = list(stop_signals())
+        if signal.getsignal(signal.SIGINT) is signal.default_int_handler:
+            taken.append(signal.SIGINT)
+        for number in taken:
             previous[number] = signal.signal(number, interrupted)
     except ValueError:
         pass  # not the main thread: signals are the main thread's to turn into an interruption
+    STOPS_SEEN = stops
     try:
         yield
     finally:
+        STOPS_SEEN = None
         for number, handler in previous.items():
             signal.signal(number, handler)
 
@@ -75,7 +107,8 @@ def signal_owned_group(process, force=False):
     of it and nothing else. Windows has no process groups to signal and no SIGTERM or SIGKILL to send (os.killpg is not
     there to call), so the tree is ended there with `taskkill /F /T`, as tools/nightly/run_nightly.py's stop() and
     run/compat/win/common.py's finish() end theirs; there is no asking first on that system, so both calls do the same.
-    Which path is taken is decided by whether this Python has os.killpg, not by the system's name."""
+    Which path is taken is decided by whether this Python has os.killpg, not by the system's name. The taskkill path
+    has run only with subprocess.run modelled (test_soak): the soak itself does not run on Windows, its self-tests do."""
     killpg = getattr(os, 'killpg', None)
     if killpg is None:
         subprocess.run(['taskkill', '/F', '/T', '/PID', str(process.pid)], capture_output=True)
@@ -789,7 +822,8 @@ def launch(args):
                 code = wait_for_client(process, evidence / 'client.log', args.timeout or max(args.seconds * 2, args.seconds + 1800))
             except KeyboardInterrupt:
                 # Ctrl-C, or SIGTERM/SIGHUP (main's stop_signals_interrupt): the client is in its own session and is
-                # stopped here; the run is then recorded as the failed run it is.
+                # stopped here; the run is then recorded as the failed run it is. A further stop signal does not
+                # raise again (that block interrupts once), so the thirty seconds and the kill after them always run.
                 signal_owned_group(process)
                 try: process.wait(timeout=30)
                 except subprocess.TimeoutExpired: signal_owned_group(process, force=True); process.wait()

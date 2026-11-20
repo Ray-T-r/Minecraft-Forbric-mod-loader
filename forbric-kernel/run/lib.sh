@@ -218,12 +218,17 @@ readable() {
 # under fixed names in $BUILD, and a step that does not run leaves the earlier run's file where its checks look:
 # gate-m17 printed eighteen PASS lines in a run whose first install had failed (2026-11-20, a download: no profile, so
 # no resolved command and no client, and sixteen checks read the command and the client log of the run before). A gate
-# that calls this before it writes anything can only read what it wrote itself, and a check whose input this run did
-# not produce fails with "no log to read".
+# that calls this before it writes anything finds under $BUILD/<name-prefix>* only what it wrote itself, and a check
+# whose log this run did not produce fails with "no log to read". That is all it covers: files a gate reads elsewhere
+# (an install directory, a run directory, a cache it keeps on purpose) are the gate's own to empty or to tell apart.
 # Two kinds of file stay: each <keep-name> (one the gate keeps across runs on purpose, and that no check reads), and
 # whatever this run's own output is going to (a caller's `bash run/gate-mX.sh > build/gate-mX.out`): that one is this
 # run's already, and unlinking it would lose the run's output. It is told by fstat of this shell's stdout and stderr,
 # not by `-ef /dev/stdout`: macOS answers stat(/dev/fd/1) with the descriptor file system's own node.
+# Only a direct redirection is told that way. Output that reaches such a file through a pipe (`... | tee
+# build/gate-mX.out`, `... | cat > build/gate-mX.out`) is a pipe to this shell, the file looks like an earlier run's and
+# is removed, and the run's output goes with it: send a gate's output to a name outside its prefix (gates-parallel.py
+# writes build/gates/<gate>.log), or redirect it directly.
 discard_earlier_run() {
   local prefix="${1:-}"
   [ -n "$prefix" ] || { echo "[kernel] FATAL: discard_earlier_run needs the name prefix of the gate's files" >&2; exit 3; }

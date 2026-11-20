@@ -9,6 +9,7 @@ import json
 import gzip
 import os
 import re
+import shlex
 import signal
 import sys
 import tempfile
@@ -365,17 +366,27 @@ class SoakVerifierTest(unittest.TestCase):
             script.write_text('import signal,sys,time\nfrom pathlib import Path\n'
                               f'def stop(*_):\n time.sleep(.3);Path({str(marker)!r}).write_text("stopped");sys.exit(1)\n'
                               f'signal.signal(signal.SIGTERM,stop);Path({str(ready)!r}).write_text("up");time.sleep(60)\n')
+            # The signal goes to this very process, so the test owns what a stray one does: for its whole length SIGTERM
+            # has a handler of the test's that only notes it, and the sender sends only once the measurement is up and
+            # only until the test is over. Without both, a run in which the measurement never came up (a temporary
+            # directory with a space in its path, before the command quoted it) failed its assertion and was then
+            # ended by its own SIGTERM, up to ten seconds later, in the middle of whatever test ran next.
+            late=[];over=threading.Event();outer=signal.signal(signal.SIGTERM,lambda number,frame:late.append(number))
             before=signal.getsignal(signal.SIGTERM)
             def interrupt():
                 for _ in range(200):
-                    if ready.is_file():break
-                    threading.Event().wait(.05)
-                os.kill(os.getpid(),signal.SIGTERM)
-            threading.Thread(target=interrupt,daemon=True).start()
-            with self.assertRaises(KeyboardInterrupt):
-                soak.run_reproduction(root,dict(reproduce=f'python3 {script}'),root/'r.log')
-            self.assertEqual('stopped',marker.read_text(),'the reproduction was told to stop and waited for')
-            self.assertIs(before,signal.getsignal(signal.SIGTERM),'the handler in force before the measurement is restored')
+                    if ready.is_file() or over.is_set():break
+                    over.wait(.05)
+                if ready.is_file() and not over.is_set():os.kill(os.getpid(),signal.SIGTERM)
+            sender=threading.Thread(target=interrupt,daemon=True);sender.start()
+            try:
+                with self.assertRaises(KeyboardInterrupt):
+                    soak.run_reproduction(root,dict(reproduce=f'python3 {shlex.quote(str(script))}'),root/'r.log')
+                self.assertEqual('stopped',marker.read_text(),'the reproduction was told to stop and waited for')
+                self.assertIs(before,signal.getsignal(signal.SIGTERM),'the handler in force before the measurement is restored')
+                self.assertEqual([],late,'the one SIGTERM reached the soak\'s handler, not the one in force outside the measurement')
+            finally:
+                over.set();sender.join();signal.signal(signal.SIGTERM,outer)
     def test_a_stopped_soak_is_interrupted_like_ctrl_c_and_stops_its_client(self):
         # A stop signal while the soak runs is the interruption Ctrl-C is, for the whole run: main() turns it into one,
         # and the handler in force before is back when main() returns. SIGTERM and SIGHUP where the soak runs; Windows
@@ -389,6 +400,64 @@ class SoakVerifierTest(unittest.TestCase):
             with patch.object(soak,'launch',side_effect=launch),patch.object(sys,'argv',argv):
                 with self.assertRaises(KeyboardInterrupt) as stopped:soak.main()
             self.assertEqual(f'signal {int(number)}',str(stopped.exception));self.assertIsNot(before,seen[0]);self.assertIs(before,signal.getsignal(number))
+        # Once. The interruption starts the stopping, and a further stop signal must not interrupt that: it used to end
+        # the soak with exit 130 and no record while the client it had started was still running. So after the first,
+        # every stop signal and Ctrl-C are counted and raise nothing, also in a block inside this one (the
+        # measurement's is inside main's). Ctrl-C is in the count where it would raise at all: Python's own handler is
+        # put in force here for the length of the test, since a runner started as a background job has it ignored.
+        ctrl_c=signal.signal(signal.SIGINT,signal.default_int_handler)
+        try:
+            for number in soak.stop_signals():
+                seen=[]
+                def launch(args):
+                    try:deliver(number);threading.Event().wait(5)
+                    except KeyboardInterrupt as first:
+                        seen.append(str(first))
+                        for again in (*soak.stop_signals(),signal.SIGINT):
+                            deliver(again);threading.Event().wait(.05)
+                        seen.append(list(soak.STOPS_SEEN))
+                        with soak.stop_signals_interrupt():
+                            deliver(number);threading.Event().wait(.05)
+                        seen.append(list(soak.STOPS_SEEN))
+                        return 1
+                    return 0
+                with patch.object(soak,'launch',side_effect=launch),patch.object(sys,'argv',argv):
+                    self.assertEqual(1,soak.main(),'the stopping ran to its end')
+                counted=[number,*soak.stop_signals(),signal.SIGINT]
+                self.assertEqual([f'signal {int(number)}',counted,counted+[number]],seen)
+                self.assertIsNone(soak.STOPS_SEEN);self.assertIs(signal.default_int_handler,signal.getsignal(signal.SIGINT))
+            # Signals a few microseconds apart run the handler inside itself. Whichever instruction of the first
+            # call the second arrives at, exactly one interruption comes out (counting first and asking afterwards
+            # whether the count is one raised none: the soak then went on as if it had not been stopped). The second
+            # signal is delivered at each line of the running handler in turn.
+            first,second=soak.stop_signals()[0],soak.stop_signals()[-1]
+            arrived_inside=0
+            for line in range(1,8):
+                seen_lines=[];sent=[]
+                def inside(frame,event,argument):
+                    if event=='line':
+                        seen_lines.append(frame.f_lineno)
+                        if len(seen_lines)==line and not sent:sent.append(second);deliver(second)
+                    return inside
+                def tracer(frame,event,argument):
+                    return inside if frame.f_code.co_name=='interrupted' and not sent else None
+                raised=0
+                with soak.stop_signals_interrupt():
+                    sys.settrace(tracer)
+                    try:deliver(first);threading.Event().wait(.05)
+                    except KeyboardInterrupt:raised+=1
+                    finally:sys.settrace(None)
+                    try:threading.Event().wait(.05)
+                    except KeyboardInterrupt:raised+=1
+                    counted=list(soak.STOPS_SEEN)
+                self.assertEqual(1,raised,f'one interruption when the second signal arrives at line {line} of the handler (counted {counted})')
+                arrived_inside+=bool(sent)
+            self.assertGreaterEqual(arrived_inside,3,'the second signal was delivered inside the running handler')
+            # An ignored Ctrl-C (a job a non-interactive shell started in the background) stays ignored.
+            signal.signal(signal.SIGINT,signal.SIG_IGN)
+            with soak.stop_signals_interrupt():self.assertIs(signal.SIG_IGN,signal.getsignal(signal.SIGINT))
+        finally:
+            signal.signal(signal.SIGINT,ctrl_c)
         # In the client's wait that interruption stops the client's own process group (it is in a session of its own:
         # nothing else would) and the run is recorded as a failed run, not left without a verdict.
         with tempfile.TemporaryDirectory() as temporary:
@@ -410,19 +479,27 @@ class SoakVerifierTest(unittest.TestCase):
             source={'root':str(root),'commit':'test','sha256':'source-content','files':{},'dirty':False}
             # The group API is modelled (create=True), as in the crash tests below: Windows has no os.killpg, and
             # signal_owned_group takes the path this Python has one for.
-            signals=[]
-            class Child:
-                pid=4242;returncode=None
-                def __init__(self,command,cwd,**kwargs):pass
-                def wait(self,timeout=None):self.returncode=-15;return -15
-                def poll(self):return self.returncode
-            def stopped(process,log,timeout):raise KeyboardInterrupt('signal 15')
+            # Told to stop, thirty seconds, and killed only when they run out (a client that does not go on SIGTERM).
             reference=put(root/'reference/vanilla-reference.jar',b'sidecar')
-            with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',side_effect=stopped),patch.object(soak.os,'killpg',side_effect=lambda pid,value:signals.append((pid,value)),create=True),patch('builtins.print'):
-                self.assertEqual(1,soak.launch(args))
-            self.assertEqual([(4242,signal.SIGTERM)],signals,'the client\'s own process group is told to stop')
-            acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
-            self.assertEqual(('FAIL',-1),(acceptance['status'],acceptance['exitCode']));self.assertIn('client exited abnormally: -1',acceptance['detail'])
+            def stopped(process,log,timeout):raise KeyboardInterrupt('signal 15')
+            for goes_when_told in (True,False):
+                signals=[];waits=[]
+                class Child:
+                    pid=4242;returncode=None
+                    def __init__(self,command,cwd,**kwargs):pass
+                    def wait(self,timeout=None):
+                        waits.append(timeout)
+                        if timeout is not None and not goes_when_told:raise soak.subprocess.TimeoutExpired('client',timeout)
+                        self.returncode=-15 if goes_when_told else -9;return self.returncode
+                    def poll(self):return self.returncode
+                with patch.object(soak,'source_record',return_value=source),patch.object(soak,'vanilla_reference',return_value=reference),patch.object(soak.subprocess,'Popen',Child),patch.object(soak,'wait_for_client',side_effect=stopped),patch.object(soak.os,'killpg',side_effect=lambda pid,value:signals.append((pid,value)),create=True),patch.object(soak.signal,'SIGKILL',9,create=True),patch('builtins.print'):
+                    self.assertEqual(1,soak.launch(args))
+                    self.assertEqual([(4242,signal.SIGTERM)]+([] if goes_when_told else [(4242,soak.signal.SIGKILL)]),signals,
+                                     'the client\'s own process group is told to stop, and killed only after its thirty seconds')
+                self.assertEqual([30]+([] if goes_when_told else [None]),waits)
+                acceptance=json.loads((kernel/'build/verification/m34-soak/last-control.json').read_text())['acceptance']
+                self.assertEqual(('FAIL',-1),(acceptance['status'],acceptance['exitCode']));self.assertIn('client exited abnormally: -1',acceptance['detail'])
+                (kernel/'build/verification/m34-soak/last-control.json').unlink()
     def test_the_reproduction_names_what_it_lacks_and_records_what_it_was_measured_on(self):
         # retention-control.py's own pieces (it runs nothing at import): the refusal that names the missing native image
         # and its one command, and an arm's record, which is what soak-run.py's freshness check reads.

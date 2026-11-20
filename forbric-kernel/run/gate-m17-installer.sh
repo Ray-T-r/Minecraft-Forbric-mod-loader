@@ -72,12 +72,17 @@ MC="${MC_DIR:-$HOME/Library/Application Support/minecraft}"
 WORLD="${M17_WORLD:-ForbricTest}"
 SRC_RUNDIR="${M17_SRC_RUNDIR:-$KERNEL/run/client-merged-pack}"
 mkdir -p "$BUILD"
-# Only this run's files. Every check below reads a file this gate writes under $BUILD by a fixed name (each install's
-# log, the resolved command, the client's log, ...), and a step that does not run writes none: whatever an earlier run
-# left is removed here, before anything is written, so such a check fails with "no log to read" instead of passing on the
-# last run's file (lib.sh discard_earlier_run says what happened; run/compat/test_gate_own_files.py holds every $BUILD
-# name in this gate to the prefix). Kept: the log of phase U's old install, which is laid out once and reused -- it is
-# that install's record, and nothing reads it after the step that writes it.
+# Only this run's files under $BUILD. Every check below that reads a log reads one this gate writes under $BUILD by a
+# fixed name (each install's log, the resolved command, the client's log, ...), and a step that does not run writes
+# none: whatever an earlier run left is removed here, before anything is written, so such a check fails with "no log to
+# read" instead of passing on the last run's file (lib.sh discard_earlier_run says what happened;
+# run/compat/test_gate_own_files.py holds every $BUILD name in this gate to the prefix). Kept: the log of phase U's old
+# install, which is laid out once and reused -- it is that install's record, and nothing reads it after the step that
+# writes it.
+# That is $BUILD only. The two install directories are emptied by the gate itself ($DEST before the first install,
+# $DEST_UP before phase U), and phase U's starts as a copy of the cached v0.3.1-beta2 install on purpose: the checks of
+# what the old install holds read beta2's files, and the checks of what THIS install produced there are told from them
+# by digest and by the install's own stamps (UP_OLD_OWN, UP_OLD_STAMP, UP_OLD_PROFILE, in phase U).
 discard_earlier_run gate-m17- gate-m17-beta2-install.log
 
 [ -d "$MC/assets" ] || { echo "[kernel] SKIP-FATAL: no Minecraft assets at $MC/assets" >&2; exit 3; }
@@ -749,7 +754,13 @@ cp -R "$SRC_RUNDIR/defaultconfigs" "$DEST_UP/defaultconfigs" 2>/dev/null || true
 cp "$SRC_RUNDIR/options.txt" "$DEST_UP/options.txt" 2>/dev/null || true
 mkdir -p "$DEST_UP/mods" "$DEST_UP/quickPlay"
 cp "$SRC_RUNDIR/mods"/*.jar "$DEST_UP/mods/" 2>/dev/null || true
-user_data() { (cd "$DEST_UP" && find mods saves config defaultconfigs options.txt -type f 2>/dev/null | LC_ALL=C sort | xargs shasum -a 1); }
+# Every one of them, whatever its name: handed to shasum through xargs's word splitting, the files with a space in their
+# names were never read (shasum got halves of each name and said "No such file"), and the comparison after the upgrade
+# passed on the rest -- 401 of this pack's 426 files, 23 mod jars and 2 configs not among them. Names go through NUL
+# separated, and the list has to be as long as the number of files there.
+user_files() { (cd "$DEST_UP" && find mods saves config defaultconfigs options.txt -type f 2>/dev/null | wc -l | tr -d ' '); }
+user_data() { (cd "$DEST_UP" && find mods saves config defaultconfigs options.txt -type f -print0 2>/dev/null | xargs -0 shasum -a 1 | LC_ALL=C sort -k 2); }
+UP_USER_FILES=$(user_files)
 user_data > "$BUILD/gate-m17-upgrade-userdata-before.txt"
 
 # What must go (relative to $DEST_UP) and what must stay: everything of beta2's that no profile names, every
@@ -809,6 +820,25 @@ echo "[kernel] dl/: $UP_DL_GONE of beta2's $(wc -l < "$BUILD/gate-m17-upgrade-dl
 UP_PRESENT_BEFORE=0
 for rel in "${UP_GONE[@]}" "${UP_KEPT_OLD[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_PRESENT_BEFORE=$((UP_PRESENT_BEFORE+1)); done
 assert_eq "the old layout holds every file phase U judges" "$(( ${#UP_GONE[@]} + ${#UP_KEPT_OLD[@]} ))" "$UP_PRESENT_BEFORE"
+# What the old install left under names this install writes too (beta2 built a NeoForge base and runtime of its own into
+# out/, each with its .pins stamp, and its profile has this one's name): their digests, before either install below
+# runs. "This install's own file is there" and the boot at the end are said of what an install of THIS run produced, and
+# with both installs failing (every download refused, the control of 2026-11-21) the gate printed PASS for four of beta2's
+# files, then resolved beta2's profile, booted beta2's kernel into the world and printed PASS for that too.
+# So a file that is still the old install's byte for byte counts as this install's only when this run stamped it: its
+# .pins is not the old one. That case is real and green -- NeoForge 26.2.0.93 patches the game to the same bytes
+# 26.2.0.88 did, so out/patched-mc-neoforge-26.2.jar comes through an upgrade unchanged (old date and all, measured
+# 2026-11-21) while the install rewrites its stamp from neoforge=26.2.0.88 to .93. A stamp, and the profile, have no
+# stamp of their own: unchanged, they are the old install's.
+file_sha1() { [ -f "$1" ] && shasum -a 1 < "$1" | cut -d' ' -f1; }
+UP_PROFILE="$DEST_UP/versions/26.2-forbric/26.2-forbric.json"
+UP_OLD_PROFILE="$(file_sha1 "$UP_PROFILE")"
+UP_OLD_OWN=()
+UP_OLD_STAMP=()
+for rel in "${UP_CURRENT[@]}"; do
+  UP_OLD_OWN+=("$(file_sha1 "$DEST_UP/$rel")")
+  UP_OLD_STAMP+=("$(file_sha1 "$DEST_UP/$rel.pins")")
+done
 
 step "phase U, reverse control: the same installer with its clean-up off leaves every old file (must PASS)"
 java "${INSTALLER_LANG[@]}" -Dforbric.installerCleanup=off -jar "$JAR" --dir "$DEST_UP" --mc 26.2 > "$BUILD/gate-m17-upgrade-off.log" 2>&1
@@ -822,7 +852,6 @@ for rel in "${UP_GONE[@]}"; do [ -e "$DEST_UP/$rel" ] && UP_RED=$((UP_RED+1)); d
 assert_eq "every one of phase U's ${#UP_GONE[@]} removal checks is red with the clean-up off" "${#UP_GONE[@]}" "$UP_RED"
 
 step "phase U: the profile the new installer wrote over the old one (must PASS)"
-UP_PROFILE="$DEST_UP/versions/26.2-forbric/26.2-forbric.json"
 UP_PROFILE_CHECKS=$(python3 - "$UP_PROFILE" <<'UPPROF'
 import json, sys
 text = open(sys.argv[1]).read()
@@ -868,9 +897,17 @@ for rel in "${UP_KEPT_OLD[@]}"; do
   [ -f "$DEST_UP/$rel" ] && echo "[kernel] PASS kept, the keep-old profile still names it: $rel" \
     || { echo "[kernel] FAIL removed, though the keep-old profile names it: $rel"; FAIL=1; }
 done
+UP_OWN_INDEX=0
 for rel in "${UP_CURRENT[@]}"; do
-  [ -f "$DEST_UP/$rel" ] && echo "[kernel] PASS this install's own file is there: $rel" \
-    || { echo "[kernel] FAIL this install's own file is missing: $rel"; FAIL=1; }
+  UP_OWN_WAS="${UP_OLD_OWN[$UP_OWN_INDEX]}"; UP_STAMP_WAS="${UP_OLD_STAMP[$UP_OWN_INDEX]}"; UP_OWN_INDEX=$((UP_OWN_INDEX+1))
+  UP_STAMP_NOW="$(file_sha1 "$DEST_UP/$rel.pins")"
+  if [ ! -f "$DEST_UP/$rel" ]; then
+    echo "[kernel] FAIL this install's own file is missing: $rel"; FAIL=1
+  elif [ -n "$UP_OWN_WAS" ] && [ "$(file_sha1 "$DEST_UP/$rel")" = "$UP_OWN_WAS" ] && { [ -z "$UP_STAMP_NOW" ] || [ "$UP_STAMP_NOW" = "$UP_STAMP_WAS" ]; }; then
+    echo "[kernel] FAIL this install's own file is still the old install's, byte for byte, and no install of this run stamped it: $rel"; FAIL=1
+  else
+    echo "[kernel] PASS this install's own file is there: $rel"
+  fi
 done
 # .forbric-build's own level, out/, tools/ and dl/ (owner ruling 6 of C6: the download cache keeps only this install's
 # inputs, so beta2's MinecraftForge downloads go too). NFRT's caches and work tree hold names of their own (an "ats" among
@@ -889,10 +926,12 @@ FORBRIC_LEFT=$(cd "$DEST_UP/libraries" && find net/forbric -type f | LC_ALL=C so
 FORBRIC_WANT=$(for rel in "${UP_KEPT_OLD[@]}" "${UP_CURRENT[@]}"; do case "$rel" in (libraries/*) echo "${rel#libraries/}";; esac; done | LC_ALL=C sort | tr '\n' ' ')
 assert_eq "libraries/net/forbric holds exactly this install's files and the ones another profile names" "$FORBRIC_WANT" "$FORBRIC_LEFT"
 user_data > "$BUILD/gate-m17-upgrade-userdata-after.txt"
-if cmp -s "$BUILD/gate-m17-upgrade-userdata-before.txt" "$BUILD/gate-m17-upgrade-userdata-after.txt"; then
+UP_USER_READ=$(wc -l < "$BUILD/gate-m17-upgrade-userdata-before.txt" | tr -d ' ')
+if [ "$UP_USER_FILES" -gt 0 ] && [ "$UP_USER_READ" = "$UP_USER_FILES" ] && [ "$(user_files)" = "$UP_USER_FILES" ] \
+    && cmp -s "$BUILD/gate-m17-upgrade-userdata-before.txt" "$BUILD/gate-m17-upgrade-userdata-after.txt"; then
   echo "[kernel] PASS the player's mods, saves, config and options are byte-identical ($(wc -l < "$BUILD/gate-m17-upgrade-userdata-after.txt" | tr -d ' ') files)"
 else
-  echo "[kernel] FAIL the player's files changed across the upgrade"; FAIL=1
+  echo "[kernel] FAIL the player's files changed across the upgrade, or were not all read ($UP_USER_FILES file(s) before it, $UP_USER_READ read; $(user_files) after it, $(wc -l < "$BUILD/gate-m17-upgrade-userdata-after.txt" | tr -d ' ') read): $BUILD/gate-m17-upgrade-userdata-before.txt vs -after.txt"; FAIL=1
 fi
 
 step "phase U: the upgraded directory boots into the world (must PASS)"
@@ -900,9 +939,16 @@ UP_COPIED=$(copy_vanilla_libraries "$DEST_UP")
 echo "[kernel] copied $UP_COPIED vanilla librar(ies) into the upgraded install"
 UP_CMD="$BUILD/gate-m17-upgrade-command.txt"
 UP_CLOG="$BUILD/gate-m17-upgrade-client.log"
-resolve_profile "$DEST_UP" "$UP_CMD"
-UP_RC=$?
-assert_eq "the upgraded profile resolved like a launcher would" "0" "$UP_RC"
+if [ -n "$UP_OLD_PROFILE" ] && [ "$(file_sha1 "$UP_PROFILE")" = "$UP_OLD_PROFILE" ]; then
+  # Still beta2's profile: resolving it resolves beta2's command, and launching that boots beta2's kernel. Neither is
+  # done, so every check below fails on a file this run did not write ("no log to read").
+  echo "[kernel] FAIL the upgraded profile resolved like a launcher would (not resolved: the profile is still the old install's, byte for byte -- no install of this run wrote it)"; FAIL=1
+  UP_RC=1
+else
+  resolve_profile "$DEST_UP" "$UP_CMD"
+  UP_RC=$?
+  assert_eq "the upgraded profile resolved like a launcher would" "0" "$UP_RC"
+fi
 check "and it runs this kernel, not beta2's" "/forbric-kernel-$VERSION\.jar" "$UP_CMD"
 [ "$UP_RC" -eq 0 ] && launch_resolved "$DEST_UP" "$UP_CMD" "$UP_CLOG"
 check "the kernel booted from the upgraded profile" "Forbric/Boot\] sovereign kernel — client" "$UP_CLOG"

@@ -11,7 +11,10 @@ Two halves. The first runs the real lib.sh in a throwaway tree: files an earlier
 writes anything, so the same check that passed on a stale log fails with "no log to read"; a file the gate keeps on
 purpose, another gate's files and the file the run's own output goes to are left alone. The second reads gate-m17 as
 text: it calls discard_earlier_run before it runs anything, every file it names under build/ is one that call removes,
-and the two "does not also name" lines cannot pass without a profile.
+the two "does not also name" lines cannot pass without a profile, phase U does not take what the old install left for
+what this install produced (nor resolve and boot the old profile), and every one of the player's files is hashed.
+That removal covers build/ only; phase U's directory is a copy of the released install on purpose, and the text checks
+of it here are held by a real run with every download refused (the record of lane cifix has both).
 """
 import os
 import re
@@ -153,7 +156,11 @@ class GateM17ReadsOnlyItsOwnRunTest(unittest.TestCase):
         _, line = self.call()
         prefix, kept = line.split()[1], set(line.split()[2:])
         named = set()
-        for _, text in self.code:
+        for number, text in self.code:
+            # Every spelling of "a file in build/": $BUILD/x, ${BUILD}/x, "$BUILD"/x and "${BUILD}"/x. One way to say
+            # the directory, so that none of them is outside what is counted here: the gate has to write $BUILD/name.
+            self.assertIsNone(re.search(r'\$\{BUILD\}|\$BUILD"/|\$KERNEL/build/', text),
+                              f'line {number} names build/ in a spelling this test does not read: {text.strip()}')
             named |= set(re.findall(r'\$BUILD/([A-Za-z0-9._-]+)', text))
         self.assertGreater(len(named), 20)
         self.assertEqual(set(), {name for name in named if not name.startswith(prefix)},
@@ -174,6 +181,59 @@ class GateM17ReadsOnlyItsOwnRunTest(unittest.TestCase):
         self.assertIn('FAIL the profile does not also name $other (no profile to read: $PROFILE)', loop)
         self.assertLess(guard, loop.index('grep -q "$other" "$PROFILE"'), 'the profile is looked for before it is searched')
         self.assertLess(guard, loop.index('PASS the profile does not also name $other'))
+
+    def test_the_removal_does_not_leave_the_sender_of_piped_output_unsaid(self):
+        # discard_earlier_run keeps the file this run's output is redirected to, and cannot keep one the output reaches
+        # through a pipe. lib.sh says so where a caller reads it.
+        text = LIB.read_text(encoding='utf-8')
+        comment = text[text.index('# discard_earlier_run <name-prefix>'):text.index('discard_earlier_run() {')]
+        self.assertIn('through a pipe', comment)
+
+    def test_phase_u_does_not_take_the_old_installs_files_for_this_installs(self):
+        # Phase U starts as a copy of the released install, which has files under names this install writes too. With
+        # both installs failing, four of them passed "this install's own file is there", and the old profile was
+        # resolved and booted (beta2's kernel) into six more PASS lines. As text: the old digests are taken before the
+        # first install over the old directory, the PASS line comes after the comparison with them, and nothing is
+        # resolved or launched from a profile that is still the old one.
+        text = '\n'.join(text for _, text in self.code)
+        phase = text[text.index('step "phase U: lay out the install v0.3.1-beta2 left"\nrm -rf "$DEST_UP"'):text.index('\nfi  # phase U')]
+        taken = phase.index('UP_OLD_OWN+=("$(file_sha1 "$DEST_UP/$rel")")')
+        self.assertIn('UP_OLD_STAMP+=("$(file_sha1 "$DEST_UP/$rel.pins")")', phase)
+        old_profile = phase.index('UP_OLD_PROFILE="$(file_sha1 "$UP_PROFILE")"')
+        first_install = phase.index('-Dforbric.installerCleanup=off -jar "$JAR" --dir "$DEST_UP"')
+        self.assertLess(taken, first_install)
+        self.assertLess(old_profile, first_install)
+        own = phase[phase.index('for rel in "${UP_CURRENT[@]}"; do\n  UP_OWN_WAS='):]
+        own = own[:own.index('\ndone')]
+        self.assertEqual(1, own.count('PASS this install\'s own file is there'))
+        self.assertLess(own.index('[ "$(file_sha1 "$DEST_UP/$rel")" = "$UP_OWN_WAS" ]'), own.index('PASS this install\'s own file is there'))
+        self.assertIn('[ "$UP_STAMP_NOW" = "$UP_STAMP_WAS" ]', own)
+        self.assertEqual(1, phase.count('PASS this install\'s own file is there'), 'the one PASS line is the guarded one')
+        boot = phase[phase.index('step "phase U: the upgraded directory boots into the world (must PASS)"'):]
+        still_old = boot.index('if [ -n "$UP_OLD_PROFILE" ] && [ "$(file_sha1 "$UP_PROFILE")" = "$UP_OLD_PROFILE" ]; then')
+        resolve = boot.index('resolve_profile "$DEST_UP" "$UP_CMD"')
+        self.assertLess(still_old, resolve)
+        self.assertLess(boot.index('UP_RC=1'), boot.index('\nelse\n'), 'a profile that is still the old one is not resolved')
+        self.assertLess(boot.index('\nelse\n'), resolve)
+        self.assertIn('[ "$UP_RC" -eq 0 ] && launch_resolved "$DEST_UP" "$UP_CMD" "$UP_CLOG"', boot)
+        self.assertEqual(1, phase.count('resolve_profile '))
+        self.assertEqual(1, phase.count('launch_resolved '))
+
+    def test_every_player_file_is_hashed_whatever_its_name(self):
+        # Through xargs's word splitting the files with a space in their names were never hashed, and "the player's
+        # files are byte-identical" passed on the rest (401 of 426). NUL-separated names, and the list has to be as
+        # long as the number of files, before and after.
+        text = '\n'.join(text for _, text in self.code)
+        data = next(line for line in text.splitlines() if line.startswith('user_data() {'))
+        self.assertIn('-type f -print0', data)
+        self.assertIn('| xargs -0 shasum -a 1', data)
+        verdict = text[text.index('user_data > "$BUILD/gate-m17-upgrade-userdata-after.txt"'):]
+        verdict = verdict[:verdict.index('\nfi\n')]
+        condition = verdict[:verdict.index('PASS the player\'s mods')]
+        self.assertIn('[ "$UP_USER_FILES" -gt 0 ]', condition)
+        self.assertIn('[ "$UP_USER_READ" = "$UP_USER_FILES" ]', condition)
+        self.assertIn('[ "$(user_files)" = "$UP_USER_FILES" ]', condition)
+        self.assertIn('cmp -s "$BUILD/gate-m17-upgrade-userdata-before.txt" "$BUILD/gate-m17-upgrade-userdata-after.txt"', condition)
 
 
 if __name__ == '__main__':
