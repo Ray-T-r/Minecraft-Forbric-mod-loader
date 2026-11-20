@@ -528,6 +528,16 @@ default `~/Forbric-backups/forge-swap`), since a tree cut before it existed has 
 run/compat/test_lib_guards.py` runs the real `lib.sh` in a throwaway tree laid out like a worktree
 beside a main checkout and goes red when the guard is a no-op or matches names by prefix.
 
+A gate's checks must read only files its own run wrote. A gate writes its logs under fixed names in
+`build/`, and a step that does not run writes none, so the file of the run before stays where that
+step's checks look: `check` fails on a missing or empty log but cannot tell this run's log from the
+last run's. `lib.sh`'s `discard_earlier_run <prefix> [keep-name ...]` removes every `build/<prefix>*`
+an earlier run left (not the names it is told to keep, and not the file this run's own output goes
+to); a gate calls it before it writes anything. gate-m17 does, for `gate-m17-`: a run whose first
+install failed used to print PASS for the command and the client log of the run before. `python3
+run/compat/test_gate_own_files.py` runs the real `lib.sh` over planted files, with the unguarded state
+as its control, and holds every `build/` name in gate-m17 to that prefix. No other gate calls it yet.
+
 The script's output is exactly the RESULT lines, byte for byte the same as `summary.txt`.
 The running commentary — what started when, on which slot and port, what each gate cost, and
 what the run would have taken sequentially — goes to `build/gates/progress.log`; `--progress`
