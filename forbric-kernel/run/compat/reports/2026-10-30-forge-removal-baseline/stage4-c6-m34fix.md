@@ -6,6 +6,11 @@ the 2-hour soak, gates-all or the full suite; the RUN lane does that. Nothing wa
 Evidence: `/Users/jerry/Forbric-backups/stage4-notes/c6/m34-survival/` (`<ev>` below). `<lane>` is
 `.claude/worktrees/s4c5-m34fix`.
 
+**The lane was then reviewed through two lenses and repaired** (commits 59f7d376, a69b8643): the last section, "Review
+and repair", says what each finding came to. Where it differs from sections A–F, the last section is the current state:
+the game type is set only while a session joins and a drifted one fails the soak at once; the client's game type is held
+too; the order line counts the classes the order names; the evidence check and `retention-control.py` changed shape.
+
 | Item | Result |
 |---|---|
 | A. survival soak player | done; unit pins + verifier check + three real control soaks |
@@ -123,7 +128,8 @@ Each measurement leaves about 140 MB of run directories under `build/retention-c
 
 `KernelModLoader.orderByDependency` wrote `[Forbric/Order] construction order is dependency order …` only when the sort
 moved a class. With nothing to reorder it wrote nothing, and so did ordering switched off or failed, so
-`run/compat/assert.sh:26` (and gate-m9's check, same pattern) could not tell a healthy small pack from a broken one.
+`run/compat/assert.sh`'s `construction is dependency order` check (line 26 at 31bfad16, line 31 at the repaired tip;
+and gate-m9's check, same pattern) could not tell a healthy small pack from a broken one.
 
 **The invariant** both checks mean is "the dependency order was applied to construction". **Decision: the kernel states
 its verdict every time**; the two patterns are unchanged. Accepting absence in the assertion would have made it pass
@@ -139,7 +145,7 @@ for ordering that never ran.
 
 The off-switch is tested before the sort: with ordering off the sort returns the list unchanged, which would otherwise
 read as "nothing to move". Every tracked file was searched for the wording (`git grep`): the only readers are
-`assert.sh:26` and `gate-m9-client.sh` (same pattern; gate-m9 also measures two real dependency pairs) and
+`assert.sh`'s check and `gate-m9-client.sh` (same pattern; gate-m9 also measures two real dependency pairs) and
 `AssertCompatTest`'s fixture line. These are log lines, not localized text, so no forced-zh test applies.
 
 ## E. `stage4-c6-accept-mac.md`
@@ -224,3 +230,155 @@ difference is the rain (zombies and skeletons on the surface) or chance, nor whe
   so a release run here measures once more.
 - Left in the lane (gitignored): `build/native-controls/native/neo` (clone), `build/retention-control/` (141 MB),
   the s2 and s3 run directories (1.3 GB, heap dumps deleted). No process, lock or port is left; no Gradle daemon.
+
+## Review and repair
+
+Two reviewers read c10eb608 against 31bfad16: SOAK SEMANTICS (5 findings: 2 minor, 3 info; `<ev>/review-soak.md`) and
+HARNESS HONESTY (8 findings: 1 major, 5 minor, 2 info; `<ev>/review-harness.md`). Both delivered, so no lens was redone.
+Every finding was reproduced before it was touched. Repair commits: 59f7d376 and a69b8643. Repair evidence:
+`<ev>/repair/`, `<ev>/smoke/s4-repair-clear`, `<ev>/smoke/s5-repair-night-rain`.
+
+### Harness findings
+
+| # | Finding | Reproduced by | Verdict |
+|---|---|---|---|
+| H1 major | the order sentence the gates grep for was written when the published order named none (or only some) of the `@Mod` classes | two new tests, red at c10eb608 (`repair/w2-reproduce-before-fix.log`: 10 tests, 2 failed) | **fixed** |
+| H2 minor | `retention-control.py` overwrote the caller's `FORBRIC_JVM`, and `test_gate_locale` could not see the script | the extended closure over the lane-tip script: `{'compat/retention-control.py': ["49: FORBRIC_JVM=... drops the caller's value"]}` | **fixed** |
+| H3 minor | a `comparison.json` of another shape ended the soak with a bare `KeyError`, nothing measured | 6 shapes in a new test | **fixed** |
+| H4 minor | freshness covered only recorded files; the image record was optional when read | new tests (no image record; a comparison copied from another tree) | **fixed in part**, rest left with reason |
+| H5 minor | `retention-control.py`'s image guard and image record had no test | the script ran at import | **fixed** |
+| H6 minor | the "nothing moved" line and a measuring release `launch()` had not been seen in a real run | — | **seen** in real runs; `assert.sh` on a real client log and gate-m9 **not run here** |
+| H7 info | the measurement's server wrote into the gate's caught file; a gate killed while measuring could leave a server; the native image is needed once per fresh worktree | provoked (below) | first two **fixed**; the image **left** (it downloads) |
+| H8 info | the record said `assert.sh:26` | — | **fixed** in section D |
+
+- **H1.** `orderByDependency` now counts the classes the order names. None named: a warning
+  `construction order is the order the mods were found in: the dependency order (N mod(s)) names none of the M @Mod
+  class(es) …`, which does not match the gates. Some named: `… the K @Mod class(es) the order names, of N …; the other
+  N-K belong to no mod the order names and are constructed after them, in the order found: [ids]`, which matches,
+  because the sentence is true of the classes it counts. All named: as before, with the count. I did not require
+  "all named" for the sentence: a pack may carry an `@Mod` class whose id no manifest declares, and such a class has no
+  known dependencies. The reviewer's four counter-examples: three (other mods, another spelling, null ids) no longer
+  match the gates; the fourth (the order names one of two) matches and says "the 1 @Mod class(es) the order names, of
+  2". Readers of the wording are unchanged (`assert.sh:31`, `gate-m9-client.sh:278`, `AssertCompatTest`'s fixture).
+- **H2.** The Forbric arm's `FORBRIC_JVM` leads with the caller's value. `test_gate_locale.drivers()` follows a driver
+  into every `run/compat/*.json` it names, so the `reproduce` command of `native-retention.json` makes
+  `retention-control.py` a driver (`soak-run.py` names no script in its own text). One new control test.
+- **H3.** Any shape that cannot be walked (`ValueError`, `KeyError`, `TypeError`, `AttributeError`) is
+  `unreadable: <file> is not a record this can read`, naming the comparison or the arm's record, and is measured again.
+- **H4.** Each arm now records `native-controls.py`, `launch-kernel-server.sh`, the two scripts it calls
+  (`game-metadata-jar.sh`, `vanilla-reference-jar.sh`; a test reads the launcher for `"$HERE/…sh"` and requires exactly
+  these) and `build.gradle`. `launch-kernel-server.sh` does not source `lib.sh`, so `lib.sh` is not recorded. A native
+  arm without an image record is stale. An arm record that does not lie beside the comparison is stale ("was not
+  measured in this checkout"). **Left:** the Forbric arm's boot classpath jars and its vanilla reference are not
+  recorded themselves. The launcher resolves both (Gradle, `vanilla-reference-jar.sh`); recording them would mean
+  resolving them a second time in Python. Both derive from recorded files (`build.gradle`, the game base).
+- **H5.** `retention-control.py` runs nothing at import: `prerequisite_problem`, `measured_sources`, `arm_inputs` and
+  `main()`. One new test holds the refusal text, the image record and the source list.
+- **H6.** Real boots at the repaired code:
+  - the measurement's Forbric server (2 `@Mod` classes):
+    `[Forbric/Order] construction order is dependency order: the 2 @Mod class(es) were found in it already, so none
+    moved …`; `grep -acE` with the two scripts' pattern gives 1 on that `server.log`;
+  - the soak client (s4, s5): `… is dependency order, not jar-file order — …, for the 80 @Mod class(es): [...]`, so
+    the order names all 80 classes of the pack; the pattern gives 1.
+  - a measuring release `launch()`: `<ev>/repair/release-start/`. The real `gate-m34-soak.sh` without `--control`, at
+    59f7d376 with a clean tree, through `client.sh heavy.sh --exclusive`. In the gate's environment it found the lane's
+    evidence stale, measured (`took 19 s and exited 0`, caught 0), recorded it in the manifest
+    (`measuredForThisRun: true`, 18.8 s) and started the release soak (dwell 600). It ran 10.5 min: session 1 complete
+    in 382 s, session 2 joined, 537 of 537 occupied rows survival on both sides, health 20.0, food 20. I then stopped
+    it on purpose, so its verdict is `FAIL … client exited abnormally: 143`. **It is not a soak.**
+  - **Not done:** `assert.sh` on a real two-mod client log, the Windows push-and-run, and gate-m9.
+- **H7.** `run_reproduction` gives the measurement `native-retention-N.caught.tsv` in the run's evidence;
+  `ensure_native_evidence` records it (`measurement.caught`), prints the count and appends it to the gate's file.
+  A stopped measurement stops its server: `retention-control.py` handles SIGTERM/SIGHUP and stops the server in a
+  `finally`; `run_reproduction` sends the script SIGTERM and waits 30 s. Provoked for real
+  (`repair/term-run.log`, `repair/term-run-soak.log`): SIGTERM to the script, and SIGTERM to a process inside
+  `run_reproduction`; in both the server was gone afterwards (0 left).
+
+### Soak findings
+
+| # | Finding | Reproduced by | Verdict |
+|---|---|---|---|
+| S1 minor | a drifted game type was put right in silence before the next move; the verifier refused the run only at the end | read from the code (`preparePlayer` at every move); the drifter in the pack is real: `Stellarity-5.5.4.jar!/data/stellarity/function/util/status_effects/creative_shock/progress.mcfunction:6` | **fixed** |
+| S2 minor | `rainingAtPlayer` could make the server thread wait for a chunk load | `javap`: `Level.getHeight` pc 35 `hasChunk`, pc 50 `getChunk(II)`; `precipitationAt` → `getHeightmapPos` | **fixed** |
+| S3 info | one layer of protection; three survival-only server paths not in the Javadoc | `javap`: `Entity.isInvulnerableToBase` pc 77 `CommonHooks.isEntityInvulnerableTo`; `Player.hurtServer` pc 12–25; `Player.causeFoodExhaustion` pc 1–7 | **fixed** (Javadoc and PROTOCOL.md) |
+| S4 info | the lane's evidence was 4537 daytime ticks | — | **more cover added**, the rest left to the 2 h run |
+| S5 info | unchecked preconditions: first-join weather, the client's game type, retention under rain | — | first two **fixed**; retention **not predicted** |
+
+- **S1.** `preparePlayer(player, joining)`: the game type is set only while a session joins. A move that finds another
+  type throws (`the soak player stopped being a survival player during the session`). Every sample row is judged as it
+  is written, after the row, by `net.forbric.kernel.soak.SoakPlayer` (a new class that links no game class); a row that
+  is not a soak player's fails the soak before the next action. `soak-run.py` applies the same rule to the evidence.
+- **S2.** `rainingAtPlayer` is asked only when `getChunkNow` (never loads) shows the player's chunk; otherwise the row
+  says `null`, and `conditions` counts such rows as `rainingAtPlayerUnknownRows`, not as dry. In s4, s5 and the release
+  start it was known in every row (0 unknown of 225, 225, 537).
+- **S5, the client.** The client's game type is now held: a `join` is written once the client holds a live survival
+  player too, and from then on a row whose `clientGameType` is not `survival` fails the soak and is refused by the
+  verifier. One exception, for a `sample` only: a row that says the client had left the world (`clientInWorld` false),
+  since a sample taken just before a disconnect can be written just after it. In s4, s5 and the release start `clientInWorld`
+  was true in every occupied row (987 of 987), so that case was not met. `hudHidden` is recorded and not checked.
+- **S5, the weather.** `soak-run.py` reads the copied world's `weather.dat` before the client starts, prints
+  `[M34] the copied world was saved in clear weather; its rain timer stands at 88032 tick(s), so the first session joins
+  into clear weather`, and records it as the manifest's `sourceWorldWeather`. It refuses nothing: a world saved in rain
+  is another run, and the evidence now says which. PROTOCOL.md states the limit.
+- **S4.** Two more control soaks at the repaired tip (below) and the 10.5 min of the release start. Still not exercised
+  with a survival player: phantoms (due about 56 min in, by the review's reading of the fixture's `time_since_rest`), a thunderstorm, hunger over two hours, and damage refusal
+  itself (nothing is known to have attacked the player; health was 20.0 in every row).
+
+### Found while repairing
+
+- **A stopped soak left its client running.** I stopped the release start with SIGINT to `soak-run.py`; it was ignored
+  (a non-interactive shell starts background jobs with SIGINT ignored, and Python then installs no handler). The soak
+  played on for 9 minutes until I sent SIGTERM to the client's own process group. SIGTERM to `soak-run.py` would have
+  ended it on the spot (Python's default) and left the client, in a session of its own, to play its two hours outside
+  the `.stage` locks. `soak-run.py` now takes SIGTERM and SIGHUP as the interruption Ctrl-C is, for the whole run: the
+  client's wait stops the client's process group and records the failed run. Provoked for real
+  (`repair/term-control-soak/`): SIGTERM after 1 join and 11 samples, `acceptance.json` says
+  `FAIL, exitCode -1, client exited abnormally: -1`, gate exit 1, no client left, no lock left.
+- **The measurement refuses itself when the kernel jar is rebuilt under it.** My first real measurement
+  (`repair/f1/f1-run.log`, step A) ran with a stale `build/libs` jar (I had run `test`, not `jar`); the launcher rebuilt
+  the jar during the Forbric arm, the arm said `inputsUnchanged: false`, and the driver was refused (exit 1). The second
+  run measured in 18 s. In the gate this cannot happen: `kernel_jar` runs before `soak-run.py` freezes anything.
+
+### Verification of the repair
+
+- **Unit** (pinned props, `--offline --no-daemon`, `boot.*`, `soak.*`, `AssertCompatTest`, `FabricLoadOrderTest`,
+  `RuntimeSeamLivenessStagedTest`, `NoRawAssumptionsTest`): 1127 tests, 0 skipped, 0 failed at a69b8643
+  (`repair/unit-and-tooltest-final.log`). New: `SoakPlayerTest` (7), three tests in `SoakPlayerPreparationTest` (7 now),
+  two in `ConstructionOrderVerdictTest` (10 now).
+- **toolTest:** 56 + 312 + 94 tests, OK. `test_soak.py` 38 → 47, `test_gate_locale.py` 10 → 11.
+- **`bash -n`:** `gate-m34-soak.sh`, `gate-m9-client.sh`, `compat/assert.sh` OK.
+- **Red controls:** 19 Python mutations on a scratch copy and 11 Java mutations in the tree (restored, `cmp` identical),
+  each red on the named test (`repair/red-controls/py-summary.txt`, `java-summary.txt`). One Java mutation got past the
+  first version of the rain test (`java-summary-first-pass.txt`: `getChunkNow` computed, `isRainingAt` asked anyway);
+  the test now requires the conditional jump that skips the question. One Python mutation is "red" by ending the test
+  run: without the SIGTERM handling the signal the test sends to itself kills it (exit -15, no summary line).
+- **Control soaks at 59f7d376, clean tree** (`client.sh heavy.sh --exclusive bash run/gate-m34-soak.sh --control
+  --seconds 30 --sessions 3 --dwell-ticks 100 --settle-seconds 10 --heap-dump-on-retention`):
+
+| Run | World | Verdict | Rows |
+|---|---|---|---|
+| s4-repair-clear | fixture | **CONTROL_PASS**, `[kernel] CAUGHT none` | 225/225 survival on server and client; 36 moves, visits 6 each; flying and invulnerable 225/225; health 20.0, food 20; y 160.0 at every probe; no `waiting` row; retained 1 of 3 (the last, mod-owned) |
+| s5-repair-night-rain | fixture clone, overworld clock 86000 (night), `rain_time` 150 | **CONTROL_PASS**, `[kernel] CAUGHT none` | the same counts; rain in 216 rows, on the player in 31, first at game time 75224; no `bound must be positive`, no `moved wrongly`; retained 1 of 3 (the last, mod-owned) |
+
+  The s5 screenshots show the night ("11:51:00 Night" on the minimap), the HUD with full hearts and hunger, and the
+  drop overlay (`smoke/s5-repair-night-rain/shots/2026-11-20_21.18.49.png`). The world is made by
+  `<ev>/tools/make-night-rain-world.py`; the soak and the fixture are untouched.
+- The soak-run.py change of a69b8643 (signals) ran for real only in the SIGTERM provocation; a control soak that runs
+  to its end was not repeated after it. The controller is the same in 59f7d376 and a69b8643.
+
+### Open after the repair
+
+- **The 2-hour run's retention verdict is still not predicted.** s2 (rain, day) kept 3 of 3 servers and was a review;
+  s5 (rain, night) kept 1 of 3 and passed, so rain alone does not decide it. s2's paths ran through per-mob-type render
+  state (`EntityRenderState.transitionEntity`, a field the TRansition library adds) and Xaero's
+  `ServerConfigManager.server`: each can hold one old session. The rule refuses when `residual * 2 >= sessions`. A
+  release session took 382 s in the release start, so two hours are about 18 sessions and up to 8 held servers would
+  pass, if every path to them is mod-owned. If the run ends REVIEW_REQUIRED, compare its `retention-paths.txt` with
+  `smoke/s2-rain` first.
+- No 2-hour soak, no gates-all, no full suite, no zh run (D88b), no CI. gate-m9 was not run.
+- A tree without `build/native-controls/native/neo` still needs `native-controls.py prepare --family neo` once.
+- The stage's own evidence (`build/retention-control/comparison.json`) is stale after this merge by design (the script,
+  the launcher record and the kernel jar changed), so the release run measures once at its start (about 19 s).
+- Left in the lane (gitignored): four more run directories of this repair (2.4 GB, heap dumps deleted), the lane's own
+  evidence (current for a69b8643's jar only until the next build), `build/verification/m34-soak/last-release.json`
+  pointing at the stopped release start (a FAIL). No process, lock or port is left; no Gradle daemon.
