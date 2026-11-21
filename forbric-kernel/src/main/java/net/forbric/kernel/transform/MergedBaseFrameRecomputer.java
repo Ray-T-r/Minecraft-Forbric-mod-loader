@@ -15,11 +15,13 @@ import org.objectweb.asm.tree.*;
  * <p>Where a join cannot be inferred because a class file it needs is not here, {@code java/lang/Object} stands in for
  * that one join. Object is above every answer the join could have had, so the frames inferred with it are never narrower
  * than the true ones: they can show that nothing needs repair, never that something does, and they are never returned.
- * When every method with a reference frame was compared and every declared frame compared accepts the stand-in (it is
- * declared as Object, as an interface, under the same name, or not as a reference there), the input is returned and
- * nothing is reported. When one declared frame does not, or one method could not be compared, the input is returned and
- * the report is made. A declared type that is itself unreadable, a looping hierarchy and one past the walk's bound are
- * not stood in for: nothing was judged, and that is reported as before. */
+ * When every declared reference frame was compared and accepts what was inferred for it (where the stand-in reached a
+ * frame, that frame is declared as Object, as an interface, as an array of one of those, or not as a reference there),
+ * the input is returned and nothing is reported. When one declared frame does not, or one declared reference frame could
+ * not be compared (its method's instructions changed, or the inference gives no frame where it stands), the input is
+ * returned and the report is made. A declared type that is itself unreadable and has to be asked about (the inference
+ * names something else there), a looping hierarchy and one past the walk's bound are not stood in for: nothing was
+ * judged, and that is reported as before. */
 public final class MergedBaseFrameRecomputer implements ClassTransformer {
     private final Function<String, byte[]> classBytes;
     private final Map<String, String[]> hierarchy = new ConcurrentHashMap<>();
@@ -48,8 +50,9 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
             byte[] computed = writer.toByteArray();
             ClassNode current = node(computed);
             // A method whose instructions the frame computation changed (it rewrites unreachable code) has no frame that
-            // lines up with the original's. Kept by class, not by method: ASM asks for each pair of types once per class,
-            // so which method a stand-in went into is not known.
+            // lines up with the original's, and a declared frame where nothing branches to has no inferred frame at all:
+            // either way a declared reference frame went uncompared. Kept by class, not by method: ASM asks for each pair
+            // of types once per class, so which method a stand-in went into is not known.
             Set<String> incompatible = new LinkedHashSet<>(), uncompared = new LinkedHashSet<>();
             for (MethodNode before : original.methods) {
                 MethodNode after = current.methods.stream().filter(m -> m.name.equals(before.name) && m.desc.equals(before.desc)).findFirst().orElse(null);
@@ -57,13 +60,13 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
                 Map<Integer, FrameNode> actual = frames(after);
                 for (var entry : frames(before).entrySet()) {
                     FrameNode inferred = actual.get(entry.getKey());
-                    if (inferred == null) continue;
+                    if (inferred == null) { if (referenceFrame(entry.getValue())) uncompared.add(before.name + before.desc); continue; }
                     compare(slots(entry.getValue().local), slots(inferred.local), incompatible);
                     compare(entry.getValue().stack, inferred.stack, incompatible);
                 }
             }
             if (!unread.isEmpty()) {
-                // Frames inferred over a stand-in are never emitted, and are no proof where a method went uncompared.
+                // Frames inferred over a stand-in are never emitted, and are no proof where a declared frame went uncompared.
                 if (incompatible.isEmpty() && uncompared.isEmpty()) {
                     if (ForbricLog.debugEnabled()) ForbricLog.debug("[Forbric/Frames] %s: no class file gives %s; java/lang/Object stood in for the merges that need it, and every declared frame that was compared accepts that, so there is nothing to repair", className, unread.keySet());
                     return input;
@@ -103,10 +106,11 @@ public final class MergedBaseFrameRecomputer implements ClassTransformer {
         List<Integer> out = new ArrayList<>(); for (AbstractInsnNode instruction : method.instructions) if (instruction.getOpcode() >= 0) out.add(instruction.getOpcode()); return out;
     }
     private static boolean hasReferenceFrame(MethodNode method) {
-        for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof FrameNode frame) {
-            if (frame.local != null && frame.local.stream().anyMatch(String.class::isInstance) || frame.stack != null && frame.stack.stream().anyMatch(String.class::isInstance)) return true;
-        }
+        for (AbstractInsnNode instruction : method.instructions) if (instruction instanceof FrameNode frame && referenceFrame(frame)) return true;
         return false;
+    }
+    private static boolean referenceFrame(FrameNode frame) {
+        return frame.local != null && frame.local.stream().anyMatch(String.class::isInstance) || frame.stack != null && frame.stack.stream().anyMatch(String.class::isInstance);
     }
     private static ClassNode node(byte[] bytes) { ClassNode node = new ClassNode(); new ClassReader(bytes).accept(node, ClassReader.EXPAND_FRAMES); return node; }
     private static int majorVersion(byte[] bytes) { return ((bytes[6] & 255) << 8) | (bytes[7] & 255); }
