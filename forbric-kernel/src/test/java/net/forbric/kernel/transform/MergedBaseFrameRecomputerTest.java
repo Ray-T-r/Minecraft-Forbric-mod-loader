@@ -17,7 +17,10 @@
 package net.forbric.kernel.transform;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import java.io.IOException;
 import java.io.InputStream;
@@ -111,6 +114,34 @@ class MergedBaseFrameRecomputerTest {
 		assertEquals("java/lang/Number", recomputer().commonSuperClass("java/lang/Integer", "java/lang/Long"));
 	}
 
+	/**
+	 * The game's own text-to-speech library, as a Windows or a Linux launch has it. Its {@code Narrator} interface picks
+	 * one of three implementations and returns it as a {@code Narrator}; the macOS one extends a class of an Objective-C
+	 * bridge that only the macOS library list carries. Inferring the join of the three has to walk that chain and, on
+	 * Windows and Linux, cannot. The frame is declared as the interface and accepts any object, so there is nothing to
+	 * repair and nothing to report. A macOS launch has the bridge and never meets the question, so this reads the class
+	 * the way the other two do: the library itself, JNA where it is installed, the JDK, and nothing else. The real jar
+	 * is the sample; the rule that keeps it quiet names no class ({@link MergedBaseFrameUnreadTypeTest} holds the shapes).
+	 */
+	@Test
+	void theNarratorOfAnotherOperatingSystemIsQuiet() throws Exception {
+		Path speech = TestFixtures.newestLibrary("com/mojang/text2speech");
+		TestFixtures.require(Fixture.MC_LIBRARIES, speech != null, "Minecraft's text2speech library required");
+		List<Path> libraries = new ArrayList<>(List.of(speech));
+		for (String optional : List.of("net/java/dev/jna/jna", "net/java/dev/jna/jna-platform")) {
+			Path jar = TestFixtures.newestLibrary(optional);
+			if (jar != null) libraries.add(jar);
+		}
+		Function<String, byte[]> resolver = over(libraries);
+		assertNull(resolver.apply("ca/weblite/objc/NSObject.class"), "the bridge must not be readable here: that is the other operating systems' class path");
+		assertThrows(TypeNotPresentException.class, () -> new MergedBaseFrameRecomputer(resolver)
+				.commonSuperClass("com/mojang/text2speech/NarratorMac", "com/mojang/text2speech/NarratorWindows"),
+				"the join of two implementations cannot be computed without the bridge");
+		byte[] narrator = resolver.apply("com/mojang/text2speech/Narrator.class");
+		assertNotNull(narrator, "Narrator in " + speech);
+		assertSame(narrator, new MergedBaseFrameRecomputer(resolver).transform("com.mojang.text2speech.Narrator", narrator, null));
+	}
+
 	private MergedBaseFrameRecomputer recomputer() throws IOException {
 		return new MergedBaseFrameRecomputer(resolver());
 	}
@@ -119,8 +150,13 @@ class MergedBaseFrameRecomputerTest {
 	private Function<String, byte[]> resolver() throws IOException {
 		TestFixtures.requireFiles(Fixture.STAGED,
 				"staged base and carriers absent — skipping the real-hierarchy check", MERGED, NEO_RT);
+		return over(List.of(MERGED, NEO_RT));
+	}
+
+	/** {@code paths}' entries in order, then the JDK's own classes; never the test class path. */
+	private Function<String, byte[]> over(List<Path> paths) throws IOException {
 		List<ZipFile> jars = new ArrayList<>();
-		for (Path p : List.of(MERGED, NEO_RT)) {
+		for (Path p : paths) {
 			ZipFile jar = new ZipFile(p.toFile());
 			jars.add(jar);
 			open.add(jar);
