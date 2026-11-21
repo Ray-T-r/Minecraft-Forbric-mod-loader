@@ -92,7 +92,7 @@ class MergedBaseFrameRecomputerTest {
 		assertSame(poolOnly, recomputer().transform("test.PoolOnly", poolOnly, null));
 	}
 
-	/** An unwalkable hierarchy abstains: the original bytes come back, and nothing is guessed. */
+	/** Not even the types the frames declare can be read, so nothing is judged: the original bytes come back, and the report stays. */
 	// The blind resolver is the point: the recomputer reports that it cannot prove a repair, and abstains.
 	@ExpectCaught("cannot prove a frame repair for org.anti_ad.mc.ipnext.item.ItemTypeExtensionsKt")
 	@Test

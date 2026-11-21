@@ -57,20 +57,24 @@ import org.objectweb.asm.Opcodes;
  * class file is not there (a library of another operating system, an optional dependency), the join cannot be computed.
  * The recomputer then lets {@code java/lang/Object} stand in for that one join: Object is above every answer the join
  * could have had, so the frames inferred with it are never narrower than the true ones. They can show that nothing needs
- * repair (every declared frame that was compared accepts even Object: it is declared as Object, as an interface, under
- * the same name, or not as a reference at all), and then the class is handed back without a word. They cannot show that
- * something does need repair, and they are never written out: where a declared frame does not accept the stand-in, or a
- * method could not be compared at all, the class is handed back and the report stays.
+ * repair: every declared reference frame was compared and accepts what was inferred for it (where the stand-in reached a
+ * frame, that frame is declared as Object, as an interface, as an array of one of those, or not as a reference there),
+ * and then the class is handed back without a word. They cannot show that something does need repair, and they are never
+ * written out: where a declared frame does not accept what was inferred for it, or a declared reference frame could not
+ * be compared at all (its method's instructions changed under the frame computation, or the computation gives no frame
+ * where it stands), the class is handed back and the report stays.
  *
- * <p>Every shape here is made with ASM under invented names, and each one runs under two unrelated sets of names: the
- * rule looks at shapes, so a shape must be judged the same whatever it is called. The resolver is the map of the world's
- * types and then the platform class loader; it never falls back to the test class path. A test that must be quiet carries
- * no {@link ExpectCaught}: one failure caught by the kernel and {@code CaughtErrorsExtension} fails it. A test that must
- * still report says what the report mentions, and checks that exactly one was made. Beside the recomputer's answer each
- * shape is put to the real verifier, in a loader that has exactly the same types: every quiet shape here links, and every
- * reported one fails to. (A report can still be more than the verifier needs, where a hierarchy loops, runs past the
- * walk's bound, or a method could not be compared, under a frame declared as an interface. Those are known and are not
- * held here as something that must stay.)
+ * <p>Every shape here is made with ASM under invented names, and every shape that must be quiet or must still report
+ * runs under two unrelated sets of names: the rule looks at shapes, so a shape must be judged the same whatever it is
+ * called. (The tests of repairs, order, the public join and concurrency further down run under one set.) The resolver is
+ * the map of the world's types and then the platform class loader; it never falls back to the test class path. A test
+ * that must be quiet carries no {@link ExpectCaught}: one failure caught by the kernel and {@code CaughtErrorsExtension}
+ * fails it. A test that must still report says what the report mentions, and checks that exactly one was made. Beside
+ * the recomputer's answer each shape is put to the real verifier, in a loader that has exactly the same types: every
+ * quiet shape here links, and every reported one fails to, but for the one whose report is of a resolver that itself
+ * threw. (A report can still be more than the verifier needs, where a hierarchy loops, runs past the walk's bound, or a
+ * frame could not be compared, under a frame declared as an interface. Those are known and are not held here as
+ * something that must stay.)
  */
 class MergedBaseFrameUnreadTypeTest {
 	private static final String OBJ = "java/lang/Object";
@@ -149,7 +153,67 @@ class MergedBaseFrameUnreadTypeTest {
 	void aDeclaredTypeWithNoClassFileIsNotAskedForWhenTheInferenceNamesItToo(String p) throws Exception {
 		World world = new World(p);
 		assertNull(world.resource(p + "gone/Local.class"));
-		assertQuiet(world, sameName(p + "Same", p + "gone/Local"));
+		assertUntouched(world, sameName(p + "Same", p + "gone/Local"));   // no join is asked for here: there is no stand-in
+	}
+
+	/**
+	 * A stand-in was used for one method's join, and another method's frame is declared as a class its inferred type
+	 * really is a subclass of, every type on that side readable. That frame does not accept Object; it does accept what
+	 * was inferred for it, which is all the comparison asks. The stand-in never reached it.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void aReadableClassFrameBesideAStandInIsQuiet(String p) throws Exception {
+		World world = new World(p);
+		String speaker = p + "Speaker", root = p + "Root";
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, p + "PickBeside", null, OBJ, null);
+		pickMethod(writer, speaker, speaker, false, p + "A", p + "B");
+		pickMethod(writer, root, root, false, p + "RC", p + "RD");
+		writer.visitEnd();
+		assertEquals(p + "RA", world.recomputer().commonSuperClass(p + "RC", p + "RD"), "premise: the second join is a subclass of what its frame declares");
+		assertQuiet(world, writer.toByteArray());
+	}
+
+	/**
+	 * A method the frame computation rewrote (it carries unreachable code) but that declares no reference frame has
+	 * nothing that could have been compared, and is no doubt about the class.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void aRewrittenMethodWithNoReferenceFrameDoesNotBringTheReportBack(String p) throws Exception {
+		World world = new World(p);
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, p + "PickTail", null, OBJ, null);
+		pickMethod(writer, p + "Speaker", p + "Speaker", false, p + "A", p + "A2", p + "B");
+		MethodVisitor tail = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "n", "(I)I", null, null);
+		tail.visitCode();
+		tail.visitVarInsn(Opcodes.ILOAD, 0);
+		tail.visitInsn(Opcodes.IRETURN);
+		tail.visitLabel(new Label());
+		tail.visitFrame(Opcodes.F_SAME, 0, null, 0, null);
+		tail.visitInsn(Opcodes.ICONST_0);
+		tail.visitInsn(Opcodes.IRETURN);
+		tail.visitMaxs(1, 1);
+		tail.visitEnd();
+		writer.visitEnd();
+		assertQuiet(world, writer.toByteArray());
+	}
+
+	/**
+	 * With every type read there is no stand-in, and a declared frame that could not be compared is, as before, no
+	 * report: neither a method whose instructions the frame computation changed, nor a frame where nothing branches to.
+	 */
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void aFrameThatCouldNotBeComparedIsNoReportWhereEveryTypeIsRead(String p) throws Exception {
+		World world = new World(p);
+		assertUntouched(world, host(p + "HostRead", p + "Root", p + "A2", p + "RA"));
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, p + "StraightRead", null, OBJ, null);
+		straightMethod(writer, p + "Root", p + "RA");
+		writer.visitEnd();
+		assertUntouched(world, writer.toByteArray());
 	}
 
 	// ---------------------------------------------------------------------------------------------------------------
@@ -163,7 +227,7 @@ class MergedBaseFrameUnreadTypeTest {
 		World world = new World(p);
 		String root = p + "Root";
 		byte[] reader = pick(p + "PickR", root, root, false, p + "RA", p + "RB");
-		assertReports(world, reader, STOOD_IN, root, p + "gone/Base");
+		assertReports(world, reader, STOOD_IN, root, "no class file gives [" + p + "gone/Base]");
 		assertThrows(NoClassDefFoundError.class, () -> link(world, reader));
 	}
 
@@ -175,7 +239,7 @@ class MergedBaseFrameUnreadTypeTest {
 		String roots = "[L" + p + "Root;";
 		assertNull(world.resource(p + unread + ".class"));
 		byte[] reader = pick(p + "PickRArr", roots, roots, true, p + "RA", p + second);
-		assertReports(world, reader, STOOD_IN, roots, p + unread);
+		assertReports(world, reader, STOOD_IN, roots, "no class file gives [" + p + unread + "]");
 		assertThrows(NoClassDefFoundError.class, () -> link(world, reader));
 	}
 
@@ -186,13 +250,14 @@ class MergedBaseFrameUnreadTypeTest {
 		World world = new World(p);
 		String root = p + "Root";
 		byte[] reader = pick(p + "PickGGR", root, root, false, p + "gone/One", p + "gone/Two");
-		assertReports(world, reader, STOOD_IN, root, p + "gone/");
+		assertReports(world, reader, STOOD_IN, root, "no class file gives [" + p + "gone/");
 		assertThrows(NoClassDefFoundError.class, () -> link(world, reader));
 	}
 
 	/**
 	 * Two exception-table entries for one handler, whose frame names a class above both catch types, and one catch type
-	 * is not there: the shape most of the real classes that still report have.
+	 * is not there. Real classes that still report with the stand-in's message have this shape (the game's own logging
+	 * library has some); most real classes that still report do so through the older report, for other reasons.
 	 */
 	@ExpectCaught(STOOD_IN)
 	@ParameterizedTest
@@ -200,7 +265,7 @@ class MergedBaseFrameUnreadTypeTest {
 	void aHandlerOfTwoCatchTypesStillReportsWhenOneHasNoClassFile(String p) throws Exception {
 		World world = new World(p);
 		byte[] reader = multiCatch(p + "Catch", "java/lang/Exception", "java/lang/IllegalStateException", p + "gone/Ex");
-		assertReports(world, reader, STOOD_IN, "java/lang/Exception", p + "gone/Ex");
+		assertReports(world, reader, STOOD_IN, "java/lang/Exception", "no class file gives [" + p + "gone/Ex]");
 		assertThrows(NoClassDefFoundError.class, () -> link(world, reader));
 	}
 
@@ -214,7 +279,7 @@ class MergedBaseFrameUnreadTypeTest {
 	void aWrongFrameBesideAnUnreadMergeIsReportedAndNothingIsRewritten(String p) throws Exception {
 		World world = new World(p);
 		byte[] reader = both(p + "FixDead", p + "Old", p + "First", p + "Second", p + "A", p + "B");
-		assertReports(world, reader, STOOD_IN, p + "Old", p + "gone/Base");
+		assertReports(world, reader, STOOD_IN, p + "Old", "no class file gives [" + p + "gone/Base]");
 		assertThrows(VerifyError.class, () -> link(world, reader));
 	}
 
@@ -231,9 +296,49 @@ class MergedBaseFrameUnreadTypeTest {
 	void anUnreadMergeBesideAMethodThatCouldNotBeComparedStillReports(String p, String readable) throws Exception {
 		World world = new World(p);
 		byte[] reader = host(p + "Host", p + "Root", p + readable, p + "RB");
-		assertReports(world, reader, STOOD_IN, p + "gone/Base", "methods whose frames could not be compared: [pick");
+		assertReports(world, reader, STOOD_IN, "no class file gives [" + p + "gone/Base]", "methods whose frames could not be compared: [pick");
 		Class<? extends LinkageError> verdict = readable.equals("A2") ? NoClassDefFoundError.class : VerifyError.class;
 		assertThrows(verdict, () -> link(world, reader));
+	}
+
+	/**
+	 * A frame where nothing branches to. The frame computation gives frames only where control joins, so it gives none
+	 * there, and this declared frame is compared with nothing although its method's instructions did not change. It
+	 * declares the local as a class, the local holds a type whose chain cannot be walked, and the verifier fails on
+	 * exactly this frame. With a stand-in used elsewhere in the class, that is not a proof that nothing needs repair.
+	 */
+	@ExpectCaught("methods whose frames could not be compared: [straight")
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void anUnreadMergeBesideAFrameTheInferenceGivesNoFrameForStillReports(String p) throws Exception {
+		World world = new World(p);
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, p + "PickStraight", null, OBJ, null);
+		pickMethod(writer, p + "Speaker", p + "Speaker", false, p + "A", p + "A2", p + "B");
+		straightMethod(writer, p + "Root", p + "RB");
+		writer.visitEnd();
+		byte[] reader = writer.toByteArray();
+		assertReports(world, reader, STOOD_IN, "no class file gives [" + p + "gone/Base]", "declared frame types that do not accept what was inferred: []",
+				"methods whose frames could not be compared: [straight()Ljava/lang/Object;]");
+		assertThrows(NoClassDefFoundError.class, () -> link(world, reader));
+	}
+
+	/** Two types with no class file in one class are one report, and it lists both. */
+	@ExpectCaught(STOOD_IN)
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void twoTypesWithNoClassFileInOneClassAreOneReportThatNamesBoth(String p) throws Exception {
+		World world = new World(p);
+		String root = p + "Root";
+		assertNull(world.resource(p + "gone/Impl.class"));
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, p + "PickTwo", null, OBJ, null);
+		pickMethod(writer, root, root, false, p + "RA", p + "RB");
+		pickMethod(writer, root, OBJ, false, p + "RA", p + "gone/Impl");
+		writer.visitEnd();
+		byte[] reader = writer.toByteArray();
+		assertReports(world, reader, STOOD_IN, "no class file gives [", p + "gone/Base", p + "gone/Impl", root);
+		assertThrows(NoClassDefFoundError.class, () -> link(world, reader));
 	}
 
 	/**
@@ -289,6 +394,24 @@ class MergedBaseFrameUnreadTypeTest {
 		assertThrows(VerifyError.class, () -> link(world, reader));
 	}
 
+	/**
+	 * Only the recomputer's own "no class file" is stood in for. An exception of the same public kind that the resolver
+	 * itself throws is something that went wrong while reading, and is reported as that.
+	 */
+	@ExpectCaught("cannot prove a frame repair for")
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void anExceptionOfTheSameKindFromTheResolverIsNotStoodInFor(String p) {
+		World world = new World(p);
+		String speaker = p + "Speaker";
+		byte[] reader = pick(p + "PickT", speaker, speaker, false, p + "A", p + "A2", p + "B");
+		MergedBaseFrameRecomputer broken = new MergedBaseFrameRecomputer(path -> {
+			if (path.equals(p + "gone/Base.class")) throw new TypeNotPresentException(path, null);
+			return world.resource(path);
+		});
+		assertFalse(assertReports(broken, reader, "gone/Base").contains(STOOD_IN), "an exception the resolver threw is not an absent class file");
+	}
+
 	// ---------------------------------------------------------------------------------------------------------------
 	// Repairs, order, the contract of the public join, and judgments running at once
 	// ---------------------------------------------------------------------------------------------------------------
@@ -337,7 +460,7 @@ class MergedBaseFrameUnreadTypeTest {
 		World world = new World("order/");
 		byte[] reader = pick("order/PickOld", "order/Old", OBJ, false, "order/B", "order/A");
 		MergedBaseFrameRecomputer one = world.recomputer();
-		assertReports(one, reader, STOOD_IN, "order/Old", "order/gone/Base");
+		assertReports(one, reader, STOOD_IN, "order/Old", "no class file gives [order/gone/Base]");
 		world.types.put("order/gone/Base", plain("order/gone/Base", "order/Current"));
 		long before = Caught.errorCount();
 		byte[] repaired = judge(one, reader);
@@ -377,10 +500,11 @@ class MergedBaseFrameUnreadTypeTest {
 	}
 
 	/**
-	 * Three classes, two fresh instances, opposite orders: each class gets the same answer. This covers judgments that
-	 * rest on class headers read from resources. It does not cover the header an instance keeps of a class it has itself
-	 * transformed: a class with no resource is known to later judgments only once it has been through the instance, and
-	 * that dependence on order is as it was.
+	 * Three classes, two fresh instances, opposite orders: each class gets the same answer. None of the three refers to
+	 * another, so what is covered is judgments that rest on class headers read from resources and on a class's own
+	 * definition while it is being judged (the first of the three is an interface the resolver does not serve). It does
+	 * not cover the header an instance keeps of a class it has transformed: a class with no resource is known to later
+	 * judgments of other classes only once it has been through the instance, and that dependence on order is as it was.
 	 */
 	@Test
 	void classesWithClassFilesAreJudgedTheSameInEitherOrder() throws Exception {
@@ -457,6 +581,8 @@ class MergedBaseFrameUnreadTypeTest {
 			types.put(p + "B", plain(p + "B", gone, speaker));
 			types.put(p + "RA", plain(p + "RA", root));
 			types.put(p + "RB", plain(p + "RB", gone));
+			types.put(p + "RC", plain(p + "RC", p + "RA"));
+			types.put(p + "RD", plain(p + "RD", p + "RA"));
 			types.put(p + "First", plain(p + "First", p + "Current"));
 			types.put(p + "Second", plain(p + "Second", p + "Current"));
 			types.put(p + "SA", plain(p + "SA", OBJ, self));
@@ -509,8 +635,27 @@ class MergedBaseFrameUnreadTypeTest {
 		return recomputer.transform(new ClassReader(input).getClassName().replace('/', '.'), input, null);
 	}
 
-	/** A fresh instance hands the class back, catches nothing, and the real verifier links those bytes. */
+	/**
+	 * A shape whose inference really needs a join that cannot be computed: a fresh instance hands the class back, catches
+	 * nothing, and the real verifier links those bytes.
+	 */
 	private static void assertQuiet(World world, byte[] input) throws Exception {
+		assertNeedsAnUnreadJoin(world, input);
+		assertUntouched(world, input);
+	}
+
+	/** Premise, against a shape that passes without ever meeting the question: inferring its frames asks for a join no class file allows. */
+	private static void assertNeedsAnUnreadJoin(World world, byte[] input) {
+		MergedBaseFrameRecomputer strict = world.recomputer();
+		assertThrows(TypeNotPresentException.class, () -> new ClassReader(input).accept(new ClassWriter(ClassWriter.COMPUTE_FRAMES) {
+			@Override protected String getCommonSuperClass(String a, String b) {
+				return strict.commonSuperClass(a, b);
+			}
+		}, ClassReader.SKIP_FRAMES), "premise: this shape's inference needs a type no class file gives");
+	}
+
+	/** A fresh instance hands the class back, catches nothing, and the real verifier links those bytes. */
+	private static void assertUntouched(World world, byte[] input) throws Exception {
 		long before = Caught.errorCount();
 		assertSame(input, judge(world.recomputer(), input), "the class comes back as it went in");
 		assertEquals(before, Caught.errorCount(), "nothing is caught: " + Caught.failureSites());
@@ -736,6 +881,24 @@ class MergedBaseFrameUnreadTypeTest {
 		method.visitEnd();
 		writer.visitEnd();
 		return writer.toByteArray();
+	}
+
+	/**
+	 * {@code static Object straight()}: a new {@code source} stored into a local and then, at an instruction nothing
+	 * branches to, a frame that declares the local as {@code declared}.
+	 */
+	private static void straightMethod(ClassWriter writer, String declared, String source) {
+		MethodVisitor method = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "straight", "()Ljava/lang/Object;", null, null);
+		method.visitCode();
+		value(method, source, false);
+		method.visitVarInsn(Opcodes.ASTORE, 0);
+		method.visitInsn(Opcodes.NOP);
+		method.visitLabel(new Label());
+		method.visitFrame(Opcodes.F_APPEND, 1, new Object[] {declared}, 0, null);
+		method.visitVarInsn(Opcodes.ALOAD, 0);
+		method.visitInsn(Opcodes.ARETURN);
+		method.visitMaxs(2, 1);
+		method.visitEnd();
 	}
 
 	/**
