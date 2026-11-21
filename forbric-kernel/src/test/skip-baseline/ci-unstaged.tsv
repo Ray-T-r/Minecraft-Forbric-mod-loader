@@ -6,7 +6,11 @@
 # kernel-test-results: job kernel, ubuntu-latest, JDK 21.0.13, no game files.
 # The 7 SoakPlayerPreparationTest rows came later, first from this file's own recipe on a clean clone of 7d87e4b7
 # (macOS, JDK 21.0.12, 2026-11-21). CI run 44790216820 (43efbd92 on ci/remove-forge-stage2, the same job) has
-# measured them since: its skips-actual-ci-unstaged.tsv holds exactly the 2017 rows below, byte for byte.
+# measured them since: its skips-actual-ci-unstaged.tsv holds exactly 2017 of the rows below, byte for byte.
+# The 2018th, MergedBaseFrameRecomputerTest theNarratorOfAnotherOperatingSystemIsQuiet(), came with that test: it reads
+# the game's text2speech library and skips where no game files are. Its line is the one this file's ratchet printed as
+# new on a clean clone of c0af603c (macOS, JDK 21.0.12, 2026-11-21, no stage, no launcher libraries). No CI run has
+# measured it yet.
 test	net.forbric.api.ForeignTypeCarrierTest	everyNeoForgeNameIsInTheStagedNeoForgeCarrier()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.access.RestoredAccessTransformerTest	actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/chunk/ChunkGenerator.class)
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:staged] staged pack or carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
@@ -1823,6 +1827,7 @@ test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	aSharedSuperclas
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	anInterfaceWidensToObject()	[fixture:staged] staged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	anUnresolvableHierarchyLeavesTheClassAlone()	[fixture:third-party] InventoryProfilesNext not staged — skipping the real-jar check
 test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	theCommonSuperclassComesFromTheStagedHierarchy()	[fixture:staged] staged base and carriers absent — skipping the real-hierarchy check: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
+test	net.forbric.kernel.transform.MergedBaseFrameRecomputerTest	theNarratorOfAnotherOperatingSystemIsQuiet()	[fixture:mc-libraries] Minecraft's text2speech library required
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	aSecondPassAndAnotherClassAreLeftAlone()	[fixture:staged] staged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	itIsAViewOfAllAssignedRightAfterAll()	[fixture:staged] staged base absent
 test	net.forbric.kernel.transform.MergedBaseKeyMappingMapTest	theBaseHasOneKeyLookupAndEveryAccessToItIsNeoForges()	[fixture:staged] staged base absent
