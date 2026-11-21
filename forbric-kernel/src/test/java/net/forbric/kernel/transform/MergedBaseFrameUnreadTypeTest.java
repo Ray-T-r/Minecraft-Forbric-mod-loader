@@ -200,6 +200,29 @@ class MergedBaseFrameUnreadTypeTest {
 		assertQuiet(world, writer.toByteArray());
 	}
 
+	/** Nor does a frame at an instruction nothing branches to, where it declares no reference: there is nothing in it to compare. */
+	@ParameterizedTest
+	@ValueSource(strings = {"shape/", "other/names/deep/"})
+	void aFrameWithNoReferenceWhereNothingBranchesToDoesNotBringTheReportBack(String p) throws Exception {
+		World world = new World(p);
+		ClassWriter writer = new ClassWriter(0);
+		writer.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, p + "PickCount", null, OBJ, null);
+		pickMethod(writer, p + "Speaker", p + "Speaker", false, p + "A", p + "A2", p + "B");
+		MethodVisitor count = writer.visitMethod(Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC, "n", "(I)I", null, null);
+		count.visitCode();
+		count.visitVarInsn(Opcodes.ILOAD, 0);
+		count.visitVarInsn(Opcodes.ISTORE, 1);
+		count.visitInsn(Opcodes.NOP);
+		count.visitLabel(new Label());
+		count.visitFrame(Opcodes.F_APPEND, 1, new Object[] {Opcodes.INTEGER}, 0, null);
+		count.visitVarInsn(Opcodes.ILOAD, 1);
+		count.visitInsn(Opcodes.IRETURN);
+		count.visitMaxs(1, 2);
+		count.visitEnd();
+		writer.visitEnd();
+		assertQuiet(world, writer.toByteArray());
+	}
+
 	/**
 	 * With every type read there is no stand-in, and a declared frame that could not be compared is, as before, no
 	 * report: neither a method whose instructions the frame computation changed, nor a frame where nothing branches to.
