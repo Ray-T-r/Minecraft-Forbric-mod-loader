@@ -29,7 +29,6 @@ import org.objectweb.asm.tree.ClassNode;
 import org.objectweb.asm.tree.InsnNode;
 import org.objectweb.asm.tree.MethodNode;
 
-import net.forbric.kernel.ExpectCaught;
 import net.forbric.kernel.TestFixtures;
 import net.forbric.kernel.classloading.ForbricClassLoader;
 import net.forbric.kernel.transform.ChainReferences;
@@ -43,9 +42,6 @@ import net.forbric.kernel.transform.ChainReferences;
  * decisions to a table recorded at b37e6ae0 (lambda-decisions-b37e6ae0.tsv). The merged base and the pruner are gone; the
  * genuine base carries no lambda name twice (NeoForgeBaseStructureCensusStagedTest.noClassHasTwoLambdasOfOneName).
  */
-// The staged jars and the test classpath carry no fastutil, which the frame recomputer's hierarchy walk reaches from some
-// targets; it abstains there, after everything a lambda decision reads.
-@ExpectCaught("cannot prove a frame repair")
 @ResourceLock("native-game-references")
 @ResourceLock("system-properties")
 class LambdaShapeEvidenceStagedTest {
