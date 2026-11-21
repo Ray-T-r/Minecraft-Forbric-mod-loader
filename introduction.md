@@ -722,7 +722,7 @@ What `KernelBoot` registers (94 call sites; some conditional):
 | `ENV_STRIP` | `EnvironmentStripTransformer` |
 | `ACCESS` | `ClassTweakerTransformer` (Fabric), `access.AccessTransformer` built from every NeoForge mod jar's **and the carrier's** `META-INF/accesstransformer*.cfg` — the carrier's AT is what the base needs too, as natively |
 | `COREMOD` | 89 registrations: the loader-probe rewriter, the Mixin-weaver slot (`FmlContextLoaderRewriter`, `ModuleClassLoaderInitInjector`), `GuestMixinPluginGuard`, the lifecycle redirect, `ForbricMergedBaseCompatTransformer`, `VanillaMemberTwinInjector`, and most of the 69 `*Injector` classes in `transform/`, each repairing one named seam between Fabric and NeoForge's game or restoring one vanilla behaviour |
-| `FABRIC_BUILTIN` | `RestoredAccessTransformer` (re-applies access to members COREMOD restored), `MergedBaseFrameRecomputer` (recomputes the stack-map frames of every class that has a reference-typed frame — the game's libraries' classes as well as guests' — from the class files actually present, and keeps the recomputed class only where a declared frame disagrees with that hierarchy; where a type on the way cannot be resolved it keeps the bytes it was given and reports to `Caught`, §19) |
+| `FABRIC_BUILTIN` | `RestoredAccessTransformer` (re-applies access to members COREMOD restored), `MergedBaseFrameRecomputer` (recomputes the stack-map frames of every class that has a reference-typed frame — the game's libraries' classes as well as guests' — from the class files actually present, and keeps the recomputed class only where a declared frame disagrees with that hierarchy; where a join on the way needs a type no class file gives, `java/lang/Object` stands in for that join, the frames inferred over it are never kept, and the class is handed on as it came — without a word when every reference frame it declares was compared and accepts what was inferred for it, with a report to `Caught` otherwise; where a type a frame declares has to be looked up and cannot be read, or a hierarchy loops, it keeps the bytes it was given and reports to `Caught`, §19) |
 
 The post-Mixin stage (`KernelMixinBootstrap`) is a fixed composition:
 
@@ -2335,31 +2335,64 @@ Located, not yet fixed (no impossibility proof):
   `NetherEntities` class initialises inside NeoForge's registration window and registers that holder only from its
   Fabric main entrypoint, after the kernel's freeze; what initialises the class that early is not traced, what the
   unfinished freeze leaves undone is not measured, the world still loaded, the old kernel on the merged base logged the
-  same throw, and the kernel that landed logs it too (measured on that machine at `6184f46b`). Every client start that
-  is not on macOS logs a `Caught` WARN,
-  `[Forbric/Frames] cannot prove a frame repair for com.mojang.text2speech.Narrator`, with its stack trace and a line
-  in both `Caught` summaries: measured on Windows, on the kernel that landed too; inferred for Linux from Minecraft's
-  library rules, where no client has been run; a dedicated server does not load the class (the Windows server logs
-  have no such line). It is a false alarm, its cause is known, and it is not fixed. `MergedBaseFrameRecomputer` (§6)
-  recomputes the frames of every class that has a reference-typed frame; `Narrator.getNarrator()` has a branch that
-  constructs the macOS narrator, `NarratorMac`, whose superclass comes from a library Minecraft lists for macOS only;
-  anywhere else the recomputer cannot walk that class's hierarchy, keeps the bytes it was given, and reports the
-  decline as a caught failure. Reproduced on macOS with that library taken away (the class loaded early, because a
-  macOS client without the library ends before it reaches its narrator): the same exception and the same 24 stack
-  frames, from the hierarchy walk up to the class loader, as on Windows (the nine frames below them there are the game
-  reaching its narrator, which the macOS run cannot reach), and the class handed to the JVM is byte for byte the jar's;
-  with the library present nothing is caught.
-  That nothing else differs is measured on macOS and inferred for Windows. The line predates Stage 4: of the two
-  commits behind it, one (2026-10-08) made the recomputer look at every such class where it had looked only at classes
-  naming one of four ancestors the merge had taken off, the other (2026-10-17) turned its decline from a plain warning
-  into a `Caught` report, and both were on `main` from 2026-10-23; the old kernel on that Windows machine predates
-  both, which is why its log has no such line, and no release contains them.
-  It turns no gate red: a gate goes red on a `Caught` report only under `FORBRIC_CAUGHT_STRICT=1` or on the three
-  messages that say an entity-attribute event did not finish (`caught_report` in `run/lib.sh`), the client gates run on
-  macOS, where the library is present, and CI's Linux and Windows jobs start no client. Behind it is a weakness with no
-  instance found, read from the code and not measured: three other callers of the same hierarchy walk
-  (`NativeCallInlining`, `NativeDecisionIsland`, `SpawnPositionCallsInjector`) would drop a rewrite of their own on a
-  type that cannot be resolved.
+  same throw, and the kernel that landed logs it too (measured on that machine at `6184f46b`). On the kernel that
+  landed, every client start that was not on macOS logged a `Caught` WARN, `[Forbric/Frames] cannot prove a frame
+  repair for com.mojang.text2speech.Narrator`, with its stack trace and a line in both `Caught` summaries: measured on
+  Windows, at `6184f46b` too; inferred for Linux from Minecraft's library rules, where no client has been run; a
+  dedicated server does not load the class (the Windows server logs have no such line). It was a false alarm.
+  `MergedBaseFrameRecomputer` (§6) recomputes the frames of every class that has a reference-typed frame;
+  `Narrator.getNarrator()` has a branch that constructs the macOS narrator, `NarratorMac`, whose superclass comes from
+  a library Minecraft lists for macOS only; anywhere else the recomputer could not walk that class's hierarchy, kept
+  the bytes it was given, and reported the decline as a caught failure. Reproduced on macOS with that library taken
+  away (the class loaded early, because a macOS client without the library ends before it reaches its narrator): the
+  same exception and the same 24 stack frames, from the hierarchy walk up to the class loader, as on Windows (the nine
+  frames below them there are the game reaching its narrator, which the macOS run cannot reach), and the class handed
+  to the JVM is byte for byte the jar's; with the library present nothing is caught. That nothing else differs is
+  measured on macOS and inferred for Windows. The line predates Stage 4: of the two commits behind it, one (2026-10-08)
+  made the recomputer look at every such class where it had looked only at classes naming one of four ancestors the
+  merge had taken off, the other (2026-10-17) turned its decline from a plain warning into a `Caught` report, and both
+  were on `main` from 2026-10-23; the old kernel on that Windows machine predates both, which is why its log has no
+  such line, and no release contains them. It turned no gate red: a gate goes red on a `Caught` report only under
+  `FORBRIC_CAUGHT_STRICT=1` or on the three messages that say an entity-attribute event did not finish (`caught_report`
+  in `run/lib.sh`), the client gates run on macOS, where the library is present, and CI's Linux and Windows jobs start
+  no client. The recomputer has been changed since so that this class is no longer reported; no client has been started
+  with the change. Where inferring a join needs a type no class file gives, `java/lang/Object` now stands in for that
+  join and the inference is finished. Object is above whatever the join would have been, so frames inferred over it can
+  show that nothing needs repair and never that something does, and they are never written out. The class is handed on
+  as it came, without a report when every reference frame it declares was compared and accepts what was inferred for
+  it: `Narrator`'s frame is declared as the interface itself, which accepts any object. It is still reported when a
+  declared frame does not accept what was inferred, when a declared reference frame could not be compared (its method
+  carries unreachable code, which the frame computation rewrites, or the frame stands where nothing branches to and the
+  computation gives none there), when a type a frame declares has to be looked up and cannot be read, and when a
+  hierarchy loops or runs past the walk's bound. Measured for the change, on macOS and none of it in a client: 61
+  unit-test invocations over synthetic class shapes, the quiet and the reported ones under two unrelated sets of names,
+  each also put to the JVM's own verifier (HotSpot 25 with the game fixtures, HotSpot 21 on a clone without them):
+  every quiet shape links there and every reported one fails to, one apart, whose report is of a resolver that itself
+  threw; one test that hands the recomputer the game's real text2speech library as a Windows or a Linux launch has it,
+  without the macOS bridge: the class comes back untouched and nothing is caught, where the kernel before the change
+  reported; and a census that hands it every class of the game's libraries as each operating system lists them: it
+  reports 6 classes on each of the three lists where it reported 9 (macOS), 10 and 10, and 20 on each with the jars of
+  a 97-mod pack added where it reported 33, 34 and 34, it rewrites none, it reports no class it did not report before,
+  and `Narrator` is on no list. Not measured: any client with the change (Windows, Linux, or macOS with the bridge
+  taken away) and any gate. Known limits. A class the change made quiet may still fail to link for a reason the
+  recomputer never reads: a `catch` type that is not there, an instruction's operand, or a super-interface, itself not
+  there, of a type a frame declares — in that last case the JVM fails on the very frame that was compared. The earlier
+  report named none of these; it was made only because the same absent type also took part in a join, and where such a
+  class is linked the JVM names the missing class itself, as it does natively. A report that stays can be more than the
+  verifier needs: beside a stand-in, a class is reported although the JVM links it where a frame declared as an
+  interface sits in a method with unreachable code, and where a reference frame stands at an instruction nothing
+  branches to, also one declared as an interface, as Object, or as a class its value really is an instance of (a frame
+  declared as an interface over a hierarchy that loops or is too deep is reported too, as before the change). Beside a
+  frame that really needs repair, a join of a readable interface with a type that has no class file is a stand-in or
+  not depending on which branch reaches the join first, so the class is repaired in one order and reported in the
+  other, as before the change. An array is still taken to fit any interface, where the JVM takes only `Cloneable` and
+  `Serializable`. The header the recomputer keeps of a class it has transformed still lets the judgment of another
+  class depend on which of the two came first, where the first has no class file of its own. That a frame declared as
+  Object makes the JVM load nothing is HotSpot's behaviour as measured, not the specification's text (for an interface
+  it is the specification's). Behind the false alarm is a weakness with no instance found, read from the code and not
+  measured, that the change leaves as it was: three other callers of the same hierarchy walk (`NativeCallInlining`,
+  `NativeDecisionIsland`, `SpawnPositionCallsInjector`) drop a rewrite of their own on a type that cannot be resolved.
+  They write the frames they compute into the class, so no stand-in is given to them.
   `-Dforbric.crossEcosystemPresence=off` also switches
   dependency-ordered construction off without a log line (§4.4): gate-m18's control boot has two NeoForge `@Mod` classes
   (it constructs one; the other is client-only) and gate-m19's constructs two, and neither writes an order line. With
