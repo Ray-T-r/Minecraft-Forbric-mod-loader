@@ -722,7 +722,7 @@ What `KernelBoot` registers (94 call sites; some conditional):
 | `ENV_STRIP` | `EnvironmentStripTransformer` |
 | `ACCESS` | `ClassTweakerTransformer` (Fabric), `access.AccessTransformer` built from every NeoForge mod jar's **and the carrier's** `META-INF/accesstransformer*.cfg` — the carrier's AT is what the base needs too, as natively |
 | `COREMOD` | 89 registrations: the loader-probe rewriter, the Mixin-weaver slot (`FmlContextLoaderRewriter`, `ModuleClassLoaderInitInjector`), `GuestMixinPluginGuard`, the lifecycle redirect, `ForbricMergedBaseCompatTransformer`, `VanillaMemberTwinInjector`, and most of the 69 `*Injector` classes in `transform/`, each repairing one named seam between Fabric and NeoForge's game or restoring one vanilla behaviour |
-| `FABRIC_BUILTIN` | `RestoredAccessTransformer` (re-applies access to members COREMOD restored), `MergedBaseFrameRecomputer` (recomputes a guest class's stack-map frames when they name a superclass the base does not have) |
+| `FABRIC_BUILTIN` | `RestoredAccessTransformer` (re-applies access to members COREMOD restored), `MergedBaseFrameRecomputer` (recomputes the stack-map frames of every class that has a reference-typed frame — the game's libraries' classes as well as guests' — from the class files actually present, and keeps the recomputed class only where a declared frame disagrees with that hierarchy; where a type on the way cannot be resolved it keeps the bytes it was given and reports to `Caught`, §19) |
 
 The post-Mixin stage (`KernelMixinBootstrap`) is a fixed composition:
 
@@ -1646,7 +1646,8 @@ inherited (`LibCaughtContractTest`; its strict case passes with the inner run ke
 the stub's outer gate ends on the inner run and takes its exit status, so that the outer gate turns red for an inner
 run's failure is held by no test). Each inner run used to take a file of its own, print its CAUGHT line into the
 server log the outer gate keeps, and leave the outer gate printing `CAUGHT none` — over an NPE gate-m39's server hit on
-every run (main f7f4ff92 too; §5's transfer attribution). gate-m34 waits for `soak-run.py` rather than exec'ing it, so
+every run (`main` as it then was, f7f4ff92, too; §5's transfer attribution). gate-m34 waits for `soak-run.py` rather
+than exec'ing it, so
 its EXIT trap still runs; the soak client (one JVM: the client and every integrated server it opens) writes the run's
 `evidence/caught.tsv`, which `soak-run.py` appends to the gate's file and records in `acceptance.json`.
 
@@ -1876,13 +1877,13 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
 - **Unit tests.** How many run and skip depends on the staged root and the fixtures present (some tests generate one
-  case per fixture), so each count names its root. The full run of the tree at the end of the Stage 4 C6 acceptance
-  (`-Pforbric.requireFixtures=all jar cleanTest test --continue`, no daemon, JDK 25, on a `.stage4` root prepared from
-  NeoForge 26.2.0.93; measured at `ce423a9d` and again at `14bf179d`, and the commits after `14bf179d` change only dated
-  records, these introductions and the comment lines of one skip baseline) reported 5,993 tests in its JUnit XML, 0
-  skipped and 5 failed. The five are fixtures this machine no longer has: three LiquidBounce tests (its two jars are
-  lost and cannot be fetched again) and two opt-in shared-final tests; `-Pforbric.requireFixtures=all` turns a missing
-  fixture into a failure rather than a skip. Many tests read the staged jars; gate-m0 fails on *any* skipped test,
+  case per fixture), so each count names its root. The full run at `6184f46b`, the commit that landed on `main` on
+  2026-11-21 (`-Pforbric.requireFixtures=all jar cleanTest test --continue`, no daemon, JDK 25, on a `.stage4` root
+  prepared from NeoForge 26.2.0.93; `ce423a9d` and `14bf179d` before it measured the same counts, and what has been
+  committed since `6184f46b` changes only these introductions) reported 920 test classes and 5,993 tests in its JUnit
+  XML, 0 skipped and 5 failed. The five are fixtures this machine no longer has: three LiquidBounce tests (its two jars
+  are lost and cannot be fetched again) and two opt-in shared-final tests; `-Pforbric.requireFixtures=all` turns a
+  missing fixture into a failure rather than a skip. Many tests read the staged jars; gate-m0 fails on *any* skipped test,
   because a skip there means the tests did not look at the real base, so gate-m0 is red on those three LiquidBounce
   tests on this machine. The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin
   and MixinExtras, each with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI
@@ -2166,12 +2167,19 @@ Break one and the failure usually surfaces far from the cause.
   79.1 % with nothing reported DEGRADED in the load report), against 80.5 % for release v0.2.0 on the same jars. That
   sweep has not been re-run on NeoForge's base.
 - **Measured for Stage 4** (the removal of MinecraftForge; every figure with its log in
-  `forbric-kernel/run/compat/reports/2026-10-30-forge-removal-baseline/`): the refusal rule over 1,953 distinct local
+  `forbric-kernel/run/compat/reports/2026-10-30-forge-removal-baseline/`, except what was measured at `6184f46b` itself,
+  the commit that landed on `main` on 2026-11-21: a commit cannot hold the record of its own measurement, and those
+  logs are kept outside the repository): the refusal rule over 1,953 distinct local
   jars refused 90, each checked by hand, with 0 false refusals; the full gate sweep at the end of C5 (`394b8804`, no
   verdict cache, the soak left out) was green on every gate but gate-m0, red only on the three lost LiquidBounce
-  fixtures (the last sweep recorded there, in the C6 acceptance re-run at `ce423a9d`, was green on 58 gates, with
-  gate-m0 red the same way and gate-m17 red inside the sweep, ended by hand while its download from Mojang trickled; run
-  alone afterwards gate-m17 was green, 164 checks, and `run/lib.sh` and gate-m17 changed after that sweep); a
+  fixtures, and so was the latest one, run the same way at the landing commit: 59 gates green, gate-m0 red on that one
+  line, gate-m17 green inside the batch (164 checks), nothing caught by the kernel in any gate, and the first full
+  sweep on `run/lib.sh` as it is now (the sweep before it, in the C6 acceptance re-run at `ce423a9d`, was green on 58
+  gates, with gate-m0 red the same way and gate-m17 red inside the sweep, ended by hand while its download from Mojang
+  trickled; run alone afterwards gate-m17 was green, 164 checks). At the landing commit the unit suite stands as §16
+  gives it, `integrationTest` is red on the same five fixture tests and on nothing else, and CI was green in all six
+  jobs (its run on the branch `ci/remove-forge-stage2`, which held that commit before `main` did); the soak was not run
+  again there (next item). Also measured: a
   pure-Fabric A/B against native Fabric found no Forbric-only difference the merged base did not have, and native
   NeoForge A/B 3 of 3; worlds the old kernel wrote open whole (gate-m58), a mod swapped from its MinecraftForge build to
   its NeoForge build loses only what the native swap loses (gate-m59), zero-mod worldgen matches vanilla (gate-m31),
@@ -2195,6 +2203,19 @@ Break one and the failure usually surfaces far from the cause.
   player is invulnerable, so nothing about damage or hunger; it is one run, on macOS only; whether native NeoForge keeps
   the same three servers with this pack was not measured; and the heap peaked at 3.76 of 4 GiB, its floor after each
   session's GC rising about 0.07 GiB per session, so a longer soak is not shown to fit.
+- **The release flow has been rehearsed, never run for real** (§13.3). Up to, not including, any upload it was
+  rehearsed at `df1e5a13` (record `stage4-c6-accept-mac.md`) and again at the landing commit, with every verdict the
+  same: a release acceptance told to skip a gate is refused; one that ran gate-m0 alone is recorded as not passed
+  (gate-m0 red on its fixture line, the other sixty gates not run) and `releaseAssets` refuses its evidence; with a
+  stand-in acceptance that passes, `releaseAssets` writes the manifest and 15 jars, the published kernel jar
+  byte-identical to the attested one, and the pinned slim installer built on that manifest installs from a local asset
+  server with no dangling reference. Its limits at the landing commit: that install was seeded, not cold — the
+  downloads, the tools and NeoForm's patched game came from gate-m17's install at the same commit, and the 14
+  third-party jars, Maven being out of reach on purpose, came from the release assets, the installer's designed
+  fallback — so the pinned slim installer's cold path is not measured there (the cold install measured there is
+  gate-m17's, with the full unpinned installer); the installed game was not launched; and the flow has never run on an
+  acceptance that really passed: the full release acceptance has not been run, it cannot pass while gate-m0 is red on
+  the lost fixtures, and the pass `releaseAssets` accepted is the stand-in's.
 - **Native comparison, last round on the merged base.** Before Stage 4, 27 mods were measured against their native
   loaders by the method of §16.1 (instruction-level landing, liveness, in-game probes, rename experiment): Carpet,
   Create Fly, C2ME, Lithium (Fabric and NeoForge builds), Physics Mod, Sodium (NeoForge), Continuity, Iris, Corpse,
@@ -2310,26 +2331,63 @@ Located, not yet fixed (no impossibility proof):
   client boot logged a `Caught` WARN that NeoForge's `GameData.freezeData()` threw on an intrusive holder nobody
   registered (`entity.betternether.naga_projectile`), so NeoForge's own freeze stops part-way — the mod's
   `NetherEntities` class initialises inside NeoForge's registration window and registers that holder only from its
-  Fabric main entrypoint, after the kernel's freeze; what initialises the class that early is not traced, the world
-  still loaded, and the old kernel on the merged base logged the same throw. On the Windows acceptance machine every
-  client boot logged a `Caught` WARN, `[Forbric/Frames] cannot prove a frame repair for
-  com.mojang.text2speech.Narrator` (the class names a macOS-only type): the original bytes are kept, but the old
-  kernel's run on the same machine has no such line, which change brought it is not traced, and no macOS gate can
-  see it. `-Dforbric.crossEcosystemPresence=off` also switches
+  Fabric main entrypoint, after the kernel's freeze; what initialises the class that early is not traced, what the
+  unfinished freeze leaves undone is not measured, the world still loaded, the old kernel on the merged base logged the
+  same throw, and the kernel that landed logs it too (measured on that machine at `6184f46b`). Every client start that
+  is not on macOS logs a `Caught` WARN,
+  `[Forbric/Frames] cannot prove a frame repair for com.mojang.text2speech.Narrator`, with its stack trace and a line
+  in both `Caught` summaries: measured on Windows, on the kernel that landed too; inferred for Linux from Minecraft's
+  library rules, where no client has been run; a dedicated server does not load the class (the Windows server logs
+  have no such line). It is a false alarm, its cause is known, and it is not fixed. `MergedBaseFrameRecomputer` (§6)
+  recomputes the frames of every class that has a reference-typed frame; `Narrator.getNarrator()` has a branch that
+  constructs the macOS narrator, `NarratorMac`, whose superclass comes from a library Minecraft lists for macOS only;
+  anywhere else the recomputer cannot walk that class's hierarchy, keeps the bytes it was given, and reports the
+  decline as a caught failure. Reproduced on macOS with that library taken away (the class loaded early, because a
+  macOS client without the library ends before it reaches its narrator): the same exception and stack frames as on
+  Windows, and the class handed to the JVM is byte for byte the jar's; with the library present nothing is caught.
+  That nothing else differs is measured on macOS and inferred for Windows. The line predates Stage 4: of the two
+  commits behind it, one (2026-10-08) made the recomputer look at every such class where it had looked only at classes
+  naming one of four ancestors the merge had taken off, the other (2026-10-17) turned its decline from a plain warning
+  into a `Caught` report, and both were on `main` from 2026-10-23; the old kernel on that Windows machine predates
+  both, which is why its log has no such line, and no release contains them.
+  It turns no gate red: a gate goes red on a `Caught` report only under `FORBRIC_CAUGHT_STRICT=1` or on the
+  entity-attribute messages, the client gates run on macOS, where the library is present, and CI's Linux and Windows
+  jobs start no client. Behind it is a weakness with no instance found, read from the code and not measured: three
+  other callers of the same hierarchy walk (`NativeCallInlining`, `NativeDecisionIsland`,
+  `SpawnPositionCallsInjector`) would drop a rewrite of their own on a type that cannot be resolved.
+  `-Dforbric.crossEcosystemPresence=off` also switches
   dependency-ordered construction off without a log line (§4.4): gate-m18's control boot has two NeoForge `@Mod` classes
   (it constructs one; the other is client-only) and gate-m19's constructs two, and neither writes an order line. With
   fabric-api 0.161.0 on the player's Windows pack the load report still names fabric-loot-api-v3 as not having finished
   loading once a world is entered, although the loot bridge delivered its events in that run (3,087 tables offered):
   `ReloadableServerRegistries` was defined so that the repair superseding the left-out mixin "can no longer be proved"
-  (§7.5); why was not looked into, and the old kernel's run on that pack reported the mod the same way. No kernel change
-  made since `df1e5a13`, the construction-order line among them, has run in a Windows game: push-and-run's last verdict
-  there was FAIL on exactly that missing line, and its repair is measured on macOS only. Two more things from those
-  Windows runs are not attributed and have no native run: on the player's world BCLib's world fixer threw
-  `Rendersystem called from wrong thread` on its own thread (the world was entered with its fixes unticked), and one
-  hotbar item drew as the missing texture.
-- Open from the same acceptance, in the installer and the gate harness: under a Chinese locale the installer's
-  command-line output mixes English lines with its Chinese ones (only `InstallerText` is localised; the window a
-  player double-clicks was not checked). Nothing bounds a gate's whole run: a download that trickled held one sweep
+  (§7.5); why was not looked into, and the old kernel's run on that pack reported the mod the same way. The kernel that
+  landed has run on the player's Windows machine (2026-11-21, at `6184f46b`): installed from the installer's window
+  into the default directory, over the install the acceptance had left there; started by the player's own PCL2 with the
+  player's settings and no `-Dforbric.*` flag; into a copy of a real save, in the world for 3 min 36 s (3,100 ticks; the
+  game paused itself once when its window lost focus); out cleanly, with no crash report. Push-and-run on an isolated
+  copy passed all 37 of its assertions, the construction-order one among them, which had failed there until the kernel
+  wrote the order line every time (§4.4); that isolated run used the NeoForge runtime built on the Mac, and the one the
+  installer built on Windows ran only under PCL2. Both `Caught` WARNs above were in the PCL2 run, and the load report
+  named fabric-loot-api-v3 as before. New in it and unexamined: about two and a half minutes into the world the server
+  thread logged two WARN lines, `[Forbric/Mixin] shared source root proof declined: source view is not ready` and
+  `shared source predicate leaf was not executed; native leaf retained` — a decline by design, not a `Caught` report;
+  what set it off was not looked into, and whether an older kernel prints them is not known (the sources that print
+  them are the same at `df1e5a13`, whose Windows run left its world within half a minute; no older kernel was kept in a
+  world as long). Not measured on Windows at this commit: a cold install (the three game artifacts were up to date from
+  the earlier install, so nothing was downloaded or built); what the installer does with a file a running game holds
+  open (§13.2; measured there at `df1e5a13` only, the installer's sources unchanged since); and BCLib's default answer.
+  Two more things from the Windows runs are not attributed and have no native run. On the player's world BCLib calls
+  the save incompatible; at `df1e5a13` its world fixer threw `Rendersystem called from wrong thread` on its own thread
+  both times its default answer was taken, and at the landing commit the prompt came again, the default was not tried
+  again, and the world was entered, as before, with "Apply Fixes" unticked. And one hotbar item draws as the missing
+  texture, on the kernel that landed too; it is not one of the save's two Sophisticated Backpacks items (a mod no
+  longer installed there), which sit in other slots and are dropped when they fail to decode.
+- Open from the same acceptance, in the installer and the gate harness: under a Chinese locale the installer mixes
+  English with Chinese, in its command-line output and in the window a player double-clicks alike (only
+  `InstallerText` is localised; in the window, seen on Windows at the landing commit, the title line, the cleanup line
+  and the closing hint about mods are Chinese, and the description, field names, buttons and build output English).
+  Nothing bounds a gate's whole run: a download that trickled held one sweep
   for 49 minutes, until the gate was ended by hand. A stop signal that reaches the soak between its client's start
   and the guarded wait still leaves the client running (a window of milliseconds; read from the code, not measured).
   Only gate-m17 has been read for checks that can pass on an earlier run's files; the other 60 gates have not. The
