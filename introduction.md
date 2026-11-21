@@ -722,7 +722,7 @@ What `KernelBoot` registers (94 call sites; some conditional):
 | `ENV_STRIP` | `EnvironmentStripTransformer` |
 | `ACCESS` | `ClassTweakerTransformer` (Fabric), `access.AccessTransformer` built from every NeoForge mod jar's **and the carrier's** `META-INF/accesstransformer*.cfg` — the carrier's AT is what the base needs too, as natively |
 | `COREMOD` | 89 registrations: the loader-probe rewriter, the Mixin-weaver slot (`FmlContextLoaderRewriter`, `ModuleClassLoaderInitInjector`), `GuestMixinPluginGuard`, the lifecycle redirect, `ForbricMergedBaseCompatTransformer`, `VanillaMemberTwinInjector`, and most of the 69 `*Injector` classes in `transform/`, each repairing one named seam between Fabric and NeoForge's game or restoring one vanilla behaviour |
-| `FABRIC_BUILTIN` | `RestoredAccessTransformer` (re-applies access to members COREMOD restored), `MergedBaseFrameRecomputer` (recomputes the stack-map frames of every class that has a reference-typed frame — the game's libraries' classes as well as guests' — from the class files actually present, and keeps the recomputed class only where a declared frame disagrees with that hierarchy; where a join on the way needs a type no class file gives, `java/lang/Object` stands in for that join, the frames inferred over it are never kept, and the class is handed on as it came — without a word when every reference frame it declares was compared and accepts what was inferred for it, with a report to `Caught` otherwise; where a type a frame declares has to be looked up and cannot be read, or a hierarchy loops, it keeps the bytes it was given and reports to `Caught`, §19) |
+| `FABRIC_BUILTIN` | `RestoredAccessTransformer` (re-applies access to members COREMOD restored), `MergedBaseFrameRecomputer` (recomputes the stack-map frames of every class that has a reference-typed frame — the game's libraries' classes as well as guests' — from the class files actually present, and keeps the recomputed class only where a declared frame disagrees with that hierarchy. Where a join on the way needs a type no class file gives, `java/lang/Object` stands in for that join, the frames inferred over it are never kept, and the class is handed on as it came: without a word when every reference frame it declares was compared and accepts what was inferred for it, with a report to `Caught` otherwise — as also where a type a frame declares has to be looked up and cannot be read, or a hierarchy loops or runs past the walk's bound; §19) |
 
 The post-Mixin stage (`KernelMixinBootstrap`) is a fixed composition:
 
@@ -1878,17 +1878,19 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   Without the staged jars `compileRuntimeJava` is skipped and `jar` produces a boot jar with no game side — which
   is what CI builds. `KernelRuntimeClasses.verify` is what catches such a jar at launch.
 - **Unit tests.** How many run and skip depends on the staged root and the fixtures present (some tests generate one
-  case per fixture), so each count names its root. The full run at `6184f46b`, the commit that landed on `main` on
-  2026-11-21 (`-Pforbric.requireFixtures=all jar cleanTest test --continue`, no daemon, JDK 25, on a `.stage4` root
-  prepared from NeoForge 26.2.0.93; `ce423a9d` and `14bf179d` before it measured the same counts, and what has been
-  committed since `6184f46b` changes only these introductions) reported 920 test classes and 5,993 tests in its JUnit
-  XML, 0 skipped and 5 failed. The five are fixtures this machine no longer has: three LiquidBounce tests (its two jars
-  are lost and cannot be fetched again) and two opt-in shared-final tests; `-Pforbric.requireFixtures=all` turns a
-  missing fixture into a failure rather than a skip. Many tests read the staged jars; gate-m0 fails on *any* skipped test,
-  because a skip there means the tests did not look at the real base, so gate-m0 is red on those three LiquidBounce
-  tests on this machine. The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin
-  and MixinExtras, each with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI
-  unstaged job is JDK 21).
+  case per fixture), so each count names its root. The full run at `bafdbdc8` (`-Pforbric.requireFixtures=all jar
+  cleanTest test --continue`, no daemon, JDK 25, on a `.stage4` root prepared from NeoForge 26.2.0.93; what has been
+  committed since changes only these introductions) reported 921 test classes and 6,055 tests in its JUnit XML, 0
+  skipped and 5 failed. The same run at `6184f46b`, the commit that landed on `main` on 2026-11-21, reported 920 classes
+  and 5,993 tests, 0 skipped and the same five failed (`ce423a9d` and `14bf179d` before it measured the same counts);
+  the 62 tests between the two are the frame recomputer's (§19), one new class of 61 and one test more in an existing
+  class. The five are fixtures this machine no longer has: three LiquidBounce tests (its two jars are lost and cannot be
+  fetched again) and two opt-in shared-final tests; `-Pforbric.requireFixtures=all` turns a missing fixture into a
+  failure rather than a skip. Many tests read the staged jars; gate-m0 fails on *any* skipped test, because a skip there
+  means the tests did not look at the real base, so gate-m0 is red on those three LiquidBounce tests on this machine.
+  The weave tests (`mixin/weave/`) run synthetic mods with unrelated names through the real Mixin and MixinExtras, each
+  with its mechanism switched off as the control. Tests must pass on JDK 21 as well as 25 (the CI unstaged job is JDK
+  21).
 - **Gates.** 61 scripts (one of them the two-hour soak, gate-m34), `forbric-kernel/run/gate-m*.sh`, each asserting on the real logs and files of a real
   instance, most with named negative controls (a `-D…=off` or input removal that must turn exactly the named
   checks red). `run/compat/gates-all.sh` discovers them by glob; `gates-parallel.py` overlaps them using each
@@ -2169,18 +2171,23 @@ Break one and the failure usually surfaces far from the cause.
   sweep has not been re-run on NeoForge's base.
 - **Measured for Stage 4** (the removal of MinecraftForge; every figure with its log in
   `forbric-kernel/run/compat/reports/2026-10-30-forge-removal-baseline/`, except what was measured at `6184f46b` itself,
-  the commit that landed on `main` on 2026-11-21: a commit cannot hold the record of its own measurement, and those
-  logs are kept outside the repository): the refusal rule over 1,953 distinct local
+  the commit that landed on `main` on 2026-11-21, and at `bafdbdc8` after it: a commit cannot hold the record of its
+  own measurement, and those logs are kept outside the repository): the refusal rule over 1,953 distinct local
   jars refused 90, each checked by hand, with 0 false refusals; the full gate sweep at the end of C5 (`394b8804`, no
   verdict cache, the soak left out) was green on every gate but gate-m0, red only on the three lost LiquidBounce
-  fixtures, and so was the latest one, run the same way at the landing commit: 59 gates green, gate-m0 red on its one
+  fixtures, and so was the one run the same way at the landing commit: 59 gates green, gate-m0 red on its one
   fixture line, gate-m17 green inside the batch (164 checks), nothing caught by the kernel in any gate, and the first
   full sweep on `run/lib.sh` and gate-m17 as they are now (the sweep before it, in the C6 acceptance re-run at
   `ce423a9d`, was green on 58 gates, with gate-m0 red the same way and gate-m17 red inside the sweep, ended by hand
   while its download from Mojang trickled; run alone afterwards gate-m17 was green, 164 checks). At the landing commit
   the unit suite stands as §16 gives it, `integrationTest` is red on the same five fixture tests and on nothing else,
   and CI was green in all six jobs both times it ran on that commit: on the branch `ci/remove-forge-stage2`, which held
-  the commit before `main` did, and on `main` after the push; the soak was not run again there (next item). Also
+  the commit before `main` did, and on `main` after the push; the soak was not run again there (next item). The latest
+  sweep, run the same way at `bafdbdc8` (the landing commit's kernel with the frame recomputer's change, below): 58
+  gates green, gate-m0 red on its fixture line, and gate-m17 red inside the batch, on downloads that did not finish
+  (its installer's from NeoForged's maven timed out); run alone afterwards gate-m17 was green, 164 checks, and nothing
+  was caught by the kernel in any gate. There the unit suite stands as §16 gives it and `integrationTest` is red on the
+  same five fixture tests and on nothing else; CI has not run on that commit, and neither has the soak. Also
   measured: a
   pure-Fabric A/B against native Fabric found no Forbric-only difference the merged base did not have, and native
   NeoForge A/B 3 of 3; worlds the old kernel wrote open whole (gate-m58), a mod swapped from its MinecraftForge build to
@@ -2335,11 +2342,12 @@ Located, not yet fixed (no impossibility proof):
   `NetherEntities` class initialises inside NeoForge's registration window and registers that holder only from its
   Fabric main entrypoint, after the kernel's freeze; what initialises the class that early is not traced, what the
   unfinished freeze leaves undone is not measured, the world still loaded, the old kernel on the merged base logged the
-  same throw, and the kernel that landed logs it too (measured on that machine at `6184f46b`). On the kernel that
-  landed, every client start that was not on macOS logged a `Caught` WARN, `[Forbric/Frames] cannot prove a frame
-  repair for com.mojang.text2speech.Narrator`, with its stack trace and a line in both `Caught` summaries: measured on
-  Windows, at `6184f46b` too; inferred for Linux from Minecraft's library rules, where no client has been run; a
-  dedicated server does not load the class (the Windows server logs have no such line). It was a false alarm.
+  same throw, the kernel that landed logs it too (measured on that machine at `6184f46b`), and so does the kernel
+  with the frame recomputer's change described next (`bafdbdc8`, title screen only). On the kernel that landed, every
+  client start that was not on macOS logged a `Caught` WARN, `[Forbric/Frames] cannot prove a frame repair for
+  com.mojang.text2speech.Narrator`, with its stack trace and a line in both `Caught` summaries: measured on Windows,
+  at `6184f46b` too; inferred for Linux from Minecraft's library rules, where no client has been run; a dedicated
+  server does not load the class (the Windows server logs have no such line). It was a false alarm.
   `MergedBaseFrameRecomputer` (§6) recomputes the frames of every class that has a reference-typed frame;
   `Narrator.getNarrator()` has a branch that constructs the macOS narrator, `NarratorMac`, whose superclass comes from
   a library Minecraft lists for macOS only; anywhere else the recomputer could not walk that class's hierarchy, kept
@@ -2355,44 +2363,75 @@ Located, not yet fixed (no impossibility proof):
   such line, and no release contains them. It turned no gate red: a gate goes red on a `Caught` report only under
   `FORBRIC_CAUGHT_STRICT=1` or on the three messages that say an entity-attribute event did not finish (`caught_report`
   in `run/lib.sh`), the client gates run on macOS, where the library is present, and CI's Linux and Windows jobs start
-  no client. The recomputer has been changed since so that this class is no longer reported; no client has been started
-  with the change. Where inferring a join needs a type no class file gives, `java/lang/Object` now stands in for that
-  join and the inference is finished. Object is above whatever the join would have been, so frames inferred over it can
-  show that nothing needs repair and never that something does, and they are never written out. The class is handed on
-  as it came, without a report when every reference frame it declares was compared and accepts what was inferred for
-  it: `Narrator`'s frame is declared as the interface itself, which accepts any object. It is still reported when a
-  declared frame does not accept what was inferred, when a declared reference frame could not be compared (its method
-  carries unreachable code, which the frame computation rewrites, or the frame stands where nothing branches to and the
-  computation gives none there), when a type a frame declares has to be looked up and cannot be read, and when a
-  hierarchy loops or runs past the walk's bound. Measured for the change, on macOS and none of it in a client: 61
-  unit-test invocations over synthetic class shapes, the quiet and the reported ones under two unrelated sets of names,
-  each also put to the JVM's own verifier (HotSpot 25 with the game fixtures, HotSpot 21 on a clone without them):
-  every quiet shape links there and every reported one fails to, one apart, whose report is of a resolver that itself
-  threw; one test that hands the recomputer the game's real text2speech library as a Windows or a Linux launch has it,
-  without the macOS bridge: the class comes back untouched and nothing is caught, where the kernel before the change
-  reported; and a census that hands it every class of the game's libraries as each operating system lists them: it
-  reports 6 classes on each of the three lists where it reported 9 (macOS), 10 and 10, and 20 on each with the jars of
-  a 97-mod pack added where it reported 33, 34 and 34, it rewrites none, it reports no class it did not report before,
-  and `Narrator` is on no list. Not measured: any client with the change (Windows, Linux, or macOS with the bridge
-  taken away) and any gate. Known limits. A class the change made quiet may still fail to link for a reason the
-  recomputer never reads: a `catch` type that is not there, an instruction's operand, or a super-interface, itself not
-  there, of a type a frame declares — in that last case the JVM fails on the very frame that was compared. The earlier
-  report named none of these; it was made only because the same absent type also took part in a join, and where such a
-  class is linked the JVM names the missing class itself, as it does natively. A report that stays can be more than the
-  verifier needs: beside a stand-in, a class is reported although the JVM links it where a frame declared as an
-  interface sits in a method with unreachable code, and where a reference frame stands at an instruction nothing
-  branches to, also one declared as an interface, as Object, or as a class its value really is an instance of (a frame
-  declared as an interface over a hierarchy that loops or is too deep is reported too, as before the change). Beside a
-  frame that really needs repair, a join of a readable interface with a type that has no class file is a stand-in or
-  not depending on which branch reaches the join first, so the class is repaired in one order and reported in the
-  other, as before the change. An array is still taken to fit any interface, where the JVM takes only `Cloneable` and
-  `Serializable`. The header the recomputer keeps of a class it has transformed still lets the judgment of another
-  class depend on which of the two came first, where the first has no class file of its own. That a frame declared as
-  Object makes the JVM load nothing is HotSpot's behaviour as measured, not the specification's text (for an interface
-  it is the specification's). Behind the false alarm is a weakness with no instance found, read from the code and not
-  measured, that the change leaves as it was: three other callers of the same hierarchy walk (`NativeCallInlining`,
-  `NativeDecisionIsland`, `SpawnPositionCallsInjector`) drop a rewrite of their own on a type that cannot be resolved.
-  They write the frames they compute into the class, so no stand-in is given to them.
+  no client. The recomputer has been changed since, and this class is no longer reported. Where inferring a join needs a
+  type no class file gives, `java/lang/Object` now stands in for that join and the inference is finished. Object is
+  above whatever the join would have been, so frames inferred over it can show that nothing needs repair and never that
+  something does, and they are never written out. The class is handed on as it came, without a report when every
+  reference frame it declares was compared and accepts what was inferred for it: `Narrator`'s frame is declared as the
+  interface itself, which accepts any object. It is still reported when a declared frame does not accept what was
+  inferred, when a declared reference frame could not be compared (its method carries unreachable code, which the frame
+  computation rewrites, or the frame stands where nothing branches to and the computation gives none there), when a type
+  a frame declares has to be looked up and cannot be read, and when a hierarchy loops or runs past the walk's bound.
+  Those stay reports because nothing was proved there: a frame declared as a class that a stand-in reached is one the
+  JVM's verifier, too, can check only by loading the type that is missing. Measured for the change, all of it with the
+  kernel built at `bafdbdc8`. Unit tests: 61 invocations over synthetic class shapes, the quiet and the reported ones
+  under two unrelated sets of names, each also put to the JVM's own verifier (HotSpot 25 with the game fixtures, HotSpot
+  21 on a clone without them): every quiet shape links there and every reported one fails to, one apart, whose report is
+  of a resolver that itself threw; and one test that hands the recomputer the game's real text2speech library as a
+  Windows or a Linux launch has it, without the macOS bridge: the class comes back untouched and nothing is caught,
+  where the kernel before the change reported. A census that hands it every class of the game's libraries as each
+  operating system lists them (the jars' own bytes; nested jars are not opened, so types a running game would find are
+  missing there and what it reports is an upper bound): it reports 6 classes on each of the three lists where it
+  reported 9 (macOS), 10 and 10, and 20 on each with the jars of a 97-mod pack added where it reported 33, 34 and 34 —
+  15 of the 20 by the report it made before, word for word, 5 by the new one, which names the missing types and the
+  frames — it rewrites none, it reports no class it did not report before, the Windows and the Linux lists give the same
+  result byte for byte, and `Narrator` is on no list. A macOS client with the bridge taken away and the class loaded
+  early, as in the reproduction above: nothing is caught, the class handed to the JVM is still byte for byte the jar's,
+  and under `-Dforbric.debug=true` one line says that no class file gives `ca/weblite/objc/NSObject` and that there is
+  nothing to repair; with the bridge present nothing is caught and that line is not printed, the client reaching its
+  sound engine; and the kernel that landed, put into the same arrangement, logs its WARN again. On the player's Windows
+  machine, on isolated copies: the three-mod push-and-run passed its 37 assertions with no `Caught` line in the client
+  log and neither summary, where the kernel that landed has one failure at one site; run again under
+  `-Dforbric.debug=true` it printed the line above, once; with the kernel that landed swapped back into that copy, the
+  WARN and both summaries returned; and the player's 14 mods and their configs, started from the installed version
+  profile to the title screen and quit from there, ended with `1 failure(s) caught at 1 site(s)`, the Better Nether one
+  above, where the kernel that landed, started the same way on the same copy, ended with 2 at 2. With times, addresses
+  and line numbers taken out, the WARN and ERROR lines of each such pair differ by the Narrator lines and the summaries
+  that count them, and by nothing else. The full unit suite at that commit is in §16 and the gate sweep above; the
+  client gates run on macOS, where the bridge is present, so both are a check that nothing else moved and no proof of
+  this. Not measured: Linux, where no client has been run and the statement rests on the census and the unit tests; on
+  Windows, a start by PCL2 and anything past the title screen (the 14-mod runs used an offline account and entered no
+  world), and the debug line on the player's pack; whether the narrator speaks, in any run; CI, which has not run on the
+  change (the one line the change adds to the skip baseline of the job without game files was taken from the ratchet on
+  a clean clone on macOS); and the soak. The player's own install on that machine was not written to: it still holds the
+  kernel that landed and logs the line until a newer one is installed over it. Known limits. Reports that were right
+  only by coincidence are gone with the false one. A class the change made quiet may still fail to link for a reason the
+  recomputer never reads: a `catch` type that is not there, an instruction's operand, a supertype of its own that is not
+  there, or a super-interface, itself not there, of a type a frame declares — in that last case the JVM fails on the
+  very frame that was compared. The earlier report named none of these; it was made only because the same absent type
+  also took part in a join, a class with the same fault and no such join was never reported, and where such a class is
+  linked the JVM names the missing class itself, as it does natively. In the census, of the 14 classes no longer
+  reported on the Windows list with the pack, two or three link on that class path (three with the kernel's own jar on
+  it, which holds a type one of them needs), `Narrator` among them, and the others fail there in one of those ways; none
+  of the 20 still reported links there (the JVM's verdicts were taken on those lists while the change was designed; the
+  built kernel reports the same classes). On the real clients measured the recomputer has reported `Narrator` and no
+  other class. A report that stays can be more than the verifier needs: beside a stand-in, a class is reported although
+  the JVM links it where a frame declared as an interface sits in a method with unreachable code, and where a reference
+  frame stands at an instruction nothing branches to, also one declared as an interface, as Object, or as a class its
+  value really is an instance of (a frame declared as an interface over a hierarchy that loops or is too deep is
+  reported too, as before the change); no class of the census is reported only because a frame went uncompared. With no
+  stand-in, a declared frame the computation gives no frame for is still not compared and nothing is said: measured for
+  one declared as a class over a source whose chain cannot be read, silent before the change and after it, where the JVM
+  fails to link. Beside a frame that really needs repair, a join of a readable interface with a type that has no class
+  file is a stand-in or not depending on which branch reaches the join first, so the class is repaired in one order and
+  reported in the other, as before the change. An array is still taken to fit any interface, where the JVM takes only
+  `Cloneable` and `Serializable`. The header the recomputer keeps of a class it has transformed still lets the judgment
+  of another class depend on which of the two came first, where the first has no class file of its own. That a frame
+  declared as Object makes the JVM load nothing is HotSpot's behaviour as measured, not the specification's text (for an
+  interface it is the specification's). Behind the false alarm is a weakness with no instance found, read from the code
+  and not measured, that the change leaves as it was: three other callers of the same hierarchy walk
+  (`NativeCallInlining`, `NativeDecisionIsland`, `SpawnPositionCallsInjector`) drop a rewrite of their own on a type
+  that cannot be resolved. They write the frames they compute into the class, so no stand-in is given to them.
   `-Dforbric.crossEcosystemPresence=off` also switches
   dependency-ordered construction off without a log line (§4.4): gate-m18's control boot has two NeoForge `@Mod` classes
   (it constructs one; the other is client-only) and gate-m19's constructs two, and neither writes an order line. With
