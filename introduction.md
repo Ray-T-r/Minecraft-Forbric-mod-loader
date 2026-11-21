@@ -750,8 +750,9 @@ Notable repairs by family (read each class's javadoc for the case that motivated
   `PackOverlayMutabilityInjector`, `NullPackGuardInjector`, `RegistryDirectoryOwnerInjector`,
   `CarrierPackIdMigrationInjector` (a world saved by an older install names the carrier's pack under an id with the
   carrier's version in it; the selection is rewritten in place to the stable `forbric/carrier/2-neoforge-runtime`
-  before vanilla reads it, `KernelCarrierPackIds`, so the world opens with its packs, and vanilla logs one expected
-  `Missing data pack` warning for the old id) (§9).
+  before vanilla reads it, `KernelCarrierPackIds`, so the world opens with its packs and that id does not go missing;
+  the one `Missing data pack` warning vanilla logs is expected, and is for the MinecraftForge carrier's pack, which
+  such a world also names and nothing serves any more) (§9).
 - **UI** — `ModsButtonRedirector` (NeoForge's pause-menu lambda opens `KernelModListScreen`),
   `CreativePagerBridgeInjector` (the page state is always the carrier's; when no NeoForge mod is installed, the guest
   pager draws its own page controls, as native Fabric does, and turns the carrier's page through the Fabric
@@ -829,7 +830,7 @@ passed through without being changed (a **Miss**, logged at ERROR immediately) a
 classes never loaded: `[Forbric/Anchor] N of M declared repair(s) landed; …, and H hedge(s) correctly found nothing to
 do`, followed by one INFO line per hedge naming it and what it is kept for (`hedge <transformer> on <class> found
 nothing to do; it is kept for: …`), so a hedge count can be traced to its claim. A hedge is a repair declared as
-possibly idle; gate-m1's zero-mod boot on NeoForge's base read `71 of 107 … 0 hedge(s)` at the C6 wave-1 tip (9cd04fc1). `RepairDriftCensus` (`run/compat/repair-drift.sh`) replays the claims against a *candidate*
+possibly idle; gate-m1's zero-mod boot on NeoForge's base read `71 of 107 … 0 hedge(s)` at `9cd04fc1`. `RepairDriftCensus` (`run/compat/repair-drift.sh`) replays the claims against a *candidate*
 game build — the question a carrier bump asks. It runs `VanillaMemberTwinInjector` first, as the boot does, so it needs
 the vanilla-reference sidecar among its jars (repair-drift.sh passes the staged one); without it the twins stand down
 and the replay says so (`H hedge(s) stood down`, each `HEDGED`) instead of printing its all-clear.
@@ -1756,7 +1757,7 @@ logged, in the player's language. Measured by gate-m17 phase U on an install the
 MinecraftForge's jars and tools), `dl/` left holding exactly this install's 17 inputs, unchanged, and the new install
 boots into a world and leaves cleanly; a second install over a fresh one leaves `dl/` untouched (every file's name,
 size, inode and time the same). About 16 MiB of the old version's files stay: NFRT's cache (12.5 MiB) and work files
-(3.1 MiB) for 26.2.0.88 (re-measured by DLCLEAN on a real-player layout: 17 files, 15.6 MiB).
+(3.1 MiB) for 26.2.0.88 (re-measured on a real-player layout: 17 files, 15.6 MiB).
 `-Dforbric.installerCleanup=off` leaves everything (phase U's reverse control).
 
 ### 13.3 Where Forbric's own jars come from
@@ -2172,14 +2173,15 @@ Break one and the failure usually surfaces far from the cause.
   logs are kept outside the repository): the refusal rule over 1,953 distinct local
   jars refused 90, each checked by hand, with 0 false refusals; the full gate sweep at the end of C5 (`394b8804`, no
   verdict cache, the soak left out) was green on every gate but gate-m0, red only on the three lost LiquidBounce
-  fixtures, and so was the latest one, run the same way at the landing commit: 59 gates green, gate-m0 red on that one
-  line, gate-m17 green inside the batch (164 checks), nothing caught by the kernel in any gate, and the first full
-  sweep on `run/lib.sh` as it is now (the sweep before it, in the C6 acceptance re-run at `ce423a9d`, was green on 58
-  gates, with gate-m0 red the same way and gate-m17 red inside the sweep, ended by hand while its download from Mojang
-  trickled; run alone afterwards gate-m17 was green, 164 checks). At the landing commit the unit suite stands as §16
-  gives it, `integrationTest` is red on the same five fixture tests and on nothing else, and CI was green in all six
-  jobs (its run on the branch `ci/remove-forge-stage2`, which held that commit before `main` did); the soak was not run
-  again there (next item). Also measured: a
+  fixtures, and so was the latest one, run the same way at the landing commit: 59 gates green, gate-m0 red on its one
+  fixture line, gate-m17 green inside the batch (164 checks), nothing caught by the kernel in any gate, and the first
+  full sweep on `run/lib.sh` and gate-m17 as they are now (the sweep before it, in the C6 acceptance re-run at
+  `ce423a9d`, was green on 58 gates, with gate-m0 red the same way and gate-m17 red inside the sweep, ended by hand
+  while its download from Mojang trickled; run alone afterwards gate-m17 was green, 164 checks). At the landing commit
+  the unit suite stands as §16 gives it, `integrationTest` is red on the same five fixture tests and on nothing else,
+  and CI was green in all six jobs both times it ran on that commit: on the branch `ci/remove-forge-stage2`, which held
+  the commit before `main` did, and on `main` after the push; the soak was not run again there (next item). Also
+  measured: a
   pure-Fabric A/B against native Fabric found no Forbric-only difference the merged base did not have, and native
   NeoForge A/B 3 of 3; worlds the old kernel wrote open whole (gate-m58), a mod swapped from its MinecraftForge build to
   its NeoForge build loses only what the native swap loses (gate-m59), zero-mod worldgen matches vanilla (gate-m31),
@@ -2343,18 +2345,21 @@ Located, not yet fixed (no impossibility proof):
   constructs the macOS narrator, `NarratorMac`, whose superclass comes from a library Minecraft lists for macOS only;
   anywhere else the recomputer cannot walk that class's hierarchy, keeps the bytes it was given, and reports the
   decline as a caught failure. Reproduced on macOS with that library taken away (the class loaded early, because a
-  macOS client without the library ends before it reaches its narrator): the same exception and stack frames as on
-  Windows, and the class handed to the JVM is byte for byte the jar's; with the library present nothing is caught.
+  macOS client without the library ends before it reaches its narrator): the same exception and the same 24 stack
+  frames, from the hierarchy walk up to the class loader, as on Windows (the nine frames below them there are the game
+  reaching its narrator, which the macOS run cannot reach), and the class handed to the JVM is byte for byte the jar's;
+  with the library present nothing is caught.
   That nothing else differs is measured on macOS and inferred for Windows. The line predates Stage 4: of the two
   commits behind it, one (2026-10-08) made the recomputer look at every such class where it had looked only at classes
   naming one of four ancestors the merge had taken off, the other (2026-10-17) turned its decline from a plain warning
   into a `Caught` report, and both were on `main` from 2026-10-23; the old kernel on that Windows machine predates
   both, which is why its log has no such line, and no release contains them.
-  It turns no gate red: a gate goes red on a `Caught` report only under `FORBRIC_CAUGHT_STRICT=1` or on the
-  entity-attribute messages, the client gates run on macOS, where the library is present, and CI's Linux and Windows
-  jobs start no client. Behind it is a weakness with no instance found, read from the code and not measured: three
-  other callers of the same hierarchy walk (`NativeCallInlining`, `NativeDecisionIsland`,
-  `SpawnPositionCallsInjector`) would drop a rewrite of their own on a type that cannot be resolved.
+  It turns no gate red: a gate goes red on a `Caught` report only under `FORBRIC_CAUGHT_STRICT=1` or on the three
+  messages that say an entity-attribute event did not finish (`caught_report` in `run/lib.sh`), the client gates run on
+  macOS, where the library is present, and CI's Linux and Windows jobs start no client. Behind it is a weakness with no
+  instance found, read from the code and not measured: three other callers of the same hierarchy walk
+  (`NativeCallInlining`, `NativeDecisionIsland`, `SpawnPositionCallsInjector`) would drop a rewrite of their own on a
+  type that cannot be resolved.
   `-Dforbric.crossEcosystemPresence=off` also switches
   dependency-ordered construction off without a log line (§4.4): gate-m18's control boot has two NeoForge `@Mod` classes
   (it constructs one; the other is client-only) and gate-m19's constructs two, and neither writes an order line. With
@@ -2364,19 +2369,25 @@ Located, not yet fixed (no impossibility proof):
   (§7.5); why was not looked into, and the old kernel's run on that pack reported the mod the same way. The kernel that
   landed has run on the player's Windows machine (2026-11-21, at `6184f46b`): installed from the installer's window
   into the default directory, over the install the acceptance had left there; started by the player's own PCL2 with the
-  player's settings and no `-Dforbric.*` flag; into a copy of a real save, in the world for 3 min 36 s (3,100 ticks; the
-  game paused itself once when its window lost focus); out cleanly, with no crash report. Push-and-run on an isolated
-  copy passed all 37 of its assertions, the construction-order one among them, which had failed there until the kernel
-  wrote the order line every time (§4.4); that isolated run used the NeoForge runtime built on the Mac, and the one the
-  installer built on Windows ran only under PCL2. Both `Caught` WARNs above were in the PCL2 run, and the load report
-  named fabric-loot-api-v3 as before. New in it and unexamined: about two and a half minutes into the world the server
-  thread logged two WARN lines, `[Forbric/Mixin] shared source root proof declined: source view is not ready` and
-  `shared source predicate leaf was not executed; native leaf retained` — a decline by design, not a `Caught` report;
-  what set it off was not looked into, and whether an older kernel prints them is not known (the sources that print
-  them are the same at `df1e5a13`, whose Windows run left its world within half a minute; no older kernel was kept in a
-  world as long). Not measured on Windows at this commit: a cold install (the three game artifacts were up to date from
-  the earlier install, so nothing was downloaded or built); what the installer does with a file a running game holds
-  open (§13.2; measured there at `df1e5a13` only, the installer's sources unchanged since); and BCLib's default answer.
+  player's settings and no `-Dforbric.*` flag; into a copy of a real save, in the world for 3 min 36 s (the kernel's
+  tick sampler last read 3,100 ticks, about 155 s of simulation; the game paused itself once just after the join, as
+  vanilla does when its window loses focus — the likely cause, not established — and the pause menu was opened again
+  before leaving); out cleanly, with no crash report. Push-and-run on an isolated copy, with three mods (fabric-api
+  0.161.0, Jade's and Sodium's NeoForge builds), passed all 37 of its assertions, the construction-order one among
+  them, which had failed there until the kernel wrote the order line every time (§4.4); that isolated run used the
+  NeoForge runtime built on the Mac, and the one the installer built on Windows ran only under PCL2. Both `Caught`
+  WARNs above were in the PCL2 run (the three-mod run, with no Better Nether, had the Narrator one alone), and the load
+  report named fabric-loot-api-v3 as before. New in it and unexamined: about two and a half minutes into the world the
+  server thread logged two WARN lines, `[Forbric/Mixin] shared source root proof declined: source view is not ready`
+  and `shared source predicate leaf was not executed; native leaf retained` — a decline by design, not a `Caught`
+  report; what set it off was not looked into, and whether an older kernel prints them is not known (the sources that
+  print them are the same at `df1e5a13`, whose Windows run left its world within half a minute; no older kernel was
+  kept in that world, on that machine and pack, as long; the macOS soaks at `df1e5a13` and `43efbd92` ran far longer,
+  on other packs and worlds, and their client logs have neither line). Not measured on Windows at this commit: a cold
+  install (the three game artifacts were up to date from the earlier install, so nothing was downloaded or built); the
+  clean-up of an older install (it found nothing to remove this time, 0 files; the 86 files removed from that machine
+  were removed by `df1e5a13`'s installer); what the installer does with a file a running game holds open (§13.2;
+  measured there at `df1e5a13` only, the installer's sources unchanged since); and BCLib's default answer.
   Two more things from the Windows runs are not attributed and have no native run. On the player's world BCLib calls
   the save incompatible; at `df1e5a13` its world fixer threw `Rendersystem called from wrong thread` on its own thread
   both times its default answer was taken, and at the landing commit the prompt came again, the default was not tried
@@ -2396,8 +2407,10 @@ Located, not yet fixed (no impossibility proof):
   while it stops its server can leave that server running (read from the code, not measured).
   `build/verification/m34-soak/last-release.json` names the last release run whatever its pack, so it now names the
   96-jar pass; only the manifest's `fixture` says which pack it was.
-- An old world from an older install logs one `Missing data pack` warning for the carrier's old pack id when it is
-  first opened (the selection is migrated, §6); expected, once.
+- An old world from an older install logs one `Missing data pack` warning when it is first opened, for the
+  MinecraftForge carrier's pack (`forbric/carrier/1-forge-runtime…`), which nothing serves any more; the NeoForge
+  carrier's old id is renamed in place and does not go missing (§6; gate-m58 holds both). Expected, once. (The pack of
+  a mod that is no longer installed is reported missing beside it.)
 - **Versions.** `forbric-kernel/build.gradle` says `0.1.0-SNAPSHOT`; the installer is `0.4.0-dev`, the line whose first
   release is the first without MinecraftForge. `net.forbric.api` is internal and changes without notice.
 
