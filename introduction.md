@@ -2187,8 +2187,8 @@ Break one and the failure usually surfaces far from the cause.
   gates green, gate-m0 red on its fixture line, and gate-m17 red inside the batch, on downloads that did not finish
   (its installer's from NeoForged's maven timed out); run alone afterwards gate-m17 was green, 164 checks, and nothing
   was caught by the kernel in any gate. There the unit suite stands as §16 gives it and `integrationTest` is red on the
-  same five fixture tests and on nothing else; CI has not run on that commit, and neither has the soak. Also
-  measured: a
+  same five fixture tests and on nothing else; CI was green in all six jobs on `9a3cc817`, the commit after it, which
+  differs from it in this document and its translation only; the soak has not run there. Also measured: a
   pure-Fabric A/B against native Fabric found no Forbric-only difference the merged base did not have, and native
   NeoForge A/B 3 of 3; worlds the old kernel wrote open whole (gate-m58), a mod swapped from its MinecraftForge build to
   its NeoForge build loses only what the native swap loses (gate-m59), zero-mod worldgen matches vanilla (gate-m31),
@@ -2401,9 +2401,10 @@ Located, not yet fixed (no impossibility proof):
   client gates run on macOS, where the bridge is present, so both are a check that nothing else moved and no proof of
   this. Not measured: Linux, where no client has been run and the statement rests on the census and the unit tests; on
   Windows, a start by PCL2 and anything past the title screen (the 14-mod runs used an offline account and entered no
-  world), and the debug line on the player's pack; whether the narrator speaks, in any run; CI, which has not run on the
-  change (the one line the change adds to the skip baseline of the job without game files was taken from the ratchet on
-  a clean clone on macOS); and the soak. The player's own install on that machine was not written to: it still holds the
+  world), and the debug line on the player's pack; whether the narrator speaks, in any run; and the soak. CI did run on
+  the change, at `9a3cc817` (above): the job without game files skipped the one new test that reads the game's speech
+  library, as the line the change adds to its skip baseline says, and the job with the game files ran it and failed
+  nothing. The player's own install on that machine was not written to: it still holds the
   kernel that landed and logs the line until a newer one is installed over it. Known limits. Reports that were right
   only by coincidence are gone with the false one. A class the change made quiet may still fail to link for a reason the
   recomputer never reads: a `catch` type that is not there, an instruction's operand, a supertype of its own that is not

@@ -9,8 +9,9 @@
 # measured them since: its skips-actual-ci-unstaged.tsv holds exactly 2017 of the rows below, byte for byte.
 # The 2018th, MergedBaseFrameRecomputerTest theNarratorOfAnotherOperatingSystemIsQuiet(), came with that test: it reads
 # the game's text2speech library and skips where no game files are. Its line is the one this file's ratchet printed as
-# new on a clean clone of c0af603c (macOS, JDK 21.0.12, 2026-11-21, no stage, no launcher libraries). No CI run has
-# measured it yet.
+# new on a clean clone of c0af603c (macOS, JDK 21.0.12, 2026-11-21, no stage, no launcher libraries). CI run
+# 44883333729 (9a3cc817 on ci/remove-forge-stage2, the same job) has measured it since: its
+# skips-actual-ci-unstaged.tsv holds exactly the 2018 rows below.
 test	net.forbric.api.ForeignTypeCarrierTest	everyNeoForgeNameIsInTheStagedNeoForgeCarrier()	[fixture:staged] staged carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.access.RestoredAccessTransformerTest	actualMergedFeatureFieldIsReconciledAfterItsDescriptorRepair()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/chunk/ChunkGenerator.class)
 test	net.forbric.kernel.boot.AbiLinkAuditStagedTest	theStagedClientPackHasNoDanglingForgeFamilyReference()	[fixture:staged] staged pack or carriers absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
