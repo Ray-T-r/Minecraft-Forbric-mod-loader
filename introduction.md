@@ -301,7 +301,12 @@ Both sides run the same steps (comments in the source number them):
   6. fire `RegisterEvent` per registry through NeoForge's own `GameData.postRegisterEvents`, in NeoForge's
      registration order; the Fabric `main` entrypoints run where its dispatch loop ends, with `minecraft:root` open
      (on the client only when `-Dforbric.fabricMainInConstructor=off`; see §3.5), so the tail steps (attributes, spawn
-     placements and the rest NeoForge posts after the loop) see what Fabric mods registered;
+     placements and the rest NeoForge posts after the loop) see what Fabric mods registered. A block state whose cache
+     is asked for on the dispatching thread during the dispatch is held and computed once where the loop ends, before
+     the Fabric mains (`DeferredStateCacheInjector`, `KernelDeferredStateCaches`; `-Dforbric.deferredStateCaches=off`):
+     fabric-registry-sync's block add callback computes every added block's cache at once, a NeoForge mod's too,
+     which ran the mod's `getShape` while a sibling `DeferredHolder` the same event registers later was still unbound
+     (Occultism, Ecliptic Seasons stopped the server); NeoForge itself computes the caches after registration;
   7. `closeRegistrationWindow` (in a `finally`, unless loading stopped): link any block item still unlinked
      (normally none; §9.4), **freeze**, redo the block-state caches and the mods' whole-registry passes for late
      registrations, re-sort NeoForge's creative tabs.
@@ -339,6 +344,20 @@ Both sides run the same steps (comments in the source number them):
 There is one registration window and one freeze. The "Tags not bound" wall the weld hit (two ecosystems
 refreezing in turn) cannot arise. Unlike native, a mod whose required dependency failed still runs its later phases
 (natively the boot has already stopped by then).
+
+With Fabric mods installed, the built-in registries stay writable until Fabric's registry freeze point (§3.5), as
+fabric-api keeps them open from `Bootstrap` until after the entrypoints: `MappedRegistry.validateWrite` asks
+`KernelFabricRegistryWindow` first and reopens a frozen built-in registry while that window is open. Without it a
+NeoForge mod that woke a Fabric mod's class early (Cold Sweat's `NewRegistry` listener initialises `RegistryDataLoader`
+and so WorldWeaver's datapack entrypoints) had the Fabric mod write into a frozen registry, and
+`GameData.postRegisterEvents` rolled back to vanilla and stopped the server. A freeze before that point — the client's,
+where NeoForge's window closes — also carries a built-in registry's unregistered intrusive holders instead of throwing
+"Some intrusive holders were not registered": NeoForge's attribute events walk `ENTITY_TYPE` before it, a Fabric
+mod's mixin there can read a field of its entity class, and that class's initialiser builds an `EntityType` the mod's
+`onInitialize` registers later (Better Nether's `naga_projectile`), so `GameData.freezeData()` used to end part-way.
+The holders stay listed, the entrypoint that registers one takes it off, and the freeze at Fabric's freeze point throws
+for whatever is left, as Fabric's does. A dedicated server closes the window before its only freeze, and a
+NeoForge-only game never opens it (`FabricRegistryWindowInjector`; `-Dforbric.fabricRegistryWindow=off` turns off both).
 
 ### 3.5 Client-only hooks inside `Minecraft.<init>`
 
@@ -619,16 +638,29 @@ classpath (first-URL-wins would otherwise let it shadow the winner and contribut
 ### 5.2 NeoForge
 
 - **Identity** — `PassiveSeeder` creates a current `FMLLoader`, `FMLPaths`, a `LoadingModList` and `ModList` built
-  from the jars this boot selected — no discovery, no module layer, no sorting.
+  from the jars this boot selected — no discovery, no module layer, no sorting. Where the kernel publishes the NeoForge
+  mods (and again where it builds mod-bus delivery) it also binds `ModLoader.modList`, a static only
+  `gatherAndInitializeMods` writes natively, to that `ModList`; left null, `ModLoader.dispatchParallelEvent` threw on
+  its first instruction, and a mod posting its own parallel event from a reload listener (AE2) failed the client's
+  first resource reload.
 - **Construction** — `KernelModLoader`: a `BusBuilder` `IEventBus` plus a kernel `ModContainer`
   (`KernelModContainerFactory`); constructor arguments filled by type (`IEventBus`, `Dist`, `ModContainer`). Mods are
   constructed, and every later parallel phase runs, on NeoForge's own `modloading-worker` pool, a mod once the mods it
   waits for are done (`NeoParallelDispatch`, §3.4); a carrier without `ModWorkManager` runs them on the caller's thread.
+  One mod's several `@Mod` classes are constructed one after another in NeoForge's order — fewest `depends()` first,
+  then the class on more sides, as `FMLJavaModLanguageProvider.loadMod` sorts them (`KernelModLoader.nativeClassOrder`;
+  `-Dforbric.modClassOrder=off`); in class-name order a client-only class ran before the common class whose
+  constructor publishes what it reads (Paraglider).
 - **Buses** — mod-bus events the kernel posts itself go through `KernelLifecycle.postModBusEvent`; setup phases
   through `runtime.KernelNeoSetup`; deferred work runs on the thread NeoForge runs it on (`NeoDeferredWork`).
 - **Enum extensions** — `NeoEnumExtensions` feeds every jar's `META-INF/enumextensions.json` to NeoForge's own
   `RuntimeEnumExtender`; `NeoEnumExtensionInjector` is registered near the end of COREMOD (its placement is
-  load-bearing: it defines FML classes at that point), and only if some mod declares an extension.
+  load-bearing: it defines FML classes at that point), and only if some mod declares an extension. A Fabric class
+  tweaker's `extend-enum` (ACCESS phase, before it) adds a stub constant field after the enum's constants that the
+  mod's enum mixin assigns later; NeoForge counts the leading enum fields as built constants, so it numbered its own
+  one too high and wrote past the end of `$values()` (Farmer's Delight Refabricated + TofuCraft on
+  `RecipeBookType`). The injector hands NeoForge the enum without the constant fields `<clinit>` never assigns and puts
+  them back afterwards (`-Dforbric.enumExtensions.unassigned=off`).
 - **Coremods** — NeoForge's coremod jar is never loaded; `transform.NativeCoremodParity` performs its rewrites
   (flower pot `potted`, biome climate/effects, structure settings, `finalizeSpawn`) *after* Mixin, where NeoForge
   runs them. `finalizeSpawn` is pointed at NeoForge's own `EventHooks.finalizeMobSpawn`.
@@ -990,6 +1022,14 @@ injector options it leaves out. A wrapper jar's declared config is dropped silen
 A config registered after the boot (`Mixins.addConfiguration` from `preLaunch` or a jar added at run time) is relaxed
 like one registered at boot and owned by the mod whose jar declares it, and a mixin a config plugin adds is judged
 when Mixin first reads it (`-Dforbric.lateMixinJudgment=off`), so the adapters below plan for it as for a listed one.
+
+`GuestMixinPluginGuard` wraps a guest config plugin's methods. The kernel ships Mixin 0.17.3, whose
+`IMixinConfigPlugin` methods are abstract; Fabric Loader 0.19.5 and NeoForge 26.2.0.93 ship 0.17.4, where every one is
+a default, so a plugin built against it may implement only some of them and die with `AbstractMethodError` while
+configs are selected (Boids; the selection was the kernel's own load of `ModList`, which was then never seeded). The
+guard backfills each method the running Mixin declares abstract and the plugin leaves out — an inherited implementation
+first, else 0.17.4's default — and guards it like a declared one; on 0.17.4 it does nothing
+(`-Dforbric.mixinPluginDefaults=off`). Mixin itself is still 0.17.3.
 
 ### 7.3 `MixinFit` — resolution, not provenance
 
@@ -1418,7 +1458,13 @@ merge mutating a list fabric-api has frozen (`KernelPackRepair` documents both).
   MinecraftForge's and filled a map nothing read; that repair is retired with MinecraftForge.) The sweep when the
   registration window closes stays as a net and normally links nothing.
 - **Datapack registries** — `KernelLifecycle.registerDataPackRegistries` posts `DataPackRegistryEvent.NewRegistry`
-  and mirrors Fabric dynamic registries both ways.
+  and mirrors Fabric dynamic registries both ways. Into Fabric's `DynamicRegistries` it mirrors NeoForge's whole list,
+  skipping keys Fabric already lists (only what the kernel's own event added was mirrored, so a registry a mod declared
+  through its own earlier event was missing at world load), and one refused key no longer aborts the rest. Every synced
+  key is also put back in `RegistrySynchronization.NETWORKABLE_REGISTRIES`: a Fabric mod's `registerSynced` from its
+  main copies that set before NeoForge declares its registries, so their elements were sent and none of their tags, and
+  a client joining with such a registry's tags unbound ended in "Network Protocol Error" (Ecliptic Seasons +
+  Promenade). Both under `-Dforbric.datapackRegistryReconcile=off`.
 - **Data maps** — NeoForge data maps are loaded (`KernelNeoDataMapWatch`, `KernelNeoWorldgen`). Every holder-based
   lookup ends in `Holder.Reference.getData`, which asked `key()` and threw `Trying to access unbound value` for a value
   not registered yet; vanilla's oxidation, waxing and stripping maps answer for any block. `UnboundHolderDataInjector`
@@ -1884,7 +1930,9 @@ java -cp <boot-cp> net.forbric.kernel.boot.Main --scan --mods <dir> --report out
   skipped and 5 failed. The same run at `6184f46b`, the commit that landed on `main` on 2026-11-21, reported 920 classes
   and 5,993 tests, 0 skipped and the same five failed (`ce423a9d` and `14bf179d` before it measured the same counts);
   the 62 tests between the two are the frame recomputer's (§19), one new class of 61 and one test more in an existing
-  class. The five are fixtures this machine no longer has: three LiquidBounce tests (its two jars are lost and cannot be
+  class. On `2ed53d9e` (the 50-mod sweep's fixes, §19; `--rerun test` without `requireFixtures=all`) the suite reported
+  6,086 tests, 0 failed and 5 skipped, the same five, which `main` at `666ce31d` skips the same way. The five are
+  fixtures this machine no longer has: three LiquidBounce tests (its two jars are lost and cannot be
   fetched again) and two opt-in shared-final tests; `-Pforbric.requireFixtures=all` turns a missing fixture into a
   failure rather than a skip. Many tests read the staged jars; gate-m0 fails on *any* skipped test, because a skip there
   means the tests did not look at the real base, so gate-m0 is red on those three LiquidBounce tests on this machine.
@@ -2010,7 +2058,7 @@ The last round's results are in §19.
 
 ## 17. System properties
 
-Set with `-D` on the JVM. The installed profile sets none. There are 463 distinct `"forbric.*"` string literals in
+Set with `-D` on the JVM. The installed profile sets none. There are 468 distinct `"forbric.*"` string literals in
 `src/main` and `src/runtime`, 86 of them retired names (`ForbricSwitches.RETIRED`: setting one changes nothing and logs
 a WARN saying why, among them every MinecraftForge switch); a renamed switch's old name still works with a WARN
 (`ForbricSwitches.RENAMED`); almost every repair has an `-Dforbric.<name>=off` switch, and turning one off logs a
@@ -2102,7 +2150,8 @@ the base lacks, re-added from the vanilla reference).
 `forbric.kernelBundledFirst`, `forbric.modDataPacks`, `forbric.modMenuStandIn`, `forbric.ownFluidTypeClauses`,
 `forbric.emptyFluidTypeTracker`, `forbric.supersededMixins`, `forbric.neoScanData` (the `ModFileScanData` index,
 §4.1), `forbric.modFilePerJar` (§4.1), `forbric.neoConditions.fabricPacksOnly` (§9.4), `forbric.fatalErrorWindow`
-(§3.2).
+(§3.2), `forbric.mixinPluginDefaults` (§7.2), `forbric.modClassOrder` and `forbric.enumExtensions.unassigned` (§5.2),
+`forbric.deferredStateCaches` and `forbric.fabricRegistryWindow` (§3.4).
 
 **Fabric adaptations on NeoForge's base** (§6; each restores what the mod does on native Fabric) —
 `forbric.itemDamageHandler`, `forbric.shearsRelayMobs`, `forbric.fluidReactionNeighbourChange` (and `.head`),
@@ -2336,14 +2385,13 @@ Located, not yet fixed (no impossibility proof):
   processed after the freeze on a client whose Fabric mains run in `Minecraft.<init>`; and NeoForge's mod construction
   runs in three kernel-level passes, with registration on the caller's thread. Owner decisions, recorded in the Stage 4
   record.
-- Open from the Stage 4 C6 acceptance, in the kernel: with Better Nether 26.201.2 (the Windows acceptance runs) every
-  client boot logged a `Caught` WARN that NeoForge's `GameData.freezeData()` threw on an intrusive holder nobody
-  registered (`entity.betternether.naga_projectile`), so NeoForge's own freeze stops part-way — the mod's
-  `NetherEntities` class initialises inside NeoForge's registration window and registers that holder only from its
-  Fabric main entrypoint, after the kernel's freeze; what initialises the class that early is not traced, what the
-  unfinished freeze leaves undone is not measured, the world still loaded, the old kernel on the merged base logged the
-  same throw, the kernel that landed logs it too (measured on that machine at `6184f46b`), and so does the kernel
-  with the frame recomputer's change described next (`bafdbdc8`, title screen only). On the kernel that landed, every
+- Open from the Stage 4 C6 acceptance, in the kernel, and closed since on macOS: with Better Nether 26.201.2 (the
+  Windows acceptance runs) every client boot logged a `Caught` WARN that NeoForge's `GameData.freezeData()` threw on an
+  intrusive holder nobody registered (`entity.betternether.naga_projectile`), so NeoForge's own freeze stopped
+  part-way, every registry after `entity_type` left open; the old kernel on the merged base, the kernel that landed
+  (`6184f46b`) and `bafdbdc8` all logged it. What initialises the class early is NeoForge's attribute events walking
+  `ENTITY_TYPE`; the freeze before Fabric's freeze point now carries the holder (§3.4), and the 50-mod sweep's client
+  runs with Better Nether (below) log no such WARN; not re-run on Windows. On the kernel that landed, every
   client start that was not on macOS logged a `Caught` WARN, `[Forbric/Frames] cannot prove a frame repair for
   com.mojang.text2speech.Narrator`, with its stack trace and a line in both `Caught` summaries: measured on Windows,
   at `6184f46b` too; inferred for Linux from Minecraft's library rules, where no client has been run; a dedicated
@@ -2480,6 +2528,26 @@ Located, not yet fixed (no impossibility proof):
   while it stops its server can leave that server running (read from the code, not measured).
   `build/verification/m34-soak/last-release.json` names the last release run whatever its pack, so it now names the
   96-jar pass; only the manifest's `fixture` says which pack it was.
+- **Measured for the 50-mod sweep** (2026-11-22, macOS; the run's record is kept outside the repository): 50 Modrinth
+  gameplay mods for 26.2 whose 26.2 version exists for one loader only, 25 Fabric and 25 NeoForge, with 16 required
+  libraries, put into one game together: a dedicated server generates the world, then a client joins it by quick play,
+  runs 400 ticks, opens the Mods screen and leaves. On `main` at `666ce31d` the pack did not start; the runs, bisected,
+  found seven kernel failures that stopped the server or the client's join (one showed only once the others were
+  fixed), each fixed by a general mechanism above: the plugin defaults (§7.2), the
+  held block-state caches and the Fabric registry window (§3.4), the enum stub count, the `@Mod` class order and
+  `ModLoader.modList` (§5.2), the networkable set (§9.4); the freeze that ended part-way (above) was found in the same
+  runs. With the fixes the 49 mods other than Silent Gear load together: the server reaches Done, the client joins and
+  leaves cleanly, with no protocol error and no freeze WARN. Better Nether + Silent Gear still fail to load the
+  datapacks: Silent Gear calls `VanillaRegistries.createLookup()` at run time and fabric-api's `NetherBiomes` has put
+  Better Nether's biome keys into vanilla's builder ("Unreferenced key"); judged a conflict between the two mods from
+  the bytecode, not run on native Fabric. Open from that sweep: after that datapack failure the dedicated server does
+  not exit (night-config's `FileWatcher` pool is not daemon, and the kernel's exit guard is armed only on the normal
+  stop path; present on `main` too); the registry window's reopened writes have no guard against concurrent writers
+  (read from the code, not measured); and the non-crash findings stand — Terrestria's bundled terraform-dirt hooks a
+  `placeBlockAt` nothing on the base calls; Friends & Foes' required `onFinalizeSpawn` injector does not attach and
+  ResourcefulLib's block-outline `@At(NEW)` does not match; NeoForge's loot-modifier manager reads a file Ube's
+  Delight's Fabric jar carries for its NeoForge build; CreativeCore's default GUI style is not found at client setup
+  (suspected, no native client run); fabric-loot-api-v3 is reported DEGRADED, as above.
 - An old world from an older install logs one `Missing data pack` warning when it is first opened, for the
   MinecraftForge carrier's pack (`forbric/carrier/1-forge-runtime…`), which nothing serves any more; the NeoForge
   carrier's old id is renamed in place and does not go missing (§6; gate-m58 holds both). Expected, once. (The pack of
