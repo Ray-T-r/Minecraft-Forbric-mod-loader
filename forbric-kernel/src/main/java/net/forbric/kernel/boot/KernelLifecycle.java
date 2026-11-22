@@ -1251,6 +1251,10 @@ public final class KernelLifecycle {
 		ForbricLog.info("[Forbric/Lifecycle] NeoForge mod-bus delivery covers %d container(s) — baseline + every "
 				+ "loaded mod (ModLoader.postEvent fans out over this list, and the Mods screen lists it)",
 				containers.size());
+		// ModLoader.dispatchParallelEvent walks ModLoader's own modList field, not ModList.get(). The publish pass binds
+		// it when there are NeoForge mods to publish; with none it returns early, and natively the field is set all
+		// the same (gatherAndInitializeMods always runs), so bind it here too.
+		KernelModLoader.bindModLoaderModList(cl);
 	}
 
 	/**
