@@ -25,11 +25,13 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Method;
+import java.util.Map;
 
 import org.junit.jupiter.api.Test;
 import org.objectweb.asm.ClassWriter;
 import org.objectweb.asm.MethodVisitor;
 import org.objectweb.asm.Opcodes;
+import org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin;
 
 import net.fabricmc.api.EnvType;
 import net.forbric.kernel.ExpectCaught;
@@ -161,6 +163,134 @@ class GuestMixinPluginGuardTest {
 			}
 		};
 		return Class.forName(IMPL.replace('/', '.'), true, loader).getDeclaredConstructor().newInstance();
+	}
+
+	// --- a plugin that leaves methods out, as Mixin 0.17.4's defaults allow -----------------------------------------
+
+	/**
+	 * Boids' plugin implements {@code shouldApplyMixin} alone — complete against sponge-mixin 0.17.4, which Fabric
+	 * Loader 0.19.5 and NeoForge 26.2.0.93 ship and where every plugin method is a default. On the kernel's 0.17.3 the
+	 * interface methods are abstract, and Mixin's first call, {@code onLoad}, was an AbstractMethodError the guard
+	 * could not catch (it wraps declared methods). Called through the interface, the way {@code PluginHandle} calls it.
+	 */
+	@Test
+	void aPluginThatImplementsOneMethodAnswersTheOthersWithTheInterfaceDefaults() throws Exception {
+		IMixinConfigPlugin plugin = (IMixinConfigPlugin) defineAll(Map.of(NAME, guard.transform(NAME,
+				partialPlugin(NAME, "java/lang/Object"), ctx())), NAME);
+
+		plugin.onLoad("pkg");
+		assertNull(plugin.getRefMapperConfig());
+		plugin.acceptTargets(java.util.Set.of(), java.util.Set.of());
+		assertNull(plugin.getMixins());
+		plugin.preApply("a.Target", new org.objectweb.asm.tree.ClassNode(), "a.Mixin", null);
+		plugin.postApply("a.Target", new org.objectweb.asm.tree.ClassNode(), "a.Mixin", null);
+		assertFalse(plugin.shouldApplyMixin("a.Target", "a.Mixin"), "the method it does implement keeps its own answer");
+	}
+
+	/** A method the plugin inherits from its superclass is that superclass's, not the default. */
+	@Test
+	void aMethodTheSuperclassImplementsIsStillTheSuperclasssOwn() throws Exception {
+		String base = "com.example.GuestPluginBase";
+		IMixinConfigPlugin plugin = (IMixinConfigPlugin) defineAll(Map.of(base, baseWithMixins(base),
+				NAME, guard.transform(NAME, partialPlugin(NAME, base.replace('.', '/')), ctx())), NAME);
+
+		assertEquals(java.util.List.of("from.base"), plugin.getMixins());
+		plugin.onLoad("pkg");
+	}
+
+	/** An interface plugins implement is given the defaults too, so a class with nothing of its own works. */
+	@Test
+	void aPluginInterfaceIsGivenTheDefaultsItLeavesOut() throws Exception {
+		IMixinConfigPlugin plugin = (IMixinConfigPlugin) defineWithApi(
+				guard.transform(API.replace('/', '.'), interfacePlugin(false), ctx()));
+		plugin.onLoad("pkg");
+		assertNull(plugin.getMixins());
+		assertFalse(plugin.shouldApplyMixin("t", "m"), "the interface's own default keeps its veto");
+	}
+
+	/**
+	 * A postApply the plugin left out is the interface's empty default, not a patch: no ContendedCallSites hooks. The
+	 * backfill used to stand a NOP in for the void default, and any opcode but RETURN read as "this postApply does
+	 * something", so every such plugin was fingerprinted on each mixin apply and could be blamed for contentions.
+	 */
+	@Test
+	void aBackfilledPostApplyIsNotObserved() {
+		byte[] out = guard.transform(NAME, partialPlugin(NAME, "java/lang/Object"), ctx());
+		assertFalse(calls(out, "beforePostApply") || calls(out, "afterPostApply") || calls(out, "abandonPostApply"),
+				"a postApply the plugin does not have cannot have patched a call site another mod took");
+
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(partialPlugin(NAME, "java/lang/Object")).accept(node, 0);
+		for (org.objectweb.asm.tree.MethodNode method : GuestMixinPluginGuard.backfillAbsentDefaults(node)) {
+			if ("postApply".equals(method.name)) {
+				assertFalse(GuestMixinPluginGuard.observesPostApply(method), "the void default is a bare return");
+			}
+		}
+	}
+
+	/** {@code -Dforbric.mixinPluginDefaults=off} leaves the class as upstream would: the absent method stays absent. */
+	@Test
+	void theSwitchLeavesTheAbsentMethodsOut() throws Exception {
+		String old = System.getProperty(GuestMixinPluginGuard.DEFAULTS_SWITCH);
+		System.setProperty(GuestMixinPluginGuard.DEFAULTS_SWITCH, "off");
+		try {
+			IMixinConfigPlugin plugin = (IMixinConfigPlugin) defineAll(Map.of(NAME, guard.transform(NAME,
+					partialPlugin(NAME, "java/lang/Object"), ctx())), NAME);
+			org.junit.jupiter.api.Assertions.assertThrows(AbstractMethodError.class, () -> plugin.onLoad("pkg"));
+		} finally {
+			if (old == null) System.clearProperty(GuestMixinPluginGuard.DEFAULTS_SWITCH);
+			else System.setProperty(GuestMixinPluginGuard.DEFAULTS_SWITCH, old);
+		}
+	}
+
+	/** {@code class <name> extends <superName> implements IMixinConfigPlugin} with only {@code shouldApplyMixin} (false). */
+	private static byte[] partialPlugin(String name, String superName) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name.replace('.', '/'), null, superName, new String[] {PLUGIN_INTERFACE});
+		MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		ctor.visitCode();
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, superName, "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(0, 0);
+		ctor.visitEnd();
+		body(cw, "shouldApplyMixin", "(Ljava/lang/String;Ljava/lang/String;)Z", false, Opcodes.ICONST_0, Opcodes.IRETURN);
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** A plain class, no plugin interface, whose {@code getMixins} answers {@code ["from.base"]}. */
+	private static byte[] baseWithMixins(String name) {
+		ClassWriter cw = new ClassWriter(ClassWriter.COMPUTE_MAXS);
+		cw.visit(Opcodes.V21, Opcodes.ACC_PUBLIC, name.replace('.', '/'), null, "java/lang/Object", null);
+		MethodVisitor ctor = cw.visitMethod(Opcodes.ACC_PUBLIC, "<init>", "()V", null, null);
+		ctor.visitCode();
+		ctor.visitVarInsn(Opcodes.ALOAD, 0);
+		ctor.visitMethodInsn(Opcodes.INVOKESPECIAL, "java/lang/Object", "<init>", "()V", false);
+		ctor.visitInsn(Opcodes.RETURN);
+		ctor.visitMaxs(0, 0);
+		ctor.visitEnd();
+		MethodVisitor mv = cw.visitMethod(Opcodes.ACC_PUBLIC, "getMixins", "()Ljava/util/List;", null, null);
+		mv.visitCode();
+		mv.visitLdcInsn("from.base");
+		mv.visitMethodInsn(Opcodes.INVOKESTATIC, "java/util/List", "of", "(Ljava/lang/Object;)Ljava/util/List;", true);
+		mv.visitInsn(Opcodes.ARETURN);
+		mv.visitMaxs(0, 0);
+		mv.visitEnd();
+		cw.visitEnd();
+		return cw.toByteArray();
+	}
+
+	/** Defines every class of {@code classes} in one loader and instantiates {@code main}. */
+	private static Object defineAll(Map<String, byte[]> classes, String main) throws Exception {
+		ClassLoader loader = new ClassLoader(GuestMixinPluginGuardTest.class.getClassLoader()) {
+			@Override protected Class<?> findClass(String name) throws ClassNotFoundException {
+				byte[] b = classes.get(name);
+				if (b == null) throw new ClassNotFoundException(name);
+				return defineClass(name, b, 0, b.length);
+			}
+		};
+		return Class.forName(main, true, loader).getDeclaredConstructor().newInstance();
 	}
 
 	// --- helpers ------------------------------------------------------------------------------------------------

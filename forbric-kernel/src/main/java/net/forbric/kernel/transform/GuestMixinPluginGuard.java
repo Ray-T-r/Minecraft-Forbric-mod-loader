@@ -116,12 +116,26 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 
+		// Before the wrapping, so a method given here is guarded like a declared one: the onLoad wrapper is also
+		// where the plugin is remembered, and a backfilled onLoad must not lose that.
+		java.util.List<MethodNode> given = backfillAbsentDefaults(node);
+		int backfilled = given.size();
+		if (backfilled > 0) {
+			ForbricLog.info("[Forbric/Mixin] gave guest mixin config plugin %s the default of %d method(s) it does not "
+					+ "implement — the plugin interface the mod was built against has a default for every method, the "
+					+ "bundled Mixin's has none, and Mixin calls them all (-D%s=off leaves them out)", className,
+					backfilled, DEFAULTS_SWITCH);
+		}
+
 		int wrapped = 0;
 		for (MethodNode method : node.methods.toArray(new MethodNode[0])) {
 			if (!GUARDED.contains(method.name) || (method.access & Opcodes.ACC_ABSTRACT) != 0) continue;
 			if (method.name.startsWith(ALIAS_PREFIX)) continue;
 
-			node.methods.add(wrap(node, method));
+			// A backfilled method is never observed as a postApply: with nothing to inherit it is a bare return, and
+			// what it does inherit is observed where it is declared, if it is declared on a plugin. Observing the
+			// backfill would make every plugin that leaves postApply out look like one that patches.
+			node.methods.add(wrap(node, method, !given.contains(method)));
 			wrapped++;
 		}
 		if (wrapped == 0) return classBytes;
@@ -135,6 +149,125 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		return writer.toByteArray();
 	}
 
+	/** {@code -Dforbric.mixinPluginDefaults=off}: a plugin that leaves a method out fails on Mixin's call, as upstream. */
+	static final String DEFAULTS_SWITCH = "forbric.mixinPluginDefaults";
+
+	/**
+	 * The plugin interface's methods that the Mixin running here declares abstract, as {@code name + descriptor}.
+	 *
+	 * <p>Read from the interface itself rather than from a version number, so the backfill follows whichever Mixin is
+	 * bundled: sponge-mixin 0.17.3 (the kernel's) declares all seven abstract; 0.17.4 — what Fabric Loader 0.19.5 and
+	 * NeoForge 26.2.0.93 ship natively — gives every one of them a default ({@code return}, {@code null},
+	 * {@code true}), and on that Mixin this set is empty and the backfill never fires.
+	 */
+	private static final Set<String> ABSTRACT_IN_RUNNING_MIXIN = abstractPluginMethods();
+
+	private static Set<String> abstractPluginMethods() {
+		Set<String> abstracts = new java.util.HashSet<>();
+		try {
+			for (java.lang.reflect.Method m : org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin.class.getMethods()) {
+				if (m.getDeclaringClass().isInterface() && !m.isDefault() && GUARDED.contains(m.getName())) {
+					abstracts.add(m.getName() + Type.getMethodDescriptor(m));
+				}
+			}
+		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read Mixin's config plugin interface; a guest plugin that "
+					+ "leaves a method out is not given its default");
+		}
+		return Set.copyOf(abstracts);
+	}
+
+	/**
+	 * Gives {@code node} — a class or interface that declares the plugin interface — a body for every method of that
+	 * interface it does not declare and that the running Mixin declares abstract.
+	 *
+	 * <p>Mixin 0.17.4 made every plugin method a default, and a plugin built against it may implement only the one it
+	 * cares about (Boids' implements {@code shouldApplyMixin} alone). Natively that is a complete plugin. On the
+	 * kernel's 0.17.3 the same class does not implement {@code onLoad}, and Mixin's {@code PluginHandle.onLoad} — the
+	 * first call, during config selection on whatever class is woven first — dies with {@code AbstractMethodError}. The
+	 * guard below could not catch it: it wraps the methods a class declares, and an absent method is not one. The
+	 * selection that died was the kernel's own {@code Class.forName} of NeoForge's {@code ModList}, so ModList was
+	 * never seeded and the boot died later, on an NPE that names neither Mixin nor the mod.
+	 *
+	 * <p>The body is what the JVM would have run with 0.17.4's interface: whatever implementation the class inherits
+	 * otherwise — tried through its superclass and its other direct interfaces, each by {@code invokespecial}, an
+	 * {@link IncompatibleClassChangeError} meaning that one has none — and when none does, the interface's default.
+	 * The defaults are 0.17.4's: nothing for the void hooks, {@code null} for the list and refmap queries, {@code true}
+	 * for {@code shouldApplyMixin}. A subclass that implements the method still overrides it.
+	 *
+	 * <p>Two costs of trying the inherited owners, both on the fail-open side the guard already takes: an
+	 * {@code IncompatibleClassChangeError} thrown from INSIDE a real inherited implementation cannot be told apart from
+	 * "no such method there" and also falls through to the default, without a report line; and a superclass that is
+	 * not {@code Object} but has no such method costs a thrown {@code NoSuchMethodError} on every call
+	 * ({@code shouldApplyMixin} runs once per mixin of the config). Telling them apart would need the superclass's
+	 * bytes, which a header-only transformer does not have.
+	 *
+	 * @return the methods that were added, in the order they were added
+	 */
+	static java.util.List<MethodNode> backfillAbsentDefaults(ClassNode node) {
+		java.util.List<MethodNode> added = new java.util.ArrayList<>();
+		if (ABSTRACT_IN_RUNNING_MIXIN.isEmpty() || !defaultsEnabled()) return added;
+		Set<String> declared = new java.util.HashSet<>();
+		for (MethodNode method : node.methods) declared.add(method.name + method.desc);
+
+		boolean isInterface = (node.access & Opcodes.ACC_INTERFACE) != 0;
+		java.util.List<String[]> inherited = new java.util.ArrayList<>(); // {owner, isInterface}
+		if (!isInterface && node.superName != null && !"java/lang/Object".equals(node.superName)) {
+			inherited.add(new String[] {node.superName, "false"});
+		}
+		for (String iface : node.interfaces) {
+			if (!PLUGIN_INTERFACE.equals(iface)) inherited.add(new String[] {iface, "true"});
+		}
+
+		for (String key : new java.util.TreeSet<>(ABSTRACT_IN_RUNNING_MIXIN)) {
+			if (declared.contains(key)) continue;
+			int split = key.indexOf('(');
+			MethodNode method = backfill(key.substring(0, split), key.substring(split), inherited);
+			node.methods.add(method);
+			added.add(method);
+		}
+		return added;
+	}
+
+	static boolean defaultsEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(DEFAULTS_SWITCH, "on"));
+	}
+
+	/**
+	 * {@code name desc}: try each inherited owner by {@code invokespecial}, falling through on
+	 * {@link IncompatibleClassChangeError} (no such method there, or an abstract one), then the interface's default.
+	 *
+	 * <p>Each handler's frame is written by hand, as in {@link #wrap}: the starting locals and one error on the stack.
+	 */
+	private static MethodNode backfill(String name, String desc, java.util.List<String[]> inherited) {
+		MethodNode method = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PUBLIC, name, desc, null, null);
+		Type returnType = Type.getReturnType(desc);
+		InsnList code = method.instructions;
+		for (String[] owner : inherited) {
+			LabelNode start = new LabelNode(new Label());
+			LabelNode end = new LabelNode(new Label());
+			LabelNode handler = new LabelNode(new Label());
+			method.tryCatchBlocks.add(new TryCatchBlockNode(start, end, handler, "java/lang/IncompatibleClassChangeError"));
+			code.add(start);
+			code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			int slot = 1;
+			for (Type arg : Type.getArgumentTypes(desc)) {
+				code.add(new VarInsnNode(arg.getOpcode(Opcodes.ILOAD), slot));
+				slot += arg.getSize();
+			}
+			code.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, owner[0], name, desc, Boolean.parseBoolean(owner[1])));
+			code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
+			code.add(end);
+			code.add(handler);
+			code.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[] {"java/lang/IncompatibleClassChangeError"}));
+			code.add(new InsnNode(Opcodes.POP));
+		}
+		// A void default is a bare return, as 0.17.4's are: no NOP standing in for a value.
+		if (returnType.getSort() != Type.VOID) code.add(fallback(returnType));
+		code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
+		return method;
+	}
+
 	/**
 	 * Renames {@code method}'s body to a private alias and returns a replacement with the original name that calls
 	 * it inside a {@code try}/{@code catch (Throwable)}.
@@ -143,7 +276,7 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 	 * handler's frame is exactly "the locals this method started with, one {@code Throwable} on the stack".
 	 * {@code COMPUTE_FRAMES} would need to resolve guest types through a loader this transformer does not have.
 	 */
-	private static MethodNode wrap(ClassNode owner, MethodNode method) {
+	private static MethodNode wrap(ClassNode owner, MethodNode method, boolean observable) {
 		String original = method.name;
 		method.name = ALIAS_PREFIX + original;
 		method.access = (method.access & ~(Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED)) | Opcodes.ACC_PRIVATE;
@@ -173,7 +306,7 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		// A postApply that does something is where a raw post-Mixin patch lives; ContendedCallSites looks at the
 		// target on either side of it. Outside the try/catch like rememberPlugin: neither hook throws, and the
 		// handler's frame stays "the starting locals, one Throwable".
-		boolean observed = observesPostApply(method);
+		boolean observed = observable && observesPostApply(method);
 		if (observed) code.add(postApplyHook("beforePostApply"));
 
 		code.add(start);
