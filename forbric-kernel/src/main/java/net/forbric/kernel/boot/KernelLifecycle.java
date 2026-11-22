@@ -794,6 +794,9 @@ public final class KernelLifecycle {
 				if (!side.isClient() && !RegistrationStop.stopped()) fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
 			}
 		} finally {
+			// A server's Fabric freeze point: from here a write to a frozen built-in registry fails, as on Fabric
+			// (FabricRegistryWindow). A client's comes after its client entrypoints (onClientEntrypoints).
+			if (!side.isClient()) FabricRegistryWindow.close();
 			rootRegistry(cl, false);
 		}
 	}
@@ -1318,7 +1321,12 @@ public final class KernelLifecycle {
 			ForbricLog.info("[Forbric/Lifecycle] posted datapack-registry declaration to %d bus(es) — %d declared "
 					+ "(%s), %d total", dataPackRegistryBuses, now.size() - before, added, now.size());
 
-			mirrorIntoFabricDynamicRegistries(cl, now.subList(before, now.size()));
+			// The whole of NeoForge's list, not only what this event added: a mod may process a NewRegistry event of its own
+			// before this one (Cold Sweat does, while mod loading runs), and natively that is a declaration like any other —
+			// but its registries were never carried into Fabric's list, which is the one worlds load with fabric-api, and
+			// the world stopped on "Missing registry: cold_sweat:world/temp_region". What Fabric already lists — vanilla's
+			// own registries, a Fabric mod's — is skipped by key.
+			mirrorIntoFabricDynamicRegistries(cl, now);
 			// Before the Fabric mirror: that one would also carry these across, but as bare (key, codec) copies.
 			reconcileLoaderRegistriesIntoNeoForge(cl, hooksCls);
 			mirrorFabricDynamicRegistriesIntoNeoForge(cl, eventCls, hooksCls);
@@ -1657,7 +1665,14 @@ public final class KernelLifecycle {
 				// registry in BOTH synced sets, and the client's configuration-phase collector then reads it twice
 				// and dies on "Duplicate key ResourceKey[minecraft:root / bagus_lib:dialog]" inside
 				// ImmutableRegistryAccess — a join failure reported only as "Network Protocol Error".
-				register.invoke(null, registryKey, elementCodec.invoke(data));
+				try {
+					register.invoke(null, registryKey, elementCodec.invoke(data));
+				} catch (java.lang.reflect.InvocationTargetException refused) {
+					// One registry Fabric refuses (a vanilla key it does not list, say) costs that one, not every one after it.
+					Caught.warn(refused.getCause(), "[Forbric/Lifecycle] Fabric's DynamicRegistries refused %s — it may be "
+							+ "missing at world load", registryKey);
+					continue;
+				}
 				mirrored.add(String.valueOf(registryKey));
 			}
 			if (!mirrored.isEmpty()) {
@@ -2463,6 +2478,9 @@ public final class KernelLifecycle {
 			// BuiltInRegistries.freeze() that FabricFreezeHookMixinAdapter moved run around the freeze that closes
 			// this window — the HEAD half while it is still open, the TAIL half once it is frozen. Not after a stage
 			// that threw: Fabric's startClient throws before its freeze, and nothing of a mod runs after it.
+			// A client's Fabric freeze point either way: from here a write to a frozen built-in registry fails, as on
+			// Fabric (FabricRegistryWindow); one a too-early write reopened is frozen again just below.
+			FabricRegistryWindow.close();
 			if (!RegistrationStop.stopped()) {
 				fabricFreezePoint(cl, FabricFreezePointInjector.HEAD_HOOK);
 				if (reopened) closeClientEntrypointWindow(cl);

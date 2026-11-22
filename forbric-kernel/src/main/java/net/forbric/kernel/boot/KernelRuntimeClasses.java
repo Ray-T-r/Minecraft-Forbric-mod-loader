@@ -328,6 +328,9 @@ public final class KernelRuntimeClasses {
 		CLASSES.put("net.forbric.kernel.runtime.KernelServerReloadNames", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelBlockSoundQuery", new Entry(Origin.COMPILED, List.of()));
 		CLASSES.put("net.forbric.kernel.runtime.KernelHudContextQuery", new Entry(Origin.COMPILED, List.of()));
+		// A write to a frozen built-in registry before Fabric's registry freeze point (FabricRegistryWindow), asked from
+		// MappedRegistry.validateWrite; its descriptor names only Object.
+		CLASSES.put("net.forbric.kernel.runtime.KernelFabricRegistryWindow", new Entry(Origin.COMPILED, List.of()));
 		// fabric-api's own two mixins for fabric:load_conditions cannot apply on NeoForge's base, so nothing
 		// evaluated them. Wrapped into ConditionalOps' one codec factory by an inserted instruction, in Codec,
 		// which no JDK type can stand for.
