@@ -788,6 +788,8 @@ public final class KernelModLoader {
 			publishModInfos(cl, modListCls, modList, containers);
 			ForbricLog.info("[Forbric/ModLoader] published %d NeoForge mod(s) into ModList %s — mods that resolve "
 					+ "their own container (event bus, config) now find themselves", containers.size(), neo.keySet());
+			// Natively gatherAndInitializeMods fills the list and THEN hands it to ModLoader, before constructMods.
+			bindModLoaderModList(cl);
 		} catch (ClassNotFoundException absent) {
 			// NeoForge ModList not present — nothing to publish
 			Caught.expected(absent);
@@ -795,6 +797,58 @@ public final class KernelModLoader {
 			Caught.warn(t, "[Forbric/ModLoader] could not publish NeoForge ModList "
 					+ "(mods that look themselves up will fail)");
 		}
+	}
+
+	/**
+	 * Hands NeoForge's {@code ModLoader} the live {@code ModList}, the one piece of static state it keeps that the
+	 * kernel's lifecycle replaces.
+	 *
+	 * <p>{@code javap} on FML 11.0.16's {@code ModLoader}: its statics are {@code LOGGER}, {@code loadingIssues} (final,
+	 * built in {@code <clinit>}) and {@code modList}, which only {@code gatherAndInitializeMods} writes — to the
+	 * {@code ModList} it just filled, right before {@code constructMods} — and only {@code clear()} resets. The kernel
+	 * never runs {@code gatherAndInitializeMods}, so the field stayed null for the whole game. Every
+	 * {@code ModLoader} entry point that reads {@code ModList.get()} ({@code postEvent}, {@code runEventGenerator},
+	 * {@code postEventWrapContainerInModOrder}) worked; the two that read the FIELD did not:
+	 * {@code dispatchParallelTask} ({@code modList.size()} on its first instruction) and so
+	 * {@code dispatchParallelEvent}, and {@code waitForFuture}'s {@code cancelLoading(modList)}. Natively a mod may
+	 * call {@code dispatchParallelEvent} at any time after loading — AE2 posts its own parallel event from a client
+	 * reload listener — and on Forbric that NPE'd inside the first resource reload, Minecraft dropped every pack and
+	 * the client never left the loading overlay.
+	 *
+	 * <p>{@code ModList.get()} is the one instance the kernel seeds and then fills in place, so binding it here keeps
+	 * the field and {@code ModList.get()} the same object, as natively. Idempotent; a carrier without NeoForge's
+	 * {@code ModLoader} is left alone.
+	 */
+	public static void bindModLoaderModList(ClassLoader cl) {
+		try {
+			Class<?> modListCls = Class.forName(ForeignType.MOD_LIST.binary(Ecosystem.NEOFORGE), false, cl);
+			Object modList = modListCls.getMethod("get").invoke(null);
+			if (modList == null) return;
+			if (bindModList(Class.forName(MOD_LOADER, false, cl), modList)) {
+				ForbricLog.debug("[Forbric/ModLoader] ModLoader.modList now names the published ModList — "
+						+ "dispatchParallelEvent / dispatchParallelTask walk it as natively");
+			}
+		} catch (ClassNotFoundException absent) {
+			// No NeoForge ModList/ModLoader on this carrier — nothing holds the field.
+			Caught.expected(absent);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/ModLoader] could not hand NeoForge's ModLoader the published ModList — a mod "
+					+ "calling ModLoader.dispatchParallelEvent will NPE on ModLoader.modList");
+		}
+	}
+
+	private static final String MOD_LOADER = "net.neoforged.fml.ModLoader";
+
+	/**
+	 * The reflective half of {@link #bindModLoaderModList}: points {@code loader}'s static {@code modList} at
+	 * {@code modList}. Returns whether it changed.
+	 */
+	static boolean bindModList(Class<?> loader, Object modList) throws ReflectiveOperationException {
+		java.lang.reflect.Field field = loader.getDeclaredField("modList");
+		field.setAccessible(true);
+		if (field.get(null) == modList) return false;
+		field.set(null, modList);
+		return true;
 	}
 
 	/**
