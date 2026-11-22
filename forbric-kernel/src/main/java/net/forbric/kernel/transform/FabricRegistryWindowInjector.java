@@ -26,6 +26,20 @@ import net.forbric.kernel.util.ForbricLog;
  *
  * <p>Keyed on the shape, not on a name the base might change: the {@code frozen} read followed by the branch that skips
  * the throw, exactly once in the method. Anything else leaves the class unchanged.
+ *
+ * <p>The same window covers {@code freeze()}'s intrusive-holder check. A client freezes the registries twice: where
+ * NeoForge's registration window closes, and again at Fabric's freeze point, after the Fabric main and client entrypoints
+ * ({@code KernelLifecycle.onClientEntrypoints}). Before the first, NeoForge's tail of {@code GameData.postRegisterEvents}
+ * has run guest code: its attribute events walk {@code ENTITY_TYPE} through {@code DefaultAttributes.hasSupplier}, a Fabric
+ * mod's mixin there reads a field of its entity class, and that class's initialiser builds an {@code EntityType} — an
+ * intrusive holder — that the mod's {@code onInitialize} registers later (Better Nether's {@code naga_projectile}). The first
+ * freeze threw "Some intrusive holders were not registered", and {@code GameData.freezeData} ended part-way: every registry
+ * after that one left open, no frozen snapshot. On Fabric nothing checks the holders before its freeze point, so before it
+ * {@code freeze()} asks {@code KernelFabricRegistryWindow.carryIntrusiveHolders(this, unregisteredIntrusiveHolders)} and
+ * skips the throw on true. NeoForge's {@code freeze()} keeps the map, so the holders stay listed, the entrypoint that
+ * registers one takes it off, and the freeze at Fabric's freeze point throws for whatever is left, as Fabric's does. Keyed
+ * on the shape: the one read of {@code unregisteredIntrusiveHolders} in {@code freeze()} that is null-tested. Either
+ * method of another shape keeps its own check, and the other is still given its question.
  */
 public final class FabricRegistryWindowInjector implements ClassTransformer {
 	public static final String TARGET = "net.minecraft.core.MappedRegistry";
@@ -35,6 +49,10 @@ public final class FabricRegistryWindowInjector implements ClassTransformer {
 	static final String HOOK_OWNER = "net/forbric/kernel/runtime/KernelFabricRegistryWindow";
 	static final String HOOK = "admit";
 	static final String HOOK_DESC = "(Ljava/lang/Object;Ljava/lang/Object;)Z";
+	static final String FREEZE = "freeze";
+	static final String FREEZE_DESC = "()Lnet/minecraft/core/Registry;";
+	static final String INTRUSIVE = "unregisteredIntrusiveHolders";
+	static final String CARRY_HOOK = "carryIntrusiveHolders";
 
 	@Override
 	public String name() {
@@ -58,23 +76,69 @@ public final class FabricRegistryWindowInjector implements ClassTransformer {
 		MethodNode validate = node.methods.stream()
 				.filter(m -> m.name.equals(METHOD) && m.desc.equals(METHOD_DESC)).findFirst().orElse(null);
 		JumpInsnNode skip = validate == null ? null : frozenBranch(validate);
-		if (skip == null) {
+		boolean asked = skip != null;
+		if (!asked) {
 			ForbricLog.debug("[Forbric/RegistrySync] MappedRegistry.validateWrite is not the shape Fabric's registry window keys on "
 					+ "(one frozen read, then the branch past the throw) — left as it is");
-			return bytes;
+		} else {
+			InsnList ask = new InsnList();
+			ask.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			ask.add(new VarInsnNode(Opcodes.ALOAD, 1));
+			ask.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK, HOOK_DESC, false));
+			// Admitted: the same label the unfrozen case jumps to, whose frame (nothing on the stack) is already there.
+			ask.add(new JumpInsnNode(Opcodes.IFNE, skip.label));
+			validate.instructions.insert(skip, ask);
+			validate.maxStack = Math.max(validate.maxStack, 2);
+			ForbricLog.debug("[Forbric/RegistrySync] MappedRegistry.validateWrite asks Fabric's registry window before it throws");
+		}
+		boolean carried = carryIntrusiveHolders(node);
+		if (!asked && !carried) return bytes;
+		ClassWriter writer = new ClassWriter(0);
+		node.accept(writer);
+		return writer.toByteArray();
+	}
+
+	/**
+	 * {@code freeze()}'s intrusive-holder check asks the window first (see the class comment): right after the null test of
+	 * {@code unregisteredIntrusiveHolders}, a true answer goes where a null map goes, past the throw. A {@code freeze()} of
+	 * another shape keeps its check as it is.
+	 */
+	static boolean carryIntrusiveHolders(ClassNode node) {
+		MethodNode freeze = node.methods.stream()
+				.filter(m -> m.name.equals(FREEZE) && m.desc.equals(FREEZE_DESC)).findFirst().orElse(null);
+		JumpInsnNode nullTest = freeze == null ? null : intrusiveNullTest(freeze);
+		if (nullTest == null) {
+			ForbricLog.debug("[Forbric/RegistrySync] MappedRegistry.freeze is not the shape Fabric's registry window keys on "
+					+ "(one null-tested read of the unregistered intrusive holders) — its check stays as it is");
+			return false;
 		}
 		InsnList ask = new InsnList();
 		ask.add(new VarInsnNode(Opcodes.ALOAD, 0));
-		ask.add(new VarInsnNode(Opcodes.ALOAD, 1));
-		ask.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, HOOK, HOOK_DESC, false));
-		// Admitted: the same label the unfrozen case jumps to, whose frame (nothing on the stack) is already there.
-		ask.add(new JumpInsnNode(Opcodes.IFNE, skip.label));
-		validate.instructions.insert(skip, ask);
-		validate.maxStack = Math.max(validate.maxStack, 2);
-		ClassWriter writer = new ClassWriter(0);
-		node.accept(writer);
-		ForbricLog.debug("[Forbric/RegistrySync] MappedRegistry.validateWrite asks Fabric's registry window before it throws");
-		return writer.toByteArray();
+		ask.add(new VarInsnNode(Opcodes.ALOAD, 0));
+		ask.add(new FieldInsnNode(Opcodes.GETFIELD, OWNER, INTRUSIVE, "Ljava/util/Map;"));
+		ask.add(new MethodInsnNode(Opcodes.INVOKESTATIC, HOOK_OWNER, CARRY_HOOK, HOOK_DESC, false));
+		// Carried: the label a null map jumps to, past the throw, with nothing on the stack there either.
+		ask.add(new JumpInsnNode(Opcodes.IFNE, nullTest.label));
+		freeze.instructions.insert(nullTest, ask);
+		freeze.maxStack = Math.max(freeze.maxStack, 2);
+		ForbricLog.debug("[Forbric/RegistrySync] MappedRegistry.freeze asks Fabric's registry window before it throws for "
+				+ "unregistered intrusive holders");
+		return true;
+	}
+
+	/** The {@code IFNULL} right after a read of {@code this.unregisteredIntrusiveHolders}, or null unless there is exactly one. */
+	static JumpInsnNode intrusiveNullTest(MethodNode method) {
+		JumpInsnNode found = null;
+		for (AbstractInsnNode insn = method.instructions.getFirst(); insn != null; insn = insn.getNext()) {
+			if (!(insn instanceof FieldInsnNode field) || field.getOpcode() != Opcodes.GETFIELD || !field.owner.equals(OWNER)
+					|| !field.name.equals(INTRUSIVE) || !field.desc.equals("Ljava/util/Map;")) continue;
+			AbstractInsnNode next = field.getNext();
+			while (next != null && next.getOpcode() < 0) next = next.getNext();
+			if (!(next instanceof JumpInsnNode jump) || jump.getOpcode() != Opcodes.IFNULL) continue;
+			if (found != null) return null;
+			found = jump;
+		}
+		return found;
 	}
 
 	/** The {@code IFEQ} right after the method's single {@code this.frozen} read, or null when there is not exactly one. */

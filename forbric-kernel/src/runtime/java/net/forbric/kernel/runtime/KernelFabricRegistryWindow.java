@@ -35,6 +35,28 @@ public final class KernelFabricRegistryWindow {
 		}
 	}
 
+	/**
+	 * Asked by {@code MappedRegistry.freeze()} when it has a map of unregistered intrusive holders, before it throws "Some
+	 * intrusive holders were not registered" for a non-empty one ({@code FabricRegistryWindowInjector}). True — skip the
+	 * throw — only for a built-in registry with holders still listed while Fabric's window is open: a freeze before Fabric's
+	 * registry freeze point, where a Fabric mod whose class something woke early has built a holder its entrypoint, not run
+	 * yet, registers. The map is left as it is, so the freeze at Fabric's freeze point checks the same holders. False leaves
+	 * vanilla's check to run.
+	 */
+	public static boolean carryIntrusiveHolders(Object registry, Object unregistered) {
+		if (!FabricRegistryWindow.isOpen()) return false;
+		try {
+			if (!(unregistered instanceof java.util.Map<?, ?> holders) || holders.isEmpty()) return false;
+			if (!(registry instanceof MappedRegistry<?> mapped) || !builtIn(registry)) return false;
+			FabricRegistryWindow.carried(String.valueOf(mapped.key()), holders.size(), String.valueOf(holders.values()));
+			return true;
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/RegistrySync] could not carry a built-in registry's unregistered intrusive holders past a "
+					+ "freeze before Fabric's registry freeze point — vanilla's check follows");
+			return false;
+		}
+	}
+
 	/** The root itself, or a registry in it; never a world's datapack registry. */
 	private static boolean builtIn(Object registry) {
 		if (registry == BuiltInRegistries.REGISTRY) return true;

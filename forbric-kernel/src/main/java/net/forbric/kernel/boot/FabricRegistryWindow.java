@@ -68,6 +68,18 @@ public final class FabricRegistryWindow {
 				+ "(-D%s=off keeps it frozen)", key, PROPERTY);
 	}
 
+	/**
+	 * Called by the game-side hook when a freeze before Fabric's freeze point skipped its intrusive-holder check for
+	 * {@code registry}: on a client the registration window's freeze comes before the Fabric main entrypoints, and a holder
+	 * built early by a Fabric mod's class is registered there.
+	 */
+	public static void carried(String registry, int count, String holders) {
+		ForbricLog.info("[Forbric/RegistrySync] %s: %d intrusive holder(s) not registered yet at a freeze before Fabric's "
+				+ "registry freeze point %s — with fabric-api nothing checks them until every Fabric entrypoint has run, so "
+				+ "they stay listed and the freeze at that point checks them (-D%s=off checks them here)",
+				registry, count, holders, PROPERTY);
+	}
+
 	/** Tests only: a fresh window, with {@code present} answering whether Fabric mods are installed (null: the real answer). */
 	public static void resetForTests(BooleanSupplier present) {
 		closed = false;
