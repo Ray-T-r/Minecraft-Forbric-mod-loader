@@ -18,13 +18,22 @@ package net.forbric.kernel.transform;
 
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Method;
+import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.function.BiConsumer;
 import java.util.function.Supplier;
 
 import org.objectweb.asm.ClassReader;
 import org.objectweb.asm.ClassWriter;
+import org.objectweb.asm.Opcodes;
 import org.objectweb.asm.Type;
+import org.objectweb.asm.tree.AbstractInsnNode;
 import org.objectweb.asm.tree.ClassNode;
+import org.objectweb.asm.tree.FieldInsnNode;
+import org.objectweb.asm.tree.FieldNode;
+import org.objectweb.asm.tree.MethodNode;
 
 import net.forbric.api.Ecosystem;
 import net.forbric.api.ForeignType;
@@ -98,14 +107,22 @@ public final class NeoEnumExtensionInjector implements ClassTransformer {
 
 			ClassNode node = new ClassNode();
 			new ClassReader(classBytes).accept(node, 0);
+			List<FieldNode> unassigned = hideUnassignedConstants(node);
+			int built = leadingConstants(node);
 			Object flags = processClass.invoke(extender,
 					transformationContext.newInstance(type, node, false, NO_AUDIT, NO_HASH));
+			restoreAfterConstants(node, unassigned);
 
 			int writerFlags = writerFlags(flags);
 			if (writerFlags < 0) return classBytes; // NO_REWRITE — the processor declined after looking
 			ClassWriter writer = new ClassWriter(writerFlags);
 			node.accept(writer);
 			ForbricLog.info("[Forbric/EnumExt] extended enum %s with the constants its mods declared", className);
+			if (!unassigned.isEmpty()) {
+				ForbricLog.info("[Forbric/EnumExt] %s: NeoForge's constants numbered after the %d constant(s) the "
+						+ "enum builds, not after %s, which nothing assigns yet (another ecosystem's extension fills it "
+						+ "later; -D%s=off counts it)", className, built, names(unassigned), UNASSIGNED_SWITCH);
+			}
 			return writer.toByteArray();
 		} catch (Throwable t) {
 			// Leaving the enum alone is survivable — the mod that wanted the constant fails on its own lookup, with
@@ -113,6 +130,81 @@ public final class NeoEnumExtensionInjector implements ClassTransformer {
 			Caught.warn(t, "[Forbric/EnumExt] could not extend %s — a mod's added constant will be missing", className);
 			return classBytes;
 		}
+	}
+
+	/** {@code -Dforbric.enumExtensions.unassigned=off} hands NeoForge the enum with its unassigned constants in place. */
+	static final String UNASSIGNED_SWITCH = "forbric.enumExtensions.unassigned";
+
+	/** {@code public static final enum}: what NeoForge's {@code getVanillaEntryCount} requires of a counted field. */
+	private static final int ENUM_CONSTANT = Opcodes.ACC_PUBLIC | Opcodes.ACC_STATIC | Opcodes.ACC_FINAL | Opcodes.ACC_ENUM;
+
+	/**
+	 * Takes out of {@code node.fields} every enum-constant field that the class's {@code <clinit>} never assigns, and
+	 * returns them in their order.
+	 *
+	 * <p><b>Why.</b> {@code RuntimeEnumExtender} numbers the constants it adds after the leading run of
+	 * {@code public static final enum} fields of the enum's own type ({@code getVanillaEntryCount}, a
+	 * {@code takeWhile} over {@code fields}) and stores each into {@code $values()}'s array at that ordinal — while
+	 * the array itself grows only by the number it adds, from the array the class really builds. That holds on
+	 * NeoForge, where every such field is a constant {@code <clinit>} constructs. Here another ecosystem may already
+	 * have declared one that is filled in later: Fabric's class tweaker {@code extend-enum} adds a stub field straight
+	 * after the existing constants (ACCESS phase, before this one), and the mod's enum mixin assigns it when Mixin
+	 * runs. NeoForge counted the stub as built, numbered its own constants one too high and wrote the last one past
+	 * the end of the array — {@code ArrayIndexOutOfBoundsException} in the enum's {@code <clinit>}, and nothing that
+	 * touches the enum loads. Either ecosystem extending the enum alone was fine.
+	 *
+	 * <p>The test is structural, not the stub's attribute: a constant nothing in {@code <clinit>} assigns is not in
+	 * the array {@code $values()} builds, whoever added it, so it must not be counted as if it were.
+	 */
+	static List<FieldNode> hideUnassignedConstants(ClassNode node) {
+		if ("off".equalsIgnoreCase(System.getProperty(UNASSIGNED_SWITCH, "on"))) return List.of();
+		String self = Type.getObjectType(node.name).getDescriptor();
+		Set<String> assigned = new HashSet<>();
+		for (MethodNode method : node.methods) {
+			if (!"<clinit>".equals(method.name)) continue;
+			for (AbstractInsnNode insn : method.instructions) {
+				if (insn.getOpcode() == Opcodes.PUTSTATIC && insn instanceof FieldInsnNode put
+						&& put.owner.equals(node.name) && put.desc.equals(self)) {
+					assigned.add(put.name);
+				}
+			}
+		}
+		List<FieldNode> unassigned = new ArrayList<>();
+		for (FieldNode field : node.fields) {
+			if ((field.access & ENUM_CONSTANT) == ENUM_CONSTANT && self.equals(field.desc)
+					&& !assigned.contains(field.name)) {
+				unassigned.add(field);
+			}
+		}
+		node.fields.removeAll(unassigned);
+		return unassigned;
+	}
+
+	/** The length of the leading run of enum constants, counted as NeoForge's {@code getVanillaEntryCount} does. */
+	static int leadingConstants(ClassNode node) {
+		String self = Type.getObjectType(node.name).getDescriptor();
+		int count = 0;
+		for (FieldNode field : node.fields) {
+			if ((field.access & ENUM_CONSTANT) != ENUM_CONSTANT || !self.equals(field.desc)) break;
+			count++;
+		}
+		return count;
+	}
+
+	/**
+	 * Puts the hidden fields back straight after the (now longer) run of constants: where the class tweaker would
+	 * have put them had NeoForge's constants already been there, and where a later pass — Mixin's enum merge, which
+	 * skips a stub when it counts the target's constants — still finds them.
+	 */
+	static void restoreAfterConstants(ClassNode node, List<FieldNode> unassigned) {
+		if (unassigned.isEmpty()) return;
+		node.fields.addAll(leadingConstants(node), unassigned);
+	}
+
+	private static String names(List<FieldNode> fields) {
+		List<String> names = new ArrayList<>();
+		for (FieldNode field : fields) names.add(field.name);
+		return String.join(", ", names);
 	}
 
 	/** Maps {@code ComputeFlags} onto the ASM writer's, or -1 for {@code NO_REWRITE}. */
