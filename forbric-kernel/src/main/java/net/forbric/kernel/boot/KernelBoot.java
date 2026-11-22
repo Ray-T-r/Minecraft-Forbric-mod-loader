@@ -721,6 +721,17 @@ public final class KernelBoot {
 					+ "Bootstrap, before every Fabric main, even with fabric-api installed (Create Fly cannot start)",
 					net.forbric.kernel.transform.FabricFreezePointInjector.PROPERTY);
 		}
+		// The built-in registries in the same window: on Fabric with fabric-api they are writable until that freeze point,
+		// and here they were frozen in Bootstrap. A Fabric mod registering from a class another mod woke before the Fabric
+		// entrypoints wrote into a frozen registry; for a new registry vanilla had already listed the key, and
+		// GameData.postRegisterEvents stopped the boot on the registry that was not there (WorldWeaver woken by Cold Sweat).
+		// See FabricRegistryWindow.
+		if (FabricRegistryWindow.enabled()) {
+			chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.FabricRegistryWindowInjector());
+		} else {
+			ForbricLog.warn("[Forbric/RegistrySync] -D%s=off — the built-in registries stay frozen outside the kernel's own "
+					+ "windows; a Fabric mod registering before the Fabric entrypoints fails", FabricRegistryWindow.PROPERTY);
+		}
 
 		// A multiloader mod ships one pack.mcmeta carrying a section per loader, and on Forbric both loaders' parsers are
 		// live — so a Fabric-only build gets its neoforge:overlays section read by NeoForge's parser and throws on a
