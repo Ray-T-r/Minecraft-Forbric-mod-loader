@@ -137,6 +137,50 @@ final class DatapackRegistryDeclaration {
 	}
 
 	/**
+	 * Makes {@code RegistrySynchronization.NETWORKABLE_REGISTRIES} hold the key of every entry of the synced list again,
+	 * the invariant both loaders keep and the kernel's synced-list reconcile alone broke. Returns the keys it added.
+	 *
+	 * <p>The synced list says WHICH registries' elements the server packs for the client ({@code packRegistries}); the
+	 * networkable set says whose TAGS travel and are taken: the server's {@code TagNetworkSerialization} sends only the
+	 * tags of networkable worldgen-layer registries, and the client's {@code RegistryDataCollector} reads a received tag
+	 * payload into the network load only for a networkable one. Vanilla derives the set from the list once, in
+	 * {@code RegistrySynchronization.<clinit>}; on NeoForge the list is a live view of NeoForge's networkable registries,
+	 * and nothing initialises {@code RegistrySynchronization} before the mods have declared theirs, so the set holds
+	 * them (javap, 26.2.0.93: the initialiser is the set's only write). fabric-api's
+	 * {@code DynamicRegistriesImpl.addSyncedRegistry} copies both into mutable collections and adds to both, which also
+	 * initialises the class right there — from a Fabric mod's main, before NeoForge's declaration. The kernel then puts
+	 * NeoForge's synced registries back into the list, but the set stayed the copy without them: their elements were
+	 * sent, their tags were not, and an element of one synced registry naming a tag of another (Ecliptic Seasons' crops
+	 * naming {@code #eclipticseasons:all} of its agro climates) left that tag unbound — the client's registry load
+	 * failed at freeze and the join ended in "Network Protocol Error".
+	 *
+	 * <p>Added in place when the set takes it (fabric-api's {@code HashSet}), else the field gets a {@code HashSet} copy
+	 * with the keys — what fabric-api does itself. Under the reconcile switch ({@link #RECONCILE_SWITCH}).
+	 */
+	@SuppressWarnings("unchecked")
+	static List<Object> restoreNetworkable(java.lang.reflect.Field networkableField, List<?> synced,
+			Function<Object, Object> keyOf) throws IllegalAccessException {
+		if ("off".equalsIgnoreCase(System.getProperty(RECONCILE_SWITCH, "on"))) return List.of();
+		networkableField.setAccessible(true);
+		Set<Object> networkable = (Set<Object>) networkableField.get(null);
+		List<Object> missing = new ArrayList<>();
+		for (Object entry : synced) {
+			Object key = keyOf.apply(entry);
+			if (!networkable.contains(key) && !missing.contains(key)) missing.add(key);
+		}
+		if (missing.isEmpty()) return missing;
+		try {
+			networkable.addAll(missing);
+		} catch (UnsupportedOperationException unmodifiable) {
+			net.forbric.kernel.util.Caught.expected(unmodifiable);
+			Set<Object> copy = new HashSet<>(networkable);
+			copy.addAll(missing);
+			networkableField.set(null, copy);
+		}
+		return missing;
+	}
+
+	/**
 	 * The finding for a declaration that failed because one of the two classes failed to initialise, or null
 	 * when the failure was anything else.
 	 *
