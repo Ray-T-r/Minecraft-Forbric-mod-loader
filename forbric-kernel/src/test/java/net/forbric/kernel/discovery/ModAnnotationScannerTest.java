@@ -124,6 +124,33 @@ class ModAnnotationScannerTest {
 	}
 
 	@Test
+	void readsTheModsANeoForgeModClassDependsOn(@TempDir Path dir) throws Exception {
+		// NeoForge orders one mod's @Mod classes by how many mods each names in depends(), fewest first.
+		Path jar = dir.resolve("deps.jar");
+
+		try (ZipOutputStream zip = new ZipOutputStream(Files.newOutputStream(jar))) {
+			ClassWriter cw = new ClassWriter(0);
+			cw.visit(Opcodes.V17, Opcodes.ACC_PUBLIC, "com/example/Compat", null, "java/lang/Object", null);
+			AnnotationVisitor av = cw.visitAnnotation(ModAnnotationScanner.MOD_DESC_NEOFORGE, true);
+			av.visit("value", "deps");
+			AnnotationVisitor array = av.visitArray("depends");
+			array.visit(null, "jei");
+			array.visit(null, "curios");
+			array.visitEnd();
+			av.visitEnd();
+			cw.visitEnd();
+			write(zip, "com/example/Compat.class", cw.toByteArray());
+			write(zip, "com/example/Plain.class", classBytes("com/example/Plain", "deps"));
+		}
+
+		List<ModAnnotationScanner.ModClassInfo> mods = ModAnnotationScanner.scan(jar);
+
+		assertEquals(List.of("jei", "curios"), mods.get(0).depends);
+		assertTrue(mods.get(1).depends.isEmpty());
+		assertEquals(2, mods.get(1).sideCount(), "a class that declares no dist belongs to both sides");
+	}
+
+	@Test
 	void findsAllModClassesSorted(@TempDir Path dir) throws Exception {
 		Path jar = dir.resolve("mod.jar");
 
