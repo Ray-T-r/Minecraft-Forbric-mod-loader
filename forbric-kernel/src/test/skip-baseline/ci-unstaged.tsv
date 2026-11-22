@@ -64,6 +64,7 @@ test	net.forbric.kernel.boot.KernelModContainerFactoryTest	theFieldsTheFactoryWr
 test	net.forbric.kernel.boot.KernelModContainerFactoryTest	theFourResolvedTypesExistAndArePublic()	[fixture:staged] staged NeoForge carrier absent
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	aClasslessModIsInModListBesideTheModsWithAClass()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelModLoaderClasslessTest	switchedOffTheClasslessModIsAbsentAgain()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
+test	net.forbric.kernel.boot.KernelModLoaderModLoaderStateTest	dispatchParallelEventRunsOnTheGenuineModLoaderOnceBound()	[fixture:staged] the genuine NeoForge base or its carrier is absent: $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar
 test	net.forbric.kernel.boot.KernelModLoaderPublishedOrderTest	aDeclaredOnlyLibraryIsPublishedBeforeTheModThatRequiresIt()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelModLoaderPublishedOrderTest	walkingThePublishedModsIsWalkingModList()	[fixture:staged] staged runtime classes/carrier absent: $ROOT/forbric-loader/run/neoforge-runtime/neoforge-runtime.jar
 test	net.forbric.kernel.boot.KernelRuntimeClassesTest	everyRegisteredCallIsOnTheCompiledGameSideClass()	[fixture:game-side] no staged game jars, so no game side was built
@@ -1705,6 +1706,7 @@ test	net.forbric.kernel.transform.DeclarationReaderNameOfferTest	aKeyOneReaderRe
 test	net.forbric.kernel.transform.DeclarationReaderNameOfferTest	theNameIsWithdrawnOnceALaterReaderReadsTheKeyAsSomethingElse()	[fixture:game-side] the game side is not compiled
 test	net.forbric.kernel.transform.DeclarationReaderSodiumJarTest	sodiumNeoForgeRegistersTheFabricModsOptionsPage()	[fixture:third-party] no sodium-neoforge jar under build/compat-inputs/*/mods or run/client-merged-pack/mods
 test	net.forbric.kernel.transform.DeclarationReaderSodiumJarTest	switchedOffSodiumSeesOnlyItsOwnFamily()	[fixture:third-party] no sodium-neoforge jar under build/compat-inputs/*/mods or run/client-merged-pack/mods
+test	net.forbric.kernel.transform.DeferredStateCacheInjectorExecutionTest	theStagedBlockStateBaseTakesTheGuard()	[fixture:staged] $ROOT/forbric-loader/run/neoforge-patched/patched-mc-neoforge-26.2.jar absent (reading net/minecraft/world/level/block/state/BlockBehaviour$BlockStateBase.class)
 test	net.forbric.kernel.transform.EnvironmentStripTransformerTest	creativeCoresLoaderLosesExactlyTheOneMethodNativeFabricRemoves()	[fixture:third-party] sweep pack absent
 test	net.forbric.kernel.transform.ExitHookInjectorTest	theRealMergedCloseIsHookedAndStillVerifies()	[fixture:staged] staged base absent — skipping real-bytecode check
 test	net.forbric.kernel.transform.ExitHookInjectorTest	theRealMergedDedicatedServerExitIsHookedAndStillVerifies()	[fixture:staged] staged base absent — skipping real-bytecode check
