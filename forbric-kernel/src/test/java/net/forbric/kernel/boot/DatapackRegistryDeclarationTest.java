@@ -569,6 +569,78 @@ class DatapackRegistryDeclarationTest {
 		return new StackTraceElement(cls, method, null, -1);
 	}
 
+	// --- networkable: a synced registry's tags travel with its elements ----------------------------------------
+
+	/** fabric-api's state after a Fabric mod's registerSynced ran before NeoForge's declaration: a HashSet copy. */
+	static final class FabricCopiedSet {
+		static java.util.Set<Object> NETWORKABLE_REGISTRIES = new java.util.HashSet<>(java.util.Set.of("minecraft:biome",
+				"promenade:snowy"));
+	}
+
+	/** Vanilla's own shape, an unmodifiable set derived once by the initialiser. */
+	static final class VanillaDerivedSet {
+		static java.util.Set<Object> NETWORKABLE_REGISTRIES = java.util.Set.of("minecraft:biome");
+	}
+
+	/**
+	 * Ecliptic Seasons + Promenade: Promenade's main called DynamicRegistries.registerSynced, which copied both the synced
+	 * list and the networkable set before NeoForge's declaration. The kernel put Ecliptic Seasons' synced registries back
+	 * into the list, so their elements were sent, but the set still lacked them, so their tags were not; a crop naming
+	 * {@code #eclipticseasons:all} of the agro climates then failed the client's freeze ("Unbound tags") and the join.
+	 */
+	@Test
+	void everySyncedRegistryIsNetworkableAgain() throws Exception {
+		java.util.Set<Object> before = FabricCopiedSet.NETWORKABLE_REGISTRIES;
+		List<Object> synced = List.of("minecraft:biome", "promenade:snowy", "eclipticseasons:agro_climate",
+				"eclipticseasons:crop", "eclipticseasons:agro_climate");
+		List<Object> added = DatapackRegistryDeclaration.restoreNetworkable(
+				FabricCopiedSet.class.getDeclaredField("NETWORKABLE_REGISTRIES"), synced, Function.identity());
+
+		assertEquals(List.of("eclipticseasons:agro_climate", "eclipticseasons:crop"), added, "each missing key once, in list order");
+		assertSame(before, FabricCopiedSet.NETWORKABLE_REGISTRIES, "fabric-api's mutable copy is added to in place");
+		assertTrue(FabricCopiedSet.NETWORKABLE_REGISTRIES.containsAll(synced));
+		assertEquals(List.of(), DatapackRegistryDeclaration.restoreNetworkable(
+				FabricCopiedSet.class.getDeclaredField("NETWORKABLE_REGISTRIES"), synced, Function.identity()),
+				"nothing left to add the second time");
+	}
+
+	@Test
+	void anUnmodifiableSetIsReplacedByACopyThatHoldsThem() throws Exception {
+		List<Object> synced = List.of("minecraft:biome", "eclipticseasons:agro_climate");
+		List<Object> added = DatapackRegistryDeclaration.restoreNetworkable(
+				VanillaDerivedSet.class.getDeclaredField("NETWORKABLE_REGISTRIES"), synced, Function.identity());
+
+		assertEquals(List.of("eclipticseasons:agro_climate"), added);
+		assertEquals(java.util.Set.of("minecraft:biome", "eclipticseasons:agro_climate"), VanillaDerivedSet.NETWORKABLE_REGISTRIES);
+	}
+
+	@Test
+	void theReconcileSwitchLeavesTheSetAlone() throws Exception {
+		System.setProperty(DatapackRegistryDeclaration.RECONCILE_SWITCH, "off");
+		java.util.Set<Object> before = java.util.Set.copyOf(FabricCopiedSet.NETWORKABLE_REGISTRIES);
+		assertEquals(List.of(), DatapackRegistryDeclaration.restoreNetworkable(
+				FabricCopiedSet.class.getDeclaredField("NETWORKABLE_REGISTRIES"), List.of("x:y"), Function.identity()));
+		assertEquals(before, FabricCopiedSet.NETWORKABLE_REGISTRIES);
+	}
+
+	/**
+	 * The set is mended whether or not the list needed mending: the call is not behind the list's early return. A list
+	 * that already holds everything (a Fabric mod's registerSynced ran after the declaration on one side, say) can still
+	 * sit beside a set copied before it.
+	 */
+	@Test
+	void theSyncedListReconcileAlwaysMendsTheSetToo() throws Exception {
+		MethodNode reconcile = method("reconcileSynchronizedRegistries");
+		assertNotNull(reconcile, "KernelLifecycle.reconcileSynchronizedRegistries not found in the compiled src/main classes");
+		int mends = firstCall(reconcile, "restoreNetworkableRegistries");
+		assertTrue(mends >= 0, "reconcileSynchronizedRegistries must mend RegistrySynchronization's networkable set");
+		AbstractInsnNode[] insns = reconcile.instructions.toArray();
+		for (int i = 0; i < mends; i++) {
+			assertFalse(insns[i].getOpcode() == Opcodes.RETURN, "no return before the set is mended, at " + i);
+		}
+		assertTrue(method("restoreNetworkableRegistries") != null);
+	}
+
 	private static MethodNode method(String name) throws Exception {
 		Path compiled = Path.of(System.getProperty("user.dir"), "build", "classes", "java", "main",
 				"net", "forbric", "kernel", "boot", "KernelLifecycle.class");

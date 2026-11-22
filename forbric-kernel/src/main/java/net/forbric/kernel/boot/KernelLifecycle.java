@@ -1463,24 +1463,59 @@ public final class KernelLifecycle {
 							throw new IllegalStateException(e);
 						}
 					}, copy::add, null);
-			if (added.isEmpty()) return;
-			try {
-				synced.addAll(added);
-			} catch (UnsupportedOperationException unmodifiable) {
-				Caught.expected(unmodifiable);
-				syncedField.setAccessible(true);
-				syncedField.set(null, copy);
+			if (!added.isEmpty()) {
+				try {
+					synced.addAll(added);
+				} catch (UnsupportedOperationException unmodifiable) {
+					Caught.expected(unmodifiable);
+					syncedField.setAccessible(true);
+					syncedField.set(null, copy);
+				}
+				java.util.List<String> keys = new java.util.ArrayList<>();
+				for (Object data : added) keys.add(String.valueOf(key.invoke(data)));
+				ForbricLog.info("[Forbric/Lifecycle] put %d NeoForge-synced datapack registr(ies) back into "
+						+ "RegistryDataLoader.SYNCHRONIZED_REGISTRIES — fabric-api had replaced that live view with a copy "
+						+ "before NeoForge's declaration, so the server would not send them and the client would not build "
+						+ "them: %s", keys.size(), keys);
 			}
-			java.util.List<String> keys = new java.util.ArrayList<>();
-			for (Object data : added) keys.add(String.valueOf(key.invoke(data)));
-			ForbricLog.info("[Forbric/Lifecycle] put %d NeoForge-synced datapack registr(ies) back into "
-					+ "RegistryDataLoader.SYNCHRONIZED_REGISTRIES — fabric-api had replaced that live view with a copy "
-					+ "before NeoForge's declaration, so the server would not send them and the client would not build "
-					+ "them: %s", keys.size(), keys);
+			// Elements alone are half of a synced registry: its tags travel only for a networkable one, and the list the
+			// kernel just mended is not where that is asked.
+			restoreNetworkableRegistries(cl, (java.util.List<?>) syncedField.get(null), key);
 		} catch (Throwable t) {
 			Caught.warn(t, "[Forbric/Lifecycle] could not check NeoForge's synced datapack registries against "
 					+ "RegistryDataLoader.SYNCHRONIZED_REGISTRIES — a NeoForge mod's synced registry may be missing on "
 					+ "the client");
+		}
+	}
+
+	/**
+	 * The other half of {@link #reconcileSynchronizedRegistries}: every registry in the synced list is networkable too,
+	 * so its tags travel with its elements. fabric-api's {@code addSyncedRegistry} had also replaced
+	 * {@code RegistrySynchronization.NETWORKABLE_REGISTRIES} with a copy lacking NeoForge's synced registries; their
+	 * elements were sent and their tags were not, and an element naming such a tag left it unbound on the client — the
+	 * join ended in "Network Protocol Error" ({@link DatapackRegistryDeclaration#restoreNetworkable} says why). Read
+	 * here, after the declaration: if this read is what initialises {@code RegistrySynchronization}, its initialiser
+	 * derives the set from the complete list, as it does natively.
+	 */
+	private static void restoreNetworkableRegistries(ClassLoader cl, java.util.List<?> synced, Method key) {
+		try {
+			Class<?> syncCls = Class.forName("net.minecraft.core.RegistrySynchronization", true, cl);
+			java.util.List<Object> added = DatapackRegistryDeclaration.restoreNetworkable(
+					syncCls.getDeclaredField("NETWORKABLE_REGISTRIES"), synced, data -> {
+						try {
+							return key.invoke(data);
+						} catch (ReflectiveOperationException e) {
+							throw new IllegalStateException(e);
+						}
+					});
+			if (added.isEmpty()) return;
+			ForbricLog.info("[Forbric/Lifecycle] made %d synced datapack registr(ies) networkable again — fabric-api had "
+					+ "replaced RegistrySynchronization's networkable set with a copy before NeoForge's declaration, so "
+					+ "their tags would not travel with their elements and a tag an element names would stay unbound on "
+					+ "the client: %s", added.size(), added);
+		} catch (Throwable t) {
+			Caught.warn(t, "[Forbric/Lifecycle] could not check RegistrySynchronization's networkable set against the "
+					+ "synced datapack registries — a synced registry's tags may not reach the client");
 		}
 	}
 
