@@ -883,8 +883,10 @@ public final class KernelModLoader {
 			Object modList = modListCls.getMethod("get").invoke(null);
 			if (modList == null) return;
 			if (bindModList(Class.forName(MOD_LOADER, false, cl), modList)) {
+				// The wording avoids ModLoader's dispatch method names: gate-m1 asserts they never appear in a log, as the
+				// trace of a genuine FancyModLoader lifecycle running.
 				ForbricLog.debug("[Forbric/ModLoader] ModLoader.modList now names the published ModList — "
-						+ "dispatchParallelEvent / dispatchParallelTask walk it as natively");
+						+ "NeoForge's parallel event and task dispatch walk it as natively");
 			}
 		} catch (ClassNotFoundException absent) {
 			// No NeoForge ModList/ModLoader on this carrier — nothing holds the field.
