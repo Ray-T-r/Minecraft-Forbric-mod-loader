@@ -208,6 +208,26 @@ class GuestMixinPluginGuardTest {
 		assertFalse(plugin.shouldApplyMixin("t", "m"), "the interface's own default keeps its veto");
 	}
 
+	/**
+	 * A postApply the plugin left out is the interface's empty default, not a patch: no ContendedCallSites hooks. The
+	 * backfill used to stand a NOP in for the void default, and any opcode but RETURN read as "this postApply does
+	 * something", so every such plugin was fingerprinted on each mixin apply and could be blamed for contentions.
+	 */
+	@Test
+	void aBackfilledPostApplyIsNotObserved() {
+		byte[] out = guard.transform(NAME, partialPlugin(NAME, "java/lang/Object"), ctx());
+		assertFalse(calls(out, "beforePostApply") || calls(out, "afterPostApply") || calls(out, "abandonPostApply"),
+				"a postApply the plugin does not have cannot have patched a call site another mod took");
+
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(partialPlugin(NAME, "java/lang/Object")).accept(node, 0);
+		for (org.objectweb.asm.tree.MethodNode method : GuestMixinPluginGuard.backfillAbsentDefaults(node)) {
+			if ("postApply".equals(method.name)) {
+				assertFalse(GuestMixinPluginGuard.observesPostApply(method), "the void default is a bare return");
+			}
+		}
+	}
+
 	/** {@code -Dforbric.mixinPluginDefaults=off} leaves the class as upstream would: the absent method stays absent. */
 	@Test
 	void theSwitchLeavesTheAbsentMethodsOut() throws Exception {

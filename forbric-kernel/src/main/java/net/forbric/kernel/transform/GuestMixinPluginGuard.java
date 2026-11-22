@@ -118,7 +118,8 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 
 		// Before the wrapping, so a method given here is guarded like a declared one: the onLoad wrapper is also
 		// where the plugin is remembered, and a backfilled onLoad must not lose that.
-		int backfilled = backfillAbsentDefaults(node);
+		java.util.List<MethodNode> given = backfillAbsentDefaults(node);
+		int backfilled = given.size();
 		if (backfilled > 0) {
 			ForbricLog.info("[Forbric/Mixin] gave guest mixin config plugin %s the default of %d method(s) it does not "
 					+ "implement — the plugin interface the mod was built against has a default for every method, the "
@@ -131,7 +132,10 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			if (!GUARDED.contains(method.name) || (method.access & Opcodes.ACC_ABSTRACT) != 0) continue;
 			if (method.name.startsWith(ALIAS_PREFIX)) continue;
 
-			node.methods.add(wrap(node, method));
+			// A backfilled method is never observed as a postApply: with nothing to inherit it is a bare return, and
+			// what it does inherit is observed where it is declared, if it is declared on a plugin. Observing the
+			// backfill would make every plugin that leaves postApply out look like one that patches.
+			node.methods.add(wrap(node, method, !given.contains(method)));
 			wrapped++;
 		}
 		if (wrapped == 0) return classBytes;
@@ -191,10 +195,18 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 	 * The defaults are 0.17.4's: nothing for the void hooks, {@code null} for the list and refmap queries, {@code true}
 	 * for {@code shouldApplyMixin}. A subclass that implements the method still overrides it.
 	 *
-	 * @return how many methods were added
+	 * <p>Two costs of trying the inherited owners, both on the fail-open side the guard already takes: an
+	 * {@code IncompatibleClassChangeError} thrown from INSIDE a real inherited implementation cannot be told apart from
+	 * "no such method there" and also falls through to the default, without a report line; and a superclass that is
+	 * not {@code Object} but has no such method costs a thrown {@code NoSuchMethodError} on every call
+	 * ({@code shouldApplyMixin} runs once per mixin of the config). Telling them apart would need the superclass's
+	 * bytes, which a header-only transformer does not have.
+	 *
+	 * @return the methods that were added, in the order they were added
 	 */
-	static int backfillAbsentDefaults(ClassNode node) {
-		if (ABSTRACT_IN_RUNNING_MIXIN.isEmpty() || !defaultsEnabled()) return 0;
+	static java.util.List<MethodNode> backfillAbsentDefaults(ClassNode node) {
+		java.util.List<MethodNode> added = new java.util.ArrayList<>();
+		if (ABSTRACT_IN_RUNNING_MIXIN.isEmpty() || !defaultsEnabled()) return added;
 		Set<String> declared = new java.util.HashSet<>();
 		for (MethodNode method : node.methods) declared.add(method.name + method.desc);
 
@@ -207,12 +219,12 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			if (!PLUGIN_INTERFACE.equals(iface)) inherited.add(new String[] {iface, "true"});
 		}
 
-		int added = 0;
 		for (String key : new java.util.TreeSet<>(ABSTRACT_IN_RUNNING_MIXIN)) {
 			if (declared.contains(key)) continue;
 			int split = key.indexOf('(');
-			node.methods.add(backfill(key.substring(0, split), key.substring(split), inherited));
-			added++;
+			MethodNode method = backfill(key.substring(0, split), key.substring(split), inherited);
+			node.methods.add(method);
+			added.add(method);
 		}
 		return added;
 	}
@@ -250,7 +262,8 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 			code.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[] {"java/lang/IncompatibleClassChangeError"}));
 			code.add(new InsnNode(Opcodes.POP));
 		}
-		code.add(fallback(returnType));
+		// A void default is a bare return, as 0.17.4's are: no NOP standing in for a value.
+		if (returnType.getSort() != Type.VOID) code.add(fallback(returnType));
 		code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
 		return method;
 	}
@@ -263,7 +276,7 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 	 * handler's frame is exactly "the locals this method started with, one {@code Throwable} on the stack".
 	 * {@code COMPUTE_FRAMES} would need to resolve guest types through a loader this transformer does not have.
 	 */
-	private static MethodNode wrap(ClassNode owner, MethodNode method) {
+	private static MethodNode wrap(ClassNode owner, MethodNode method, boolean observable) {
 		String original = method.name;
 		method.name = ALIAS_PREFIX + original;
 		method.access = (method.access & ~(Opcodes.ACC_PUBLIC | Opcodes.ACC_PROTECTED)) | Opcodes.ACC_PRIVATE;
@@ -293,7 +306,7 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		// A postApply that does something is where a raw post-Mixin patch lives; ContendedCallSites looks at the
 		// target on either side of it. Outside the try/catch like rememberPlugin: neither hook throws, and the
 		// handler's frame stays "the starting locals, one Throwable".
-		boolean observed = observesPostApply(method);
+		boolean observed = observable && observesPostApply(method);
 		if (observed) code.add(postApplyHook("beforePostApply"));
 
 		code.add(start);
