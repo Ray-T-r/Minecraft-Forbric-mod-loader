@@ -116,6 +116,16 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		ClassNode node = new ClassNode();
 		new ClassReader(classBytes).accept(node, 0);
 
+		// Before the wrapping, so a method given here is guarded like a declared one: the onLoad wrapper is also
+		// where the plugin is remembered, and a backfilled onLoad must not lose that.
+		int backfilled = backfillAbsentDefaults(node);
+		if (backfilled > 0) {
+			ForbricLog.info("[Forbric/Mixin] gave guest mixin config plugin %s the default of %d method(s) it does not "
+					+ "implement — the plugin interface the mod was built against has a default for every method, the "
+					+ "bundled Mixin's has none, and Mixin calls them all (-D%s=off leaves them out)", className,
+					backfilled, DEFAULTS_SWITCH);
+		}
+
 		int wrapped = 0;
 		for (MethodNode method : node.methods.toArray(new MethodNode[0])) {
 			if (!GUARDED.contains(method.name) || (method.access & Opcodes.ACC_ABSTRACT) != 0) continue;
@@ -133,6 +143,116 @@ public final class GuestMixinPluginGuard implements ClassTransformer {
 		ClassWriter writer = new ClassWriter(ClassWriter.COMPUTE_MAXS);
 		node.accept(writer);
 		return writer.toByteArray();
+	}
+
+	/** {@code -Dforbric.mixinPluginDefaults=off}: a plugin that leaves a method out fails on Mixin's call, as upstream. */
+	static final String DEFAULTS_SWITCH = "forbric.mixinPluginDefaults";
+
+	/**
+	 * The plugin interface's methods that the Mixin running here declares abstract, as {@code name + descriptor}.
+	 *
+	 * <p>Read from the interface itself rather than from a version number, so the backfill follows whichever Mixin is
+	 * bundled: sponge-mixin 0.17.3 (the kernel's) declares all seven abstract; 0.17.4 — what Fabric Loader 0.19.5 and
+	 * NeoForge 26.2.0.93 ship natively — gives every one of them a default ({@code return}, {@code null},
+	 * {@code true}), and on that Mixin this set is empty and the backfill never fires.
+	 */
+	private static final Set<String> ABSTRACT_IN_RUNNING_MIXIN = abstractPluginMethods();
+
+	private static Set<String> abstractPluginMethods() {
+		Set<String> abstracts = new java.util.HashSet<>();
+		try {
+			for (java.lang.reflect.Method m : org.spongepowered.asm.mixin.extensibility.IMixinConfigPlugin.class.getMethods()) {
+				if (m.getDeclaringClass().isInterface() && !m.isDefault() && GUARDED.contains(m.getName())) {
+					abstracts.add(m.getName() + Type.getMethodDescriptor(m));
+				}
+			}
+		} catch (Throwable unreadable) {
+			Caught.warn(unreadable, "[Forbric/Mixin] could not read Mixin's config plugin interface; a guest plugin that "
+					+ "leaves a method out is not given its default");
+		}
+		return Set.copyOf(abstracts);
+	}
+
+	/**
+	 * Gives {@code node} — a class or interface that declares the plugin interface — a body for every method of that
+	 * interface it does not declare and that the running Mixin declares abstract.
+	 *
+	 * <p>Mixin 0.17.4 made every plugin method a default, and a plugin built against it may implement only the one it
+	 * cares about (Boids' implements {@code shouldApplyMixin} alone). Natively that is a complete plugin. On the
+	 * kernel's 0.17.3 the same class does not implement {@code onLoad}, and Mixin's {@code PluginHandle.onLoad} — the
+	 * first call, during config selection on whatever class is woven first — dies with {@code AbstractMethodError}. The
+	 * guard below could not catch it: it wraps the methods a class declares, and an absent method is not one. The
+	 * selection that died was the kernel's own {@code Class.forName} of NeoForge's {@code ModList}, so ModList was
+	 * never seeded and the boot died later, on an NPE that names neither Mixin nor the mod.
+	 *
+	 * <p>The body is what the JVM would have run with 0.17.4's interface: whatever implementation the class inherits
+	 * otherwise — tried through its superclass and its other direct interfaces, each by {@code invokespecial}, an
+	 * {@link IncompatibleClassChangeError} meaning that one has none — and when none does, the interface's default.
+	 * The defaults are 0.17.4's: nothing for the void hooks, {@code null} for the list and refmap queries, {@code true}
+	 * for {@code shouldApplyMixin}. A subclass that implements the method still overrides it.
+	 *
+	 * @return how many methods were added
+	 */
+	static int backfillAbsentDefaults(ClassNode node) {
+		if (ABSTRACT_IN_RUNNING_MIXIN.isEmpty() || !defaultsEnabled()) return 0;
+		Set<String> declared = new java.util.HashSet<>();
+		for (MethodNode method : node.methods) declared.add(method.name + method.desc);
+
+		boolean isInterface = (node.access & Opcodes.ACC_INTERFACE) != 0;
+		java.util.List<String[]> inherited = new java.util.ArrayList<>(); // {owner, isInterface}
+		if (!isInterface && node.superName != null && !"java/lang/Object".equals(node.superName)) {
+			inherited.add(new String[] {node.superName, "false"});
+		}
+		for (String iface : node.interfaces) {
+			if (!PLUGIN_INTERFACE.equals(iface)) inherited.add(new String[] {iface, "true"});
+		}
+
+		int added = 0;
+		for (String key : new java.util.TreeSet<>(ABSTRACT_IN_RUNNING_MIXIN)) {
+			if (declared.contains(key)) continue;
+			int split = key.indexOf('(');
+			node.methods.add(backfill(key.substring(0, split), key.substring(split), inherited));
+			added++;
+		}
+		return added;
+	}
+
+	static boolean defaultsEnabled() {
+		return !"off".equalsIgnoreCase(System.getProperty(DEFAULTS_SWITCH, "on"));
+	}
+
+	/**
+	 * {@code name desc}: try each inherited owner by {@code invokespecial}, falling through on
+	 * {@link IncompatibleClassChangeError} (no such method there, or an abstract one), then the interface's default.
+	 *
+	 * <p>Each handler's frame is written by hand, as in {@link #wrap}: the starting locals and one error on the stack.
+	 */
+	private static MethodNode backfill(String name, String desc, java.util.List<String[]> inherited) {
+		MethodNode method = new MethodNode(Opcodes.ASM9, Opcodes.ACC_PUBLIC, name, desc, null, null);
+		Type returnType = Type.getReturnType(desc);
+		InsnList code = method.instructions;
+		for (String[] owner : inherited) {
+			LabelNode start = new LabelNode(new Label());
+			LabelNode end = new LabelNode(new Label());
+			LabelNode handler = new LabelNode(new Label());
+			method.tryCatchBlocks.add(new TryCatchBlockNode(start, end, handler, "java/lang/IncompatibleClassChangeError"));
+			code.add(start);
+			code.add(new VarInsnNode(Opcodes.ALOAD, 0));
+			int slot = 1;
+			for (Type arg : Type.getArgumentTypes(desc)) {
+				code.add(new VarInsnNode(arg.getOpcode(Opcodes.ILOAD), slot));
+				slot += arg.getSize();
+			}
+			code.add(new MethodInsnNode(Opcodes.INVOKESPECIAL, owner[0], name, desc, Boolean.parseBoolean(owner[1])));
+			code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
+			code.add(end);
+			code.add(handler);
+			code.add(new FrameNode(Opcodes.F_SAME1, 0, null, 1, new Object[] {"java/lang/IncompatibleClassChangeError"}));
+			code.add(new InsnNode(Opcodes.POP));
+		}
+		code.add(fallback(returnType));
+		code.add(new InsnNode(returnType.getOpcode(Opcodes.IRETURN)));
+		return method;
 	}
 
 	/**
