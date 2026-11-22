@@ -45,6 +45,7 @@ class FabricRegistryWindowInjectorExecutionTest {
 			MAPPED, """
 					package net.minecraft.core;
 
+					import java.util.IdentityHashMap;
 					import java.util.Iterator;
 					import java.util.LinkedHashMap;
 					import java.util.Map;
@@ -53,10 +54,36 @@ class FabricRegistryWindowInjectorExecutionTest {
 					public class MappedRegistry<T> implements Registry<T> {
 						private final Map<String, T> byLocation = new LinkedHashMap<>();
 						private boolean frozen;
+						private Map<T, String> unregisteredIntrusiveHolders;
+						private String name = "test:registry";
+
+						public MappedRegistry() {
+						}
+
+						/** A registry with intrusive holders (ENTITY_TYPE, BLOCK, ITEM, …): NeoForge's freeze keeps the map. */
+						public MappedRegistry(String name) {
+							this.name = name;
+							this.unregisteredIntrusiveHolders = new IdentityHashMap<>();
+						}
+
+						public ResourceKey<Registry<T>> key() {
+							return new ResourceKey<>(name);
+						}
+
+						/** What EntityType's constructor does: the holder is listed until the value is registered. */
+						public void createIntrusiveHolder(T value) {
+							if (this.unregisteredIntrusiveHolders == null) throw new IllegalStateException("This registry can't create intrusive holders");
+							this.unregisteredIntrusiveHolders.put(value, "Reference{null=" + value + "}");
+						}
+
+						public boolean listed(T value) {
+							return this.unregisteredIntrusiveHolders != null && this.unregisteredIntrusiveHolders.containsKey(value);
+						}
 
 						public void register(ResourceKey<T> key, T value) {
 							validateWrite(key);
 							byLocation.put(key.location(), value);
+							if (this.unregisteredIntrusiveHolders != null) this.unregisteredIntrusiveHolders.remove(value);
 						}
 
 						private void validateWrite(ResourceKey<T> key) {
@@ -69,8 +96,12 @@ class FabricRegistryWindowInjectorExecutionTest {
 							this.frozen = false;
 						}
 
-						public MappedRegistry<T> freeze() {
+						/** NeoForge's base: the flag first, then the intrusive-holder check, and the map is kept. */
+						public Registry<T> freeze() {
 							this.frozen = true;
+							if (this.unregisteredIntrusiveHolders != null && !this.unregisteredIntrusiveHolders.isEmpty()) {
+								throw new IllegalStateException("Some intrusive holders were not registered: " + this.unregisteredIntrusiveHolders.values());
+							}
 							return this;
 						}
 
@@ -98,9 +129,11 @@ class FabricRegistryWindowInjectorExecutionTest {
 					public class BuiltInRegistries {
 						public static final Registry<Registry<?>> REGISTRY = new MappedRegistry<>();
 						public static final MappedRegistry<Object> STRUCTURE_TYPE = new MappedRegistry<>();
+						public static final MappedRegistry<Object> ENTITY_TYPE = new MappedRegistry<>("minecraft:entity_type");
 
 						static {
 							((MappedRegistry<Registry<?>>) REGISTRY).register(new ResourceKey<>("minecraft:worldgen/structure_type"), STRUCTURE_TYPE);
+							((MappedRegistry<Registry<?>>) REGISTRY).register(new ResourceKey<>("minecraft:entity_type"), ENTITY_TYPE);
 						}
 
 						/** What Bootstrap leaves: every built-in registry frozen, the root too. */
@@ -186,6 +219,67 @@ class FabricRegistryWindowInjectorExecutionTest {
 		Object shippedRoot = InjectorExecution.getStatic(frozenBuiltIns(shipped), "REGISTRY");
 		assertTrue(frozenFailure(shipped, shippedRoot, "wover:wover/biome_codec").startsWith("Registry is already frozen"),
 				"premise: without the injector the root refuses the early write");
+	}
+
+	/**
+	 * A client's two freezes. NeoForge's attribute events (the tail of its registration) ran a Fabric mod's mixin on
+	 * {@code DefaultAttributes.hasSupplier}, which initialised the mod's entity class; its initialiser built an
+	 * {@code EntityType} (Better Nether's {@code naga_projectile}) that the mod's {@code onInitialize} registers, and on a
+	 * client that runs after the registration window's freeze. That freeze threw "Some intrusive holders were not registered"
+	 * and {@code GameData.freezeData} stopped part-way. Before Fabric's freeze point the freeze now carries the holder; the
+	 * entrypoint registers it; the freeze at Fabric's freeze point checks it, and throws for one nothing registered.
+	 */
+	@Test void aFreezeBeforeFabricsFreezePointCarriesUnregisteredIntrusiveHoldersToIt(@TempDir Path work) throws Throwable {
+		FabricRegistryWindow.resetForTests(() -> true);
+		Map<String, byte[]> original = compile(work);
+		ClassLoader loader = withInjected(original);
+		Object entityTypes = InjectorExecution.getStatic(Class.forName(BUILT_IN, true, loader), "ENTITY_TYPE");
+
+		Object projectile = "entity.betternether.naga_projectile";
+		InjectorExecution.invoke(entityTypes, "createIntrusiveHolder", projectile);
+		InjectorExecution.invoke(entityTypes, "freeze");
+		assertEquals(true, InjectorExecution.invoke(entityTypes, "frozen"), "the registration window's freeze completes");
+		assertEquals(true, InjectorExecution.invoke(entityTypes, "listed", projectile), "and the holder is still listed for the next one");
+
+		// The Fabric entrypoint window: reopened, the main entrypoint registers the value it built early.
+		InjectorExecution.invoke(entityTypes, "unfreeze", false);
+		register(loader, entityTypes, "betternether:naga_projectile", projectile);
+		FabricRegistryWindow.close();
+		InjectorExecution.invoke(entityTypes, "freeze");
+		assertEquals(false, InjectorExecution.invoke(entityTypes, "listed", projectile));
+
+		// At and after Fabric's freeze point a holder nothing registered fails the freeze, as on Fabric.
+		InjectorExecution.invoke(entityTypes, "unfreeze", false);
+		InjectorExecution.invoke(entityTypes, "createIntrusiveHolder", "entity.mod.never_registered");
+		IllegalStateException unregistered = assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(entityTypes, "freeze"));
+		assertTrue(unregistered.getMessage().startsWith("Some intrusive holders were not registered"), unregistered.getMessage());
+
+		// Without Fabric mods there is no later freeze to carry them to: NeoForge's check, as on NeoForge.
+		FabricRegistryWindow.resetForTests(() -> false);
+		Object neoOnly = InjectorExecution.construct(loader.loadClass(MAPPED), "neo:entity_type");
+		InjectorExecution.invoke(neoOnly, "createIntrusiveHolder", "entity.neo.thing");
+		assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(neoOnly, "freeze"));
+
+		// Premise: as shipped, the registration window's freeze throws on the early-built holder.
+		FabricRegistryWindow.resetForTests(() -> true);
+		ClassLoader shipped = InjectorExecution.load(original);
+		Object shippedEntityTypes = InjectorExecution.getStatic(Class.forName(BUILT_IN, true, shipped), "ENTITY_TYPE");
+		InjectorExecution.invoke(shippedEntityTypes, "createIntrusiveHolder", projectile);
+		IllegalStateException premise = assertThrows(IllegalStateException.class, () -> InjectorExecution.invoke(shippedEntityTypes, "freeze"));
+		assertTrue(premise.getMessage().startsWith("Some intrusive holders were not registered"), premise.getMessage());
+	}
+
+	@Test void aFreezeOfAnotherShapeIsLeftAsItIs(@TempDir Path work) throws Throwable {
+		Map<String, byte[]> original = compile(work);
+		org.objectweb.asm.tree.ClassNode node = new org.objectweb.asm.tree.ClassNode();
+		new org.objectweb.asm.ClassReader(original.get(MAPPED.replace('.', '/'))).accept(node, 0);
+		node.methods.removeIf(m -> m.name.equals("freeze"));
+		assertFalse(FabricRegistryWindowInjector.carryIntrusiveHolders(node), "no freeze() of that shape: nothing to ask");
+	}
+
+	private static void register(ClassLoader loader, Object registry, String location, Object value) throws Throwable {
+		Object key = InjectorExecution.construct(loader.loadClass(KEY), location);
+		registry.getClass().getMethod("register", loader.loadClass(KEY), Object.class).invoke(registry, key, value);
 	}
 
 	@Test void withoutFabricModsTheRegistriesKeepNeoForgesFreeze(@TempDir Path work) throws Throwable {
