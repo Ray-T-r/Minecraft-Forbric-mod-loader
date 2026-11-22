@@ -829,6 +829,10 @@ public final class KernelBoot {
 		// Those data-map lookups (and the oxidation, waxing and stripping ones) end in Holder.Reference.getData, which
 		// threw for a value not registered yet; it answers "no data" there, so they fall back to vanilla's maps.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.UnboundHolderDataInjector());
+		// A block state's cache asked for inside NeoForge's RegisterEvent (fabric-api's add callback asks for every block
+		// added) waits for the end of the dispatch, where NeoForge computes it: a NeoForge mod's block shape may read a
+		// sibling's DeferredHolder that is still unbound until then. Inert outside that window.
+		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.DeferredStateCacheInjector());
 		// NeoForge's tooltip registration event goes to each mod on its own, not through ModLoader's aborting fan-out.
 		chain.register(TransformPhase.COREMOD, new net.forbric.kernel.transform.NeoTooltipAppendersInjector());
 		// NeoForge's coremods never run under the kernel; NativeCoremodParity does their rewrites after Mixin. These

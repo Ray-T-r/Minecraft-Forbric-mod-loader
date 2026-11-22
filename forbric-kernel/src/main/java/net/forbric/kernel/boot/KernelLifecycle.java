@@ -840,6 +840,9 @@ public final class KernelLifecycle {
 		synchronized void runAfterDispatch() {
 			if (afterDispatchRan) return;
 			afterDispatchRan = true;
+			// Every registry's RegisterEvent has been dispatched: the block state caches held back during it are computed
+			// now, before the Fabric mains, whose own blocks have theirs computed on add as on Fabric.
+			net.forbric.kernel.util.KernelDeferredStateCaches.close(true);
 			try {
 				afterDispatch.run();
 			} catch (Throwable t) {
@@ -873,12 +876,20 @@ public final class KernelLifecycle {
 		if (!seam) publishModBusDelivery(cl);
 		int registries = ((java.util.Collection<?>) gameData.getMethod("getRegistrationOrder").invoke(null)).size();
 		registerEventsWindow = window;
+		// A block state's cache asked for inside the dispatch waits for its end, where NeoForge computes its mods' block
+		// caches (KernelDeferredStateCaches): fabric-api's add callback asked while a block's siblings were still unbound.
+		net.forbric.kernel.util.KernelDeferredStateCaches.open();
+		boolean dispatched = false;
 		try {
 			gameData.getMethod("postRegisterEvents").invoke(null);
+			dispatched = true;
 		} catch (java.lang.reflect.InvocationTargetException failed) {
 			throw failed.getCause() instanceof Exception e ? e : failed;
 		} finally {
 			registerEventsWindow = null;
+			// Already closed where the dispatch loop ended (runAfterDispatch); here when the seam never got there. After a
+			// failure NeoForge has rolled every registry back, and what was held belongs to blocks no longer registered.
+			net.forbric.kernel.util.KernelDeferredStateCaches.close(dispatched);
 		}
 		ForbricLog.info("[Forbric/Lifecycle] fired RegisterEvent in NeoForge's registration order — NeoForge's own "
 				+ "GameData.postRegisterEvents walked %d registr(ies), every mixin on it applied%s", registries,
