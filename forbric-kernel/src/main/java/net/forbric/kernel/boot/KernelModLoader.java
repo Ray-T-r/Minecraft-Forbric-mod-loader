@@ -151,6 +151,9 @@ public final class KernelModLoader {
 		// sort by dependency before they construct anything.
 		List<String> modOrder = dependencyOrder();
 		claimed = orderByDependency(claimed, modOrder);
+		// Phase 1c — the @Mod classes of ONE mod in the order NeoForge constructs them, which is not the class-name
+		// order the scanner hands back. See nativeClassOrder.
+		claimed = nativeClassOrder(claimed);
 
 		// Phase 2 — build every NeoForge mod's identity. They are PUBLISHED below, before phase 3, because a mod's constructor may ask its family's ModList about ITSELF, and against the kernel's
 		// empty ModList that is fatal to that mod (Bookshelf: "Could not find mod 'bookshelf'" from getModBus;
@@ -267,8 +270,8 @@ public final class KernelModLoader {
 			here.add(i);
 		}
 		// Each on NeoForge's own modloading-worker pool, as soon as the mods it waits for are constructed, the way
-		// ModLoader.constructMods runs them (NeoParallelDispatch); one mod's classes one after another, as
-		// FMLModContainer.constructMod constructs them. It ran on the caller's thread, one mod after another: main on a
+		// ModLoader.constructMods runs them (NeoParallelDispatch); one mod's classes one after another, in the order
+		// nativeClassOrder put them in, as FMLModContainer.constructMod constructs them. It ran on the caller's thread, one mod after another: main on a
 		// server, the render thread on a client.
 		java.util.concurrent.atomic.AtomicReferenceArray<ConstructedMod> constructed =
 				new java.util.concurrent.atomic.AtomicReferenceArray<>(claimed.size());
@@ -628,6 +631,61 @@ public final class KernelModLoader {
 	static DiscoveredMod declaredIn(Map<String, Declared> declared, String modId, Path jar) {
 		Declared entry = modId == null ? null : declared.get(modId);
 		return entry != null && entry.jar().equals(jar) ? entry.mod() : null;
+	}
+
+	/** {@code -Dforbric.modClassOrder=off}: one mod's {@code @Mod} classes in class-name order again. */
+	static final String CLASS_ORDER_SWITCH = "forbric.modClassOrder";
+
+	/**
+	 * Within each mod id, its {@code @Mod} classes in the order NeoForge constructs them; every class keeps the slot of
+	 * the list it had, so the order between mods is untouched.
+	 *
+	 * <p><b>What native NeoForge does</b> (FML 11.0.16, {@code FMLJavaModLanguageProvider.loadMod}, from its bytecode):
+	 * it takes the mod file's {@code @Mod} classes naming this mod id, keeps those whose {@code dist} includes this side,
+	 * and sorts them with {@code Comparator.comparingInt(depends.size()).thenComparingInt(-getSides(dist).size())},
+	 * a stable sort over the order the scan found them in. {@code FMLModContainer} loads them into its
+	 * {@code modClasses} list in that order and {@code constructMod} constructs them one after another, in that order, in
+	 * the one task the container has. So a class that depends on fewer mods comes first, and of two that depend on as
+	 * many, the one that belongs to more sides: a mod's common class ({@code dist} not declared, so both sides) is
+	 * constructed before its {@code dist = CLIENT} class, whatever their names.
+	 *
+	 * <p>The kernel took them in the scanner's class-name order. A mod whose client class sorts first by name and asks
+	 * for the instance its common class's constructor publishes (Paraglider: {@code ParagliderClientMod} calls
+	 * {@code ParagliderMod.instance()}, which throws "Mod instance not ready yet") had its client class constructed
+	 * before the common one, on every client, and the boot stopped on it.
+	 *
+	 * <p>Ties keep the order they came in, as natively; there the scan order breaks them, here the class name does.
+	 */
+	static List<ModAnnotationScanner.ModClassInfo> nativeClassOrder(List<ModAnnotationScanner.ModClassInfo> claimed) {
+		if ("off".equalsIgnoreCase(System.getProperty(CLASS_ORDER_SWITCH, "on"))) return claimed;
+
+		Map<String, List<Integer>> slots = new LinkedHashMap<>();
+		for (int i = 0; i < claimed.size(); i++) {
+			ModAnnotationScanner.ModClassInfo info = claimed.get(i);
+			if (info == null || info.modId == null) continue;
+			slots.computeIfAbsent(info.modId, k -> new ArrayList<>()).add(i);
+		}
+		List<ModAnnotationScanner.ModClassInfo> ordered = new ArrayList<>(claimed);
+		List<String> moved = new ArrayList<>();
+		for (Map.Entry<String, List<Integer>> mod : slots.entrySet()) {
+			List<Integer> at = mod.getValue();
+			if (at.size() < 2) continue;
+			List<ModAnnotationScanner.ModClassInfo> classes = new ArrayList<>(at.size());
+			for (int i : at) classes.add(claimed.get(i));
+			List<ModAnnotationScanner.ModClassInfo> sorted = new ArrayList<>(classes);
+			// List.sort is stable, as Stream.sorted on NeoForge's ordered stream is.
+			sorted.sort(java.util.Comparator.<ModAnnotationScanner.ModClassInfo>comparingInt(info -> info.depends.size())
+					.thenComparingInt(info -> -info.sideCount()));
+			if (sorted.equals(classes)) continue;
+			for (int k = 0; k < at.size(); k++) ordered.set(at.get(k), sorted.get(k));
+			moved.add(mod.getKey() + " " + sorted.stream().map(info -> info.className).toList());
+		}
+		if (!moved.isEmpty()) {
+			ForbricLog.info("[Forbric/ModLoader] %d mod(s) have several @Mod classes, constructed in the order NeoForge "
+					+ "constructs them — fewest depends first, then the class that belongs to more sides — not in "
+					+ "class-name order (-D%s=off to go back): %s", moved.size(), CLASS_ORDER_SWITCH, moved);
+		}
+		return ordered;
 	}
 
 	/**

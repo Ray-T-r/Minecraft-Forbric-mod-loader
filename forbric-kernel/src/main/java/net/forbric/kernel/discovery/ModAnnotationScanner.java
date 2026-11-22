@@ -65,16 +65,40 @@ public final class ModAnnotationScanner {
 		 */
 		public final java.util.Set<String> dists;
 
+		/**
+		 * The mod ids this {@code @Mod} class names in NeoForge's {@code String[] depends()}, in declared order; empty
+		 * when it names none.
+		 *
+		 * <p>NeoForge orders the {@code @Mod} classes of one mod by it: {@code FMLJavaModLanguageProvider.loadMod}
+		 * sorts them by how many mods they depend on, fewest first (see {@code KernelModLoader.nativeClassOrder}).
+		 */
+		public final List<String> depends;
+
 		/** Public so code outside this package — the loader's own tests — can state a scan result directly. */
 		public ModClassInfo(String className, String modId, Ecosystem family) {
 			this(className, modId, family, java.util.Set.of());
 		}
 
 		public ModClassInfo(String className, String modId, Ecosystem family, java.util.Set<String> dists) {
+			this(className, modId, family, dists, List.of());
+		}
+
+		public ModClassInfo(String className, String modId, Ecosystem family, java.util.Set<String> dists,
+				List<String> depends) {
 			this.className = className;
 			this.modId = modId;
 			this.family = family;
 			this.dists = dists == null ? java.util.Set.of() : java.util.Set.copyOf(dists);
+			this.depends = depends == null ? List.of() : List.copyOf(depends);
+		}
+
+		/**
+		 * How many sides this {@code @Mod} belongs to, counted as NeoForge counts them
+		 * ({@code AutomaticEventSubscriber.getSides(...).size()}): a class that declares no {@code dist} belongs to
+		 * every side, so to both.
+		 */
+		public int sideCount() {
+			return dists.isEmpty() ? 2 : dists.size();
 		}
 
 		/**
@@ -138,7 +162,8 @@ public final class ModAnnotationScanner {
 		ModCollector collector = new ModCollector();
 		new ClassReader(bytes).accept(collector, ClassReader.SKIP_CODE | ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
 		return collector.family != null
-				? new ModClassInfo(collector.className, collector.modId, collector.family, collector.dists)
+				? new ModClassInfo(collector.className, collector.modId, collector.family, collector.dists,
+						collector.depends)
 				: null;
 	}
 
@@ -147,6 +172,7 @@ public final class ModAnnotationScanner {
 		String modId;
 		Ecosystem family;
 		final java.util.Set<String> dists = new java.util.LinkedHashSet<>();
+		final List<String> depends = new ArrayList<>();
 
 		ModCollector() {
 			super(Opcodes.ASM9);
@@ -173,6 +199,15 @@ public final class ModAnnotationScanner {
 				public AnnotationVisitor visitArray(String name) {
 					// NeoForge's @Mod(dist = {Dist.CLIENT}). The constants arrive as visitEnum, and only their
 					// NAMES are kept: the Dist class belongs to the game side, which this scanner runs before.
+					if ("depends".equals(name)) {
+						// NeoForge's @Mod(depends = {"jei"}): plain strings, which arrive as visit.
+						return new AnnotationVisitor(Opcodes.ASM9) {
+							@Override
+							public void visit(String unused, Object value) {
+								if (value instanceof String id) depends.add(id);
+							}
+						};
+					}
 					if (!"dist".equals(name)) return null;
 					return new AnnotationVisitor(Opcodes.ASM9) {
 						@Override
